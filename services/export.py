@@ -5,7 +5,6 @@ import subprocess
 import os
 import sys
 import re
-from weasyprint import HTML
 from config import Config
 from services.db import get_supabase
 import pdfkit
