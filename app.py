@@ -12,7 +12,6 @@ import pdfkit
 import openpyxl
 import random
 from flask import make_response
-from weasyprint import HTML
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from dateutil import parser
@@ -35,12 +34,9 @@ from utils.training_helpers import get_training_country_templates_status
 
 # ================= 1. 日志配置（在 app 创建之前） =================
 logging.basicConfig(
-    level=logging.DEBUG,
+    level=logging.INFO,
     format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger(__name__)
 logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
@@ -50,6 +46,10 @@ app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
 app.debug = os.environ.get("FLASK_DEBUG", "False").lower() == "true"      # 🔥 强制调试模式显示详细错误
+
+@app.route('/health')
+def health():
+    return "OK", 200
 
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
