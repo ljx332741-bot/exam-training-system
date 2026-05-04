@@ -1,0 +1,412 @@
+<!-- templates/exam/dashboard.html -->
+{% extends "base.html" %}
+{% block title %}我的考试中心{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- 培训签到卡片区（多培训） -->
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-calendar-check me-2"></i><span data-i18n="training_signin">培训签到</span>
+            </div>
+            <div class="card-body" id="trainingsContainer">
+                <div class="row g-3" id="trainingCards">
+                    <!-- 动态加载 -->
+                    <div class="col-12 text-center text-muted"><span data-i18n="loading">加载中...</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 我的访谈卡片区 -->
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-chat-dots me-2"></i><span data-i18n="my_interviews">我的访谈</span>
+            </div>
+            <div class="card-body" id="interviewsContainer">
+                <div class="row g-3" id="interviewCards">
+                    <div class="col-12 text-center text-muted"><span data-i18n="loading">加载中...</span></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+  <!-- 📋 待考任务 -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-header bg-white fw-bold"><i class="bi bi-pencil-square me-2"></i><span data-i18n="pending_exams">待参加考试</span></div>
+      <div class="card-body">
+        {% set active_exams = exams | selectattr("is_active", "equalto", true) | list %}
+        {% if active_exams %}
+        <div class="list-group list-group-flush">
+          {% for ex in exams %}
+            {% if not ex.user_status.is_submitted %}
+              <a href="{{ url_for('take_exam', exam_id=ex.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" data-exam-id="{{ ex.id }}">
+                <div>
+                  <span class="fw-semibold d-block">{{ ex.title }}</span>
+                  <small class="text-muted">
+                      {% if ex.created_at %}
+                      {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
+                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }}<span data-i18n="score_unit">分</span> | 
+                      {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
+                      <span class="local-time" data-utc="{{ ex.created_at }}">{{ ex.created_at[:19].replace('T', ' ') }}</span>
+                      {% endif %}
+                  </small>
+                </div>
+                <span class="badge rounded-pill {% if ex.user_status.started %}bg-warning{% else %}bg-primary{% endif %}">
+                  {% if ex.user_status.started %}
+                    <span data-i18n="resume_exam">继续考试</span> 
+                    <span class="exam-timer" data-remaining="{{ ex.user_status.remaining }}">({{ (ex.user_status.remaining // 60) }}:{{ '%02d' % (ex.user_status.remaining % 60) }})</span>
+                  {% else %}
+                    <span data-i18n="start_exam">进入考试</span>
+                  {% endif %}
+                </span>
+              </a>
+            {% endif %}
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i><span data-i18n="no_pending">暂无待考任务</span></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- 📊 历史记录 -->
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-header bg-white fw-bold"><i class="bi bi-clock-history me-2"></i><span data-i18n="recent_scores">最近考试成绩</span></div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0">
+            <thead class="table-light"><tr><th><span data-i18n="exam_name">考试名称</span></th><th><span data-i18n="score">得分</span></th><th><span data-i18n="submitted_at">提交时间</span></th><th><span data-i18n="actions">操作</span></th></tr></thead>
+            <tbody>
+              {% for r in results | default([]) %}
+              <tr>
+                <td>{{ r.exam_title }}</td>
+                <td><span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">{{ r.total_score }}</span></td>
+                <td class="text-muted small">
+                  <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at[:19].replace('T', ' ') if r.created_at else '-' }}</span>
+                </td>
+                <td>
+                  <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
+                  <a href="{{ url_for('exam_export_pdf', result_id=r.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a></td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="text-center text-muted py-4"><span data-i18n="no_records">暂无考试记录</span></td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 手写签名模态框 -->
+<div class="modal fade" id="signatureModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title">✍️ <span data-i18n="signature_title">手写签名确认</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label"><span data-i18n="signature_name">姓名:</span>
+                    <span class="text-center text-muted py-4">{{ CURRENT_USER_NAME }}</span></label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label"><span data-i18n="signature_area">手写签名区</span></label>
+                    <canvas id="signatureCanvas" style="width:100%; height:200px; border:1px solid #ccc; background:#fff; touch-action: none;"></canvas>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-secondary" id="clearSignatureBtn"><span data-i18n="clear_signature">清除重签</span></button>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button type="button" class="btn btn-primary" id="submitSignatureBtn"><span data-i18n="submit_signature">提交签到</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
+<script>
+  function safeT(key, fallback = '') {
+      if (window.i18n && typeof window.i18n.t === 'function') {
+          return window.i18n.t(key) || fallback || key;
+      }
+      return fallback || key;
+  }
+
+    let currentSignAction = 'sign';  // 'sign' 或 'resign'
+    let currentTrainingId = null;
+    let signaturePad = null;
+    const CURRENT_USER_NAME = "{{ user_name | default('') }}";
+
+    // 加载可签到的培训
+    async function loadTrainings() {
+      const res = await fetch('/api/trainings/available');
+      const trainings = await res.json();
+      const container = document.getElementById('trainingCards');
+      if (!trainings.length) {
+        container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('no_ongoing_sign_ins') + '</div>';
+        return;
+      }
+      container.innerHTML = '';
+
+      trainings.forEach(t => {
+        const col = document.createElement('div');
+        col.className = 'col-md-6 col-lg-4';
+        const card = document.createElement('div');
+        card.className = 'card h-100 shadow-sm';
+        
+        // ✅ 根据状态生成徽章和按钮，放在一个变量中
+        let statusBadge = '';
+        let actionHtml = '';
+        let signTimeHtml = t.signed ? `
+          <div class="small text-muted mt-2">
+            ${safeT('sign_in_period')}：${new Date(t.sign_time).toLocaleString()}
+          </div>` : '';
+        if (!t.signed) {
+            statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
+            actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${t('sign_now')}</button>`;
+        } else if (t.needs_resign) {
+            statusBadge = '<span class="badge bg-warning text-dark">' + safeT('need_re-sign') + '</span>';
+            actionHtml = `<button
+                            class="btn btn-warning resign-btn" data-id="${t.id}">
+                            <i class="bi bi-exclamation-triangle">
+                            </i> ${safeT('re-sign')}
+                          </button>`;
+        } else {
+            statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
+        }
+
+        card.innerHTML = `
+          <div class="card-body">
+            <h5 class="card-title">${escapeHtml(t.name)}</h5>
+            <p class="card-text small">
+              ${safeT('period')}：${new Date(t.start_time).toLocaleString()} - ${new Date(t.end_time).toLocaleString()}<br>
+              ${statusBadge} ${signTimeHtml}
+            </p>
+            ${actionHtml}
+          </div>
+        `;
+        col.appendChild(card);
+        container.appendChild(col);
+      });
+      // 绑定签到按钮事件
+      document.querySelectorAll('.sign-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentTrainingId = btn.dataset.id;
+          currentSignAction = 'sign';
+          // 重置签名画板
+          if(signaturePad) signaturePad.clear();
+          new bootstrap.Modal(document.getElementById('signatureModal')).show();
+          document.getElementById('signatureCanvas').focus(); // 可选
+        });
+      });
+      // 绑定重新签字事件
+      document.querySelectorAll('.resign-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          currentTrainingId = btn.dataset.id;
+          currentSignAction = 'resign';
+          // 显示签名模态框，行为与首次签到类似，但提交时调用 resign 接口
+          if(signaturePad) signaturePad.clear();
+          new bootstrap.Modal(document.getElementById('signatureModal')).show();
+        });
+      });
+    }
+
+    // 加载“我的访谈”
+    async function loadMyInterviews() {
+        try {
+            const res = await fetch('/api/my/interviews');
+            const interviews = await res.json();
+            const container = document.getElementById('interviewCards');
+            if (!interviews.length) {
+                container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('t_no_active_interview_now') + '</div>';
+                return;
+            }
+            container.innerHTML = '';
+            interviews.forEach(inv => {
+                const col = document.createElement('div');
+                col.className = 'col-md-6 col-lg-4';
+                const card = document.createElement('div');
+                card.className = 'card h-100 shadow-sm';
+                card.innerHTML = `
+                    <div class="card-body">
+                        <h5 class="card-title">${escapeHtml(inv.title)}</h5>
+                        <p class="card-text small">
+                            ${safeT('period')}：${new Date(inv.start_time).toLocaleString()} - ${new Date(inv.end_time).toLocaleString()}
+                        </p>
+                        <a 
+                          href="${inv.is_completed ? '#' : '/interview/take/' + inv.id}" 
+                          class="btn btn-sm ${inv.is_completed ? 'btn-secondary' : 'btn-primary'}"
+                          ${inv.is_completed ? 'disabled' : ''}>
+                          ${inv.is_completed ? safeT('js_completed') : safeT('js_start_interview')}
+                        </a>
+                    </div>
+                `;
+                col.appendChild(card);
+                container.appendChild(col);
+            });
+        } catch (e) {
+            console.error(safeT('js_interview_load_failed'), e);
+        }
+    }
+
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // 初始化签名画板
+    // 在模态框显示时初始化画板
+    document.getElementById('signatureModal').addEventListener('shown.bs.modal', function () {
+      const canvas = document.getElementById('signatureCanvas');
+      // 关键：设置 canvas 的实际像素尺寸，避免模糊 
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+
+      // 初始化或重新初始化 signaturePad
+      if (signaturePad) signaturePad.clear();
+      signaturePad = new SignaturePad(canvas, {
+        backgroundColor: 'rgb(255,255,255)',
+        penColor: 'rgb(0,0,0)',
+        velocityFilterWeight: 0.7,
+        minWidth: 1,
+        maxWidth: 3,
+        throttle: 16
+      });
+      // 确保鼠标/触摸可用
+      canvas.style.touchAction = 'none';
+      canvas.style.cursor = 'crosshair';
+    });
+    // 监听窗口大小变化，重新调整画板内容比例
+    window.addEventListener('resize', () => {
+      if (!signaturePad) return;
+      const data = signaturePad.toData();
+      const canvas = signaturePad.canvas;      // ✅ 从签名板实例获取 canvas
+      canvas.width = canvas.clientWidth;
+      canvas.height = 200;
+      signaturePad.clear();
+      if (data && data.length) signaturePad.fromData(data);
+    });
+    // 清除按钮
+    document.getElementById('clearSignatureBtn').onclick = () => {
+      if (signaturePad) signaturePad.clear();
+    };
+
+    // 提交签到
+    document.getElementById('submitSignatureBtn').onclick = async () => {
+        if (!signaturePad || signaturePad.isEmpty()) {
+            alert('请先进行手写签名');
+            return;
+        }
+        // 从后端获取的用户名（确保在页面加载时已定义）
+        const userName = CURRENT_USER_NAME;
+        if (!userName) {
+            alert('无法获取您的姓名，请先完善个人资料');
+            return;
+        }
+        const dataURL = signaturePad.toDataURL('image/png');
+        const apiUrl = currentSignAction === 'resign' ? '/api/training/resign' : '/api/training/sign';
+        const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                training_id: currentTrainingId,
+                signature: dataURL,
+                name: userName
+            })
+        });
+        const json = await res.json();
+        if (json.success) {
+            alert(currentSignAction === 'resign' ? safeT('t_re_sign_successful') : safeT('t_sign_in_successful'));
+            bootstrap.Modal.getInstance(document.getElementById('signatureModal')).hide();
+            loadTrainings();
+        } else {
+            alert(safeT('t_operation_failure') + (json.message || safeT('t_unknown_error')));
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        if (window.i18n) {
+          window.i18n.subscribe(() => {
+            loadTrainings();
+            loadMyInterviews();
+          });
+        }
+    });
+
+  // 全局函数：将页面上所有带有 class="local-time" 且 data-utc 属性的元素转换为本地时区显示
+  function convertAllTimesToLocal() {
+    const elements = document.querySelectorAll('.local-time[data-utc]');
+    elements.forEach(el => {
+      const utcString = el.getAttribute('data-utc');
+      if (!utcString) return;
+      
+      const utcDate = new Date(utcString);
+      // 检查日期是否有效
+      if (isNaN(utcDate.getTime())) {
+        console.warn('无效的UTC时间字符串:', utcString);
+        return;
+      }
+      
+      // 转换为本地时间字符串（格式：YYYY-MM-DD HH:MM:SS，24小时制）
+      const localString = utcDate.toLocaleString(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+      el.textContent = localString;
+    });
+  }
+
+  // 页面加载完成后执行转换
+  document.addEventListener('DOMContentLoaded', convertAllTimesToLocal);
+
+  // 签到按钮逻辑
+  // 修改 loadTrainings 中的签到按钮事件，不再清除画板（每次打开模态框会重新初始化）
+  document.querySelectorAll('.sign-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+          currentTrainingId = btn.dataset.id;
+          new bootstrap.Modal(document.getElementById('signatureModal')).show();
+          // 不在此时清空画板，由模态框 shown 事件负责重新初始化
+      });
+  });
+
+  // 动态更新倒计时
+  function updateAllTimers() {
+      document.querySelectorAll('.exam-timer').forEach(timerSpan => {
+          let remaining = parseInt(timerSpan.dataset.remaining);
+          if (remaining > 0) {
+              remaining--;
+              timerSpan.dataset.remaining = remaining;
+              const minutes = Math.floor(remaining / 60);
+              const seconds = remaining % 60;
+              timerSpan.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
+              }
+          })
+      };
+  // 每秒更新一次
+  setInterval(updateAllTimers, 1000);
+</script>
+{% endblock %}

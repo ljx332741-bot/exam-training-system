@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block title %}题库导入预览{% endblock %}
+{% block extra_css %}
+<style>
+  .edit-table td { padding: 0.5rem; }
+  .edit-table input, .edit-table select { width: 100%; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; }
+  .edit-table .q-content { min-height: 40px; }
+  .row-actions { white-space: nowrap; }
+  .row-actions button { margin: 0 2px; padding: 2px 6px; font-size: 12px; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="card shadow-sm">
+  <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap">
+    <h5 class="mb-0">📄 考试预览（可编辑）</h5>
+    <div>
+      <button type="button" class="btn btn-outline-secondary me-2" id="backBtn">← 返回</button>
+      {% if edit_mode %}
+        <button type="button" class="btn btn-primary" id="updateBtn">💾 保存修改</button>
+      {% else %}
+        <button type="button" class="btn btn-success" id="saveBtn">✅ 确认导入数据库</button>
+        <button type="button" class="btn btn-info" id="saveDraftBtn">📝 保存为草稿</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="card-body">
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="examTitleInput">📌 考试名称</label>
+        <input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
+        <div class="form-text">可编辑，将作为考试的名称</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label" for="countryInput" data-i18n="country">国家</label>
+        <input type="text" id="countryInput" class="form-control" list="countryDatalist" placeholder="请输入或选择国家" data-code-input="countryCode" autocomplete="off" value="{{ exam_country_name or '' }}">
+        <datalist id="countryDatalist"></datalist>
+        <input type="hidden" id="countryCode" value="{{ exam_country or '' }}">
+      </div>
+    </div>
+  </div>
+  <div class="card-body p-0 table-responsive">
+    <table class="table table-bordered edit-table mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th style="width:40px">操作</th>
+          <th style="width:50px">题号</th>
+          <th style="width:80px">题型</th>
+          <th>题干</th>
+          <th>选项A</th><th>选项B</th><th>选项C</th><th>选项D</th>
+          <th>选项E</th><th>选项F</th><th>选项G</th><th>选项H</th><th>选项I</th>
+          <th>标准答案</th>
+          <th style="width:60px">分值</th>
+        </tr>
+      </thead>
+      <tbody id="qTableBody">
+        {% for q in questions %}
+        <tr data-index="{{ loop.index0 }}">
+          <td class="row-actions">
+            <button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
+            <button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
+            <button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
+          </td>
+          <td class="q-num">{{ q.num }}</td>
+          <td>
+            <select class="form-select form-select-sm q-type">
+              <option value="single" {% if q.type=='single' %}selected{% endif %}>单选</option>
+              <option value="multi" {% if q.type=='multi' %}selected{% endif %}>多选</option>
+              <option value="judge" {% if q.type=='judge' %}selected{% endif %}>判断</option>
+            </select>
+          </td>
+          <td><textarea class="form-control form-control-sm q-content">{{ q.content }}</textarea></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H','') }}"></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I','') }}"></td>
+          <td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}"></td>
+          <td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-center">
+    <button type="button" class="btn btn-secondary" id="addRowBtn">➕ 新增题目（末尾）</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // ---- 全局变量 ----
+  let isEditMode = {{ edit_mode | default(false) | tojson }};
+  let examId = {{ original_exam_id | default(0) }};
+  let returnUrl = "{{ return_url | default(url_for('admin_dashboard')) }}";
+
+  // ---- 辅助函数：重新编号题号 ----
+  function renumberRows() {
+    document.querySelectorAll('#qTableBody tr').forEach((tr, idx) => {
+      tr.querySelector('.q-num').innerText = idx + 1;
+    });
+  }
+
+  // ---- 创建空白行 HTML（用于插入） ----
+  function createEmptyRow() {
+    return `
+      <td class="row-actions">
+        <button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
+        <button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
+        <button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
+      </td>
+      <td class="q-num"></td>
+      <td>
+        <select class="form-select form-select-sm q-type">
+          <option value="single" selected>单选</option>
+          <option value="multi">多选</option>
+          <option value="judge">判断</option>
+        </select>
+      </td>
+      <td><textarea class="form-control form-control-sm q-content"></textarea></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="A"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="B"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="C"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="D"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="E"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="F"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="G"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="H"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="I"></td>
+      <td><input class="form-control form-control-sm q-ans"></td>
+      <td><input type="number" class="form-control form-control-sm q-score" value="5" min="1"></td>
+    `;
+  }
+
+  // ---- 插入新行 ----
+  function insertRow(targetRow, position) {
+    const newRow = document.createElement('tr');
+    newRow.innerHTML = createEmptyRow();
+    if (position === 'above') {
+      targetRow.before(newRow);
+    } else if (position === 'below') {
+      targetRow.after(newRow);
+    }
+    renumberRows();
+    attachRowEvents(newRow);
+  }
+
+  // ---- 删除行 ----
+  function deleteRow(row) {
+    if (document.querySelectorAll('#qTableBody tr').length === 1) {
+      alert("至少保留一道题目");
+      return;
+    }
+    row.remove();
+    renumberRows();
+  }
+
+  // ---- 绑定行内按钮事件（新行需要调用） ----
+  function attachRowEvents(row) {
+    row.querySelector('.insert-above')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      insertRow(row, 'above');
+    });
+    row.querySelector('.insert-below')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      insertRow(row, 'below');
+    });
+    row.querySelector('.delete-row')?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteRow(row);
+    });
+  }
+
+  // ---- 为所有现有行绑定事件 ----
+  function bindAllRowEvents() {
+    document.querySelectorAll('#qTableBody tr').forEach(row => attachRowEvents(row));
+  }
+
+  // ---- 收集题目数据 ----
+  function collectQuestionsData() {
+    const data = [];
+    document.querySelectorAll('#qTableBody tr').forEach(tr => {
+      const opts = {};
+      tr.querySelectorAll('.q-opt').forEach(inp => opts[inp.dataset.key] = inp.value);
+      data.push({
+        num: parseInt(tr.querySelector('.q-num').innerText),
+        type: tr.querySelector('.q-type').value,
+        content: tr.querySelector('.q-content').value,
+        options: opts,
+        answer: tr.querySelector('.q-ans').value.toUpperCase(),
+        score: parseInt(tr.querySelector('.q-score').value)
+      });
+    });
+    return data;
+  }
+
+  // ---- 通用校验 ----
+  function validate(examTitle) {
+    if (!examTitle) { alert('请填写考试名称'); return false; }
+    const questions = collectQuestionsData();
+    if (questions.length === 0) { alert('至少添加一道题目'); return false; }
+    return true;
+  }
+
+  // ---- 保存为草稿（创建新考试） ----
+  async function saveAsDraft(isDraft = true) {
+    const examTitle = document.getElementById('examTitleInput').value.trim();
+    if (!validate(examTitle)) return;
+    const questions = collectQuestionsData();
+    const countryCode = document.getElementById('countryCode').value;
+    const url = isDraft ? `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=true` : `/admin/import/save?title=${encodeURIComponent(examTitle)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ questions, country_code: countryCode })
+    });
+    const json = await res.json();
+    if (json.success) {
+      alert(isDraft ? '考试已保存为草稿' : '导入成功');
+      window.location.href = '{{ url_for("admin_exams_page") }}';
+    } else {
+      alert('操作失败: ' + json.message);
+    }
+  }
+
+  // ---- 编辑模式：保存修改 ----
+  async function updateExam() {
+    const examTitle = document.getElementById('examTitleInput').value.trim();
+    if (!validate(examTitle)) return;
+    const questions = collectQuestionsData();
+    const countryCode = document.getElementById('countryCode').value;
+    const isDraft = false; // 可根据需要添加草稿选项
+    const res = await fetch(`/admin/exam/${examId}/update_full`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: examTitle,
+        country_code: countryCode,
+        questions: questions,
+        is_draft: isDraft
+      })
+    });
+    const json = await res.json();
+    if (json.success) {
+      alert('保存成功');
+      window.location.href = returnUrl;
+    } else {
+      alert('更新失败: ' + json.message);
+    }
+  }
+
+  // ---- 页面初始化 ----
+  document.addEventListener('DOMContentLoaded', async () => {
+    // 填充国家 datalist
+    await populateCountryDatalist('countryDatalist');
+    const countryInput = document.getElementById('countryInput');
+    if (countryInput) {
+      countryInput.addEventListener('blur', () => validateCountryInput('countryInput', 'countryCode'));
+      if (countryInput.value) await validateCountryInput('countryInput', 'countryCode');
+    }
+
+    // 绑定行操作事件
+    bindAllRowEvents();
+
+    // 绑定新增行（末尾）
+    document.getElementById('addRowBtn').addEventListener('click', () => {
+      const tbody = document.getElementById('qTableBody');
+      const newRow = document.createElement('tr');
+      newRow.innerHTML = createEmptyRow();
+      tbody.appendChild(newRow);
+      renumberRows();
+      attachRowEvents(newRow);
+    });
+
+    // 根据模式绑定不同保存按钮
+    if (isEditMode) {
+      document.getElementById('updateBtn').addEventListener('click', updateExam);
+    } else {
+      document.getElementById('saveBtn').addEventListener('click', () => saveAsDraft(false));
+      document.getElementById('saveDraftBtn').addEventListener('click', () => saveAsDraft(true));
+    }
+
+    // 返回按钮
+    document.getElementById('backBtn').addEventListener('click', () => {
+      window.location.href = returnUrl;
+    });
+  });
+</script>
+{% endblock %}

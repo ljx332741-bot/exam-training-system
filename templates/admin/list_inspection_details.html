@@ -1,0 +1,234 @@
+<!-- templates/admin/list_inspection_details.html -->
+{% extends "base.html" %}
+{% block title %}访谈详情 - {{ interview.exam_title or interview.title }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-chat-dots"></i> 访谈详情 - <span id="examTitle">加载中...</span></h2>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <input type="text" id="searchName" class="form-control" placeholder="访谈人员姓名">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" placeholder="国家">
+                    <datalist id="countryDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <button id="searchBtn" class="btn btn-primary">搜索</button>
+                </div>
+                <div class="col-md-3 ms-auto">
+                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ 关闭返回</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 数据表格 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>国家</th>
+                            <th>访谈人员姓名</th>
+                            <th>库房编码</th>
+                            <th>检查时间</th>
+                            <th>检查人员</th>
+                            <th>访谈问题数量</th>
+                            <th>答对问题数量</th>
+                            <th>备注</th>
+                            <th>反馈人</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailsTableBody">
+                        <tr><td colspan="10" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div>共 <span id="totalCount">0</span> 条</div>
+            <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<!-- 答题详情模态框 -->
+<div class="modal fade" id="answersModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">答题详情 - <span id="answersUserName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="answersContent">
+                <!-- 动态填充 -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const interviewId = {{ request.view_args['interview_id'] }};
+    let currentPage = 1;
+
+    async function loadDetails() {
+        const search = document.getElementById('searchName').value;
+        const country = document.getElementById('filterCountry').value;
+        const params = new URLSearchParams({ page: currentPage, per_page: 20, search, country });
+        const res = await fetch(`/api/admin/interview/${interviewId}/details?${params}`);
+        const data = await res.json();
+        document.getElementById('examTitle').innerText = data.interview?.exam_title || data.interview?.title || '未知考试';
+        renderTable(data.data);
+        document.getElementById('totalCount').innerText = data.total;
+        renderPagination(data.page, Math.ceil(data.total / data.per_page));
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('detailsTableBody');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center">暂无数据</td></tr>';
+            return;
+        }
+        tbody.innerHTML = rows.map(r => `
+            <tr>
+                <td>${escapeHtml(r.country || '-')}</td>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${escapeHtml(r.wh_id || '-')}</td>
+                <td>${r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '-'}</td>
+                <td>${escapeHtml(r.reviewer || '-')}</td>
+                <td>${r.total_questions}</td>
+                <td>${r.correct_count}</td>
+                <td>${escapeHtml(r.feedback || '-')}</td>
+                <td>${escapeHtml(r.department || '-')}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info view-answers-btn" 
+                    data-user-id="${r.user_id}" 
+                    data-user-name="${escapeHtml(r.name)}">答题详情</button>
+                    ${r.has_submitted ? `<button class="btn btn-sm btn-outline-warning resample-btn" data-user-id="${r.user_id}">重新访谈</button>` : ''}
+                </td>
+            </tr>
+        `).join('');
+
+        // 绑定重新访谈事件
+        document.querySelectorAll('.resample-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const userId = btn.dataset.userId;
+                if (confirm('确定要重新为此学员生成新的访谈题目吗？原有答案将被保留。')) {
+                    await fetch(`/api/admin/interview/${interviewId}/resample/${userId}`, { method: 'POST' });
+                    alert('已重新生成访谈题目，学员可重新答题。');
+                    loadDetails();
+                }
+            });
+        });
+    }
+
+    // 委托事件：查看答题详情
+    document.addEventListener('click', (e) => {
+        const btn = e.target.closest('.view-answers-btn');
+        if (!btn) return;
+        const userId = btn.dataset.userId;
+        const userName = btn.dataset.userName || userId;  // 用户名回退
+        showUserAnswers(interviewId, userId, userName);
+    });
+
+    // 答题详情获取函数（独立定义，不依赖 btn）
+    async function showUserAnswers(interviewId, userId, userName) {
+        try {
+            const res = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/answers`);
+            const data = await res.json();
+            if (!data.answers || data.answers.length === 0) {
+                alert('暂无答题记录');
+                return;
+            }
+            document.getElementById('answersUserName').innerText = userName;
+            let html = '<div class="list-group">';
+            data.answers.forEach((item, index) => {
+                const questionNum = index + 1;   // 从1开始的连续编号
+                const statusIcon = item.is_correct ? '✅' : '❌';
+                const statusColor = item.is_correct ? 'text-success' : 'text-danger';
+                let optionsHtml = '';
+                const typeBadge = item.question_type === 'multi' ? '<span class="badge bg-warning ms-2">多选</span>' :
+                                item.question_type === 'judge' ? '<span class="badge bg-info ms-2">判断</span>' :
+                                '<span class="badge bg-primary ms-2">单选</span>';
+                if (item.question_type !== 'judge' && item.options && typeof item.options === 'object') {
+                    const opts = item.options;
+                    const sortedKeys = Object.keys(opts).filter(k => opts[k] && opts[k].toString().trim());
+                    if (sortedKeys.length) {
+                        optionsHtml = '<ul>' + sortedKeys.map(k => `<li>${k}. ${opts[k]}</li>`).join('') + '</ul>';
+                    }
+                } else if (item.question_type === 'judge') {
+                    optionsHtml = '<span>正确 True | 错误 False</span>';
+                }
+                html += `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>${questionNum}-[${item.question_num}]. ${item.question_content} ${typeBadge}</strong>
+                                ${optionsHtml}
+                                <div class="mt-2">
+                                    <span>答案：<strong>${item.user_answer || '未作答'}</strong></span>
+                                    <span class="ms-3 ${statusColor}">${statusIcon}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            document.getElementById('answersContent').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('answersModal')).show();
+        } catch (e) {
+            console.error(e);
+            alert('加载答题详情失败');
+        }
+    }
+
+    // 分页、搜索等事件绑定...
+    function renderPagination(current, totalPages) {
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                loadDetails();
+            });
+        });
+    }
+
+    document.getElementById('searchBtn').addEventListener('click', () => {
+        currentPage = 1;
+        loadDetails();
+    });
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+        await populateCountryDatalist('countryDatalist');
+        loadDetails();
+    });
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' })[m]);
+    }
+</script>
+{% endblock %}

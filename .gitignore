@@ -1,0 +1,33 @@
+# Python 
+__pycache__/ 
+*.py[cod] 
+*$py.class 
+*.so 
+.Python 
+env/ 
+venv/ 
+*.egg-info/ 
+dist/ 
+build/ 
+ 
+# 环境变量 & 密钥 
+.env 
+*.key 
+*.pem 
+reviewers.json 
+ 
+# 日志 & 临时文件 
+*.log 
+tmp/ 
+temp/ 
+*.tmp 
+*.swp 
+ 
+# IDE 
+.idea/ 
+.vscode/ 
+*.sublime-project 
+ 
+# OS 
+.DS_Store 
+Thumbs.db 

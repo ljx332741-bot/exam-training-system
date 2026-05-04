@@ -1,0 +1,34 @@
+﻿<!-- templates/admin/import.html -->
+{% extends "base.html" %}
+{% block title %}导入题库{% endblock %}
+{% block content %}
+<div class="container py-5">
+  <div class="card shadow-sm">
+    <div class="card-header bg-light fw-bold d-flex justify-content-between align-items-center">
+      <span data-i18n="import_title">📦 导入题库-Word 格式</span>
+      <button type="button" class="btn btn-outline-secondary me-2" onclick="history.back()">← 关闭返回</button>
+    </div>    
+    <div class="card-body">
+      <form method="POST" enctype="multipart/form-data">
+        <div class="mb-3">
+          <label class="form-label"><span data-i18n="select_docx">选择 .docx 文件</span></label>
+          <input type="file" name="docx_file" class="form-control" accept=".docx" required>
+          <div class="form-text small text-muted">
+            <span data-i18n="import_tips1">💡 支持格式：标准题库文档（题型标记【单选题】/题号 1. /选项 A. /答案：A /分值：5）</span><br>
+            <span data-i18n="import_tips2">📌 考试名称将自动从文档中提取，若无则使用文件名。</span>
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary"><span data-i18n="upload_parse">🔍 上传并解析</span></button>
+      </form>
+      <hr>
+      <h6><span data-i18n="format_example">📝 格式示例</span></h6>
+      <pre class="small bg-light p-2 rounded"><span data-i18n="single_choice">【单选题】</span>
+<span data-i18n="example_question">1. 下列哪个是 Python 框架？</span>
+A. Django  B. MySQL  C. Redis
+<span data-i18n="example_ans">答案：A</span>
+<span data-i18n="example_score">分值：5</span>
+      </pre>
+    </div>
+  </div>
+</div>
+{% endblock %}

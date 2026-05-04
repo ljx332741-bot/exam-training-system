@@ -1,0 +1,254 @@
+﻿<!-- templates/admin/list_training_attendance.html -->
+{% extends "base.html" %}
+{% block title %}培训签到详情{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-4">
+        <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> 培训签到表</h2>
+        <div class="d-flex justify-content-end gap-2 no-print">
+            <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
+            <button class="btn btn-success" onclick="window.print();"><i class="bi bi-printer"></i> 浏览器导出 PDF（打印）</button>
+            <a id="pdfExportBtn" class="btn btn-success" href="#" target="_blank">
+                <i class="bi bi-printer"></i> 专用导出 PDF
+            </a>
+        </div> 
+    </div>
+
+    <div class="card shadow-sm" id="printArea">
+        <div class="card-body">
+            <div class="mb-4" id="headerInfo">
+                <!-- 动态加载表头信息 -->
+            </div>
+            <div class="table-responsive">
+                <table class="table table-bordered align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>序号</th>
+                            <th>部门/合作伙伴</th>
+                            <th>姓名+工号</th>
+                            <th>签名</th>
+                            <th class="print-hide">签到时间</th>
+                            <th class="print-hide">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="attendanceTbody">
+                        <tr><td colspan="5" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style media="print">
+    #headerInfo .row {
+        border: 1px solid #000;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+    }
+    #headerInfo .row > .col-md-6 {
+        border: 1px solid #000;
+        padding: 4px 6px;
+        font-size: 10pt;
+        word-break: break-word;
+    }
+
+    /* 隐藏按钮、导航、页脚、打印隐藏类 */
+    .no-print, .btn, .navbar, footer, .print-hide { display: none !important; }
+    .card { border: none !important; box-shadow: none !important; }
+    body { 
+        padding: 0; 
+        margin: 0; 
+        font-size: 11pt;
+    }
+
+    /* 页面边距 */
+    @page {
+        size: A4;
+        margin: 0.8cm;
+    }
+
+    /* 标题 */
+    h2 {
+        font-size: 14pt;
+        display: block !important;
+        margin: 0 0 10px 0;
+    }
+
+    /* 表格边框 */
+    .table-bordered td, .table-bordered th { border: 1px solid #000 !important; }
+
+    /* 表头两列布局 */
+    #headerInfo .row > .col-md-6 {
+        width: 50% !important;
+        float: left !important;
+        box-sizing: border-box;
+        padding: 0 4px;
+        margin-bottom: 4px;
+        font-size: 10pt;
+    }
+    #headerInfo .row::after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+    #headerInfo strong {
+        font-weight: 600;
+    }
+
+    /* 表格整体 */
+    .table-responsive {
+        overflow-x: visible !important;
+        white-space: normal !important;
+    }
+    .table {
+        width: 100% !important;
+        table-layout: fixed;
+        font-size: 10pt;
+        border-collapse: collapse;
+    }
+
+    /* 列宽分配（仅可见的四列） */
+    .table td:nth-child(1), .table th:nth-child(1) { width: 5%; }
+    .table td:nth-child(2), .table th:nth-child(2) { width: 45%; }
+    .table td:nth-child(3), .table th:nth-child(3) { width: 25%; }
+    .table td:nth-child(4), .table th:nth-child(4) { width: 25%; }
+
+    .table td, .table th {
+        padding: 4px 5px;
+        word-break: break-word;
+        vertical-align: middle;
+    }
+
+    /* 签名图片 */
+    .table td img {
+        max-width: 100%;
+        max-height: 65px;
+        height: auto;
+        object-fit: contain;
+    }
+</style>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const trainingId = {{ request.view_args.get('training_id') }};
+
+    async function loadDetail() {
+        const urlParams = new URLSearchParams(window.location.search);
+        let country = urlParams.get('country');
+        // 过滤无效值（null、'null'、'undefined' 等均视为没有筛选）
+        if (!country || country === 'null' || country === 'undefined') {
+            country = '';
+        }
+        let apiUrl = `/api/training/attendance/${trainingId}`;
+        if (country) {
+            apiUrl += `?country=${encodeURIComponent(country)}`;
+        }
+        const res = await fetch(apiUrl);
+        const data = await res.json();
+
+        if (!data.training) {
+            document.getElementById('attendanceTbody').innerHTML = '<tr><td colspan="5">培训不存在</td></tr>';
+            return;
+        }
+
+        // ✅ 动态设置标题为培训名称
+        const titleElement = document.getElementById('attendanceTitle');
+        if (titleElement && data.training.name) {
+            titleElement.innerHTML = `<i class="bi bi-people-fill"></i> 签到表Attendance Record - ${escapeHtml(data.training.name)}`;
+        }
+
+        // 使用后端返回的 header_template（已考虑国家模板）
+        const header = data.header_template || {};
+
+        // 渲染表头 HTML
+        const headerHtml = `
+            <div class="row">
+                <div class="col-md-6"><strong>培训课程名称（双语）Training Course Name：</strong> ${escapeHtml(header.course_name || '')}</div>
+                <div class="col-md-6"><strong>项目编号Training Project NO.：</strong> ${escapeHtml(header.project_no || '')}</div>
+                <div class="col-md-6"><strong>培训地点（双语）Training Venue：</strong> ${escapeHtml(header.venue || '')}</div>
+                <div class="col-md-6"><strong>培训语言Language：</strong> ${escapeHtml(header.language || '')}</div>
+                <div class="col-md-6"><strong>培训对象（双语）Target Trainees：</strong> ${escapeHtml(header.target || '')}</div>
+                <div class="col-md-6"><strong>组织部门（双语）Training Organizing Dept：</strong> ${escapeHtml(header.dept || '')}</div>
+                <div class="col-md-6"><strong>组织者Training Organizer：</strong> ${escapeHtml(header.organizer || '')}</div>
+                <div class="col-md-6"><strong>培训日期Training Date：</strong> ${escapeHtml(header.training_date || '')}</div>
+                <div class="col-md-6"><strong>主讲人Course Lecturer：</strong> ${escapeHtml(header.lecturer || '')}</div>
+                <div class="col-md-6"><strong>翻译员Translator：</strong> ${escapeHtml(header.translator || '')}</div>
+            </div>
+            <hr>
+        `;
+        document.getElementById('headerInfo').innerHTML = headerHtml;
+
+        // 渲染签到记录
+        const tbody = document.getElementById('attendanceTbody');
+        const records = data.attendances || [];
+        if (records.length === 0) {
+            tbody.innerHTML = '<td><td colspan="5">暂无签到记录</td></tr>';
+            return;
+        }
+        tbody.innerHTML = '';
+        records.forEach((r, idx) => {
+            const nameDisplay = r.signed_name || r.name_cn || r.name_en || '';
+            const empId = r.employee_id ? ` (${r.employee_id})` : '';
+            // 签名单元格：有签名显示图片，无签名显示提示文字
+            const signatureCell = r.signature_url
+                ? `<img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'">`
+                : '<span class="text-warning fw-bold">待重新签字</span>';
+
+            const row = tbody.insertRow();
+            row.innerHTML = `
+                <td>${idx+1}</td>
+                <td>${escapeHtml(r.company || '')}</td>
+                <td>${escapeHtml(nameDisplay)}${empId}</td>
+                <td><img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'"></td>
+                <td class="print-hide">${new Date(r.sign_time).toLocaleString()}</td>
+                <td class="print-hide">
+                    <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
+                        <i class="bi bi-pencil-square"></i> 重新签字
+                    </button>
+                </td>
+            `;
+        });
+
+        // 绑定事件
+        document.querySelectorAll('.reset-sign-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const attId = e.currentTarget.dataset.id;
+                if (!confirm('确定要让该学员重新手写签名吗？原签名将被清除。')) return;
+                const res = await fetch(`/api/admin/training/attendance/${attId}/reset-signature`, { method: 'POST' });
+                const json = await res.json();
+                if (json.success) {
+                    alert('已推送重新签字，学员端将显示重新签字提示。');
+                    // 刷新页面或更新当前行签名显示
+                    loadDetail();
+                } else {
+                    alert('操作失败：' + (json.message || '未知错误'));
+                }
+            });
+        });
+
+        // 绑定专用PDF导出按钮
+        const pdfBtn = document.getElementById('pdfExportBtn');
+        if (pdfBtn) {
+            const countryParam = country ? `?country=${encodeURIComponent(country)}` : '';
+            pdfBtn.href = `/admin/training/${trainingId}/attendance/pdf${countryParam}`;
+        }
+
+    }
+
+    function escapeHtml(str) {
+        if(!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if(m === '&') return '&amp;';
+            if(m === '<') return '&lt;';
+            if(m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    loadDetail();
+</script>
+{% endblock %}

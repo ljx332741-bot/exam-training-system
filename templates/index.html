@@ -1,0 +1,77 @@
+<!-- templates/index.html -->
+{% extends "base.html" %}
+<!-- {% block title %}首页 | 在线培训与考试系统{% endblock %} -->
+{% block content %}
+<div class="container py-5">
+    <!-- 企业标语 -->
+    <div class="text-center mb-5">
+        <h1 class="display-4 fw-bold text-primary"><span data-i18n="slogan1">合规培训 · 知识赋能 · 文化宣贯</span></h1>
+        <p class="lead"><span data-i18n="poster1">打造库房安全内控一体化平台</span></p>
+    </div>
+
+    <!-- 信息卡片区 -->
+    <div class="row g-4 mb-5">
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-shield-lock fs-1 text-primary"></i>
+                    <h5 class="card-title mt-2"><span data-i18n="slogan2">信息安全制度</span></h5>
+                    <p class="card-text"><span data-i18n="poster2">遵守国家网络安全法，保护敏感数据，防止泄露。</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-journal-bookmark-fill fs-1 text-primary"></i>
+                    <h5 class="card-title mt-2"><span data-i18n="slogan3">合规内控手册</span></h5>
+                    <p class="card-text"><span data-i18n="poster3">库房操作规范、风险管理流程、审计要点。</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body text-center">
+                    <i class="bi bi-building fs-1 text-primary"></i>
+                    <h5 class="card-title mt-2"><span data-i18n="slogan4">库房文化墙</span></h5>
+                    <p class="card-text"><span data-i18n="poster4">优秀员工风采、团队活动、安全月宣传。</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 图片轮播（可选） -->
+    <div id="carouselExample" class="carousel slide mb-5" data-bs-ride="carousel">
+        <div class="carousel-inner rounded-3">
+            <div class="carousel-item active">
+                <img src="{{ url_for('static', filename='images/compliance_training.jpg') }}"
+                class="d-block" style="height: 300px; width: 300px; object-fit: cover;"
+                data-i18n-alt="compliance_training_alt" 
+                alt="合规培训现场">
+            </div>
+            <div class="carousel-item">
+                <img src="{{ url_for('static', filename='images/warehouse_check.jpg') }}" 
+                class="d-block" style="height: 300px; width: 300px; object-fit: cover;"
+                data-i18n-alt="wh_safe_check_alt" 
+                alt="库房安全检查">
+            </div>
+        </div>
+        <button class="carousel-control-prev" type="button" data-bs-target="#carouselExample" data-bs-slide="prev">
+            <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+        </button>
+        <button class="carousel-control-next" type="button" data-bs-target="#carouselExample" data-bs-slide="next">
+            <span class="carousel-control-next-icon" aria-hidden="true"></span>
+        </button>
+    </div>
+
+    <!-- 登录/仪表盘入口 -->
+    <div class="text-center">
+        {% if session.user_id %}
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg px-5"><span data-i18n="url_for_exam_dashboard">进入我的仪表盘</span></a>
+        {% else %}
+            <a href="{{ url_for('login') }}" class="btn btn-success btn-lg px-5"><span data-i18n="login_system">登录系统</span></a>
+            <a href="{{ url_for('register') }}" class="btn btn-outline-primary btn-lg px-5 ms-3"><span data-i18n="register_new">注册新帐号</span></a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

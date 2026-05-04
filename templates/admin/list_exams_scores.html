@@ -1,0 +1,206 @@
+﻿<!-- templates/admin/list_exams_scores.html -->
+{% extends "base.html" %}
+{% block title %}{{ _('exam_scores_detail') }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><span data-i18n="exam_scores_detail">考生成绩详情</span> - <span id="examTitle">{{exam_title}}</span></h2>
+        <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+    </div>
+
+    <!-- 过滤栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <input type="text" id="searchInput" class="form-control" placeholder="考生姓名/邮箱">
+                </div>
+                <div class="col-md-3">
+                    <select id="submitMethodFilter" class="form-select">
+                        <option value="">全部提交方式</option>
+                        <option value="manual">考生提交</option>
+                        <option value="auto">超时自动提交</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button id="searchBtn" class="btn btn-primary">搜索</button>
+                </div>
+                <div class="col-md-2">
+                    <button id="batchExportBtn" class="btn btn-success">批量导出选中PDF</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 考生成绩表格 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" style="width: 100% !important; min-width: 100%;">
+                    <thead class="table-light">
+                        <tr>
+                            <th><input type="checkbox" id="selectAll"></th>
+                            <th>序号</th>
+                            <th>国家</th>
+                            <th>考生姓名</th>
+                            <th>邮箱</th>
+                            <th>状态</th>
+                            <th>考试开始时间</th>
+                            <th>提交时间</th>
+                            <th>提交方式</th>
+                            <th>用时(秒)</th>
+                            <th>得分</th>
+                            <th>阅卷人</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scoresTbody">
+                        <tr><td colspan="13" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div>共 <span id="totalCount">0</span> 条记录</div>
+            <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<script>
+    const examId = {{ exam_id }};
+    let currentPage = 1;
+    let currentSearch = '';
+    let currentSubmitMethod = '';
+    let allSelected = [];
+
+    async function loadScores() {
+        const params = new URLSearchParams({
+            page: currentPage,
+            per_page: 20,
+            search: currentSearch,
+            submit_method: currentSubmitMethod
+        });
+        const res = await fetch(`/api/admin/exam/${examId}/scores?${params}`);
+        const data = await res.json();
+        renderScoresTable(data.data);
+        document.getElementById('totalCount').innerText = data.total;
+        renderPagination(data.page, Math.ceil(data.total / data.per_page));
+    }
+
+    function renderScoresTable(scores) {
+        const tbody = document.getElementById('scoresTbody');
+        if (!scores.length) {
+            tbody.innerHTML = '<tr><td colspan="13" class="text-center">暂无数据</td></tr>';
+            return;
+        }
+        tbody.innerHTML = scores.map((s, idx) => `
+            <tr>
+                <td><input type="checkbox" class="user-checkbox" data-user-id="${s.user_id}" data-result-id="${s.result_id}"></td>
+                <td>${(currentPage-1)*20 + idx + 1}</td>
+                <td>${s.country || '-'}</td>
+                <td>${escapeHtml(s.name)}</td>
+                <td>${escapeHtml(s.email)}</td>
+                <td>${s.status}</td>
+                <td>${formatDate(s.started_at)}</td>
+                <td>${formatDate(s.submitted_at)}</td>
+                <td>${s.submit_method === 'manual' ? '考生提交' : '超时自动提交'}</td>
+                <td>${s.time_used ?? '-'}</td>
+                <td>${s.score}</td>
+                <td>${s.reviewer || '-'}</td>
+                <td>
+                    <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info" target="_blank">详情</a>
+                    <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
+                </td>
+            </tr>
+        `).join('');
+
+        // 全选逻辑
+        const selectAll = document.getElementById('selectAll');
+        selectAll.addEventListener('change', (e) => {
+            document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
+        });
+        // 收集选中的用户ID
+        document.querySelectorAll('.user-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateSelected);
+        });
+        updateSelected();
+    }
+
+    function updateSelected() {
+        allSelected = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.dataset.userId);
+    }
+
+    function formatDate(iso) {
+        if (!iso) return '-';
+        return new Date(iso).toLocaleString();
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function renderPagination(current, totalPages) {
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                loadScores();
+            });
+        });
+    }
+
+    document.getElementById('searchBtn').addEventListener('click', () => {
+        currentSearch = document.getElementById('searchInput').value;
+        currentSubmitMethod = document.getElementById('submitMethodFilter').value;
+        currentPage = 1;
+        loadScores();
+    });
+
+    // 绑定指定考生批量导出按钮
+    document.getElementById('batchExportBtn').addEventListener('click', batchExportSelected);
+
+    async function batchExportSelected() {
+        const selectedResultIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.dataset.resultId);
+        if (selectedResultIds.length === 0) {
+            alert(t('select_at_least_one') || "请至少选择一个考生成绩记录");
+            return;
+        }
+        const examId = {{ exam_id }};
+        const response = await fetch(`/api/admin/exam/batch_export_by_result`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ result_ids: selectedResultIds, exam_id: examId })
+        });
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `exam_${examId}_selected.zip`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } else {
+            alert(t('export_failed') || "导出失败");
+        }
+    };
+
+    loadScores();
+</script>
+{% endblock %}

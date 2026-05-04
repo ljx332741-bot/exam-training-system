@@ -1,0 +1,109 @@
+<!-- templates/auth/login.html -->
+{% extends "base.html" %}
+{% block title %}登录 - 培训考试平台{% endblock %}
+{% block content %}
+<div class="row justify-content-center py-5">
+  <div class="col-md-5 col-lg-4">
+    <div class="card shadow-sm border-0">
+      <div class="card-body p-4">
+        <h3 class="text-center mb-4 fw-bold">🔐 <span data-i18n="user_login">用户登录</span></h3>
+        <form method="POST" action="{{ url_for('login') }}" class="needs-validation" novalidate>
+          <div class="mb-3">
+            <label class="form-label fw-medium"><span data-i18n="email_add">邮箱地址</span></label>
+            <input type="email" name="email" class="form-control" required placeholder="name@company.com">
+            <div class="invalid-feedback"><span data-i18n="enter_valid_email_add">请输入有效的邮箱地址</span></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-medium"><span data-i18n="password">密码</span></label>
+            <input type="password" name="password" class="form-control" required minlength="6">
+            <div class="invalid-feedback"><span data-i18n="pw_character">密码长度至少6位</span></div>
+          </div>
+          <button type="submit" class="btn btn-primary w-100 mb-3"><span data-i18n="login_now">立即登陆</span></button>
+        </form>
+        <div class="text-center">
+          <a href="#" class="text-decoration-none small" data-bs-toggle="modal" data-bs-target="#resetModal"><span data-i18n="reset_password_tip">忘记密码？使用邮箱验证码重置</span></a>
+          <hr class="my-3">
+          <span><span data-i18n="no_account_tip">还没有账号？</span> <a href="{{ url_for('register') }}" class="fw-bold"><span data-i18n="sign_up_for_free">免费注册</span></a></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 密码重置模态框 -->
+<div class="modal fade" id="resetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">🔑 <span data-i18n="reset_password">重置密码</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form id="resetForm" class="needs-validation" novalidate>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label"><span data-i18n="bind_email_add">绑定邮箱</span></label>
+            <input type="email" id="reset_email" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label"><span data-i18n="verification_code">验证码</span> <button type="button" id="sendOtpBtn" class="btn btn-sm btn-outline-primary float-end"><span data-i18n="send_code">发送验证码</span></button></label>
+            <input type="text" id="reset_otp" class="form-control" maxlength="6" pattern="\d{6}" 
+            data-i18n-placeholder="placeholder_enter_number",
+            required placeholder="输入6位数字">
+          </div>
+          <div class="mb-3">
+            <label class="form-label"><span data-i18n="new_password">新密码</span></label>
+            <input type="password" id="reset_pwd" class="form-control" required minlength="6">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+          <button type="submit" class="btn btn-primary"><span data-i18n="confirm_reset">确定重置</span></button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // 表单验证
+  document.querySelectorAll('.needs-validation').forEach(form => {
+    form.addEventListener('submit', e => { if (!form.checkValidity()) { e.preventDefault(); e.stopPropagation(); } form.classList.add('was-validated'); });
+  });
+
+  // OTP 发送倒计时
+  const sendBtn = document.getElementById('sendOtpBtn');
+  let timer = null;
+  sendBtn.addEventListener('click', async () => {
+    const email = document.getElementById('reset_email').value;
+    if (!email.includes('@')) return alert(window.i18n.t('js_enter_correct_email'));
+    sendBtn.disabled = true;
+    let sec = 60;
+    timer = setInterval(() => {
+      // sendBtn.textContent = `${sec}s 后重发`;
+      sendBtn.textContent = window.i18n.t('js_otp_resend', `${sec}s`);
+      if (--sec < 0) { clearInterval(timer); sendBtn.disabled = false; sendBtn.textContent = window.i18n.t('js_send_code'); }
+    }, 1000);
+    try {
+      const res = await fetch('/api/send-otp', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email}) });
+      if (!res.ok) throw new Error(window.i18n.t('js_sent_failed'));
+      alert(window.i18n.t('js_sent_success_tip'));
+    } catch(e) { alert(e.message); clearInterval(timer); sendBtn.disabled = false; sendBtn.textContent = window.i18n.t('js_send_code'); }
+  });
+
+  // 重置密码提交
+  document.getElementById('resetForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const data = {
+      email: document.getElementById('reset_email').value,
+      otp: document.getElementById('reset_otp').value,
+      password: document.getElementById('reset_pwd').value
+    };
+    const res = await fetch('/api/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+    const json = await res.json();
+    if (json.success) { alert(window.i18n.t('js_reset_successful_tip')); location.reload(); }
+    else alert(json.message || window.i18n.t('js_reset_failed'));
+  });
+</script>
+{% endblock %}

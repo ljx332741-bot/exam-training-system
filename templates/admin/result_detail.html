@@ -1,0 +1,57 @@
+﻿<!-- templates/admin/result_detail.html -->
+{% extends "base.html" %}
+{% block title %}成绩详情 - 管理员{% endblock %}
+{% block content %}
+<div class="container py-4">
+    <h3 class="mb-4">
+        <i class="bi bi-file-text me-2"></i><span data-i18n="grade_detail">成绩详情</span>
+        <button class="btn btn-sm btn-outline-secondary float-end" onclick="window.close();">✖ <span data-i18n="close">关闭</span></button>
+    </h3>
+    
+    <div class="card mb-4">
+        <div class="card-body">
+            <h5>{{ result.exams.title }}</h5>
+            <p class="mb-1"><strong><span data-i18n="examinee">考生:</span></strong>{{ result.users.name_cn or result.users.email }} ({{ result.users.email }})</p>
+            <p class="mb-1"><strong><span data-i18n="total_score">总分:</span></strong><span class="badge bg-primary fs-6">{{ result.total_score }}</span></p>
+            <p class="mb-0"><strong><span data-i18n="submitted_at">提交时间</span>：</strong>{{ result.created_at }}</p>
+        </div>
+    </div>
+    
+    <div class="table-responsive">
+        <table class="table table-bordered table-hover">
+            <thead class="table-light">
+                <tr>
+                    <th style="width:60px"><span data-i18n="question_no">题号</span></th>
+                    <th><span data-i18n="question_stem">题干</span></th>
+                    <th style="width:100px"><span data-i18n="standard_answer">标准答案</span></th>
+                    <th style="width:100px"><span data-i18n="candidate_answer">考生答案</span></th>
+                    <th style="width:60px"><span data-i18n="ca_result">结果</span></th>
+                    <th style="width:80px"><span data-i18n="candidate_score">得分</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for q in questions %}
+                {% set qid = q.id|string %}
+                {% set ans = answers.get('q_' + qid, '') %}
+                {% set detail = details.get(qid, {}) %}
+                <tr>
+                    <td>{{ q.num }}</td>
+                    <td>{{ q.content_cn or q.content or '' }}</td>
+                    <td><code>{{ q.answer }}</code></td>
+                    <td><code>{{ ans }}</code></td>
+                    <td>
+                        {% if detail.get('correct') %}
+                        <span class="badge bg-success"><span data-i18n="correct">正确</span></span>
+                        {% else %}
+                        <span class="badge bg-danger"><span data-i18n="wrong">错误</span></span>
+                        {% endif %}
+                    </td>
+                    <td>{{ detail.get('score', 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <button class="btn btn-sm btn-outline-secondary float-end" onclick="window.close();">✖ <span data-i18n="close">关闭</span></button>
+</div>
+{% endblock %}
