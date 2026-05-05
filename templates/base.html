@@ -16,6 +16,14 @@
     <!-- 前端依赖（引入 signature_pad 培训签到手写签名库 -->
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
 
+    <style>
+        html {
+            font-size: 14px;   /* 全局基准，Bootstrap 5 默认 16px */
+        }
+        .card-title { font-size: 1rem; }
+        .btn { font-size: 0.875rem; }
+    </style>
+
     <!-- 🔧 页面级自定义样式插槽 -->
     {% block extra_css %}{% endblock %}
 </head>
