@@ -12,6 +12,7 @@ import pdfkit
 import openpyxl
 import random
 from flask import make_response
+from weasyprint import HTML
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from dateutil import parser
@@ -34,9 +35,12 @@ from utils.training_helpers import get_training_country_templates_status
 
 # ================= 1. 日志配置（在 app 创建之前） =================
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')
+    ]
 )
 logger = logging.getLogger(__name__)
 logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
@@ -45,11 +49,7 @@ logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
-app.debug = os.environ.get("FLASK_DEBUG", "False").lower() == "true"      # 🔥 强制调试模式显示详细错误
-
-@app.route('/health')
-def health():
-    return "OK", 200
+app.debug = True  # 🔥 强制调试模式显示详细错误
 
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
@@ -267,6 +267,20 @@ def register():
     """渲染注册页面"""
     return render_template('auth/register.html')
 
+@app.route('/api/check-name')
+def check_name():
+    """检查用户名是否已存在"""
+    q = request.args.get('q', '').strip()
+    if len(q) < 2:
+        return jsonify([])
+    db = get_supabase()
+    res = db.table("users").select("name_en") \
+        .eq("user_status", "imported") \
+        .ilike("name_en", f"%{q}%") \
+        .limit(10).execute()
+    names = list(dict.fromkeys(r['name_en'] for r in (res.data or []) if r.get('name_en')))
+    return jsonify(names)
+
 @app.route('/api/countries')
 def api_countries():
     """所有国家选择处改为下拉框（动态加载）"""
@@ -346,41 +360,67 @@ def api_send_otp():
 def api_register():
     """用户注册"""
     d = request.json
+    email = d.get('email', '').strip().lower()
     if not auth.verify_otp(d.get('email'), d.get('otp')):
         return jsonify({"success": False, "message": "验证码无效或已过期"})
-    
-    db = get_supabase()
-    res = db.table("users").select("id").eq("email", d['email']).execute()
-    if res.data:
-        return jsonify({"success": False, "message": "邮箱已注册"})
-    
+
     name_en = d.get('name_en', '').strip()
-    if not name_en:
-        return jsonify({"success": False, "message": "姓名不能为空"}), 400
+    password = d.get('password', '')
+    birthday = d.get('birthday', '')               # 格式 YYYY-MM-DD
+    is_partner_val = d.get('is_partner', 'N')
+
+    # 1. 邮箱全局唯一性检查
+    db = get_supabase()
+    if db.table("users").select("id").eq("email", email).execute().data:
+        return jsonify({"success": False, "message": "该邮箱已注册，请直接登录或更换邮箱"}), 400
     
-    # 查找资源池中匹配的潜在学员
-    pool_user = db.table("users").select("*") \
+    # 2. 姓名 + 出生日期精确匹配 imported 用户（且尚未设置邮箱）
+    query = db.table("users").select("*") \
         .eq("name_en", name_en) \
         .eq("user_status", "imported") \
-        .order("created_at") \
-        .limit(1).execute()
-    
-    if not pool_user.data:
-        return jsonify({"success": False, "message": "姓名未匹配到预授权名单，请联系管理员"}), 403
-    
-    target = pool_user.data[0]
+        .is_("email", "null")                       # 确保未被注册
 
-    db.table("users").insert({
-        "id": str(uuid.uuid4()),
-        "email": d['email'],
-        "password_hash": auth.hash_password(d['password']),
+    if birthday:
+        query = query.eq("birthday", birthday)      # 有生日时精确匹配
+    else:
+        # 如果不填生日，则要求预授权记录中也不能有生日（兼容旧数据）
+        query = query.is_("birthday", "null")
+
+    pool = query.execute()
+    count = len(pool.data or [])
+
+    if count == 0:
+        if birthday:
+            return jsonify({"success": False, "message": "姓名与出生日期不匹配，请核对或联系管理员"}), 403
+        else:
+            return jsonify({"success": False, "message": "姓名未匹配到预授权名单，请联系管理员"}), 403
+
+    if count > 1:
+        return jsonify({"success": False, "message": "该姓名和出生日期对应多条预授权记录，请通知管理员修正数据"}), 403
+    
+    # 3. 更新记录，完成注册
+    target = pool.data[0]
+    update_fields = {
+        "email": email,
+        "password_hash": auth.hash_password(password),
         "user_status": "registered",
-        "name_en": d.get('name_en', ''),
-        "company": d.get('company', ''),
-        "role": "user",
-        "is_active": True
-    }).execute()
-    return jsonify({"success": True, "redirect": url_for('login')})
+        "is_active": True,
+        "is_partner": True if is_partner_val.upper() == 'Y' else False,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    # 如果前端传了出生日期，可更新（确保一致），但预授权已有生日则不必改
+    if birthday:
+        update_fields["birthday"] = birthday
+
+    db.table("users").update(update_fields).eq("id", target['id']).execute()
+
+    # 4. 自动登录
+    session.update({
+        "user_id": target['id'],
+        "user_email": email,
+        "role": target.get('role', 'user')
+    })
+    return jsonify({"success": True, "redirect": url_for('index')})
 
 @app.route('/api/reset-password', methods=['POST'])
 def api_reset_password():
@@ -409,7 +449,7 @@ def login():
                 "user_email": email,
                 "role": res.data.get('role', 'user')
             })
-            flash('Login Successful登录成功', 'success')
+            flash('登录成功', 'success')
             logger.info(f"用户 {email} 登录，角色：{res.data.get('role', '未设定')}")
 
             return redirect(url_for('index'))
@@ -799,7 +839,7 @@ def submit_exam(exam_id):
         # 可选：给用户一个警告，但成绩已保存，可不阻断流程
 
     db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-    flash(f'✅ 交卷成功！得分submitted!Score：{grade["total"]}', 'success')
+    flash(f'✅ 交卷成功！得分：{grade["total"]}', 'success')
     return redirect(url_for('dashboard'))
 
 # ================= 10. 管理员路由 =================
@@ -1098,7 +1138,8 @@ def api_admin_import_users():
         'wh_id': 'wh_id',
         'wh_name_en': 'wh_name_en',
         'employee_id': 'employee_id',
-        'phone': 'phone'
+        'phone': 'phone',
+        'birthday': 'birthday'
     }
     
     # 读取表头（第一行）
@@ -3319,11 +3360,11 @@ def api_admin_add_user():
     """管理员添加用户（生成随机密码并发送邮件）"""
     data = request.json
     email = data.get('email', '').strip().lower()
-    name_cn = data.get('name_cn', '')
     name_en = data.get('name_en', '')
     company = data.get('company', '')
     department = data.get('department', '')
     employee_id = data.get('employee_id', '')
+    birthday = data.get('birthday', '')
     country = data.get('country', '')
     phone = data.get('phone', '')
     role = data.get('role', 'user')
@@ -3350,11 +3391,11 @@ def api_admin_add_user():
             "id": user_id,
             "email": email,
             "password_hash": password_hash,
-            "name_cn": name_cn,
             "name_en": name_en,
             "company": company,
             "department": department,
             "employee_id": employee_id,
+            "birthday": birthday,
             "country": country,
             "phone": phone,
             "role": role,
@@ -3414,7 +3455,7 @@ def api_admin_edit_user(user_id):
     
     # 允许超管修改所有字段，普通管理员修改部分字段（除role外）
     update_data = {}
-    allowed_fields = ['name_cn', 'name_en', 'company', 'department', 'employee_id', 'country', 'phone', 
+    allowed_fields = ['name_en', 'company', 'department', 'employee_id', 'birthday', 'country', 'phone', 
                       'wh_type', 'wh_id', 'wh_name_en', 'user_status', 'is_partner']
     if current_role == 'super_admin':
         allowed_fields.append('role')  # 超管可改角色
@@ -4308,10 +4349,12 @@ def admin_questions_stats():
 # ================= 启动入口 =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    logger.info(f"🚀 Flask 启动: debug={app.debug}, host=127.0.0.1, port={port}")
     
     app.run(
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=port,
-        debug=False,          # 🔑 必须为 True 显示详细错误
+        debug=True,          # 🔑 必须为 True 显示详细错误
+        use_reloader=False,  # 禁用重载器避免日志混乱
         threaded=True        # 支持并发请求
     )

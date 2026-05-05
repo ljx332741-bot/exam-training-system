@@ -33,18 +33,31 @@
             </div>
             <div class="col-12"><hr class="my-2"></div>
             <div class="col-md-6">
-              <label class="form-label"><span data-i18n="name_cn">中文姓名</span></label>
-              <input type="text" name="name_cn" class="form-control" 
-              data-i18n-placeholder="placeholder_name_cn" 
-              placeholder="张三">
+              <label class="form-label"><span data-i18n="name_en">姓名</span> <small class="text-muted"><span data-i18n="name_en_tip">(支持长文本)</span></small></label>
+              <input type="text" name="name_en" id="regName" class="form-control" list="nameSuggestions" 
+                    placeholder="John Alexander Smith" autocomplete="off">
+              <datalist id="nameSuggestions"></datalist>
             </div>
             <div class="col-md-6">
-              <label class="form-label"><span data-i18n="name_en">英文姓名</span> <small class="text-muted"><span data-i18n="name_en_tip">(支持长文本)</span></small></label>
-              <input type="text" name="name_en" class="form-control" placeholder="John Alexander Smith">
+              <label class="form-label"><span data-i18n="birthday">出生日期</span> 
+                <small class="text-muted"><span data-i18n="identity_verification">（用于验证身份）</span></small>
+              </label>
+              <input type="date" name="birthday" id="regBirthday" class="form-control">
             </div>
             <div class="col-12">
               <label class="form-label"><span data-i18n="company">公司</span></label>
               <input type="text" name="company" class="form-control" data-i18n-placeholder="placeholder_company_name" placeholder="XX国际物流集团">
+            </div> 
+            <div class="col-12">
+              <label class="form-label"><span data-i18n="is_partner_q">您是合作方吗？</span></label>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="is_partner" id="partnerNo" value="N" checked>
+                <label class="form-check-label" for="partnerNo"><span data-i18n="partner_no">否</span></label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="is_partner" id="partnerYes" value="Y">
+                <label class="form-check-label" for="partnerYes"><span data-i18n="partner_yes">是</span></label>
+              </div>
             </div>
           </div>
           <button type="submit" class="btn btn-success w-100 mt-4 py-2">✅ <span data-i18n="complete_registration">完成注册</span></button>
@@ -60,7 +73,10 @@
 <script>
   const form = document.getElementById('regForm');
   const otpBtn = document.getElementById('regOtpBtn');
-  
+  const regNameInput = document.getElementById('regName');
+  const nameDatalist = document.getElementById('nameSuggestions');
+  let nameDebounceTimer;
+
   // OTP 倒计时
   otpBtn.addEventListener('click', async () => {
     const email = form.email.value;
@@ -71,14 +87,38 @@
     if(res.ok) alert(window.i18n.t('js_verification_code_sent')); else alert(window.i18n.t('js_email_available_tip'));
   });
 
+  // 姓名建议实现只查询 imported 用户
+  regNameInput.addEventListener('input', () => {
+    const q = regNameInput.value.trim();
+    if (q.length < 2) { nameDatalist.innerHTML = ''; return; }
+    clearTimeout(nameDebounceTimer);
+    nameDebounceTimer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/check-name?q=${encodeURIComponent(q)}`);
+        const names = await res.json();
+        nameDatalist.innerHTML = names.map(n => `<option value="${escapeHtml(n)}">`).join('');
+      } catch (e) { console.error('姓名查询失败', e); }
+    }, 300);
+  });
+
+  function escapeHtml(text) {
+    const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'};
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+  }
+
   // 提交注册
   form.addEventListener('submit', async e => {
     e.preventDefault();
     if (!form.checkValidity()) { form.classList.add('was-validated'); return; }
     if (form.password.value !== form.confirm_password.value) return alert(window.i18n.t('js_two_pw_inconsistent'));
     const data = {
-      email: form.email.value, otp: form.otp.value, password: form.password.value,
-      name_cn: form.name_cn.value, name_en: form.name_en.value, company: form.company.value
+      email: form.email.value, 
+      otp: form.otp.value, 
+      password: form.password.value,
+      name_en: form.name_en.value, 
+      birthday: form.birthday.value,          // 新增
+      company: form.company.value,
+      is_partner: form.querySelector('input[name="is_partner"]:checked')?.value || 'N'
     };
     const res = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const json = await res.json();
