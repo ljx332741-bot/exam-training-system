@@ -12,7 +12,6 @@ import pdfkit
 import openpyxl
 import random
 from flask import make_response
-from weasyprint import HTML
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from dateutil import parser
