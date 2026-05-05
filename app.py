@@ -49,7 +49,7 @@ logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
-app.debug = True  # 🔥 强制调试模式显示详细错误
+app.debug = False  # 🔥 强制调试模式显示详细错误
 
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
@@ -232,7 +232,8 @@ def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if session.get('role') not in ('admin', 'super_admin'):
-            flash('权限不足，仅限管理员访问', 'danger')
+            #flash('权限不足，仅限管理员访问', 'danger')
+            flash({'msg': 'permission_denied_admin', 'params': []}, 'danger')
             return redirect(url_for('dashboard'))
         return f(*args, **kwargs)
     return decorated
@@ -299,39 +300,45 @@ def profile():
         if action == 'update_info':
             # 更新基本信息
             update_data = {
-                'name_cn': request.form.get('name_cn', ''),
+                'birthday': request.form.get('birthday', ''),
                 'name_en': request.form.get('name_en', ''),
                 'company': request.form.get('company', ''),
                 'department': request.form.get('department', ''),
                 'employee_id': request.form.get('employee_id', ''),
                 'country': request.form.get('country', ''),
-                'phone': request.form.get('phone', '')
+                'phone': request.form.get('phone', ''),
+                'birthday': request.form.get('birthday', '')  or None
             }
-
             db.table('users').update(update_data).eq('id', user_id).execute()
-            flash('个人信息已更新', 'success')
+            #flash('个人信息已更新', 'success')
+            flash({'msg': 'profile_updated', 'params': []}, 'success')
+
         elif action == 'change_password':
             old_pwd = request.form.get('old_password')
             new_pwd = request.form.get('new_password')
             confirm_pwd = request.form.get('confirm_password')
             
             if new_pwd != confirm_pwd:
-                flash('两次输入的新密码不一致', 'danger')
+                #flash('两次输入的新密码不一致', 'danger')
+                flash({'msg': 'password_mismatch', 'params': []}, 'danger')
                 return redirect(url_for('profile'))
             if len(new_pwd) < 6:
-                flash('密码长度至少6位', 'danger')
+                #flash('密码长度至少6位', 'danger')
+                flash({'msg': 'password_too_short', 'params': []}, 'danger')
                 return redirect(url_for('profile'))
             
             # 验证原密码
             user_res = db.table('users').select('password_hash').eq('id', user_id).execute()
             if not user_res.data or not auth.check_password(old_pwd, user_res.data[0]['password_hash']):
-                flash('原密码错误', 'danger')
+                #flash('原密码错误', 'danger')
+                flash({'msg': 'wrong_password', 'params': []}, 'danger')
                 return redirect(url_for('profile'))
             
             # 更新密码
             new_hash = auth.hash_password(new_pwd)
             db.table('users').update({'password_hash': new_hash}).eq('id', user_id).execute()
-            flash('密码修改成功，请重新登录', 'success')
+            #flash('密码修改成功，请重新登录', 'success')
+            flash({'msg': 'password_changed', 'params': []}, 'success')
             session.clear()
             return redirect(url_for('login'))
         
@@ -380,10 +387,12 @@ def api_register():
         .eq("user_status", "imported") \
         .is_("email", "null")                       # 确保未被注册
 
+    # 根据是否提供生日进行不同匹配
     if birthday:
-        query = query.eq("birthday", birthday)      # 有生日时精确匹配
+        # 提供生日：要求导入记录的生日为空或者与提供的生日一致
+        query = query.or_(f"birthday.is.null,birthday.eq.{birthday}")
     else:
-        # 如果不填生日，则要求预授权记录中也不能有生日（兼容旧数据）
+        # 未提供生日：要求导入记录的生日为空
         query = query.is_("birthday", "null")
 
     pool = query.execute()
@@ -449,18 +458,21 @@ def login():
                 "user_email": email,
                 "role": res.data.get('role', 'user')
             })
-            flash('登录成功', 'success')
+            #flash('登录成功', 'success')
+            flash({'msg': 'login_success', 'params': []}, 'success')
             logger.info(f"用户 {email} 登录，角色：{res.data.get('role', '未设定')}")
 
             return redirect(url_for('index'))
-        flash('邮箱或密码错误', 'danger')
+        #flash('邮箱或密码错误', 'danger')
+        flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
     return render_template('auth/login.html')
 
 @app.route('/logout')
 def logout():
     """退出登录"""
     session.clear()
-    flash('已安全退出', 'info')
+    #flash('已安全退出', 'info')
+    flash({'msg': 'logout_success', 'params': []}, 'info')
     return redirect(url_for('login'))
 
 @app.route('/')
@@ -750,14 +762,16 @@ def submit_exam(exam_id):
         start_dt = datetime.fromisoformat(status.data['started_at'])
         elapsed = (now - start_dt).total_seconds()
         if elapsed > total_seconds:
-            flash("考试时间已超时，无法提交。", "danger")
+            #flash("考试时间已超时，无法提交。", "danger")
+            flash({'msg': 'exam_timeout', 'params': []}, 'danger')
             return redirect(url_for('dashboard'))
 
     # 检查是否已交卷
     try:
         existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
         if existing.data and existing.data.get("is_submitted"):
-            flash('您已完成此考试，不能重复提交', 'warning')
+            #flash('您已完成此考试，不能重复提交', 'warning')
+            flash({'msg': 'already_submitted', 'params': []}, 'warning')
             return redirect(url_for('dashboard'))
     except Exception as e:
         logger.warning(f"状态检查失败: {e}")
@@ -780,7 +794,8 @@ def submit_exam(exam_id):
         logger.info(f"📊 评分结果：总分={grade['total']}，详情={grade['details']}")
     except Exception as e:
         logger.error(f"❌ 评分失败: {e}")
-        flash('评分过程出错，请重试', 'danger')
+        #flash('评分过程出错，请重试', 'danger')
+        flash({'msg': 'grading_error', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
 
     # 保存成绩
@@ -802,7 +817,8 @@ def submit_exam(exam_id):
             logger.warning(f"备份草稿失败: {e}")
     except Exception as e:
         logger.error(f"❌ 成绩保存失败: {e}")
-        flash('成绩保存失败，请联系管理员', 'danger')
+        #flash('成绩保存失败，请联系管理员', 'danger')
+        flash({'msg': 'save_score_failed', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
 
     # 标记已提交（先查询是否存在，再更新或插入）
@@ -1047,7 +1063,8 @@ def admin_import():
         
         if not file.filename.endswith('.docx'):
             logger.warning(f"❌ 文件格式错误: {file.filename}")
-            flash('❌ 仅支持 .docx 格式', 'danger')
+            #flash('❌ 仅支持 .docx 格式', 'danger')
+            flash({'msg': 'only_docx', 'params': []}, 'danger')
             return redirect(request.url)
         
         import tempfile, os
@@ -1072,7 +1089,8 @@ def admin_import():
             
             if not qs:
                 logger.warning("⚠️ 解析结果为空")
-                flash('⚠️ 未识别到有效题目，请检查 Word 格式', 'warning')
+                #flash('⚠️ 未识别到有效题目，请检查 Word 格式', 'warning')
+                flash({'msg': 'no_valid_question', 'params': []}, 'warning')
                 return render_template('admin/import.html')
             
             logger.info("🔄 跳转预览页")
@@ -1081,17 +1099,21 @@ def admin_import():
         except AttributeError as e:
             logger.error(f"❌ AttributeError: {e}")
             logger.error(f"💡 请确认 services/exam.py 中存在 parse_docx_bilingual 函数")
-            flash('❌ 系统错误: 解析函数未找到', 'danger')
+            #flash('❌ 系统错误: 解析函数未找到', 'danger')
+            flash({'msg': 'parse_func_missing', 'params': []}, 'danger')
         except FileNotFoundError as e:
             logger.error(f"❌ 文件未找到: {e}")
-            flash('❌ 临时文件创建失败', 'danger')
+            #flash('❌ 临时文件创建失败', 'danger')
+            flash({'msg': 'temp_file_failed', 'params': []}, 'danger')
         except PermissionError as e:
             logger.error(f"❌ 权限错误: {e}")
-            flash('❌ 文件访问权限不足', 'danger')
+            #flash('❌ 文件访问权限不足', 'danger')
+            flash({'msg': 'file_permission_denied', 'params': []}, 'danger')
         except Exception as e:
             logger.error(f"❌ 未知异常: {type(e).__name__}: {e}")
             logger.error(f"📋 完整堆栈:\n{traceback.format_exc()}")
-            flash(f'❌ 解析失败: {str(e)}', 'danger')
+            #flash(f'❌ 解析失败: {str(e)}', 'danger')
+            flash({'msg': 'parse_error', 'params': [str(e)]}, 'danger')          # 带参数
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 try:
@@ -1322,7 +1344,8 @@ def copy_exam_preview(exam_id):
     # 获取原考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
-        flash("考试不存在", "danger")
+        #flash("考试不存在", "danger")
+        flash({'msg': 'exam_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_exams_page'))
     exam = exam_res.data
     # 获取原考试的所有题目
@@ -1534,7 +1557,8 @@ def admin_result_detail(result_id):
     # 1. 获取成绩记录
     result_res = db.table("exam_results").select("*").eq("id", result_id).maybe_single().execute()
     if not result_res.data:
-        flash("成绩记录不存在", "danger")
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     
     result = result_res.data
@@ -1580,11 +1604,13 @@ def exam_result_detail(result_id):
     # 获取成绩记录
     result_res = db.table("exam_results").select("*").eq("id", result_id).maybe_single().execute()
     if not result_res.data:
-        flash("成绩记录不存在", "danger")
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
     result = result_res.data
     if result['user_id'] != session['user_id']:
-        flash("无权访问", "danger")
+        #flash("无权访问", "danger")
+        flash({'msg': 'access_denied', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
     
     exam_id = result['exam_id']
@@ -1667,7 +1693,8 @@ def export_bilingual_excel(training_id, exam_id):
         )
     except Exception as e:
         logger.error(f"❌ Excel 导出失败: {e}")
-        flash(f"❌ 导出失败: {str(e)}", "danger")
+        #flash(f"❌ 导出失败: {str(e)}", "danger")
+        flash({'msg': 'export_error', 'params': [str(e)]}, 'danger')
         return redirect(url_for('admin_dashboard'))
 
 @app.route('/api/admin/export_filtered_excel', methods=['POST'])
@@ -1766,7 +1793,8 @@ def admin_export_pdf_by_result(result_id):
     # 获取成绩记录
     result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
     if not result_res.data:
-        flash("成绩记录不存在", "danger")
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     result = result_res.data[0]
     
@@ -1776,14 +1804,16 @@ def admin_export_pdf_by_result(result_id):
     # 获取考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
     if not exam_res.data:
-        flash("考试不存在", "danger")
+        #flash("考试不存在", "danger")
+        flash({'msg': 'exam_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     exam_data = exam_res.data[0]
     
     # 获取考生信息
     user_res = db.table("users").select("*").eq("id", user_id).execute()
     if not user_res.data:
-        flash("考生不存在", "danger")
+        #flash("考生不存在", "danger")
+        flash({'msg': 'student_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     user_data = user_res.data[0]
     user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生')
@@ -1838,7 +1868,8 @@ def admin_export_pdf_by_result(result_id):
         )
     except Exception as e:
         logger.error(f"PDF 生成失败: {e}")
-        flash(f"PDF 生成失败: {str(e)}", "danger")
+        #flash(f"PDF 生成失败: {str(e)}", "danger")
+        flash({'msg': 'pdf_generation_error', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     
     filename = f"Transcript_{user_name}_{exam_data.get('title', 'exam')}.pdf"
@@ -1958,11 +1989,13 @@ def exam_export_pdf(result_id):
     # 获取成绩记录
     result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
     if not result_res.data:
-        flash("成绩记录不存在", "danger")
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
     result = result_res.data[0]
     if result['user_id'] != session['user_id']:
-        flash("无权访问", "danger")
+        #flash("无权访问", "danger")
+        flash({'msg': 'access_denied', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
     
     exam_id = result['exam_id']
@@ -2024,7 +2057,8 @@ def exam_export_pdf(result_id):
         )
     except Exception as e:
         logger.error(f"PDF生成失败: {e}")
-        flash("PDF生成失败", "danger")
+        #flash("PDF生成失败", "danger")
+        flash({'msg': 'pdf_generation_error', 'params': []}, 'danger')
         return redirect(url_for('dashboard'))
     
     filename = f"Transcript_{user_name}_{exam_data.get('title', 'exam')}.pdf"
@@ -2045,21 +2079,24 @@ def admin_export_user_pdf(exam_id, user_id):
     # 获取考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
     if not exam_res.data:
-        flash("考试不存在", "danger")
+        #flash("考试不存在", "danger")
+        flash({'msg': 'exam_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     exam_data = exam_res.data[0]
     
     # 获取考生信息
     user_res = db.table("users").select("*").eq("id", user_id).execute()
     if not user_res.data:
-        flash("考生不存在", "danger")
+        #flash("考生不存在", "danger")
+        flash({'msg': 'student_not_found', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     user_data = user_res.data[0]
     
     # 获取成绩记录（不使用 maybe_single，避免 204 异常）
     result_res = db.table("exam_results").select("*").eq("exam_id", exam_id).eq("user_id", user_id).execute()
     if not result_res.data:
-        flash("该考生尚无成绩记录", "warning")
+        #flash("该考生尚无成绩记录", "warning")
+        flash({'msg': 'no_score_record', 'params': []}, 'warning')
         return redirect(url_for('admin_dashboard'))
     result = result_res.data[0]
 
@@ -2146,7 +2183,8 @@ def admin_export_user_pdf(exam_id, user_id):
         )
     except Exception as e:
         logger.error(f"PDF 生成失败: {e}")
-        flash(f"PDF 生成失败: {str(e)}", "danger")
+        #flash(f"PDF 生成失败: {str(e)}", "danger")
+        flash({'msg': 'pdf_generation_error', 'params': []}, 'danger')
         return redirect(url_for('admin_dashboard'))
     
     filename = f"Transcript_{user_name}_{exam_data.get('title', 'exam')}.pdf"
@@ -4349,12 +4387,10 @@ def admin_questions_stats():
 # ================= 启动入口 =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    logger.info(f"🚀 Flask 启动: debug={app.debug}, host=127.0.0.1, port={port}")
-    
     app.run(
-        host="127.0.0.1",
+        host="0.0.0.0",
         port=port,
-        debug=True,          # 🔑 必须为 True 显示详细错误
+        debug=False,          # 🔑 必须为 True 显示详细错误
         use_reloader=False,  # 禁用重载器避免日志混乱
         threaded=True        # 支持并发请求
     )
