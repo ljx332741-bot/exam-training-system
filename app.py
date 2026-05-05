@@ -50,6 +50,11 @@ app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
 app.debug = False  # 🔥 强制调试模式显示详细错误
 
+@app.route('/health')
+def health_check():
+    # 返回一个简单的 "OK" 和 200 状态码即可
+    return "OK", 200
+
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
     """扫描所有已超时但未提交的考试，执行自动提交"""
