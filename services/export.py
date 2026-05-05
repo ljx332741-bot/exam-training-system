@@ -165,7 +165,7 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
             # 获取考生答案（兼容 q_ 前缀和纯数字键）
             user_answer_raw = answers.get(f'q_{qid}', answers.get(qid, ''))
             if not user_answer_raw:
-                user_answer_raw = "未作答"
+                user_answer_raw = "未作答not answered"
 
             detail = details.get(qid, {})
             is_correct = detail.get('correct', False)
@@ -205,7 +205,7 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
             # 显示考生答案及对错
             html += f'''
             <div class="user-answer">
-                考生答案：{user_display} 
+                考生答案CA：{user_display} 
                 <span class="{'correct-mark' if is_correct else 'incorrect-mark'}">{mark}</span>
             </div>
             '''
@@ -303,7 +303,7 @@ def generate_pdf(user_name, score, questions, answers, details, reviewer, lang_p
         <div class="q-block">
           <strong>{q.get('num')}. </strong>{content_html} ({q.get('score')}分) <span class="tag {'tag-ok' if is_correct else 'tag-err'}">{mark}</span><br>
           <div class="ms-3 mt-2">{options_html}</div>
-          <small class="text-muted">考生答案：{u_ans} | 标准答案：{q.get('answer')}</small>
+          <small class="text-muted">考生答案CA：{u_ans} | 标准答案SA：{q.get('answer')}</small>
         </div>
         """
     pdf_bytes = HTML(string=html).write_pdf()
