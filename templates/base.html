@@ -111,7 +111,12 @@
             {% if messages %}
                 {% for category, message in messages %}
                     <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show shadow-sm" role="alert">
-                        <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+                        {% if message is mapping and message.msg %}
+                            <i class="bi bi-info-circle-fill me-2"></i>
+                            <span class="flash-text" data-i18n-key="{{ message.msg }}" data-i18n-params='{{ message.params | tojson | safe }}'></span>
+                        {% else %}
+                            <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
+                        {% endif %}
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 {% endfor %}
@@ -149,8 +154,28 @@
                 modal.addEventListener('hide.bs.modal', () => {
                     document.activeElement.blur();
                 });
+                translateFlashMessages();
             });
+            setTimeout(() => {
+                document.querySelectorAll('.alert').forEach(el => {
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(el);
+                    bsAlert.close();
+                });
+            }, 3000);
         });
+
+        function translateFlashMessages() {
+            if (window.i18n && typeof window.i18n.t === 'function' && window.i18n.translations && Object.keys(window.i18n.translations).length > 0) {
+                document.querySelectorAll('.flash-text').forEach(function (el) {
+                    const key = el.getAttribute('data-i18n-key');
+                    const params = JSON.parse(el.getAttribute('data-i18n-params') || '[]');
+                    el.textContent = window.i18n.t(key, ...params);
+                });
+            } else {
+                // 如果 i18n 未就绪，50ms 后重试
+                setTimeout(translateFlashMessages, 50);
+            }
+        }
 
         // 全局前端统一时间转换函数
         function formatLocalDateTime(isoString) {
@@ -219,52 +244,9 @@
             }
         }
 
-        // 全局函数：校验用户输入的国家是否在清单中（支持中文、英文、代码）
-        async function validateCountryInput(inputElement) {
-            const inputVal = inputElement.value.trim();
-            if (!inputVal) return false;
-            const countries = await loadCountryList();
-            // 匹配中文、英文（忽略大小写）或国家代码
-            const matched = countries.find(c => 
-                c.name_zh === inputVal || 
-                c.name_en.toLowerCase() === inputVal.toLowerCase() ||
-                c.code === inputVal.toUpperCase()
-            );
-            if (matched) {
-                // 将输入框的值标准化为当前语言对应的名称（可选）
-                const currentLang = window.i18n?.currentLang || 'zh';
-                inputElement.value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
-                // 将国家代码存储到隐藏字段（如果有）
-                if (inputElement.dataset.codeInput) {
-                    const hiddenField = document.getElementById(inputElement.dataset.codeInput);
-                    if (hiddenField) hiddenField.value = matched.code;
-                }
-                return true;
-            } else {
-                inputElement.value = ''; // 清空不匹配的输入
-                // 可选：使用全局提示（如果定义了 toast 函数）
-                if (typeof showToast === 'function') {
-                    showToast('国家不在列表中，请重新选择', 'warning');
-                } else {
-                    alert('国家不在列表中，请重新选择');
-                }
-                return false;
-            }
-        }
-
         // 自动更新年份
         document.getElementById('currentYear').textContent = new Date().getFullYear();
         
-        // 自动关闭提示框（3秒后）
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(() => {
-                document.querySelectorAll('.alert').forEach(el => {
-                    const bsAlert = bootstrap.Alert.getOrCreateInstance(el);
-                    bsAlert.close();
-                });
-            }, 3000);
-        });
-
         // 全局确认模拟对话框
         function showConfirm(message, title = null) {
             return new Promise((resolve) => {
@@ -297,21 +279,6 @@
         
         // ================= 全局国家选择相关函数 =================
         // 1. 加载国家列表（缓存，避免重复请求）
-        async function loadCountryList() {
-            if (window.countryList) return window.countryList;
-            try {
-                const res = await fetch('/api/countries');
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const data = await res.json();
-                window.countryList = Array.isArray(data) ? data : [];
-                return window.countryList;
-            } catch (err) {
-                console.error('加载国家列表失败', err);
-                window.countryList = [];
-                return [];
-            }
-        }
-
         // 2. 填充国家的 datalist 选项（同时支持中文、英文、国家代码）
         async function populateCountryDatalist(datalistId) {
             const datalist = document.getElementById(datalistId);
@@ -335,21 +302,39 @@
         }
 
         // 3. 国家输入框失焦校验（自动匹配标准名称，写入隐藏字段）
-        async function validateCountryInput(inputId, hiddenId) {
-            const input = document.getElementById(inputId);
-            const hidden = document.getElementById(hiddenId);
+        // 全局函数：校验国家输入，支持直接传元素或传 inputId, hiddenId
+        async function validateCountryInput(inputArg, hiddenId) {
+            let input, hidden = null;
+            
+            // 判断参数类型
+            if (typeof inputArg === 'string') {
+                // 传入的是 ID 字符串
+                input = document.getElementById(inputArg);
+                hidden = hiddenId ? document.getElementById(hiddenId) : null;
+            } else {
+                // 传入的是元素本身
+                input = inputArg;
+                // 尝试从 data-code-input 属性获取隐藏字段ID
+                if (input && input.dataset.codeInput) {
+                    hidden = document.getElementById(input.dataset.codeInput);
+                }
+            }
+            
             if (!input) return false;
+            
             const inputVal = input.value.trim();
             if (!inputVal) {
                 if (hidden) hidden.value = '';
                 return false;
             }
+            
             const countries = await loadCountryList();
             const matched = countries.find(c => 
                 c.name_zh === inputVal || 
                 c.name_en.toLowerCase() === inputVal.toLowerCase() ||
                 c.code === inputVal.toUpperCase()
             );
+            
             if (matched) {
                 const currentLang = window.i18n?.currentLang || 'zh';
                 input.value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
@@ -358,11 +343,14 @@
             } else {
                 input.value = '';
                 if (hidden) hidden.value = '';
-                alert('国家不在列表中，请重新选择');
+                if (typeof showToast === 'function') {
+                    showToast('国家不在列表中，请重新选择', 'warning');
+                } else {
+                    alert('国家不在列表中，请重新选择');
+                }
                 return false;
             }
         }
-
     </script>
 </body>
 </html>
