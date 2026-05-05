@@ -13,11 +13,7 @@
                     <form method="POST" action="{{ url_for('profile') }}">
                         <input type="hidden" name="action" value="update_info">
                         <div class="mb-3">
-                            <label class="form-label"><span data-i18n="name_cn">中文姓名</span></label>
-                            <input type="text" name="name_cn" class="form-control" value="{{ user.name_cn or '' }}">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label"><span data-i18n="name_en">英文姓名</span></label>
+                            <label class="form-label"><span data-i18n="name_en">姓名</span></label>
                             <input type="text" name="name_en" class="form-control" value="{{ user.name_en or '' }}">
                         </div>
                         <div class="mb-3">
