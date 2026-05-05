@@ -9,13 +9,13 @@
         <h3 class="text-center mb-4 fw-bold">🔐 <span data-i18n="user_login">用户登录</span></h3>
         <form method="POST" action="{{ url_for('login') }}" class="needs-validation" novalidate>
           <div class="mb-3">
-            <label class="form-label fw-medium"><span data-i18n="email_add">邮箱地址</span></label>
-            <input type="email" name="email" class="form-control" required placeholder="name@company.com">
+            <label class="form-label fw-medium" for="email"><span data-i18n="email_add">邮箱地址</span></label>
+            <input type="email" name="email" id="email" class="form-control" required placeholder="name@company.com" autocomplete="email">
             <div class="invalid-feedback"><span data-i18n="enter_valid_email_add">请输入有效的邮箱地址</span></div>
           </div>
           <div class="mb-3">
-            <label class="form-label fw-medium"><span data-i18n="password">密码</span></label>
-            <input type="password" name="password" class="form-control" required minlength="6">
+            <label class="form-label fw-medium" for="password"><span data-i18n="password">密码</span></label>
+            <input type="password" name="password" id="password" class="form-control" required minlength="6" autocomplete="current-password">
             <div class="invalid-feedback"><span data-i18n="pw_character">密码长度至少6位</span></div>
           </div>
           <button type="submit" class="btn btn-primary w-100 mb-3"><span data-i18n="login_now">立即登陆</span></button>
@@ -41,18 +41,18 @@
       <form id="resetForm" class="needs-validation" novalidate>
         <div class="modal-body">
           <div class="mb-3">
-            <label class="form-label"><span data-i18n="bind_email_add">绑定邮箱</span></label>
-            <input type="email" id="reset_email" class="form-control" required>
+            <label class="form-label" for="reset_email"><span data-i18n="bind_email_add">绑定邮箱</span></label>
+            <input type="email" id="reset_email" class="form-control" required autocomplete="email">
           </div>
           <div class="mb-3">
-            <label class="form-label"><span data-i18n="verification_code">验证码</span> <button type="button" id="sendOtpBtn" class="btn btn-sm btn-outline-primary float-end"><span data-i18n="send_code">发送验证码</span></button></label>
+            <label class="form-label" for="reset_otp"><span data-i18n="verification_code">验证码</span> <button type="button" id="sendOtpBtn" class="btn btn-sm btn-outline-primary float-end"><span data-i18n="send_code">发送验证码</span></button></label>
             <input type="text" id="reset_otp" class="form-control" maxlength="6" pattern="\d{6}" 
-            data-i18n-placeholder="placeholder_enter_number",
-            required placeholder="输入6位数字">
+            data-i18n-placeholder="placeholder_enter_number"
+            required placeholder="输入6位数字" autocomplete="one-time-code">
           </div>
           <div class="mb-3">
-            <label class="form-label"><span data-i18n="new_password">新密码</span></label>
-            <input type="password" id="reset_pwd" class="form-control" required minlength="6">
+            <label class="form-label" for="reset_pwd"><span data-i18n="new_password">新密码</span></label>
+            <input type="password" id="reset_pwd" class="form-control" required minlength="6" autocomplete="new-password">
           </div>
         </div>
         <div class="modal-footer">
