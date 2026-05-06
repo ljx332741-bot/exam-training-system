@@ -171,7 +171,7 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
 
             detail = details.get(qid, {})
             is_correct = detail.get('correct', False)
-            mark = '✅' if is_correct else '❌'
+            mark = '[√]' if is_correct else '[×]'
 
             # 题干
             stem = q.get('content_cn') or q.get('content', '')
