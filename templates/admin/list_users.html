@@ -30,7 +30,7 @@
                         <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
                     </button>
                     <button class="btn btn-sm btn-outline-success" id="importBtn">
-                        <i class="bi bi-file-earmark-excel"></i> <span data-i18n="batch_import">批量导入</span>
+                        <i class="bi bi-file-earmark-excel"></i><span data-i18n="batch_import">批量导入</span>
                     </button>
                     <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
                 </div>
@@ -143,10 +143,10 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="isPartnerSelect"><span data-i18n="is_partner">合作方?</span></label>
+                            <label class="form-label" for="isPartnerSelect"><span data-i18n="is_partner">服务商?</span></label>
                             <select class="form-select" id="isPartnerSelect">
-                                <option value="N"><span data-i18n="partner_no">否</span></option>
                                 <option value="Y"><span data-i18n="partner_yes">是</span></option>
+                                <option value="N"><span data-i18n="partner_no">否</span></option>
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -211,6 +211,20 @@
     }
 
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
+   
+    // 全局：动态更新邮箱必填属性
+    function updateEmailRequired() {
+        const emailInput = document.getElementById('email');
+        const userStatusSelect = document.getElementById('user_status');
+        if (emailInput && userStatusSelect) {
+            if (userStatusSelect.value === 'imported') {
+                emailInput.removeAttribute('required');
+            } else {
+                emailInput.setAttribute('required', 'required');
+            }
+        }
+    }
+
     // 等待 i18n 就绪工具函数
     function waitForI18n() {
         return new Promise((resolve) => {
@@ -282,7 +296,7 @@
                 <td>${u.id.slice(0,8)}...</td>
                 <td>${escapeHtml(u.country || '-')}</td>
                 <td>${escapeHtml(u.name_en || '-')}</td>
-                <td>${escapeHtml(u.email)}</td>
+                <td>${u.email && u.email.startsWith('noemail-') ? '' : escapeHtml(u.email)}</td>
                 <td>${escapeHtml(u.company || '-')}</td>
                 <td>${escapeHtml(u.department || '-')}</td>
                 <td>${escapeHtml(u.wh_type || '-')}</td>
@@ -297,7 +311,7 @@
                 </td>
                 <td>
                     ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
-                    ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}/button>` : ''}
+                    ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
                     ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
                  </td>
             </tr>
@@ -406,7 +420,12 @@
                     countryCodeHidden.value = '';
                 }
             }
-            
+            // 绑定状态变化监听
+            const userStatusSelect = document.getElementById('user_status');
+            userStatusSelect.removeEventListener('change', updateEmailRequired);
+            userStatusSelect.addEventListener('change', updateEmailRequired);
+            updateEmailRequired(); // 根据当前状态设置
+
             new bootstrap.Modal(document.getElementById('addUserModal')).show();
         } catch (err) {
             console.error(t('t_user_loading_failed'), err);
@@ -487,19 +506,24 @@
 
     // 新建用户时清空国家相关字段
     document.getElementById('addUserModal').addEventListener('show.bs.modal', async () => {
+        // 绑定邮箱必填状态变化
+        const userStatusSelect = document.getElementById('user_status');
+        userStatusSelect.removeEventListener('change', updateEmailRequired);
+        userStatusSelect.addEventListener('change', updateEmailRequired);
+        updateEmailRequired();
+
         if (!currentEditUserId) {
-            // 新建模式，重置表单
+            // 新建模式
             document.getElementById('userForm').reset();
             document.getElementById('editUserId').value = '';
-            // 清空国家相关字段
             const countryInput = document.getElementById('userCountrySelect');
             const countryCodeHidden = document.getElementById('countryCode');
             if (countryInput) countryInput.value = '';
             if (countryCodeHidden) countryCodeHidden.value = '';
-            // 确保 datalist 已经填充（通常页面加载时已填充）
             if (typeof populateCountryDatalist === 'function') {
                 await populateCountryDatalist('countryDatalist');
             }
+            updateEmailRequired(); // 确保默认状态去掉 required
         }
     });
 
@@ -546,7 +570,7 @@
             alert('网络错误: ' + err.message);
         } finally {
             importBtn.disabled = false;
-            importBtn.innerHTML = `i class="bi bi-file-earmark-excel"></i> ${t('t_batch_import')}`;
+            importBtn.innerHTML = `<i class="bi bi-file-earmark-excel"></i> ${t('t_batch_import')}`;
             e.target.value = '';  // 清空文件选择
         }
     });
