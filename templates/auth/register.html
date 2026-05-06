@@ -116,13 +116,14 @@
       password: form.password.value,
       name_en: form.name_en.value, 
       birthday: form.birthday.value,          // 新增
-      company: form.company.value,
+      // company: form.company.value,
       is_partner: form.querySelector('input[name="is_partner"]:checked')?.value || 'N'
     };
     const res = await fetch('/api/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const json = await res.json();
     if (json.success) { window.location.href = json.redirect; }
-    else alert(json.message || window.i18n.t('js_register_failed'));
+    // else alert(json.message || window.i18n.t('js_register_failed'));
+    else apiAlert(json);   // 使用全局翻译函数
   });
 </script>
 {% endblock %}
