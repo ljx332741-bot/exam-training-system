@@ -168,7 +168,7 @@
 <script>
     let currentPage = 1;
     let filters = { name: '', status: '', quarter: '', country: '' };
-
+    const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     async function loadExams() {
         const params = new URLSearchParams({
             page: currentPage,
@@ -186,6 +186,52 @@
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
 
+    // 按钮绑定事件
+    function bindExamTableButtons() {
+        // 详情按钮
+        document.querySelectorAll('.detail-btn').forEach(btn => {
+            btn.addEventListener('click', () => location.href = `/admin/exam/${btn.dataset.id}/scores`);
+        });
+
+        // 推送按钮
+        document.querySelectorAll('.push-btn').forEach(btn => {
+            btn.addEventListener('click', () => openSettingModal(btn.dataset.id));
+        });
+
+        // 拷贝按钮
+        document.querySelectorAll('.copy-exam-btn').forEach(btn => {
+            btn.addEventListener('click', () => copyExam(btn.dataset.id));
+        });
+
+        // 批量导出 PDF
+        document.querySelectorAll('.batch-export').forEach(btn => {
+            btn.addEventListener('click', () => batchExport(btn.dataset.id));
+        });
+
+        // 删除按钮（super_admin）
+        document.querySelectorAll('.delete-exam-btn').forEach(btn => {
+            btn.addEventListener('click', () => confirmDeleteExam(btn.dataset.id));
+        });
+
+        // 恢复按钮
+        document.querySelectorAll('.restore-exam-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const examId = btn.dataset.id;
+                await fetch(`/admin/exam/restore/${examId}`, { method: 'POST' });
+                alert('考试已恢复');
+                loadExams();
+            });
+        });
+
+        // 考试名称链接
+        document.querySelectorAll('.exam-detail-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (link.dataset.id) window.location.href = `/admin/exam/${link.dataset.id}/scores`;
+            });
+        });
+    }
+
     function renderExamsTable(exams) {
         const tbody = document.getElementById('examsTbody');
         if (!exams.length) {
@@ -196,8 +242,10 @@
             const isDeleted = ex.deleted_at !== null && ex.deleted_at !== undefined;
             // 根据状态决定是否显示详情，推送，导出按钮
             const showDetail = ['active', 'closed'].includes(ex.status);
-            const showPush = ['draft', 'created', 'active'].includes(ex.status);
+            const showPush = ['draft', 'created', 'active'].includes(ex.status) || 
+                             (ex.status === 'closed' && ex.assigned_count === 0);
             const showExport = ['active', 'closed'].includes(ex.status);
+            const showDelete = CURRENT_USER_ROLE === 'super_admin';
             let actionButtons = '';
             if (isDeleted) {
                 actionButtons = `<button class="btn btn-sm btn-outline-success restore-exam-btn" data-id="${ex.id}">${t('t_recover')}</button>`;
@@ -207,6 +255,7 @@
                     ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
                     <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
                     ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
+                    ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
                 `;
             }
             return `
@@ -226,34 +275,8 @@
             </tr>
             `;
         }).join('');
-        // 绑定事件
-        document.querySelectorAll('.detail-btn').forEach(btn => {
-            btn.addEventListener('click', () => location.href = `/admin/exam/${btn.dataset.id}/scores`);
-        });
-        document.querySelectorAll('.push-btn').forEach(btn => {
-            btn.addEventListener('click', () => openSettingModal(btn.dataset.id));
-        });
-        document.querySelectorAll('.copy-exam-btn').forEach(btn => {
-            btn.addEventListener('click', () => copyExam(btn.dataset.id));
-        });
-        document.querySelectorAll('.batch-export').forEach(btn => {
-            btn.addEventListener('click', () => batchExport(btn.dataset.id));
-        });
-        document.querySelectorAll('.restore-exam-btn').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const examId = btn.dataset.id;
-                await fetch(`/admin/exam/restore/${examId}`, { method: 'POST' });
-                alert('考试已恢复');
-                loadExams();
-            });
-        });
-        document.querySelectorAll('.exam-detail-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                const examId = link.dataset.id;
-                if (examId) window.location.href = `/admin/exam/${examId}/scores`;
-            });
-        });
+        // 绑定所有按钮事件
+        bindExamTableButtons();
     }
 
     function getStatusText(status) {
