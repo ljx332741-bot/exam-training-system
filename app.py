@@ -27,6 +27,7 @@ from flask import jsonify, request
 from functools import wraps
 from services.db import get_supabase
 from services import auth, exam, export
+from services.export import find_wkhtmltopdf
 from config import Config
 from utils.status import get_exam_status
 from utils.common import match_country_code, quarter_to_date_range
@@ -2691,15 +2692,20 @@ def download_training_attendance_pdf(training_id):
                                     attendances=data['attendances'])
 
     # 配置 wkhtmltopdf 路径（根据实际安装位置修改）
-    config = pdfkit.configuration(wkhtmltopdf=r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe')
+    wkhtmltopdf_path = find_wkhtmltopdf()   # 自动查找（支持环境变量 WKHTMLTOPDF_PATH）
+    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
     pdf = pdfkit.from_string(html_content, False, configuration=config,
                              options={
-                                 'page-size': 'A4',
-                                 'margin-top': '10mm',
-                                 'margin-bottom': '10mm',
-                                 'margin-left': '10mm',
-                                 'margin-right': '10mm',
-                                 'encoding': 'UTF-8'
+                                'page-size': 'A4',
+                                'margin-top': '10mm',
+                                'margin-bottom': '10mm',
+                                'margin-left': '10mm',
+                                'margin-right': '10mm',
+                                'encoding': 'UTF-8',
+                                'enable-local-file-access': None,
+                                # 可选：避免因网络图片慢而超时
+                                'javascript-delay': '200',
+                                'no-stop-slow-scripts': None,
                              })
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
