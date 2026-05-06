@@ -42,6 +42,7 @@ logging.basicConfig(
         logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')
     ]
 )
+DEFAULT_LOCAL_TIMEZONE = os.environ.get('LOCAL_TIMEZONE', 'Asia/Kathmandu')
 logger = logging.getLogger(__name__)
 logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
 
@@ -50,11 +51,6 @@ app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
 app.debug = False  # 🔥 强制调试模式显示详细错误
-
-@app.route('/health')
-def health_check():
-    # 返回一个简单的 "OK" 和 200 状态码即可
-    return "OK", 200
 
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
@@ -153,19 +149,22 @@ def auto_submit_timeout_exams():
             except:
                 pass
 
-def local_to_utc(local_time_str, local_tz='Asia/Kathmandu'):
+@app.route('/health')
+def health_check():
+    # 返回一个简单的 "OK" 和 200 状态码即可
+    return "OK", 200
+
+def local_to_utc(local_time_str, local_tz=None):
     """
     将本地时间字符串（格式：YYYY-MM-DDTHH:MM）转换为 UTC ISO 字符串。
-    如果传入的字符串为空或 None，返回 None。
+    如果未传时区，则使用环境变量 LOCAL_TIMEZONE 或默认 Asia/Kathmandu。
     """
     if not local_time_str:
         return None
-    # 解析本地时间（不含时区）
     local_dt = datetime.fromisoformat(local_time_str)
-    # 假定该时间为指定时区的时间
-    local_tz = pytz.timezone(local_tz)
-    local_dt_aware = local_tz.localize(local_dt)
-    # 转换为 UTC
+    tz_name = local_tz if local_tz else DEFAULT_LOCAL_TIMEZONE
+    local_tz_obj = pytz.timezone(tz_name)
+    local_dt_aware = local_tz_obj.localize(local_dt)
     utc_dt = local_dt_aware.astimezone(timezone.utc)
     return utc_dt.isoformat()
 
@@ -373,24 +372,25 @@ def api_register():
     """用户注册"""
     d = request.json
     email = d.get('email', '').strip().lower()
-    if not auth.verify_otp(d.get('email'), d.get('otp')):
-        return jsonify({"success": False, "message": "验证码无效或已过期"})
-
     name_en = d.get('name_en', '').strip()
     password = d.get('password', '')
     birthday = d.get('birthday', '')               # 格式 YYYY-MM-DD
     is_partner_val = d.get('is_partner', 'N')
-
+    otp = d.get('otp', '')
+    
     # 1. 邮箱全局唯一性检查
     db = get_supabase()
     if db.table("users").select("id").eq("email", email).execute().data:
-        return jsonify({"success": False, "message": "该邮箱已注册，请直接登录或更换邮箱"}), 400
+        # 邮箱已注册
+        # return jsonify({"success": False, "message": "该邮箱已注册，请直接登录或更换邮箱"}), 400
+        return jsonify({"success": False, "message": "email_already_registered", "params": []}), 400
     
     # 2. 姓名 + 出生日期精确匹配 imported 用户（且尚未设置邮箱）
     query = db.table("users").select("*") \
         .eq("name_en", name_en) \
         .eq("user_status", "imported") \
-        .is_("email", "null")                       # 确保未被注册
+        .is_("email", "null") \
+        .is_("deleted_at", "null")   # ✅ 防止匹配到已删除用户
 
     # 根据是否提供生日进行不同匹配
     if birthday:
@@ -405,14 +405,26 @@ def api_register():
 
     if count == 0:
         if birthday:
-            return jsonify({"success": False, "message": "姓名与出生日期不匹配，请核对或联系管理员"}), 403
+            # 姓名与生日不匹配
+            #return jsonify({"success": False, "message": "姓名与出生日期不匹配，请核对或联系管理员"}), 403
+            return jsonify({"success": False, "message": "name_birthday_mismatch", "params": []}), 403
         else:
-            return jsonify({"success": False, "message": "姓名未匹配到预授权名单，请联系管理员"}), 403
+            # 姓名未匹配
+            #return jsonify({"success": False, "message": "姓名未匹配到预授权名单，请联系管理员"}), 403
+            return jsonify({"success": False, "message": "name_not_matched", "params": []}), 403
 
     if count > 1:
-        return jsonify({"success": False, "message": "该姓名和出生日期对应多条预授权记录，请通知管理员修正数据"}), 403
-    
-    # 3. 更新记录，完成注册
+        # 多条匹配
+        #return jsonify({"success": False, "message": "该姓名和出生日期对应多条预授权记录，请通知管理员修正数据"}), 403
+        return jsonify({"success": False, "message": "multiple_imported_records", "params": []}), 403
+
+    # 3. 姓名匹配通过后，再验证 OTP
+    if not auth.verify_otp(email, otp):
+        # 验证码无效或已过期
+        # return jsonify({"success": False, "message": "验证码无效或已过期"})
+        return jsonify({"success": False, "message": "otp_invalid", "params": []})
+
+    # 4. 更新记录，完成注册
     target = pool.data[0]
     update_fields = {
         "email": email,
@@ -428,7 +440,7 @@ def api_register():
 
     db.table("users").update(update_fields).eq("id", target['id']).execute()
 
-    # 4. 自动登录
+    # 5. 自动登录
     session.update({
         "user_id": target['id'],
         "user_email": email,
@@ -1150,7 +1162,8 @@ def api_admin_import_users():
         wb = openpyxl.load_workbook(file, read_only=True)
         ws = wb.active
     except Exception as e:
-        return jsonify({"success": False, "message": f"文件解析失败: {str(e)}"}), 400
+        # return jsonify({"success": False, "message": f"文件解析失败: {str(e)}"}), 400
+        return jsonify({"success": False, "message": "file_parse_error", "params": [str(e)]}), 400
     
     # 字段映射
     column_map = {
@@ -1207,7 +1220,33 @@ def api_admin_import_users():
         if not name_en:
             error_rows.append(f"第{row_idx}行: 姓名不能为空")
             continue
-        
+
+        name_en = user_data.get('name_en', '')
+        birthday = user_data.get('birthday') or None
+        employee_id = user_data.get('employee_id') or None
+
+        # 重复检查
+        existing_query = db.table("users").select("id").eq("name_en", name_en)
+        if birthday and employee_id:
+            existing_query = existing_query.or_(f"birthday.eq.{birthday},employee_id.eq.{employee_id}")
+        elif birthday:
+            existing_query = existing_query.eq("birthday", birthday)
+        elif employee_id:
+            existing_query = existing_query.eq("employee_id", employee_id)
+        else:
+            existing_query = existing_query  # 仅姓名判断
+
+        if (birthday or employee_id):
+            existing_res = existing_query.execute()
+            if existing_res.data:
+                error_rows.append(f"第{row_idx}行: 用户已存在（姓名+生日/工号重复）")
+                continue
+        else:
+            existing_res = db.table("users").select("id").eq("name_en", name_en).execute()
+            if existing_res.data:
+                error_rows.append(f"第{row_idx}行: 用户已存在（姓名重复）")
+                continue
+
         # 邮箱为空时保留空字符串
         if not user_data.get('email'):
             user_data['email'] = ''
@@ -1223,6 +1262,12 @@ def api_admin_import_users():
         user_data['role'] = user_data.get('role', 'user')
         user_data['user_status'] = 'imported'
         user_data['is_active'] = False  # 导入的用户尚未激活，需注册后才激活
+
+        birthday_raw = row_data.get('birthday', '')
+        user_data['birthday'] = birthday_raw if birthday_raw else None
+
+        email_raw = row_data.get('email', '').strip().lower()
+        user_data['email'] = email_raw if email_raw else None  # 空则 None
         
         try:
             db.table("users").insert(user_data).execute()
@@ -1706,22 +1751,60 @@ def export_bilingual_excel(training_id, exam_id):
 @login_required
 @admin_required
 def export_filtered_excel():
-    """导出培训测评结果（根据筛选条件）"""
     data = request.json
     country = data.get('country', '')
     training_name = data.get('training_name', '')
     exam_name = data.get('exam_name', '')
     start_date = data.get('start_date', '')
     end_date = data.get('end_date', '')
+    wh_raw = data.get('wh_id', '').strip()
+    wh_id = wh_raw.split('(')[0].strip() if wh_raw else None
 
     db = get_supabase()
 
-    test_res = db.table("users").select("country").limit(5).execute()
-    logger.info(f"数据库前5个用户的 country 值: {[r['country'] for r in test_res.data]}")
+    # 构建统一的候选用户ID列表
+    user_ids_for_country = None
+    user_ids_for_wh = None
 
-    # 1. 查询符合条件的培训（带保险回退）
+    # 1. 如果指定了国家，获取该国用户ID
     if country:
-        # 先尝试用培训自身的国家字段过滤
+        users_res = db.table("users").select("id").eq("country", country).execute()
+        user_ids_for_country = [u['id'] for u in (users_res.data or [])]
+        if not user_ids_for_country:
+            # 没有该国用户，直接返回空文件
+            wb = openpyxl.Workbook()
+            wb.active.title = "空报告"
+            buffer = BytesIO()
+            wb.save(buffer)
+            buffer.seek(0)
+            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             as_attachment=True, download_name=f"空报告_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx")
+
+    # 2. 如果指定了库房，获取该库房下的所有用户ID
+    if wh_id:
+        users_in_wh = db.table("users").select("id").eq("wh_id", wh_id).execute()
+        user_ids_for_wh = [u['id'] for u in (users_in_wh.data or [])]
+        if not user_ids_for_wh:
+            wb = openpyxl.Workbook()
+            wb.active.title = "空报告"
+            buffer = BytesIO()
+            wb.save(buffer)
+            buffer.seek(0)
+            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                             as_attachment=True, download_name=f"空报告_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx")
+
+    # 3. 合并国家与库房的用户范围
+    if user_ids_for_country is not None and user_ids_for_wh is not None:
+        final_user_ids = list(set(user_ids_for_country) & set(user_ids_for_wh))
+    elif user_ids_for_country is not None:
+        final_user_ids = user_ids_for_country
+    elif user_ids_for_wh is not None:
+        final_user_ids = user_ids_for_wh
+    else:
+        final_user_ids = None
+
+    # 4. 查询培训（带保险回退）
+    if country:
         training_query = db.table("trainings").select("*").eq("country", country)
         if training_name:
             training_query = training_query.ilike("name", f"%{training_name}%")
@@ -1730,8 +1813,6 @@ def export_filtered_excel():
         if end_date:
             training_query = training_query.lte("end_time", end_date)
         trainings = training_query.execute().data or []
-
-        # 如果过滤后为空，则回退：忽略培训国家，只靠考生国家过滤
         if not trainings:
             logger.info(f"按培训国家过滤后无结果，回退为不过滤培训国家")
             training_query = db.table("trainings").select("*")
@@ -1743,7 +1824,6 @@ def export_filtered_excel():
                 training_query = training_query.lte("end_time", end_date)
             trainings = training_query.execute().data or []
     else:
-        # 未指定国家，正常查询
         training_query = db.table("trainings").select("*")
         if training_name:
             training_query = training_query.ilike("name", f"%{training_name}%")
@@ -1753,13 +1833,12 @@ def export_filtered_excel():
             training_query = training_query.lte("end_time", end_date)
         trainings = training_query.execute().data or []
 
-    # 2. 查询符合条件的考试（带保险回退）
+    # 5. 查询考试（带保险回退）
     if country:
         exam_query = db.table("exams").select("*").eq("country", country)
         if exam_name:
             exam_query = exam_query.ilike("title", f"%{exam_name}%")
         exams = exam_query.execute().data or []
-
         if not exams:
             logger.info(f"按考试国家过滤后无结果，回退为不过滤考试国家")
             exam_query = db.table("exams").select("*")
@@ -1771,16 +1850,17 @@ def export_filtered_excel():
         if exam_name:
             exam_query = exam_query.ilike("title", f"%{exam_name}%")
         exams = exam_query.execute().data or []
-    # 以上修复导出excel问题。
 
-    # 3. 调用生成函数
+    # 6. 调用生成函数
     try:
         buffer, filename = export.generate_bilingual_excel_filtered(
             trainings=trainings,
             exams=exams,
             country=country,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            user_ids=final_user_ids,
+            wh_id=wh_id
         )
         return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                          as_attachment=True, download_name=filename)
@@ -2337,7 +2417,12 @@ def api_training_sign():
     
     db = get_supabase()
     user_id = session['user_id']
-    
+
+    # 检查用户是否已注册且激活
+    user_res = db.table("users").select("is_active, user_status").eq("id", user_id).maybe_single().execute()
+    if not user_res.data or not user_res.data.get('is_active') or user_res.data.get('user_status') != 'registered':
+        return jsonify({"success": False, "message": "用户未完成注册"}), 400
+
     # 检查是否已签到
     try:
         exist_res = db.table("training_attendances") \
@@ -2802,6 +2887,12 @@ def api_admin_interviews():
         status = 'draft' if is_draft else 'active'
         if start_time and end_time:
             status = 'active'  # 简单处理，后续根据时间自动判定
+
+        if user_ids:
+            # 校验所有用户均为已注册
+            valid_users = db.table("users").select("id").in_("id", user_ids).eq("user_status", "registered").execute()
+            if len(valid_users.data or []) != len(user_ids):
+                return jsonify({"success": False, "message": "所选考生中包含未注册的用户"}), 400
 
         user_ids = data.get('user_ids', [])
         interviewee_count = len(user_ids)
@@ -3375,8 +3466,10 @@ def api_admin_users():
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('search', '').strip()
     country = request.args.get('country', '')
-    
+
     query = db.table("users").select("*", count="exact")
+    # 排除已删除用户
+    query = query.is_("deleted_at", "null")
     # 非超级管理员不显示超级管理员
     if session.get('role') != 'super_admin':
         query = query.neq("role", "super_admin")
@@ -3390,7 +3483,11 @@ def api_admin_users():
     start = (page - 1) * per_page
     end = start + per_page - 1
     query = query.range(start, end).order("created_at", desc=True)
-    
+
+    user_status = request.args.get('status', '')
+    if user_status:
+        query = query.eq("user_status", user_status)
+
     res = query.execute()
     total = res.count if hasattr(res, 'count') else len(res.data or [])
     
@@ -3407,69 +3504,121 @@ def api_admin_users():
 def api_admin_add_user():
     """管理员添加用户（生成随机密码并发送邮件）"""
     data = request.json
-    email = data.get('email', '').strip().lower()
-    name_en = data.get('name_en', '')
-    company = data.get('company', '')
-    department = data.get('department', '')
-    employee_id = data.get('employee_id', '')
-    birthday = data.get('birthday', '')
-    country = data.get('country', '')
-    phone = data.get('phone', '')
-    role = data.get('role', 'user')
-    
-    if not email:
-        return jsonify({"success": False, "message": "邮箱不能为空"}), 400
-    
+    email = data.get('email', '').strip().lower() or None
+    name_en = data.get('name_en', '').strip()
+    birthday = data.get('birthday', '') or None
+    employee_id = data.get('employee_id', '').strip() or None
+    user_status = data.get('user_status', 'imported')
+
+    # 姓名必填
+    if not name_en:
+        return jsonify({"success": False, "message": "name_cannot_empty", "params": []}), 400
+
+    # 邮箱条件校验
+    if not email and user_status != 'imported':
+        return jsonify({"success": False, "message": "mail_cannot_empty", "params": []}), 400
+
     db = get_supabase()
-    # 检查邮箱是否已存在
-    exist = db.table("users").select("id").eq("email", email).execute()
-    if exist.data:
-        return jsonify({"success": False, "message": "邮箱已注册"}), 400
-    
-    # 生成随机密码（8位字母数字混合）
-    import secrets, string
-    alphabet = string.ascii_letters + string.digits
-    temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
-    password_hash = auth.hash_password(temp_password)
-    
-    # 插入用户
+
+    # 检查重复：姓名相同，且（生日相同 或 工号相同）
+    tmp_query = db.table("users").select("id").eq("name_en", name_en)
+    if birthday and employee_id:
+        tmp_query = tmp_query.or_(f"birthday.eq.{birthday},employee_id.eq.{employee_id}")
+    elif birthday:
+        tmp_query = tmp_query.eq("birthday", birthday)
+    elif employee_id:
+        tmp_query = tmp_query.eq("employee_id", employee_id)
+    else:
+        # 无生日无工号，只要姓名相同也算重复（避免纯姓名重复）
+        pass  # 继续往下，后边判断 tmp_query 是否存在记录
+
+    if birthday or employee_id:  # 有辅助信息时才进行精确重复检测
+        existing = tmp_query.execute()
+        if existing.data:
+            return jsonify({"success": False, "message": "duplicate_user_found", "params": []}), 400
+    else:
+        # 无生日无工号，只要姓名相同就认为可能重复，给出警告（可允许保存？根据需求，不允许）
+        existing = db.table("users").select("id").eq("name_en", name_en).execute()
+        if existing.data:
+            return jsonify({"success": False, "message": "duplicate_user_found", "params": []}), 400
+
+    # 邮箱唯一性检查
+    if email:
+        exist = db.table("users").select("id").eq("email", email).execute()
+        if exist.data:
+            return jsonify({"success": False, "message": "email_already_registered", "params": []}), 400
+
+    # 生成用户ID和密码
     user_id = str(uuid.uuid4())
+    temp_password = ''
+    password_hash = ''
+    if email:
+        import secrets, string
+        alphabet = string.ascii_letters + string.digits
+        temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
+        password_hash = auth.hash_password(temp_password)
+
+    # 准备插入数据
+    insert_data = {
+        "id": user_id,
+        "email": email,
+        "password_hash": password_hash,
+        "name_en": name_en,
+        "company": data.get('company', ''),
+        "department": data.get('department', ''),
+        "employee_id": employee_id,
+        "birthday": birthday,
+        "country": data.get('country', ''),
+        "phone": data.get('phone', ''),
+        "role": data.get('role', 'user'),
+        "user_status": user_status,
+        "is_partner": data.get('is_partner', 'N') == 'Y',
+        "wh_type": data.get('wh_type', ''),
+        "wh_id": data.get('wh_id', ''),
+        "wh_name_en": data.get('wh_name_en', ''),
+        "is_active": False if user_status == 'imported' else True,
+        "created_by": session['user_id']
+    }
     try:
-        db.table("users").insert({
-            "id": user_id,
-            "email": email,
-            "password_hash": password_hash,
-            "name_en": name_en,
-            "company": company,
-            "department": department,
-            "employee_id": employee_id,
-            "birthday": birthday,
-            "country": country,
-            "phone": phone,
-            "role": role,
-            "created_by": session['user_id']
-        }).execute()
+        db.table("users").insert(insert_data).execute()
+        # 发送邮件通知（仅当邮箱存在）
+        if email:
+            try:
+                # 邮件主题 / Email Subject
+                subject = "您的考试系统账号已创建Your exam system account has been created"
+                
+                # 邮件正文 / Email Body
+                body = f"""
+                # ---------------------------- 中文版 ----------------------------
+                尊敬的 {name_en or email}：
+                
+                您的在线考试系统账号已由管理员创建。
+                
+                登录邮箱：{email}
+                临时密码：{temp_password}
+                
+                请尽快登录系统并修改密码。
+                
+                登录地址：{request.host_url}
+                
+                # ---------------------------- English Version ----------------------------
+                Dear {name_en or email},
+                
+                Your online exam system account has been created by the administrator.
+                
+                Login Email: {email}
+                Temporary Password: {temp_password}
+                
+                Please log in and change your password as soon as possible.
+                
+                Login URL: {request.host_url}
+                """
+                
+                auth.send_email(email, subject, body)
+            except Exception as e:
+                logger.warning(f"发送邮件失败: {e}")
         
-        # 发送邮件通知
-        try:
-            subject = "您的考试系统账号已创建"
-            body = f"""
-            尊敬的 {name_cn or email}：
-            
-            您的在线考试系统账号已由管理员创建。
-            
-            登录邮箱：{email}
-            临时密码：{temp_password}
-            
-            请尽快登录系统并修改密码。
-            
-            登录地址：{request.host_url}
-            """
-            auth.send_email(email, subject, body)
-        except Exception as e:
-            logger.warning(f"发送邮件失败: {e}")
-        
-        logger.info(f"管理员添加用户: {email}, 临时密码: {temp_password}")
+        logger.info(f"管理员添加用户: {email or '无邮箱'}, 状态: {user_status}")
         return jsonify({"success": True, "user_id": user_id, "temp_password": temp_password})
     except Exception as e:
         logger.error(f"添加用户失败: {e}")
@@ -3507,10 +3656,28 @@ def api_admin_edit_user(user_id):
                       'wh_type', 'wh_id', 'wh_name_en', 'user_status', 'is_partner']
     if current_role == 'super_admin':
         allowed_fields.append('role')  # 超管可改角色
-    
+
+    if 'email' in data:
+        email_val = data['email'].strip().lower() or None
+        if email_val:
+            conflict = db.table("users").select("id").eq("email", email_val).neq("id", user_id).execute()
+            if conflict.data:
+                return jsonify({"success": False, "message": "邮箱已被使用"}), 400
+        update_data['email'] = email_val
+
+    if 'birthday' in data:
+        val = data['birthday']
+        update_data['birthday'] = val if val else None
+    # 或者统一在遍历时用函数转换
+    def none_if_empty(val):
+        return val if val else None
+
     for field in allowed_fields:
         if field in data:
-            update_data[field] = data[field]
+            val = data[field]
+            if field == 'birthday':
+                val = none_if_empty(val)
+            update_data[field] = val
     
     if not update_data:
         return jsonify({"success": False, "message": "没有要更新的字段"}), 400
@@ -3531,35 +3698,53 @@ def api_admin_edit_user(user_id):
 @login_required
 @admin_required
 def api_admin_delete_user(user_id):
-    """删除用户（仅软删除或标记禁用，实际建议禁用而非删除）"""
-    # 防止删除自己
+    """删除用户：已导入 → 硬删除；已注册 → 软删除"""
     if user_id == session['user_id']:
         return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
-    
+
     db = get_supabase()
+    # 获取目标用户的角色和当前状态
+    target_res = db.table("users").select("role, user_status").eq("id", user_id).maybe_single().execute()
+    if not target_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+
+    target = target_res.data
+    target_role = target.get('role', 'user')
+    current_role = session.get('role')
+
+    # 权限控制：普通管理员不能删除管理员或超管
+    if current_role != 'super_admin' and target_role in ('admin', 'super_admin'):
+        return jsonify({"success": False, "message": "权限不足，无法删除管理员"}), 403
+
+    user_status = target.get('user_status', 'registered')
+
+    # ========= 已导入用户：硬删除 =========
+    if user_status == 'imported':
+        try:
+            # 清理可能存在的考试分配记录（防止外键冲突）
+            db.table("exam_assignments").delete().eq("user_id", user_id).execute()
+            # 物理删除用户
+            db.table("users").delete().eq("id", user_id).execute()
+            logger.info(f"硬删除已导入用户 {user_id}")
+            return jsonify({"success": True, "hard_delete": True})
+        except Exception as e:
+            # 如果硬删除失败（例如仍有其他关联记录），回退为软删除
+            logger.error(f"硬删除失败，尝试软删除: {e}")
+            try:
+                db.table("users").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", user_id).execute()
+                return jsonify({"success": True, "hard_delete": False, "fallback": True, "message": "用户存在关联记录，已转为软删除"})
+            except Exception as soft_err:
+                logger.error(f"软删除也失败: {soft_err}")
+                return jsonify({"success": False, "message": str(soft_err)}), 500
+
+    # ========= 已注册用户：软删除 =========
     try:
-        # 获取目标用户角色
-        target_res = db.table("users").select("role").eq("id", user_id).maybe_single().execute()
-        if not target_res.data:
-            return jsonify({"success": False, "message": "用户不存在"}), 404
-        target_role = target_res.data.get('role', 'user')
-        
-        current_role = session.get('role')
-        if current_role != 'super_admin':
-            if target_role in ('admin', 'super_admin'):
-                return jsonify({"success": False, "message": "权限不足，无法删除管理员"}), 403
-        # 可选：软删除（添加 is_active 字段），这里直接删除
-        # 注意：如果有关联成绩，可能需要保留用户。建议软删除。
-        # 为安全，这里只做软删除标记（需要 users 表有 is_active 字段）
-        # 如果没有 is_active，先添加：ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT TRUE;
-        db.table("users").update({"is_active": False}).eq("id", user_id).execute()
-        # 或者直接删除：
-        # db.table("users").delete().eq("id", user_id).execute()
-        return jsonify({"success": True})
+        db.table("users").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", user_id).execute()
+        logger.info(f"软删除用户 {user_id}")
+        return jsonify({"success": True, "hard_delete": False})
     except Exception as e:
-        error_msg = str(e)
-        logger.error(f"删除用户失败: {error_msg}")
-        return jsonify({"success": False, "message": error_msg}), 500
+        logger.error(f"软删除失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
     #-----------------
 
 @app.route('/api/admin/users/<user_id>/reset_password', methods=['POST'])
@@ -4151,6 +4336,28 @@ def search_exams():
     names = [row['title'] for row in (res.data or [])]
     return jsonify(names)
 
+@app.route('/api/search/warehouses')
+@login_required
+@admin_required
+def search_warehouses():
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    db = get_supabase()
+    res = db.table("users").select("wh_id, wh_name_en") \
+        .or_(f"wh_id.ilike.%{q}%,wh_name_en.ilike.%{q}%") \
+        .limit(10).execute()
+    suggestions = []
+    seen = set()
+    for row in (res.data or []):
+        wh_id = row.get('wh_id', '')
+        wh_name = row.get('wh_name_en', '')
+        label = f"{wh_id} ({wh_name})" if wh_name else wh_id
+        if label not in seen:
+            seen.add(label)
+            suggestions.append(label)
+    return jsonify(suggestions)
+
 #----------3. 培训签到管理 API（类似考试清单，复用现有逻辑）---------
 # ================= 管理员培训管理路由 =================
 @app.route('/admin/trainings')
@@ -4397,10 +4604,11 @@ def admin_questions_stats():
 # ================= 启动入口 =================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8000))
+    
     app.run(
         host="0.0.0.0",
         port=port,
-        debug=False,          # 🔑 必须为 True 显示详细错误
+        debug=True,          # 🔑 必须为 True 显示详细错误
         use_reloader=False,  # 禁用重载器避免日志混乱
         threaded=True        # 支持并发请求
     )
