@@ -65,15 +65,15 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">删除考试</h5>
+        <h5 class="modal-title"><span data-i18n="delete_exam">删除考试</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p>请选择删除方式：</p>
+        <p><span data-i18n="delete_method">请选择删除方式：</span></p>
         <div class="d-flex justify-content-between gap-2">
-          <button class="btn btn-danger flex-fill" id="deletePermanentBtn">永久删除</button>
-          <button class="btn btn-warning flex-fill" id="deleteSoftBtn">软删除（回收站）</button>
-          <button class="btn btn-secondary flex-fill" data-bs-dismiss="modal">取消</button>
+          <button class="btn btn-danger flex-fill" id="deletePermanentBtn"><span data-i18n="permanently_delete">永久删除</span></button>
+          <button class="btn btn-warning flex-fill" id="deleteSoftBtn"><span data-i18n="soft_deleted">软删除（回收站）</span></button>
+          <button class="btn btn-secondary flex-fill" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
         </div>
       </div>
     </div>
@@ -222,20 +222,20 @@
                     [{{ ex.country or '' }}]
                     <span class="local-time" data-utc="{{ ex.start_time or '' }}"></span>
                      - <span class="local-time" data-utc="{{ ex.end_time or '' }}"></span>
-                    | {{ ex.duration }}分钟 | 实考/应考: {{ ex.submitted_count }}/{{ ex.assigned_count }}
+                    | {{ ex.duration }}<span data-i18n="minutes">分钟</span> | <span data-i18n="att_reg">应考|实考</span>: {{ ex.submitted_count }}/{{ ex.assigned_count }}
                   </small>
                 </td>
                 <td>
                   {% if ex.status == 'draft' %}
-                      <span class="badge bg-secondary">草稿</span>
+                      <span class="badge bg-secondary"><span data-i18n="draft">草稿</span></span>
                   {% elif ex.status == 'created' %}
-                      <span class="badge bg-info">未开始</span>
+                      <span class="badge bg-info"><span data-i18n="not_started">未开始</span></span>
                   {% elif ex.status == 'active' %}
-                      <span class="badge bg-success">进行中</span>
+                      <span class="badge bg-success"><span data-i18n="ongoing">进行中</span></span>
                   {% elif ex.status == 'closed' %}
-                      <span class="badge bg-danger">已关闭</span>
+                      <span class="badge bg-danger"><span data-i18n="closed">已关闭</span></span>
                   {% elif ex.status == 'deleted' %}
-                      <span class="badge bg-dark">已删除</span>
+                      <span class="badge bg-dark"><span data-i18n="deleted">已删除</span></span>
                   {% else %}
                       {{ ex.status }}
                   {% endif %}
@@ -245,11 +245,11 @@
                   <div class="btn-group btn-group-sm" role="group">
                     <button class="btn btn-outline-secondary batch-export" data-id="{{ ex.id }}">PDF</button> 
                     <!-- ✅ 新增：重置考生状态（需配合用户选择，示例中简化） -->
-                    <button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}">设置</button>
+                    <button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}"><span data-i18n="setting">设置</span></button>
                     {% if ex.dynamic_status == 'draft' %}
                         <button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}">✏️ <span data-i18n="edit">编辑</span></button>
                     {% endif %}
-                    <button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}">拷贝</button>
+                    <button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}"><span data-i18n="copy">拷贝</span></button>
                     <!-- ✅ 新增：删除考试（危险操作） -->
                     <form method="POST" action="{{ url_for('admin_delete_exam', exam_id=ex.id) }}" 
                       onsubmit="return confirm(window.i18n.t('js_exam_delete_tip'));"
@@ -289,41 +289,50 @@
     <div class="modal-dialog modal-lg">
       <div class="modal-content">
         <div class="modal-header">
-          <h5 class="modal-title">导出培训考试综合报告</h5>
+          <h5 class="modal-title"><span data-i18n="exportfiltermodal">导出培训考试综合报告</span></h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
         <div class="modal-body">
           <div class="row g-3">
             <div class="col-md-6">
-              <label class="form-label" for="filterTrainingName">培训名称</label>
-              <input type="text" id="filterTrainingName" class="form-control" list="trainingNamelist" placeholder="模糊匹配">
+              <label class="form-label" for="filterTrainingName"><span data-i18n="training_name">培训名称</span></label>
+              <input type="text" id="filterTrainingName" class="form-control" list="trainingNamelist" 
+              data-i18n-placeholder="placeholder_fuzzy_matching" placeholder="模糊匹配">
               <datalist id="trainingNamelist"></datalist>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="filterExamName">考试名称</label>
-              <input type="text" id="filterExamName" class="form-control" list="examNamelist" placeholder="模糊匹配">
+              <label class="form-label" for="filterExamName"><span data-i18n="exam_name">考试名称</span></label>
+              <input type="text" id="filterExamName" class="form-control" list="examNamelist" 
+              data-i18n-placeholder="placeholder_fuzzy_matching" placeholder="模糊匹配">
               <datalist id="examNamelist"></datalist>
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="filterStartDate">培训有效期开始</label>
+              <label class="form-label" for="filterStartDate"><span data-i18n="training_start">培训有效期开始</span></label>
               <input type="date" id="filterStartDate" class="form-control">
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="filterEndDate">培训有效期结束</label>
+              <label class="form-label" for="filterEndDate"><span data-i18n="training_end">培训有效期结束</span></label>
               <input type="date" id="filterEndDate" class="form-control">
             </div>
             <div class="col-md-6">
-              <label class="form-label" for="exportCountryInput" >国家</label>
-              <input type="text" id="exportCountryInput" class="form-control" list="countryDatalist" placeholder="请输入或选择国家名称" autocomplete="off">
+              <label class="form-label" for="exportCountryInput" ><span data-i18n="country">国家</span></label>
+              <input type="text" id="exportCountryInput" class="form-control" list="countryDatalist" 
+              data-i18n-placeholder="placeholder_select_or_input"
+              placeholder="请输入或选择国家名称" autocomplete="off">
               <datalist id="countryDatalist"></datalist>
               <input type="hidden" id="exportCountryCode">
             </div>
+            <div class="col-md-6">
+              <label class="form-label" for="filterWhId">库房编码/名称</label>
+              <input type="text" id="filterWhId" class="form-control" list="whDatalist" placeholder="模糊匹配库房编码或名称">
+              <datalist id="whDatalist"></datalist>
+            </div>
           </div>
-          <div class="form-text text-muted mt-3">提示：所有条件均为非必填，不选则导出全部数据。培训有效期指培训的签到起止时间。</div>
+          <div class="form-text text-muted mt-3"><span data-i18n="exportfiltermodal_tip">提示：所有条件均为非必填，不选则导出全部数据。培训有效期指培训的签到起止时间。</span></div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-          <button class="btn btn-primary" id="confirmExportBtn">确定导出</button>
+          <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+          <button class="btn btn-primary" id="confirmExportBtn"><span data-i18n="confirm_export">确定导出</span></button>
         </div>
       </div>
     </div>
@@ -518,7 +527,7 @@
         const endTime = document.getElementById('settingEndTime').value;
         const duration = parseInt(document.getElementById('settingDuration').value);
         if (!duration || duration <= 0) {
-            alert('请输入有效时长');
+            alert(t('t_enter_valid_duration'));
             return;
         }
         // 更新有效期和时长
@@ -528,11 +537,11 @@
             body: JSON.stringify({ start_time: startTime || null, end_time: endTime || null, duration: duration })
         });
         if (updateRes.ok) {
-            alert('设置已保存');
+            alert(t('t_setting_saved'));
             bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
             location.reload(); // 刷新列表
         } else {
-            alert('保存失败');
+            alert(t('t_save_failed'));
         }
     });
 
@@ -544,11 +553,11 @@
         const duration = parseInt(document.getElementById('settingDuration').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
         if (!duration || duration <= 0) {
-            alert('请输入有效时长');
+            alert(t('t_enter_valid_duration'));
             return;
         }
         if (userIds.length === 0) {
-            alert('请至少选择一个考生');
+            alert(t('t_choice_candidate'));
             return;
         }
         // 调用后端推送接口（需支持有效期、时长和考生列表）
@@ -563,11 +572,11 @@
             })
         });
         if (pushRes.ok) {
-            alert('设置已保存并已推送邮件通知');
+            alert(t('t_setting_saved_email_pushed'));
             bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
             location.reload();
         } else {
-            alert('操作失败');
+            alert(t('t_operation_failed'));
         }
     });
 
@@ -604,10 +613,10 @@
   async function deleteExam(examId, permanent) {
       const response = await fetch(`/admin/exam/delete/${examId}?permanent=${permanent}`, { method: 'POST' });
       if (response.ok) {
-          alert(permanent ? '考试已永久删除' : '考试已软删除（回收站）');
+          alert(permanent ? t('t_permanently_deleted') : t('t_soft_deleted'));
           location.reload();
       } else {
-          alert('删除失败');
+          alert(t('t_delete_failed'));
       }
   }
 
@@ -712,7 +721,7 @@
           currentExamId = examId;
           renderExamStatusTable(); // 首次渲染
       } catch (err) {
-          console.error('加载考生状态失败:', err);
+          console.error(t('t_failed_load_candidate_status'), err);
           container.innerHTML = `<div class="alert alert-danger">${t('load_failed')}</div>`;
       }
   }
@@ -785,7 +794,7 @@
       const countryCodeHidden = document.getElementById('exportCountryCode');
       if (countryInput && countryInput.value.trim()) {
           const valid = await validateCountryInput('exportCountryInput', 'exportCountryCode');
-          if (!valid) { alert('请选择有效的国家'); return; }
+          if (!valid) { alert(t('t_select_valid_country')); return; }
       } else {
           countryCodeHidden.value = '';
       }
@@ -794,13 +803,14 @@
       console.log('导出时国家代码:', countryCodeHidden.value);
       const btn = document.getElementById('confirmExportBtn');
       btn.disabled = true;
-      btn.textContent = '导出中...';
+      btn.textContent = t('t_exporting');
       const params = {
           country: document.getElementById('exportCountryCode').value,   // 使用标准化后的代码
           training_name: document.getElementById('filterTrainingName').value,
           exam_name: document.getElementById('filterExamName').value,
           start_date: document.getElementById('filterStartDate').value,
           end_date: document.getElementById('filterEndDate').value,
+          wh_id: document.getElementById('filterWhId').value.trim()   // 新增
       };
       try {
           const response = await fetch('/api/admin/export_filtered_excel', {
@@ -808,7 +818,7 @@
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(params)
           });
-          if (!response.ok) throw new Error('导出失败');
+          if (!response.ok) throw new Error(t('t_export_failed'));
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -819,10 +829,10 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
       } catch (err) {
-          alert('导出失败：' + err.message);
+          alert(t('t_export_failed') + '：' + err.message);
       } finally {
           btn.disabled = false;
-          btn.textContent = '确定导出';
+          btn.textContent = t('t_confirm_export');
           bootstrap.Modal.getInstance(document.getElementById('exportFilterModal')).hide();
       }
   });
@@ -840,7 +850,7 @@
           const names = await res.json();
           datalist.innerHTML = names.map(name => `<option value="${escapeHtml(name)}">`).join('');
       } catch (e) {
-          console.error('搜索培训失败', e);
+          console.error(t('t_search_training_failed'), e);
       }
   });
 
@@ -857,20 +867,32 @@
           const names = await res.json();
           datalist.innerHTML = names.map(name => `<option value="${escapeHtml(name)}">`).join('');
       } catch (e) {
-          console.error('搜索考试失败', e);
+          console.error(t('t_search_examination_failed'), e);
       }
   });
-
+  // 模糊搜索库房
+  document.getElementById('filterWhId').addEventListener('input', async function () {
+      const q = this.value.trim();
+      const datalist = document.getElementById('whDatalist');
+      if (q.length === 0) { datalist.innerHTML = ''; return; }
+      try {
+          const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
+          const items = await res.json();
+          datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
+      } catch (e) {
+          console.error('搜索库房失败', e);
+      }
+  });
   // 对当前考试批量导出PDF考试接口 0426
   async function batchExport(examId) {
       // 需要先获取该考试下的所有考生ID，然后调用批量导出接口
-      if (!confirm("确定导出该考试下所有考生的试卷吗？")) return;
+      if (!confirm(t('t_export_all_pdf'))) return;
       // 1. 获取该考试下的所有考生ID（一次性获取全部，避免分页）
       const res = await fetch(`/api/admin/exam/${examId}/scores?per_page=1000`);
       const data = await res.json();
       const userIds = data.data.map(item => item.user_id);
       if (userIds.length === 0) {
-          alert("该考试暂无考生");
+          alert(t('t_no_have_result'));
           return;
       }
       // 2. 调用批量导出接口
@@ -890,7 +912,7 @@
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
       } else {
-          alert("批量导出失败");
+          alert(t('t_batch_export_pdf_failed'));
       }
   }
 
