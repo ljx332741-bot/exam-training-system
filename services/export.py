@@ -5,6 +5,7 @@ import subprocess
 import os
 import sys
 import re
+# from weasyprint import HTML
 from config import Config
 from services.db import get_supabase
 import pdfkit
@@ -14,6 +15,7 @@ from openpyxl.utils import get_column_letter
 from datetime import datetime
 from collections import defaultdict
 import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -165,11 +167,11 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
             # 获取考生答案（兼容 q_ 前缀和纯数字键）
             user_answer_raw = answers.get(f'q_{qid}', answers.get(qid, ''))
             if not user_answer_raw:
-                user_answer_raw = "未作答not answered"
+                user_answer_raw = "未作答"
 
             detail = details.get(qid, {})
             is_correct = detail.get('correct', False)
-            mark = '[√]' if is_correct else '[×]'
+            mark = '✅' if is_correct else '❌'
 
             # 题干
             stem = q.get('content_cn') or q.get('content', '')
@@ -205,7 +207,7 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
             # 显示考生答案及对错
             html += f'''
             <div class="user-answer">
-                考生答案CA：{user_display} 
+                考生答案：{user_display} 
                 <span class="{'correct-mark' if is_correct else 'incorrect-mark'}">{mark}</span>
             </div>
             '''
@@ -303,7 +305,7 @@ def generate_pdf(user_name, score, questions, answers, details, reviewer, lang_p
         <div class="q-block">
           <strong>{q.get('num')}. </strong>{content_html} ({q.get('score')}分) <span class="tag {'tag-ok' if is_correct else 'tag-err'}">{mark}</span><br>
           <div class="ms-3 mt-2">{options_html}</div>
-          <small class="text-muted">考生答案CA：{u_ans} | 标准答案SA：{q.get('answer')}</small>
+          <small class="text-muted">考生答案：{u_ans} | 标准答案：{q.get('answer')}</small>
         </div>
         """
     pdf_bytes = HTML(string=html).write_pdf()
@@ -600,41 +602,25 @@ def generate_bilingual_excel(training_id: int, exam_id: int, country: str = None
     filename = f"培训报告_{training_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return buffer, filename
 
-def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end_date):
+def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end_date, user_ids=None, wh_id=None):
     """
-    生成双语Excel报告（支持多培训和多考试）
+    生成双语Excel报告，支持按国家、库房、培训名称、考试名称筛选
+    user_ids: 外部计算好的允许用户ID列表（None表示不限制）
+    wh_id: 库房编码，用于分组逻辑
     """
-    # 防御：确保参数为列表
     if not isinstance(trainings, list): trainings = []
     if not isinstance(exams, list): exams = []
 
-    db = get_supabase()    
-    # 如果指定了国家，先获取该国所有用户ID，用于后续过滤
-    # 国家过滤：获取该国所有用户ID
-    user_ids_for_country = None
-    if country:
-        users_res = db.table("users").select("id").eq("country", country).execute()
-        user_ids_for_country = [u['id'] for u in (users_res.data or [])]
-        logger.info(f"国家过滤：country='{country}'，匹配用户数={len(user_ids_for_country)}")
-        if not user_ids_for_country:
-            logger.warning(f"没有国家为 {country} 的用户，生成空报告")
-            # 直接返回一个空 Excel，避免后续查询错误
-            wb = openpyxl.Workbook()
-            wb.active.title = "空报告"
-            buffer = BytesIO()
-            wb.save(buffer)
-            buffer.seek(0)
-            filename = f"培训考试综合报告_空_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            return buffer, filename
-
+    db = get_supabase()
     wb = openpyxl.Workbook()
     clean_title = lambda s: re.sub(r'[\\/*?:\[\]]', ' ', s).strip()
+
+    # 预处理：获取所有可能用到的用户信息（如果 user_ids 不为空，可以加速查询，但此处不优化）
 
     # ========== 工作表1：培训信息汇总 ==========
     ws1 = wb.active
     ws1.title = clean_title("培训信息汇总 Training Summary")
 
-    # 表头（同原有）
     headers1 = [
         ("序号\nNO.", "NO."),
         ("库房类型\nWH Type", "WH Type"),
@@ -657,77 +643,120 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-        cell.border = Border(
-            left=Side(style="thin"), right=Side(style="thin"),
-            top=Side(style="thin"), bottom=Side(style="thin")
-        )
+        cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                             top=Side(style="thin"), bottom=Side(style="thin"))
 
-    # 遍历所有培训，写入数据行
+    # 构建 training_id -> meta 映射
+    training_metas = {}
+    training_names = {}
+    for t in trainings:
+        training_metas[t['id']] = t.get('header_template', {})
+        training_names[t['id']] = t.get('name', '')
+
     row_idx = 2
-    db = get_supabase()  # 需要在函数内获取数据库连接
+
     for training in trainings:
-        # 获取培训的元数据（header_template）
-        meta = training.get('header_template', {})
-        # 查询该培训的签到记录（通过 training_attendances）
-        query = db.table("training_attendances") \
-            .select("*, users(*)") \
-            .eq("training_id", training['id'])
-        if user_ids_for_country:
-            query = query.in_("user_id", user_ids_for_country)
-        att_res = query.execute()
-        signs = att_res.data or []
-        logger.info(f"培训 {training['id']} ({training.get('name')}) 过滤后签到记录数: {len(signs)}")
+        tid = training['id']
+        # 查询该培训下的签到记录（已用 user_ids 过滤）
+        query = db.table("training_attendances").select("*, users(*)").eq("training_id", tid)
+        if user_ids is not None:
+            query = query.in_("user_id", user_ids)
+        signs = query.execute().data or []
+        if not signs:
+            continue
 
-        # 按库房分组（这里简化，直接按用户公司分组）
-        warehouse_stats = {}
-        for sign in signs:
-            user = sign.get('users', {})
-            wh_type = user.get('wh_type', '')
-            wh_id = user.get('wh_id', '')
-            wh_name_cn = user.get('wh_name_en', '')
-            wh_name_en = user.get('wh_name_en', '')
-            key = (wh_type, wh_id)
-            if key not in warehouse_stats:
-                warehouse_stats[key] = {
-                    "wh_name_cn": wh_name_en,
-                    "wh_name_en": wh_name_en,
-                    "trainees": set(),
-                    "providers": set(),
-                    "sign_dates": []
-                }
-            warehouse_stats[key]["trainees"].add(sign.get('user_id'))
-            warehouse_stats[key]["sign_dates"].append(sign.get('sign_time'))
-            # 第三方判断（根据邮箱或其他字段）
-            is_partner = user.get('is_partner')
-            if is_partner is True or str(is_partner).upper() == 'Y':
-                warehouse_stats[key]["providers"].add(sign.get('user_id'))
+        meta = training_metas.get(tid, {})
 
-        for (wh_type, wh_id), stats in warehouse_stats.items():
-            row_data = [
-                row_idx - 1,
-                wh_type,
-                wh_id,
-                stats["wh_name_cn" or "wh_name_en"],
-                stats["wh_name_en"],
-                meta.get("project_no", ""),
-                training.get('name', ''),
-                meta.get("language", ""),
-                meta.get("lecturer", ""),
-                min(stats["sign_dates"])[:10] if stats["sign_dates"] else "",
-                meta.get("duration", ""),
-                "第三方服务商" if len(stats["providers"]) > 0 else "内部员工",
-                len(stats["providers"]),
-                len(stats["trainees"]),
-                ""
-            ]
-            for col_idx, value in enumerate(row_data, 1):
-                cell = ws1.cell(row=row_idx, column=col_idx, value=value)
-                cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = Border(
-                    left=Side(style="thin"), right=Side(style="thin"),
-                    top=Side(style="thin"), bottom=Side(style="thin")
-                )
-            row_idx += 1
+        # 分组：若指定了库房，按培训自身分组；否则按国家分组
+        if wh_id:
+            # 固定库房，所有签到合并为一个组（该培训在该库房下）
+            groups = {'default': {'trainees': set(), 'partner_companies': set(), 'sign_dates': []}}
+            for sign in signs:
+                user = sign.get('users', {})
+                groups['default']['trainees'].add(sign['user_id'])
+                groups['default']['sign_dates'].append(sign['sign_time'])
+                if user.get('is_partner'):
+                    company = user.get('company', '').strip()
+                    if company:
+                        groups['default']['partner_companies'].add(company)
+            # 获取库房信息（从第一个用户中提取，实际上同一个库房）
+            first_user = (signs[0] if signs else {}).get('users', {})
+            wh_type_val = first_user.get('wh_type', '')
+            wh_id_val = wh_id
+            wh_name_val = first_user.get('wh_name_en', '')
+            for g_key, g in groups.items():
+                partner_str = '/'.join(sorted(g['partner_companies'])) if g['partner_companies'] else '内部员工'
+                partner_count = len(g['partner_companies'])
+                row_data = [
+                    row_idx - 1,
+                    wh_type_val,
+                    wh_id_val,
+                    wh_name_val,
+                    wh_name_val,
+                    meta.get("project_no", ""),
+                    training_names[tid],
+                    meta.get("language", ""),
+                    meta.get("lecturer", ""),
+                    min(g['sign_dates'])[:10] if g['sign_dates'] else "",
+                    meta.get("duration", ""),
+                    partner_str,
+                    partner_count,
+                    len(g['trainees']),
+                    ""
+                ]
+                for col_idx, value in enumerate(row_data, 1):
+                    cell = ws1.cell(row=row_idx, column=col_idx, value=value)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                                         top=Side(style="thin"), bottom=Side(style="thin"))
+                row_idx += 1
+        else:
+            # 按国家分组（每个国家＋培训一行）
+            country_groups = defaultdict(lambda: {'trainees': set(), 'partner_companies': set(), 'sign_dates': [], 'wh_info': {}})
+            for sign in signs:
+                user = sign.get('users', {})
+                cty = user.get('country', 'Unknown')
+                grp = country_groups[cty]
+                grp['trainees'].add(sign['user_id'])
+                grp['sign_dates'].append(sign['sign_time'])
+                if user.get('is_partner'):
+                    company = user.get('company', '').strip()
+                    if company:
+                        grp['partner_companies'].add(company)
+                # 保存该国家的库房信息（取第一个出现的用户数据）
+                if not grp['wh_info']:
+                    grp['wh_info'] = {
+                        'wh_type': user.get('wh_type', ''),
+                        'wh_id': user.get('wh_id', ''),
+                        'wh_name_en': user.get('wh_name_en', '')
+                    }
+            for cty, grp in country_groups.items():
+                partner_str = '/'.join(sorted(grp['partner_companies'])) if grp['partner_companies'] else '内部员工'
+                partner_count = len(grp['partner_companies'])
+                row_data = [
+                    row_idx - 1,
+                    grp['wh_info'].get('wh_type', ''),
+                    grp['wh_info'].get('wh_id', ''),
+                    grp['wh_info'].get('wh_name_en', ''),
+                    grp['wh_info'].get('wh_name_en', ''),
+                    meta.get("project_no", ""),
+                    training_names[tid],
+                    meta.get("language", ""),
+                    meta.get("lecturer", ""),
+                    min(grp['sign_dates'])[:10] if grp['sign_dates'] else "",
+                    meta.get("duration", ""),
+                    partner_str,
+                    partner_count,
+                    len(grp['trainees']),
+                    ""
+                ]
+                # 增加国家标识（国家列未在表头中？实际表头没有国家列，但需求提到按国家分组，我们可以将国家信息附加在培训名称后，或忽略。原需求并未要求显示国家列，但要求每个国家一行，此处库房信息可体现不同。若需直观，可在备注列前加国家列，但表头已固定。此处暂不显示国家，行区分已足够。）
+                for col_idx, value in enumerate(row_data, 1):
+                    cell = ws1.cell(row=row_idx, column=col_idx, value=value)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                                         top=Side(style="thin"), bottom=Side(style="thin"))
+                row_idx += 1
 
     # 调整列宽
     for col in range(1, len(headers1) + 1):
@@ -736,8 +765,8 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     # ========== 工作表2：知识测评汇总表 ==========
     ws2 = wb.create_sheet(title=clean_title("知识测评汇总表 Assessment Summary"))
 
-    # 收集每个考试的题目列表，并确定最大列数
-    exam_questions_dict = {}   # exam_id -> list of questions (sorted by num)
+    # 收集所有考试题目及最大列数
+    exam_questions_dict = {}
     max_questions = 0
     for exam in exams:
         q_res = db.table("questions").select("id, num").eq("exam_id", exam['id']).order("num").execute()
@@ -746,8 +775,6 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         if len(questions) > max_questions:
             max_questions = len(questions)
 
-    # 固定表头
-    # 固定表头（A‑J）
     headers2_fixed = [
         ("序号\nNO.", "NO."),
         ("国家\nCountry", "Country"),
@@ -763,6 +790,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     dynamic_col_count = max_questions
     remark_col = len(headers2_fixed) + dynamic_col_count + 1
     total_header_cols = remark_col
+
 
     # ========== 第一行表头 ==========
     # 固定列：合并第一、二行，写入列标题
@@ -823,43 +851,30 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                     c.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # 遍历考试，写入成绩行
-    row_idx = 3
-    for exam in exams:
-        if user_ids_for_country is not None:
-            query = query.in_("user_id", user_ids_for_country)
-        # 查询该考试的所有成绩记录（不带 users 嵌套）
-        results_query = db.table("exam_results") \
-            .select("*") \
-            .eq("exam_id", exam['id'])
-        if user_ids_for_country:
-            results_query = results_query.in_("user_id", user_ids_for_country)
-        results_res = results_query.execute()
-        results_all = results_res.data or []
-        logger.info(f"考试 {exam['id']} 原始记录数: {len(results_all)}")
-        logger.info(f"考试 {exam['id']} ({exam.get('title')}) 过滤后成绩记录数: {len(results_all)}")
 
-        # 去重：每个用户只保留最新一次考试成绩（按其 created_at 字段）
+    row_idx2 = 3  # 数据从第3行开始
+    for exam in exams:
+        results_query = db.table("exam_results").select("*").eq("exam_id", exam['id'])
+        if user_ids is not None:
+            results_query = results_query.in_("user_id", user_ids)
+        results_all = results_query.execute().data or []
+        # 去重：每个用户只保留最新一次成绩
         latest_map = {}
         for r in results_all:
             uid = r['user_id']
             if uid not in latest_map or r.get('created_at', '') > latest_map[uid].get('created_at', ''):
                 latest_map[uid] = r
         results = list(latest_map.values())
-        logger.info(f"考试 {exam['id']} 去重后记录数: {len(results)}，用户ID: {[r['user_id'] for r in results]}")
 
-        # 收集所有 user_id
-        user_ids = list(set([r['user_id'] for r in results]))
+        user_ids_set = list(set([r['user_id'] for r in results]))
         users_map = {}
-        if user_ids:
-            # 批量查询用户信息
-            users_res = db.table("users").select("*").in_("id", user_ids).execute()
+        if user_ids_set:
+            users_res = db.table("users").select("*").in_("id", user_ids_set).execute()
             for u in users_res.data or []:
                 users_map[u['id']] = u
 
         for result in results:
             user = users_map.get(result['user_id'], {})
-            # 解析 details（同上）
             details_raw = result.get('details', {})
             if isinstance(details_raw, str):
                 try:
@@ -869,12 +884,10 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             else:
                 details = details_raw
 
-            # 生成 Y/N 数组（同上）
             exam_questions = exam_questions_dict.get(exam['id'], [])
             answer_status = []
             for q in exam_questions:
                 q_id = str(q['id'])
-                # 优先用纯 id，再用带 'q_' 前缀（兼容可能的混用）
                 q_detail = details.get(q_id) or details.get(f'q_{q_id}')
                 if isinstance(q_detail, dict):
                     is_correct = q_detail.get('correct', False)
@@ -885,7 +898,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 answer_status.append("")
 
             row_data = [
-                row_idx - 2,
+                row_idx2 - 2,
                 user.get('country', ''),
                 user.get('wh_type', ''),
                 user.get('wh_id', ''),
@@ -897,22 +910,19 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 result.get('custom1', ''),
             ] + answer_status + [result.get('custom5', '')]
 
-            # 写入单元格（同前）
             for col_idx, value in enumerate(row_data, 1):
-                cell = ws2.cell(row=row_idx, column=col_idx, value=value)
+                cell = ws2.cell(row=row_idx2, column=col_idx, value=value)
                 cell.alignment = Alignment(horizontal="center", vertical="center")
-                cell.border = Border(
-                    left=Side(style="thin"), right=Side(style="thin"),
-                    top=Side(style="thin"), bottom=Side(style="thin")
-                )
+                cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                                     top=Side(style="thin"), bottom=Side(style="thin"))
                 if len(headers2_fixed) + 1 <= col_idx <= len(headers2_fixed) + max_questions:
                     if value == "Y":
                         cell.font = Font(color="008000", bold=True)
                     elif value == "N":
                         cell.font = Font(color="FF0000", bold=True)
-            row_idx += 1
+            row_idx2 += 1
 
-    # 调整列宽
+    # 调整列宽...
     for col in range(1, remark_col + 1):
         if col <= len(headers2_fixed):
             ws2.column_dimensions[get_column_letter(col)].width = 15
@@ -922,17 +932,13 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             ws2.column_dimensions[get_column_letter(col)].width = 20
 
     # ========== 工作表3：访谈检查结果 ==========
-    # 仅当考试列表非空时才生成访谈汇总
     if exams:
         ws3 = wb.create_sheet(title=clean_title("访谈检查结果 Interview Results"))
-        # 收集所有考试ID
         exam_ids = [ex['id'] for ex in exams]
-        # 查询这些考试对应的所有访谈（未被软删除）
         interviews_query = db.table("interviews").select("*").in_("exam_id", exam_ids).is_("deleted_at", "null").order("created_at", desc=True).execute()
         interviews = interviews_query.data or []
 
         if interviews:
-            # 表头
             headers3 = [
                 ("序号\nNO.", "NO."),
                 ("国家\nCountry", "Country"),
@@ -952,77 +958,61 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 cell.font = Font(bold=True, color="FFFFFF")
                 cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
-                cell.border = Border(
-                    left=Side(style="thin"), right=Side(style="thin"),
-                    top=Side(style="thin"), bottom=Side(style="thin")
-                )
+                cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                                     top=Side(style="thin"), bottom=Side(style="thin"))
 
-            row_idx = 2
+            row_idx3 = 2
             for interview in interviews:
-                # 获取该访谈的所有答题记录
-                results_res = db.table("interview_results").select("*").eq("interview_id", interview['id']).execute()
-                all_rows = results_res.data or []
+                all_rows = db.table("interview_results").select("*").eq("interview_id", interview['id']).execute().data or []
+                if user_ids is not None:
+                    all_rows = [r for r in all_rows if r['user_id'] in user_ids]
                 if not all_rows:
                     continue
 
-                # 获取涉及的用户ID
-                user_ids = list(set(r['user_id'] for r in all_rows))
+                user_ids_set = list(set(r['user_id'] for r in all_rows))
                 users_map = {}
-                if user_ids:
-                    users_res = db.table("users").select("id, name_cn, name_en, country, wh_type, wh_id, wh_name_en, department").in_("id", user_ids).execute()
-                    for u in (users_res.data or []):
+                if user_ids_set:
+                    users_res = db.table("users").select("id, name_cn, name_en, country, wh_type, wh_id, wh_name_en, department").in_("id", user_ids_set).execute()
+                    for u in users_res.data or []:
                         users_map[u['id']] = u
 
-                # 按用户聚合
                 user_stats = {}
                 for row in all_rows:
                     uid = row['user_id']
                     if uid not in user_stats:
-                        user_stats[uid] = {
-                            'total': 0,
-                            'correct': 0,
-                            'submitted_at': None,
-                            'feedback': ''
-                        }
+                        user_stats[uid] = {'total': 0, 'correct': 0, 'submitted_at': None, 'feedback': ''}
                     user_stats[uid]['total'] += 1
                     if row.get('is_correct'):
                         user_stats[uid]['correct'] += 1
                     if row.get('submitted_at') and (not user_stats[uid]['submitted_at'] or row['submitted_at'] > user_stats[uid]['submitted_at']):
                         user_stats[uid]['submitted_at'] = row['submitted_at']
-                    if row.get('feedback'):
-                        # 合并反馈或取第一个
-                        if not user_stats[uid]['feedback']:
-                            user_stats[uid]['feedback'] = row['feedback']
+                    if row.get('feedback') and not user_stats[uid]['feedback']:
+                        user_stats[uid]['feedback'] = row['feedback']
 
-                # 确定反馈人：可取该用户所在部门或检查人员
                 reviewer = interview.get('reviewer', '')
-
                 for uid, stats in user_stats.items():
                     user = users_map.get(uid, {})
                     row_data = [
-                        row_idx - 1,                                  # 序号
-                        user.get('country', ''),                      # 国家
-                        user.get('wh_type', ''),                      # 库房类型
-                        user.get('wh_id', ''),                        # 库房编码
-                        user.get('wh_name_en') or user.get('name_cn') or user.get('name_en', ''),  # 库房名称
-                        user.get('name_cn') or user.get('name_en', ''),  # 访谈人员姓名
-                        stats['submitted_at'][:19] if stats['submitted_at'] else '',  # 检查时间
-                        reviewer,                                      # 检查人员
-                        stats['total'],                                # 访谈问题数量
-                        stats['correct'],                              # 答对问题数量
-                        stats['feedback'],                             # 备注
-                        user.get('department', ''),                    # 反馈人（部门）
+                        row_idx3 - 1,
+                        user.get('country', ''),
+                        user.get('wh_type', ''),
+                        user.get('wh_id', ''),
+                        user.get('wh_name_en') or user.get('name_cn') or user.get('name_en', ''),
+                        user.get('name_cn') or user.get('name_en', ''),
+                        stats['submitted_at'][:19] if stats['submitted_at'] else '',
+                        reviewer,
+                        stats['total'],
+                        stats['correct'],
+                        stats['feedback'],
+                        user.get('department', ''),
                     ]
                     for col_idx, value in enumerate(row_data, 1):
-                        cell = ws3.cell(row=row_idx, column=col_idx, value=value)
+                        cell = ws3.cell(row=row_idx3, column=col_idx, value=value)
                         cell.alignment = Alignment(horizontal="center", vertical="center")
-                        cell.border = Border(
-                            left=Side(style="thin"), right=Side(style="thin"),
-                            top=Side(style="thin"), bottom=Side(style="thin")
-                        )
-                    row_idx += 1
+                        cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
+                                             top=Side(style="thin"), bottom=Side(style="thin"))
+                    row_idx3 += 1
 
-            # 调整列宽
             for col in range(1, len(headers3) + 1):
                 ws3.column_dimensions[get_column_letter(col)].width = 15
 
@@ -1030,5 +1020,4 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     wb.save(buffer)
     buffer.seek(0)
     filename = f"培训考试综合报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-
     return buffer, filename
