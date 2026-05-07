@@ -453,7 +453,7 @@ def api_reset_password():
     """密码重置，用户自身重置"""
     d = request.json
     if not auth.verify_otp(d.get('email'), d.get('otp')):
-        return jsonify({"success": False, "message": "验证码无效"})
+        return jsonify({"success": False, "message": "otp_invalid", "params": []})
     db = get_supabase()
     db.table("users").update({
         "password_hash": auth.hash_password(d['password'])
