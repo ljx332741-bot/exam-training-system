@@ -103,7 +103,8 @@
     const res = await fetch('/api/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
     const json = await res.json();
     if (json.success) { alert(window.i18n.t('js_reset_successful_tip')); location.reload(); }
-    else alert(json.message || window.i18n.t('js_reset_failed'));
+    // else alert(json.message || window.i18n.t('js_reset_failed'));
+    else apiAlert(json);   // 使用全局翻译函数
   });
 </script>
 {% endblock %}
