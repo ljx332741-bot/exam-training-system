@@ -1,11 +1,11 @@
-﻿<!-- templates/admin/list_trainings.html -->
+<!-- templates/admin/list_trainings.html -->
 {% extends "base.html" %}
 {% block title %}培训管理{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-calendar-event"></i> 培训签到管理</h2>
+        <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
     </div>
 
     <!-- 过滤栏 -->
@@ -13,22 +13,28 @@
         <div class="card-body">
             <div class="row g-3">
                 <div class="col-md-3">
-                    <input type="text" id="filterName" class="form-control" placeholder="培训名称">
+                    <input type="text" id="filterName" class="form-control" 
+                    data-i18n-placeholder="placeholder_training_name"
+                    placeholder="培训名称">
                 </div>
                 <div class="col-md-3">
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" placeholder="国家" autocomplete="off">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                    data-i18n-placeholder="placeholder_country"
+                    placeholder="国家" autocomplete="off">
                     <datalist id="countryDatalist"></datalist>
                 </div>
                 <div class="col-md-2">
-                    <input type="text" id="filterQuarter" class="form-control" list="quarterDatalist" placeholder="季度 (如2025Q1)">
+                    <input type="text" id="filterQuarter" class="form-control" list="quarterDatalist" 
+                    data-i18n-placeholder="placeholder_quarter"
+                    placeholder="季度 (如2025Q1)">
                     <datalist id="quarterDatalist"></datalist>
                 </div>
                 <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary">搜索</button>
+                    <button id="searchBtn" class="btn btn-primary"><span data-i18n="search">搜索</span></button>
                 </div>
                 <div class="col-md-2">
                     <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
-                    <!-- <button class="btn btn-primary" id="newTrainingBtn"><i class="bi bi-plus-circle"></i> 新增培训</button> -->
+                    <button class="btn btn-primary" id="newTrainingBtn"><i class="bi bi-plus-circle"></i> <span data-i18n="new_training">新增培训</span></button>
                 </div>
             </div>
         </div>
@@ -70,23 +76,25 @@
                     </thead>
                     <tbody id="trainingsTbody">
                         <tr id="newTrainingTemplate" style="display: none;">
-                            <td><input type="text" id="newCountry" class="form-control form-control-sm" list="countryDatalist" placeholder="国家代码"></td>
-                            <td><input type="text" id="newName" class="form-control form-control-sm" placeholder="培训名称"></td>
-                            <td colspan="2"></td>
-                            <td><input type="datetime-local" id="newStartTime" class="form-control form-control-sm"> 至 <input type="datetime-local" id="newEndTime" class="form-control form-control-sm"></td>
-                            <td colspan="2"></td>
+                            <td><input type="text" id="newCountry" class="form-control form-control-sm" list="countryDatalist" 
+                                data-i18n-placeholder="placeholder_country_code" placeholder="国家代码"></td>
+                            <td><input type="text" id="newName" class="form-control form-control-sm" 
+                                data-i18n-placeholder="placeholder_training_name" placeholder="培训名称"></td>
+                            <td colspan="3"></td>
+                            <td><input type="datetime-local" id="newStartTime" class="form-control form-control-sm"> - <input type="datetime-local" id="newEndTime" class="form-control form-control-sm"></td>
+                            <td colspan="1"></td>
                             <td>
-                                <button class="btn btn-sm btn-success save-new-training">保存</button>
-                                <button class="btn btn-sm btn-secondary cancel-new-training">取消</button>
+                                <button class="btn btn-sm btn-success save-new-training"><span data-i18n="save">保存</span></button>
+                                <button class="btn btn-sm btn-secondary cancel-new-training"><span data-i18n="cancel">取消</span></button>
                             </td>
                         </tr>
-                        </tr><td colspan="9" class="text-center">加载中...</td></tr>
+                        </tr><td colspan="9" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
         <div class="card-footer d-flex justify-content-between align-items-center">
-            <div>共 <span id="totalCount">0</span> 条记录</div>
+            <div><span data-i18n="total">共</span> <span id="totalCount">0</span> <span data-i18n="record">条记录</span></div>
             <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
         </div>
     </div>
@@ -97,7 +105,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-light">
-                <h5 class="modal-title">📋 培训表头录入（标黄字段）</h5>
+                <h5 class="modal-title"><span data-i18n="training_header_input">📋 培训表头录入</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -106,51 +114,51 @@
                     <input type="hidden" id="currentEditCountry" value="">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label" for="course_name">培训课程名称（双语）</label>
+                            <label class="form-label" for="course_name">培训课程名称（双语）Training Course Name</label>
                             <input type="text" class="form-control" name="course_name" id="course_name">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="project_no">培训项目编号</label>
+                            <label class="form-label" for="project_no">培训项目编号Training Project NO.</label>
                             <input type="text" class="form-control" name="project_no" id="project_no">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="venue">培训地点（双语）</label>
+                            <label class="form-label" for="venue">培训地点（双语）Training Venue</label>
                             <input type="text" class="form-control" name="venue" id="venue">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="language">培训语言</label>
+                            <label class="form-label" for="language">培训语言Language</label>
                             <input type="text" class="form-control" name="language" id="language">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="target">培训对象（双语）</label>
+                            <label class="form-label" for="target">培训对象（双语）Target Trainees</label>
                             <input type="text" class="form-control" name="target" id="target">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="dept">培训组织部门（双语）</label>
+                            <label class="form-label" for="dept">培训组织部门（双语）Training Organizing Dept</label>
                             <input type="text" class="form-control" name="dept" id="dept">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="organizer">培训组织者</label>
+                            <label class="form-label" for="organizer">培训组织者Training Organizer</label>
                             <input type="text" class="form-control" name="organizer" id="organizer">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="training_date">培训年月日</label>
+                            <label class="form-label" for="training_date">培训年月日Training Date</label>
                             <input type="date" class="form-control" name="training_date" id="training_date">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="lecturer">主讲人</label>
+                            <label class="form-label" for="lecturer">主讲人Course Lecturer</label>
                             <input type="text" class="form-control" name="lecturer" id="lecturer">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="translator">翻译员</label>
+                            <label class="form-label" for="translator">翻译员Translator</label>
                             <input type="text" class="form-control" name="translator" id="translator">
                         </div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-primary" id="saveHeaderBtn">保存模板</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button type="button" class="btn btn-primary" id="saveHeaderBtn"><span data-i18n="save">保存</span></button>
             </div>
         </div>
     </div>
@@ -161,19 +169,19 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">📢 推送培训签到</h5>
+                <h5 class="modal-title">📢 <span data-i18n="push_sign_in_notify">推送培训签到</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <label class="form-label" for="start_time">签到开始时间</label>
+                <label class="form-label" for="start_time"><span data-i18n="sign_in_start">签到开始时间</span></label>
                 <input type="datetime-local" class="form-control mb-3" id="start_time">
-                <label class="form-label" for="end_time">签到结束时间</label>
+                <label class="form-label" for="end_time"><span data-i18n="sign_in_end">签到结束时间</span></label>
                 <input type="datetime-local" class="form-control" id="end_time">
-                <div class="form-text">时间将自动转换为服务器UTC时间存储，前端显示会转为本地时区。</div>
+                <div class="form-text"><span data-i18n="local_time_tip">时间将自动转换为服务器UTC时间存储，前端显示会转为本地时区。</span></div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button type="button" class="btn btn-success" id="confirmPushBtn">确认推送</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button type="button" class="btn btn-success" id="confirmPushBtn"><span data-i18n="confirm_push">确认推送</span></button>
             </div>
         </div>
     </div>
@@ -185,7 +193,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
-                    按国家分组签到记录 - <span id="groupModalTrainingName"></span>
+                    <span data-i18n="sign_in_records_by_country_group">按国家分组签到记录</span> - <span id="groupModalTrainingName"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -194,9 +202,9 @@
                     <table class="table table-bordered">
                         <thead class="table-light">
                             <tr>
-                                <th>国家</th>
-                                <th>签到人数</th>
-                                <th>操作</th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="sign_count">签到人数</span></th>
+                                <th><span data-i18n="actions">操作</span></th>
                             </tr>
                         </thead>
                         <tbody id="groupTableBody"></tbody>
@@ -204,7 +212,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
             </div>
         </div>
     </div>
@@ -217,6 +225,29 @@
     let filters = { name: '', country: '', quarter: '' };
     let currentTrainingId = null;
     let currentHeaderTemplate = {};
+
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    function safeT(key, fallback = '') {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key) || fallback || key;
+        }
+        return fallback || key;
+    }
 
     // ---------- 季度辅助 ----------
     function getQuarterFromDate(isoDate) {
@@ -293,50 +324,50 @@
             let statusText = '', statusClass = '';
             switch (t.dynamic_status) {
                 case 'draft':
-                    statusText = '草稿';
+                    statusText = safeT('t_draft');
                     statusClass = 'bg-secondary';
                     break;
                 case 'pending':
-                    statusText = '未推送';
+                    statusText = safeT('t_pending');
                     statusClass = 'bg-warning text-dark';
                     break;
                 case 'active':
-                    statusText = '已推送';
+                    statusText = safeT('t_pushed');
                     statusClass = 'bg-success';
                     break;
                 case 'closed':
-                    statusText = '已关闭';
+                    statusText = safeT('t_closed');
                     statusClass = 'bg-danger';
                     break;
                 default:
-                    statusText = '未知';
+                    statusText = safeT('t_unknown');
                     statusClass = 'bg-light text-dark';
             }
             row.innerHTML = `
                 <td>${t.id}</td>
-                <td class="country-cell" title="${escapeHtml(t.country || '通用')}">${escapeHtml(t.country || '通用')}</td>
+                <td class="country-cell" title="${escapeHtml(t.country || safeT('t_general'))}">${escapeHtml(t.country || safeT('t_general'))}</td>
                 <td class="name-cell" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
                 <td>${quarter}</td>
                 <td>${t.signed_count || 0}</td>
                 <td title="${new Date(t.created_at).toLocaleString()}">${new Date(t.created_at).toLocaleString()}</td>
                 <td 
-                    class="time-range" title="${formatDate(t.start_time)} 至 ${formatDate(t.end_time)}">
-                    ${formatDate(t.start_time)} 至 ${formatDate(t.end_time)}
+                    class="time-range" title="${formatDate(t.start_time)} - ${formatDate(t.end_time)}">
+                    ${formatDate(t.start_time)} - ${formatDate(t.end_time)}
                 </td>
                 <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary edit-name-btn" data-id="${t.id}">编辑名称</button>
+                    <button class="btn btn-sm btn-outline-primary edit-name-btn" data-id="${t.id}">${safeT('t_edit_name')}</button>
                     <button class="btn btn-sm btn-outline-info header-btn" 
                             data-id="${t.id}"
                             ${t.has_inconsistent_templates ? 'disabled' : ''}
                             title="${t.has_inconsistent_templates ? '存在多个国家模板，请在分组详情页分别录入' : '录入表头字段'}">
-                        📋 表头录入
+                        📋 ${safeT('t_header_input')}
                     </button>
-                    <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}">推送</button>
-                    ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary">详情</a>` : 
-                    `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}">详情(按国家)</button>`}
-                    <button class="btn btn-sm btn-outline-secondary copy-training-btn" data-id="${t.id}">复制</button>
-                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${t.id}">删除</button>
+                    <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}">${safeT('t_push')}</button>
+                    ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary">${safeT('t_details')}</a>` : 
+                    `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}">${safeT('t_details_by_country')}</button>`}
+                    <button class="btn btn-sm btn-outline-secondary copy-training-btn" data-id="${t.id}">${safeT('t_copy')}</button>
+                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${t.id}">${safeT('t_delete')}</button>
                   </td>
             `;
         });
@@ -431,7 +462,7 @@
         // 删除
         document.querySelectorAll('.delete-btn').forEach(btn => {
             btn.onclick = async (e) => {
-                if(confirm('确定删除该培训吗？所有签到记录也会被删除。')) {
+                if(confirm(safeT('t_training_delete_tip'))) {
                     const id = btn.dataset.id;
                     await fetch(`/api/admin/trainings?id=${id}`, {method: 'DELETE'});
                     loadTrainings();
@@ -448,7 +479,7 @@
         });
 
         // 新增培训复制按钮
-        // document.getElementById('newTrainingBtn').onclick = addNewTrainingRow;
+        document.getElementById('newTrainingBtn').onclick = addNewTrainingRow;
         document.querySelectorAll('.copy-training-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const trainingId = btn.dataset.id;
@@ -457,7 +488,7 @@
                 const data = await res.json();
                 const training = Array.isArray(data) ? data[0] : data.data?.[0];
                 if (!training) {
-                    alert('获取培训数据失败');
+                    alert(safeT('t_failed_to_obtain_training_data'));
                     return;
                 }
                 // 准备预填数据
@@ -495,8 +526,8 @@
                     <td>${g.country}</td>
                     <td>${g.count}</td>
                     <td>
-                        <button class="btn btn-sm btn-primary view-country-attendance" data-training-id="${trainingId}" data-country="${g.country}">查看签到记录导出</button>
-                        <button class="btn btn-sm btn-outline-info country-header-btn" data-training-id="${trainingId}" data-country="${g.country}">表头录入</button>
+                        <button class="btn btn-sm btn-primary view-country-attendance" data-training-id="${trainingId}" data-country="${g.country}">${safeT('t_view_sign_in_records_export')}</button>
+                        <button class="btn btn-sm btn-outline-info country-header-btn" data-training-id="${trainingId}" data-country="${g.country}">${safeT('t_header_input')}</button>
                     </td>
                 </tr>
             `).join('');
@@ -609,8 +640,8 @@
             document.getElementById('lecturer').value = template.lecturer || '';
             document.getElementById('translator').value = template.translator || '';
         } catch (err) {
-            console.error('加载培训详情失败:', err);
-            alert('加载培训详情失败，请稍后重试');
+            console.error(safeT('t_failed_load_training_detals'), err);
+            alert(safeT('t_failed_load_training_detals_try_later'));
         }
     }
 
@@ -623,40 +654,69 @@
 
         const newRow = tbody.insertRow(0);
         newRow.id = 'new-training-row';
-        // 预填值
-        const prefillCountry = prefillData ? prefillData.country : '';
-        const prefillName = prefillData ? prefillData.name : '';
-        const prefillStart = prefillData ? prefillData.start_time : '';
-        const prefillEnd = prefillData ? prefillData.end_time : '';
-        // 存储复制的 header_template（如果有）
+        // ✅ 安全提取预填值，全部设默认空字符串
+        const prefillCountry = prefillData ? (prefillData.country || '') : '';
+        const prefillName = prefillData ? (prefillData.name || '') : '';
+        const prefillStart = prefillData ? (prefillData.start_time || '') : '';
+        const prefillEnd = prefillData ? (prefillData.end_time || '') : '';
         let copiedHeaderTemplate = prefillData ? prefillData.header_template : null;
 
         newRow.innerHTML = `
-            <td>新</td>
+            <td>${safeT('t_new')}</td>
             <td>
-                <input type="text" id="newCountry" class="form-control form-control-sm" list="countryDatalist" value="${escapeHtml(prefillCountry)}" placeholder="国家代码" autocomplete="off">
+                <input type="text" id="newCountry" class="form-control form-control-sm" list="countryDatalist" value="${escapeHtml(prefillCountry)}" 
+                data-i18n-placeholder="placeholder_country_code" placeholder="国家代码" autocomplete="off">
                 <datalist id="countryDatalist"></datalist>
                 <input type="hidden" id="newCountryCode">
             </td>
-            <td><input type="text" id="newName" class="form-control form-control-sm" value="${escapeHtml(prefillName)}" placeholder="培训名称"></td>
+            <td><input type="text" id="newName" class="form-control form-control-sm" value="${escapeHtml(prefillName)}" 
+                data-i18n-placeholder="placeholder_training_name" placeholder="培训名称"></td>
             <td colspan="3"></td>
             <td>
                 <input type="datetime-local" id="newStartTime" class="form-control form-control-sm" value="${prefillStart}">
-                至
+                -
                 <input type="datetime-local" id="newEndTime" class="form-control form-control-sm" value="${prefillEnd}">
             </td>
-            <td colspan="2"></td>
+            <td colspan="1"></td>
             <td>
-                <button class="btn btn-sm btn-success save-new-training">保存</button>
-                <button class="btn btn-sm btn-secondary cancel-new-training">取消</button>
+                <button class="btn btn-sm btn-success save-new-training">${safeT('t_save')}</button>
+                <button class="btn btn-sm btn-secondary cancel-new-training">${safeT('t_cancel')}</button>
             </td>
         `;
+
+        // 翻译新行中的 data-i18n-placeholder 属性
+        if (window.i18n && typeof window.i18n.translateElement === 'function') {
+            window.i18n.translateElement(newRow);
+        } else {
+            const elements = newRow.querySelectorAll('[data-i18n-placeholder]');
+            elements.forEach(el => {
+                const key = el.getAttribute('data-i18n-placeholder');
+                if (key && window.i18n && typeof window.i18n.t === 'function') {
+                    el.setAttribute('placeholder', window.i18n.t(key));
+                }
+            });
+        }
 
         // 绑定国家校验（同之前）
         const countryInput = newRow.querySelector('#newCountry');
         const countryCodeHidden = newRow.querySelector('#newCountryCode');
         if (countryInput) {
             countryInput.addEventListener('blur', () => validateCountryInput('newCountry', 'newCountryCode'));
+            if (countryInput.value) validateCountryInput('newCountry', 'newCountryCode');
+            // 如果已知国家代码，预先设置隐藏字段，并尝试显示标准名称
+            if (prefillData && prefillData.country) {
+                countryCodeHidden.value = prefillData.country;
+                // 异步设置输入框显示为标准名称（如果可转换）
+                loadCountryList().then(list => {
+                    const found = list.find(c => c.code === prefillData.country || c.name_zh === prefillData.country || c.name_en === prefillData.country);
+                    if (found) {
+                        const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
+                        countryInput.value = lang === 'zh' ? found.name_zh : found.name_en;
+                    } else {
+                        // 如果未匹配，保留原值
+                    }
+                });
+            }
             if (countryInput.value) validateCountryInput('newCountry', 'newCountryCode');
         }
 
@@ -668,12 +728,12 @@
             const end = newRow.querySelector('#newEndTime').value;
 
             if (!name) {
-                alert('培训名称不能为空');
+                alert(safeT('t_training_name_cannot_empty'));
                 return;
             }
             const countryInputVal = countryInput.value.trim();
             if (countryInputVal && !countryCode) {
-                alert('国家不在列表中，请重新选择');
+                alert(safeT('t_country_requred'));
                 return;
             }
 
@@ -788,7 +848,6 @@
         await populateCountryDatalist('countryDatalist');
         await loadQuarterOptions();
         setupQuarterInput();
-        loadTrainings();
     });
 
     // 监听国家分组模态框中的“表头录入”按钮（动态元素使用事件委托）
@@ -801,5 +860,43 @@
         openHeaderModalForTraining(trainingId, country);
     });
 
+    // 页面初始化流程（替换原有 IIFE）
+    (async function() {
+        await waitForI18n();                 // 确保 i18n 已就绪
+        window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
+        loadTrainings();                     // 首次加载列表
+
+        // 语言切换时重新加载列表，实现实时翻译
+        let isInitialSubscribe = true;
+        window.i18n.subscribe(async () => {
+            if (isInitialSubscribe) {
+                isInitialSubscribe = false;
+                return;
+            }
+            // 保存编辑行数据
+            const editRow = document.getElementById('new-training-row');
+            let editData = null;
+            if (editRow) {
+                const countryInput = editRow.querySelector('#newCountry');
+                const nameInput = editRow.querySelector('#newName');
+                const startInput = editRow.querySelector('#newStartTime');
+                const endInput = editRow.querySelector('#newEndTime');
+                const countryCodeHidden = editRow.querySelector('#newCountryCode');
+                const countryCode = countryCodeHidden ? countryCodeHidden.value : (countryInput ? countryInput.value : '');
+                editData = {
+                    country: countryCode || (countryInput ? countryInput.value : ''),
+                    name: nameInput ? nameInput.value : '',
+                    start_time: startInput ? startInput.value : '',
+                    end_time: endInput ? endInput.value : ''
+                };
+            }
+
+            await loadTrainings();
+
+            if (editData) {
+                addNewTrainingRow(editData);
+            }
+        });
+    })();
 </script>
 {% endblock %}
