@@ -462,7 +462,8 @@
             employee_id: document.getElementById('employee_id').value,
             birthday: document.getElementById('birthday').value,
             country: document.getElementById('countryCode').value,
-            role: document.getElementById('role').value,
+            // 只有当角色下拉框未被禁用时才传递角色（即超级管理员或自己编辑自己）
+            ...(document.getElementById('role').disabled ? {} : { role: document.getElementById('role').value }),
             wh_type: document.getElementById('wh_type').value,
             wh_id: document.getElementById('wh_id').value,
             wh_name_en: document.getElementById('wh_name_en').value,
