@@ -198,7 +198,7 @@
   "new_user_registration": "新用户注册",
   "placeholder_otp_number": "6位数字",
   "placeholder_name_cn": "张三",
-  "name_en_tip": "(支持长文本，中文请录入拼音)",
+  "name_en_tip": "(支持长文本，中文录入拼音)",
   "placeholder_company_name": "XX国际物流集团",
   "complete_registration": "完成注册",
   "already_have_account_q": "已有账号？",
