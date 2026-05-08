@@ -3654,8 +3654,10 @@ def api_admin_edit_user(user_id):
     update_data = {}
     allowed_fields = ['name_en', 'company', 'department', 'employee_id', 'birthday', 'country', 'phone', 
                       'wh_type', 'wh_id', 'wh_name_en', 'user_status', 'is_partner']
-    if current_role == 'super_admin':
-        allowed_fields.append('role')  # 超管可改角色
+    # 只有超级管理员才能修改角色
+    if session.get('role') == 'super_admin' and 'role' in data:
+        update_data['role'] = data['role']
+    # 普通管理员提交的 role 字段会被忽略
 
     if 'email' in data:
         email_val = data['email'].strip().lower() or None
@@ -3668,15 +3670,15 @@ def api_admin_edit_user(user_id):
     if 'birthday' in data:
         val = data['birthday']
         update_data['birthday'] = val if val else None
-    # 或者统一在遍历时用函数转换
-    def none_if_empty(val):
-        return val if val else None
 
     for field in allowed_fields:
         if field in data:
             val = data[field]
             if field == 'birthday':
-                val = none_if_empty(val)
+                val = val if val else None
+            elif field == 'is_partner':
+                # 前端发送 'Y' / 'N'，转为布尔值
+                val = True if val in ('Y', 'true', True, '1') else False
             update_data[field] = val
     
     if not update_data:
