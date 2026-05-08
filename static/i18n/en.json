@@ -199,7 +199,7 @@
   "new_user_registration": "New user registration",
   "placeholder_otp_number": "6-digit number",
   "placeholder_name_cn": "Zhang San",
-  "name_en_tip": "(Long text OK)",
+  "name_en_tip": "(Long text OK, Chinese use Pin-yin)",
   "placeholder_company_name": "XX International Logistics Group",
   "complete_registration": "Complete Registration",
   "already_have_account_q": "Already have an account?",
