@@ -461,6 +461,7 @@ def api_reset_password():
     return jsonify({"success": True})
 
 # ================= 9. 页面路由 =================
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
