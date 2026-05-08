@@ -94,7 +94,6 @@ def auto_submit_timeout_exams():
             answers = {}
             draft_res = db.table("user_exam_drafts").select("answers").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
             # 检查 data 是否为字典且包含 answers 字段
-            #if draft_res.data and isinstance(draft_res.data, dict) and draft_res.data.get('answers'):
             if draft_res is not None and hasattr(draft_res, 'data') and draft_res.data and isinstance(draft_res.data, dict):
                 raw = draft_res.data['answers']
                 try:
