@@ -461,27 +461,33 @@ def api_reset_password():
     return jsonify({"success": True})
 
 # ================= 9. 页面路由 =================
-@app.route('/login', methods=['GET', 'POST'])
 def login():
-    """登录页面"""
     if request.method == 'POST':
         email = request.form['email']
         pwd = request.form['password']
         db = get_supabase()
-        res = db.table("users").select("*").eq("email", email).single().execute()
-        if res.data and auth.check_password(pwd, res.data['password_hash']):
-            session.update({
-                "user_id": res.data['id'],
-                "user_email": email,
-                "role": res.data.get('role', 'user')
-            })
-            #flash('登录成功', 'success')
-            flash({'msg': 'login_success', 'params': []}, 'success')
-            logger.info(f"用户 {email} 登录，角色：{res.data.get('role', '未设定')}")
+        user = None
+        try:
+            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").maybe_single().execute()
+            # 防御性处理：res 可能为 None 或包含 data 属性的对象
+            if res is not None and hasattr(res, 'data'):
+                user = res.data
+            elif isinstance(res, dict):
+                user = res
+        except Exception as e:
+            logger.error(f"登录查询异常: {e}")
 
+        if user and auth.check_password(pwd, user.get('password_hash', '')):
+            session.update({
+                "user_id": user['id'],
+                "user_email": email,
+                "role": user.get('role', 'user')
+            })
+            flash({'msg': 'login_success', 'params': []}, 'success')
             return redirect(url_for('index'))
-        #flash('邮箱或密码错误', 'danger')
-        flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
+        else:
+            flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
+            return render_template('auth/login.html')
     return render_template('auth/login.html')
 
 @app.route('/logout')
