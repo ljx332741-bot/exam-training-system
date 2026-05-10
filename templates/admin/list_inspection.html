@@ -3,29 +3,30 @@
 {% block title %}访谈管理{% endblock %}
 {% block content %}
 <div class="container-fluid">
-    <h2><i class="bi bi-chat-dots"></i> 访谈统计与管理</h2>
+    <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_statistics_management">访谈统计与管理</span></h2>
 
     <!-- 筛选栏 -->
     <div class="card mb-3">
         <div class="card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-md-3">
-                    <label class="form-label" for="filterName">访谈名称</label>
-                    <input type="text" id="filterName" class="form-control" placeholder="模糊搜索">
+                    <input type="text" id="filterName" class="form-control" 
+                    data-i18n-placeholder="placeholder_interview_title" placeholder="访谈名称">
                 </div>
                 <div class="col-md-2">
-                    <label class="form-label" for="filterCountry">国家</label>
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" placeholder="国家代码/名称">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                    data-i18n-placeholder="placeholder_country" placeholder="国家代码/名称">
                     <datalist id="countryDatalist"></datalist>
+                    <input type="hidden" id="filterCountryCode">
                 </div>
                 <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary w-100">搜索</button>
+                    <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
                 <div class="col-md-2">
-                    <button class="btn btn-outline-secondary w-100" onclick="history.back();">✖ 关闭返回</button>
+                    <button class="btn btn-outline-secondary w-100" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
                 <div class="col-md-3">
-                    <button class="btn btn-success w-100" id="newInterviewBtn">➕ 新增访谈</button>
+                    <button class="btn btn-success w-100" id="newInterviewBtn">➕ <span data-i18n="add_new_interviewee">新增访谈</span></button>
                 </div>
             </div>
         </div>
@@ -39,24 +40,24 @@
                     <thead class="table-light">
                         <tr>
                             <th>ID</th>
-                            <th>国家</th>
-                            <th>访谈名称</th>
-                            <th>创建时间</th>
-                            <th>访谈有效期</th>
-                            <th>访谈人数</th>
-                            <th>题目数量</th>
-                            <th>状态</th>
-                            <th>操作</th>
+                            <th><span data-i18n="country">国家</span></th>
+                            <th><span data-i18n="interview_title">访谈名称</span></th>
+                            <th><span data-i18n="created_at">创建时间</span></th>
+                            <th><span data-i18n="interviewee_period">访谈有效期</span></th>
+                            <th><span data-i18n="interviewee_number">访谈人数</span></th>
+                            <th><span data-i18n="quenstion_number">题目数量</span></th>
+                            <th><span data-i18n="status">状态</span></th>
+                            <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="interviewTableBody">
-                        <tr><td colspan="9" class="text-center">加载中...</td></tr>
+                        <tr><td colspan="9" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
         <div class="card-footer d-flex justify-content-between align-items-center">
-            <div>共 <span id="totalCount">0</span> 条</div>
+            <div><span data-i18n="total_questions">共</span> <span id="totalCount">0</span> <span data-i18n="record">条记录</span></div>
             <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
         </div>
     </div>
@@ -67,69 +68,83 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">新增访谈</h5>
+                <h5 class="modal-title"><span data-i18n="add_new_interviewee">新增访谈</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label" for="examSearch">考试名称</label>
-                        <input type="text" id="examSearch" class="form-control" list="examDatalist" placeholder="输入考试名称搜索">
+                        <label class="form-label" for="examSearch"><span data-i18n="exam_name">考试名称</span></label>
+                        <input type="text" id="examSearch" class="form-control" list="examDatalist" 
+                        data-i18n-placeholder="placeholder_exam_name" placeholder="考试名称">
                         <datalist id="examDatalist"></datalist>
                         <input type="hidden" id="selectedExamId">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" for="questionCount">抽查数量（每人）</label>
+                        <label class="form-label" for="questionCount"><span data-i18n="interview_check_number">抽查数量（每人）</span></label>
                         <input type="number" id="questionCount" class="form-control" min="1" value="5">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" for="startTime">访谈有效期开始</label>
+                        <label class="form-label" for="startTime"><span data-i18n="interview_start_time">访谈开始时间</span></label>
                         <input type="datetime-local" id="startTime" class="form-control">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" for="endTime">访谈有效期结束</label>
+                        <label class="form-label" for="endTime"><span data-i18n="interview_end_time">访谈结束时间</span></label>
                         <input type="datetime-local" id="endTime" class="form-control">
                     </div>
                     <div class="col-md-6">
-                        <label class="form-label" for="reviewerInput">检查人员（监督员）</label>
-                        <input type="text" id="reviewerInput" class="form-control" placeholder="选填">
+                        <label class="form-label" for="reviewerInput"><span data-i18n="inspector">检查人员（监督员）</span></label>
+                        <input type="text" id="reviewerInput" class="form-control" 
+                        data-i18n-placeholder="placeholder_optional" placeholder="选填">
                     </div>
                 </div>
                 <hr>
-                <h6>选择学员</h6>
+                <h6><span data-i18n="selecting_interviewee">选择访谈人员</span></h6>
                 <div class="row g-2 mb-2">
                     <div class="col-md-3">
-                        <input type="text" id="userSearch" class="form-control" placeholder="姓名/邮箱">
+                        <input type="text" id="userSearch" class="form-control" 
+                        data-i18n-placeholder="placeholder_mail_name" placeholder="姓名/邮箱">
                     </div>
                     <div class="col-md-2">
-                        <input type="text" id="whIdFilter" class="form-control" placeholder="库房编码">
+                        <input type="text" id="whIdFilter" class="form-control" 
+                        data-i18n-placeholder="placeholder_wh_id" placeholder="库房编码">
                     </div>
                     <div class="col-md-2">
                         <select id="isPartnerFilter" class="form-select">
-                            <option value="">合作方(全部)</option>
-                            <option value="Y">是</option>
-                            <option value="N">否</option>
+                            <option value=""><span data-i18n="supplier_all">服务商(全部)</span></option>
+                            <option value="Y"><span data-i18n="partner_yes">是</span></option>
+                            <option value="N"><span data-i18n="partner_no">否</span></option>
                         </select>
                     </div>
                     <div class="col-md-2">
-                        <input type="text" id="countryFilter" class="form-control" list="countryDatalist" placeholder="国家">
+                        <input type="text" id="countryFilter" class="form-control" list="countryDatalist" 
+                        data-i18n-placeholder="placeholder_country" placeholder="国家">
+                        <input type="hidden" id="countryCodeForInterview">
                     </div>
                     <div class="col-md-3">
-                        <button id="loadUsersBtn" class="btn btn-secondary w-100">刷新/查询</button>
+                        <button id="loadUsersBtn" class="btn btn-secondary w-100"><span data-i18n="refresh_list">刷新列表</span></button>
                     </div>
                 </div>
                 <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
                     <table class="table table-sm mb-0">
-                        <thead><tr><th><input type="checkbox" id="selectAllUsers"></th><th>姓名</th><th>邮箱</th><th>国家</th><th>库房编号</th></tr></thead>
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="selectAllUsers"></th>
+                                <th><span data-i18n="name_en">姓名</span></th>
+                                <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="wh_id">库房编码</span></th>
+                            </tr>
+                        </thead>
                         <tbody id="userListBody"></tbody>
                     </table>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
                 <button class="btn btn-info" id="previewBtn">预览访谈内容</button>
                 <button class="btn btn-warning" id="saveDraftBtn">保存为草稿</button>
                 <button class="btn btn-success" id="saveAndPublishBtn">保存并发布</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
             </div>
         </div>
     </div>
@@ -140,7 +155,7 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">访谈预览 - <span id="previewExamTitle"></span></h5>
+                <h5 class="modal-title"><span data-i18n="interview_preview">访谈预览</span> - <span id="previewExamTitle"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="previewContent">
@@ -148,9 +163,9 @@
             </div>
             <div class="modal-footer">
                 <span id="currentUserIndicator" class="me-auto"></span>
-                <button class="btn btn-secondary" id="prevUserBtn" disabled>上一个</button>
-                <button class="btn btn-secondary" id="nextUserBtn">下一个</button>
-                <button class="btn btn-primary" id="confirmSaveBtn">确认保存并关闭预览</button>
+                <button class="btn btn-secondary" id="prevUserBtn" disabled><span data-i18n="interview_previous">上一个</span></button>
+                <button class="btn btn-secondary" id="nextUserBtn"><span data-i18n="interview_next">下一个</span></button>
+                <button class="btn btn-primary" id="confirmSaveBtn"><span data-i18n="confirm_to_save_close">确认保存并关闭预览</span></button>
             </div>
         </div>
     </div>
@@ -161,27 +176,27 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">编辑访谈草稿</h5>
+                <h5 class="modal-title"><span data-i18n="edit">编辑</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <input type="hidden" id="editInterviewId">
                 <div class="mb-3">
-                    <label class="form-label" for="editStartTime">有效期开始</label>
+                    <label class="form-label" for="editStartTime"><span data-i18n="interview_start_time">访谈开始时间</span></label>
                     <input type="datetime-local" id="editStartTime" class="form-control">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" for="editEndTime">有效期结束</label>
+                    <label class="form-label" for="editEndTime"><span data-i18n="interview_end_time">访谈结束时间</span></label>
                     <input type="datetime-local" id="editEndTime" class="form-control">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" for="editReviewer">检查人员</label>
+                    <label class="form-label" for="editReviewer"><span data-i18n="inspector">检查人员（监督员）</span></label>
                     <input type="text" id="editReviewer" class="form-control">
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
-                <button class="btn btn-primary" id="saveEditBtn">保存</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button class="btn btn-primary" id="saveEditBtn"><span data-i18n="save">保存</span></button>
             </div>
         </div>
     </div>
@@ -205,7 +220,7 @@
 
     // ========== 初始化 ==========
     document.addEventListener('DOMContentLoaded', async () => {
-        await populateCountryDatalist('countryDatalist');
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         loadInterviews();
     });
 
@@ -225,7 +240,7 @@
     }
 
     function getStatusText(status) {
-        const map = { 'draft': '草稿', 'created': '未开始', 'active': '进行中', 'closed': '已关闭' };
+        const map = { 'draft': t('t_draft'), 'created': t('t_not_started'), 'active': t('t_on_going'), 'closed': t('t_closed') };
         return map[status] || status;
     }
     function formatDate(iso) {
@@ -240,7 +255,7 @@
     function renderInterviewTable(interviews) {
         const tbody = document.getElementById('interviewTableBody');
         if (!interviews.length) {
-            tbody.innerHTML = '<tr><td colspan="9" class="text-center">暂无数据</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="9" class="text-center">${t('t_no_data')}</td></tr>`;
             return;
         }
         tbody.innerHTML = interviews.map(inv => {
@@ -250,20 +265,20 @@
 
         if (status === 'draft' || status === 'created') {
             actionButtons = `
-                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">编辑</button>
-                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">删除</button>`;
+                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
+                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
         } else if (status === 'active') {
             actionButtons = `
-                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">编辑</button>
-                <button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">详情</button>
-                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">删除</button>`;
+                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
+                <button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>
+                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
         } else if (status === 'closed') {
             // 已关闭：仅详情；超管额外显示删除
-            actionButtons = `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">详情</button>`;
+            actionButtons = `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>`;
             if (isSuperAdmin) {
                 actionButtons += `
-                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">编辑</button>
-                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">删除</button>`;
+                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
+                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
             }
         }
 
@@ -273,9 +288,9 @@
                 <td>${escapeHtml(inv.country || '-')}</td>
                 <td><a href="/admin/interview/${inv.id}" class="text-decoration-none">${escapeHtml(inv.title)}</a></td>
                 <td>${formatLocalDateTime(inv.created_at)}</td>
-                <td>${formatLocalDateTime(inv.start_time)} 至 ${formatLocalDateTime(inv.end_time)}</td>
-                <td>${inv.interviewee_count} 人</td>
-                <td>${inv.question_count} 题/人</td>
+                <td>${formatLocalDateTime(inv.start_time)} - ${formatLocalDateTime(inv.end_time)}</td>
+                <td>${inv.interviewee_count} ${t('t_people')}</td>
+                <td>${inv.question_count} ${t('t_question_per_people')}</td>
                 <td>${getStatusBadge(status)}</td>
                 <td>${actionButtons}</td>
             </tr>
@@ -291,7 +306,7 @@
         });
         document.querySelectorAll('.delete-interview-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
-                if (confirm('确定删除该草稿访谈？')) {
+                if (confirm(t('t_interveiw_delete_confirm'))) {
                     await fetch(`/api/admin/interviews/${btn.dataset.id}`, { method: 'DELETE' });
                     loadInterviews();
                 }
@@ -301,10 +316,10 @@
 
     function getStatusBadge(status) {
         const map = {
-            'draft': '<span class="badge bg-secondary">草稿</span>',
-            'created': '<span class="badge bg-info">未开始</span>',
-            'active': '<span class="badge bg-success">进行中</span>',
-            'closed': '<span class="badge bg-danger">已关闭</span>'
+            'draft': `<span class="badge bg-secondary">${t('t_draft')}</span>`,
+            'created': `<span class="badge bg-info">${t('t_not_started')}</span>`,
+            'active': `<span class="badge bg-success">${t('t_on_going')}</span>`,
+            'closed': `<span class="badge bg-danger">${t('t_closed')}</span>`
         };
         return map[status] || status;
     }
@@ -333,7 +348,8 @@
 
     document.getElementById('searchBtn').addEventListener('click', () => {
         filters.name = document.getElementById('filterName').value;
-        filters.country = document.getElementById('filterCountry').value;
+        const countryText = document.getElementById('filterCountry').value;
+        filters.country = document.getElementById('filterCountryCode').value || resolveCountryParam(countryText);
         currentPage = 1;
         loadInterviews();
     });
@@ -370,7 +386,7 @@
             const names = await res.json();
             datalist.innerHTML = names.map(name => `<option value="${escapeHtml(name)}">`).join('');
         } catch (e) {
-            console.error('搜索考试失败', e);
+            console.error(t('t_search_examination_failed'), e);
         }
     });
 
@@ -383,9 +399,9 @@
             const data = await res.json();
             if (data.data.length > 0) {
                 document.getElementById('selectedExamId').value = data.data[0].id;
-                console.log('选定考试ID:', data.data[0].id);
+                console.log(t('t_select_exam'), data.data[0].id);
             } else {
-                alert('未找到匹配的考试');
+                alert(t('t_no_matching_exam'));
             }
         } catch (e) {
             console.error(e);
@@ -397,13 +413,14 @@
     
     async function loadUserListForInterview() {
         const search = document.getElementById('userSearch').value;
-        const country = document.getElementById('countryFilter').value;
+        const countryText = document.getElementById('countryFilter').value;
+        const countryCode = document.getElementById('countryCodeForInterview').value || resolveCountryParam(countryText);
         const whId = document.getElementById('whIdFilter').value;
         const isPartner = document.getElementById('isPartnerFilter').value;
         // 构建查询参数（后端暂时只支持 search 和 country，其余前端过滤）
         const params = new URLSearchParams({
             search: search,
-            country: country,
+            country: countryCode,
             page: 1,
             per_page: 100   // 一次加载足够多
         });
@@ -437,13 +454,13 @@
     document.getElementById('previewBtn').addEventListener('click', async () => {
         const examId = document.getElementById('selectedExamId').value;
         if (!examId || examId === 'undefined' || examId === 'null') {
-            alert('请先选择有效的考试');
+            alert(t('t_choice_availabel_exam'));
             return;
         }
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
         const questionCount = parseInt(document.getElementById('questionCount').value) || 5;
-        if (!examId) { alert('请选择考试'); return; }
-        if (userIds.length === 0) { alert('请至少选择一名学员'); return; }
+        if (!examId) { alert(t('t_choice_exam')); return; }
+        if (userIds.length === 0) { alert(t('t_choice_candidate')); return; }
 
         const payload = {
             exam_id: examId,
@@ -457,10 +474,10 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
-            if (!res.ok) throw new Error('预览失败');
+            if (!res.ok) throw new Error(t('t_preview_failed'));
             const data = await res.json();
             previewData = data.preview;
-            document.getElementById('previewExamTitle').innerText = data.exam_title || '未命名考试';
+            document.getElementById('previewExamTitle').innerText = data.exam_title || t('t_unnamed_examination');
             currentPreviewIndex = 0;
             renderPreviewUser();
             new bootstrap.Modal(document.getElementById('previewModal')).show();
