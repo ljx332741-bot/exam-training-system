@@ -6,7 +6,6 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-bar-chart-steps"></i> <span data-i18n="exam_statistics">考试统计</span></h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
     </div>
 
     <!-- 过滤栏 -->
@@ -40,15 +39,19 @@
                     autocomplete="off">
                     <datalist id="countryDatalist"></datalist>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-4">
                     <button id="searchBtn" class="btn btn-primary"><span data-i18n="search">搜索</span></button>
+                    <input type="checkbox" id="includeDeletedCheckbox" class="form-check-input">
+                    <label class="form-check-label" for="includeDeletedCheckbox"><span data-i18n="show_deleted_exam">显示已删除考试</span></label>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
                 </div>
-                <div class="col-md-2">
+                <!-- <div class="col-md-2">
                     <div class="form-check">
                         <input type="checkbox" id="includeDeletedCheckbox" class="form-check-input">
                         <label class="form-check-label" for="includeDeletedCheckbox"><span data-i18n="show_deleted_exam">显示已删除考试</span></label>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
                     </div>
-                </div>
+                </div> -->
             </div>
         </div>
     </div>
@@ -66,6 +69,7 @@
                     </style>
                     <thead class="table-light">
                         <tr>
+                            <th><span data-i18n="actions">操作</span></th>
                             <th><span data-i18n="sequence">序号</span></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="exam_name">考试名称</span></th>
@@ -77,7 +81,6 @@
                             <th><span data-i18n="highest">最高分</span></th>
                             <th><span data-i18n="lowest">最低分</span></th>
                             <th><span data-i18n="re_exam">复考人数</span></th>
-                            <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="examsTbody">
@@ -126,18 +129,29 @@
         <div class="mt-3">
           <label class="form-label" for="userSearch"><span data-i18n="choice_candidate">选择考生（可多选）</span></label>
           <div class="row">
-            <div class="col-md-5">
+            <div class="col-md-3">
                 <input type="text" id="userSearch" class="form-control" 
-                placeholder="搜索姓名/邮箱"
-                data-i18n-placeholder="placeholder_mail_name">
-            </div>
-            <div class="col-md-4">
-                <input type="text" id="countryInput" class="form-control" list="countryDatalist" 
-                placeholder="输入或选择国家" 
-                data-i18n-placeholder="placeholder_select_or_input"
-                autocomplete="off">
+                data-i18n-placeholder="placeholder_mail_name" placeholder="搜索姓名/邮箱">
             </div>
             <div class="col-md-3">
+                <input type="text" id="pushWhFilter" class="form-control" list="whDatalist" 
+                data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
+                <datalist id="whDatalist"></datalist>
+            </div>
+            <div class="col-md-2">
+                <select id="pushIsPartner" class="form-select">
+                    <option value=""><span data-i18n="supplier_all">服务商(全部)</span></option>
+                    <option value="Y"><span data-i18n="partner_yes">是</span></option>
+                    <option value="N"><span data-i18n="partner_no">否</span></option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="text" id="countryInput" class="form-control" list="countryDatalist" 
+                data-i18n-placeholder="placeholder_select_or_input" placeholder="输入或选择国家" autocomplete="off">
+                <datalist id="countryDatalist"></datalist>
+                <input type="hidden" id="countryCodeForSetting">
+            </div>
+            <div class="col-md-2">
                 <button id="loadUsersBtn" class="btn btn-secondary"><span data-i18n="refresh_list">刷新列表</span></button>
             </div>
           </div>
@@ -149,6 +163,7 @@
                         <th><span data-i18n="name_en">姓名</span></th>
                         <th><span data-i18n="email">邮箱</span></th>
                         <th><span data-i18n="country">国家</span></th>
+                        <th><span data-i18n="wh_id_name">库房编码/名称</span></th>
                     </tr>
                 </thead>
               <tbody id="userListBody"></tbody>
@@ -160,6 +175,26 @@
         <button class="btn btn-success" id="confirmSettingBtn"><span data-i18n="save_push">保存并推送通知</span></button>
         <button class="btn btn-primary" id="saveSettingBtn"><span data-i18n="save_setting">保存设置</span></button>
         <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button> 
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 自定义删除确认模态框（三选一） -->
+<div class="modal fade" id="deleteExamModal" tabindex="-1" data-bs-backdrop="static">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><span data-i18n="delete_exam">删除考试</span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p><span data-i18n="delete_method">请选择删除方式：</span></p>
+        <div class="d-flex justify-content-between gap-2">
+          <button class="btn btn-danger flex-fill" id="deletePermanentBtn"><span data-i18n="permanently_delete">永久删除</span></button>
+          <button class="btn btn-warning flex-fill" id="deleteSoftBtn"><span data-i18n="soft_deleted">软删除（回收站）</span></button>
+          <button class="btn btn-secondary flex-fill" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+        </div>
       </div>
     </div>
   </div>
@@ -232,6 +267,42 @@
         });
     }
 
+    // ========== 删除考试逻辑 ==========
+    let currentDeleteExamId = null;
+
+    function confirmDeleteExam(examId) {
+        currentDeleteExamId = examId;
+        const modal = new bootstrap.Modal(document.getElementById('deleteExamModal'));
+        modal.show();
+    }
+
+    async function deleteExam(examId, permanent) {
+        const response = await fetch(`/admin/exam/delete/${examId}?permanent=${permanent}`, { method: 'POST' });
+        if (response.ok) {
+            alert(permanent ? t('t_permanently_deleted') : t('t_soft_deleted'));
+            loadExams();  // 刷新列表
+        } else {
+            alert(t('t_delete_failed'));
+        }
+    }
+
+    // 绑定模态框按钮事件（在 DOMContentLoaded 中或单独）
+    document.getElementById('deletePermanentBtn')?.addEventListener('click', function() {
+        if (currentDeleteExamId) {
+            deleteExam(currentDeleteExamId, true);
+            bootstrap.Modal.getInstance(document.getElementById('deleteExamModal')).hide();
+            currentDeleteExamId = null;
+        }
+    });
+
+    document.getElementById('deleteSoftBtn')?.addEventListener('click', function() {
+        if (currentDeleteExamId) {
+            deleteExam(currentDeleteExamId, false);
+            bootstrap.Modal.getInstance(document.getElementById('deleteExamModal')).hide();
+            currentDeleteExamId = null;
+        }
+    });
+
     function renderExamsTable(exams) {
         const tbody = document.getElementById('examsTbody');
         if (!exams.length) {
@@ -260,6 +331,7 @@
             }
             return `
             <tr>
+                <td>${actionButtons}</td>
                 <td>${(currentPage-1)*20 + idx + 1}</td>
                 <td>${ex.country || '-'}</td>
                 <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
@@ -271,7 +343,6 @@
                 <td>${ex.max_score ?? '-'}</td>
                 <td>${ex.min_score ?? '-'}</td>
                 <td>${ex.retake_count}</td>
-                <td>${actionButtons}</td>
             </tr>
             `;
         }).join('');
@@ -336,8 +407,8 @@
             const res = await fetch(`/api/admin/exam/${examId}`);
             if (res.ok) {
                 const data = await res.json();
-                document.getElementById('settingStartTime').value = data.start_time ? data.start_time.slice(0,16) : '';
-                document.getElementById('settingEndTime').value = data.end_time ? data.end_time.slice(0,16) : '';
+                document.getElementById('settingStartTime').value = utcToLocalDatetimeLocal(data.start_time);
+                document.getElementById('settingEndTime').value = utcToLocalDatetimeLocal(data.end_time);
                 document.getElementById('settingDuration').value = data.duration || 60;
             } else {
                 document.getElementById('settingStartTime').value = '';
@@ -351,10 +422,14 @@
         new bootstrap.Modal(document.getElementById('settingModal')).show();
     }
 
+    // 修复请求 URL 错误，并正确整合国家参数的智能转换
     async function loadUserListForSetting() {
         const search = document.getElementById('userSearch').value;
-        const country = document.getElementById('countryInput').value;
         const examId = currentExamIdForSetting;
+        const whFilter = document.getElementById('pushWhFilter').value.trim().toLowerCase();
+        const isPartner = document.getElementById('pushIsPartner').value;
+        
+        // 获取已分配的考生ID
         let assignedUsers = [];
         if (examId) {
             const assignRes = await fetch(`/api/admin/exam/${examId}/assignments`);
@@ -363,15 +438,47 @@
                 assignedUsers = assignData.user_ids || [];
             }
         }
-        const res = await fetch(`/api/admin/users?search=${encodeURIComponent(search)}&country=${country}&page=1&per_page=100`);
+
+        // 国家参数（复用已有逻辑）
+        let countryParam = document.getElementById('countryCodeForSetting')?.value;
+        if (!countryParam) {
+            const countryText = document.getElementById('countryInput').value;
+            countryParam = resolveCountryParam(countryText);
+        }
+
+        const params = new URLSearchParams({
+            search: search,
+            country: countryParam,
+            status: 'registered',
+            page: 1,
+            per_page: 100
+        });
+        const res = await fetch(`/api/admin/users?${params.toString()}`);
         const data = await res.json();
+        let users = data.data || [];
+
+        // 前端二次过滤
+        users = users.filter(u => u.user_status === 'registered');
+        // 库房筛选
+        if (whFilter) {
+            users = users.filter(u => 
+                (u.wh_id && u.wh_id.toLowerCase().includes(whFilter)) ||
+                (u.wh_name_en && u.wh_name_en.toLowerCase().includes(whFilter))
+            );
+        }
+        // 合作方筛选
+        if (isPartner) {
+            users = users.filter(u => u.is_partner === (isPartner === 'Y'));
+        }
+
         const tbody = document.getElementById('userListBody');
-        tbody.innerHTML = data.data.map(u => `
+        tbody.innerHTML = users.map(u => `
             <tr>
                 <td><input type="checkbox" class="user-checkbox" value="${u.id}" ${assignedUsers.includes(u.id) ? 'checked' : ''}></td>
-                <td>${u.name_cn || u.name_en || '-'}</td>
-                <td>${u.email}</td>
-                <td>${u.country || '-'}</td>
+                <td>${escapeHtml(u.name_cn || u.name_en || '-')}</td>
+                <td>${escapeHtml(u.email)}</td>
+                <td>${escapeHtml(u.country || '-')}</td>
+                <td>${escapeHtml(u.wh_id || '-')}</td>
             </tr>
         `).join('');
         document.getElementById('selectAllUsers').onclick = (e) => {
@@ -380,7 +487,20 @@
     }
 
     document.getElementById('loadUsersBtn')?.addEventListener('click', async () => {
-        await loadUserListForSetting();
+        const btn = document.getElementById('loadUsersBtn');
+        const originalHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${t('t_searching')}`;
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-info');
+        try {
+            await loadUserListForSetting();
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHTML;
+            btn.classList.remove('btn-info');
+            btn.classList.add('btn-secondary');
+        }
     });
 
     // 保存设置（不推送）
@@ -516,7 +636,27 @@
             loadExams();
           });
         }
-            await populateCountryDatalist('countryDatalist');
+        await setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
+
+        const whFilterInput = document.getElementById('pushWhFilter');
+        if (whFilterInput) {
+            whFilterInput.addEventListener('input', async function () {
+                const q = this.value.trim();
+                const datalist = document.getElementById('whDatalist');
+                if (q.length === 0) {
+                    datalist.innerHTML = '';
+                    return;
+                }
+                try {
+                    const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
+                    const items = await res.json();
+                    datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
+                } catch (e) {
+                    console.error('搜索库房失败', e);
+                }
+            });
+        }
+
     });
 </script>
 {% endblock %}
