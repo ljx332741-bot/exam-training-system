@@ -21,6 +21,7 @@
                     <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
                     data-i18n-placeholder="placeholder_country"
                     placeholder="国家" autocomplete="off">
+                    <input type="hidden" id="filterCountryCode">
                     <datalist id="countryDatalist"></datalist>
                 </div>
                 <div class="col-md-2">
@@ -173,11 +174,54 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <label class="form-label" for="start_time"><span data-i18n="sign_in_start">签到开始时间</span></label>
+                <label class="form-label" for="start_time"><span data-i18n="start_time">开始时间</span></label>
                 <input type="datetime-local" class="form-control mb-3" id="start_time">
-                <label class="form-label" for="end_time"><span data-i18n="sign_in_end">签到结束时间</span></label>
-                <input type="datetime-local" class="form-control" id="end_time">
-                <div class="form-text"><span data-i18n="local_time_tip">时间将自动转换为服务器UTC时间存储，前端显示会转为本地时区。</span></div>
+                <label class="form-label" for="end_time"><span data-i18n="end_time">结束时间</span></label>
+                <input type="datetime-local" class="form-control mb-3" id="end_time">
+                
+                <hr>
+                <h6>选择推送对象（可选）</h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-3">
+                        <input type="text" id="pushUserSearch" class="form-control"
+                        data-i18n-placeholder="placeholder_mail_name" placeholder="姓名/邮箱">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" id="pushWhFilter" class="form-control" list="whDatalist" 
+                        data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
+                        <datalist id="whDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <select id="pushIsPartner" class="form-select">
+                            <option value=""><span data-i18n="supplier_all">服务商(全部)</span></option>
+                            <option value="Y"><span data-i18n="partner_yes">是</span></option>
+                            <option value="N"><span data-i18n="partner_no">否</span></option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="pushCountryFilter" class="form-control" list="countryDatalist"
+                        data-i18n-placeholder="placeholder_country"  placeholder="国家">
+                        <datalist id="countryDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="pushLoadUsersBtn" class="btn btn-secondary w-100"><span data-i18n="refresh_list">刷新列表</span>/button>
+                    </div>
+                </div>
+                <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="pushSelectAll"></th>
+                                <th><span data-i18n="name_en">姓名</span></th>
+                                <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="wh_id_name">库房编码/名称</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pushUserListBody"></tbody>
+                    </table>
+                </div>
+                <small class="text-muted">不选择则推送至所有用户（仅发送通知）</small>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
@@ -363,7 +407,7 @@
                             title="${t.has_inconsistent_templates ? '存在多个国家模板，请在分组详情页分别录入' : '录入表头字段'}">
                         📋 ${safeT('t_header_input')}
                     </button>
-                    <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}">${safeT('t_push')}</button>
+                    <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}" data-start="${t.start_time || ''}" data-end="${t.end_time || ''}">${safeT('t_push')}</button>
                     ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary">${safeT('t_details')}</a>` : 
                     `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}">${safeT('t_details_by_country')}</button>`}
                     <button class="btn btn-sm btn-outline-secondary copy-training-btn" data-id="${t.id}">${safeT('t_copy')}</button>
@@ -453,9 +497,13 @@
         document.querySelectorAll('.push-btn').forEach(btn => {
             btn.onclick = (e) => {
                 currentTrainingId = btn.dataset.id;
-                document.getElementById('start_time').value = '';
-                document.getElementById('end_time').value = '';
+                // 填充已有有效期（本地时间）
+                document.getElementById('start_time').value = utcToLocalDatetimeLocal(btn.dataset.start);
+                document.getElementById('end_time').value = utcToLocalDatetimeLocal(btn.dataset.end);
+                // 清空用户列表并加载
+                document.getElementById('pushUserListBody').innerHTML = '';
                 new bootstrap.Modal(document.getElementById('pushModal')).show();
+                loadPushUserList(); // 初始加载用户列表
             };
         });
 
@@ -504,6 +552,101 @@
             });
         });
     }
+
+    // 加载推送候选用户
+    async function loadPushUserList() {
+        const search = document.getElementById('pushUserSearch').value;
+        const whFilter = document.getElementById('pushWhFilter').value.toLowerCase();
+        const isPartner = document.getElementById('pushIsPartner').value;
+        const countryCodeHidden = document.getElementById('pushCountryCode');
+        let countryCode = countryCodeHidden ? countryCodeHidden.value : '';
+        // 若隐藏字段为空，尝试从输入框文本转换
+        if (!countryCode) {
+            const countryText = document.getElementById('pushCountryFilter').value.trim();
+            if (countryText) {
+                const matched = window.countryList?.find(c =>
+                    c.name_zh === countryText || c.name_en.toLowerCase() === countryText.toLowerCase() || c.code === countryText.toUpperCase()
+                );
+                countryCode = matched ? matched.code : countryText;
+            }
+        }
+
+        const params = new URLSearchParams({
+            search: search,
+            country: countryCode,
+            status: 'registered',
+            page: 1,
+            per_page: 100
+        });
+        try {
+            const res = await fetch(`/api/admin/users?${params}`);
+            const data = await res.json();
+            let users = (data.data || []).filter(u => u.user_status === 'registered');
+
+            // 前端额外过滤：库房编码/名称
+            if (whFilter) {
+                users = users.filter(u =>
+                    (u.wh_id && u.wh_id.toLowerCase().includes(whFilter)) ||
+                    (u.wh_name_en && u.wh_name_en.toLowerCase().includes(whFilter))
+                );
+            }
+            // 合作方过滤
+            if (isPartner) {
+                users = users.filter(u => u.is_partner === (isPartner === 'Y'));
+            }
+
+            const tbody = document.getElementById('pushUserListBody');
+            tbody.innerHTML = users.map(u => `
+                <tr>
+                    <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
+                    <td>${escapeHtml(u.name_en || '')}</td>
+                    <td>${escapeHtml(u.email)}</td>
+                    <td>${escapeHtml(u.country || '-')}</td>
+                    <td>${escapeHtml(u.wh_id || '-')}</td>
+                </tr>
+            `).join('');
+
+            document.getElementById('pushSelectAll').onclick = (e) => {
+                document.querySelectorAll('.push-user-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
+        } catch (err) {
+            console.error('加载用户列表失败', err);
+        }
+    }
+
+    // 绑定刷新按钮
+    document.getElementById('pushLoadUsersBtn')?.addEventListener('click', loadPushUserList);
+
+    // 库房模糊搜索（复用全局搜索）
+    document.getElementById('pushWhFilter')?.addEventListener('input', async function () {
+        const q = this.value.trim();
+        const datalist = document.getElementById('whDatalist');
+        if (q.length === 0) { datalist.innerHTML = ''; return; }
+        try {
+            const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
+            const items = await res.json();
+            datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
+        } catch (e) {
+            console.error('搜索库房失败', e);
+        }
+    });
+
+    // 国家自动补全初始化（在 pushModal 显示时调用）
+    document.getElementById('pushModal')?.addEventListener('shown.bs.modal', function () {
+        if (!document.getElementById('pushCountryCode')) {
+            // 动态添加隐藏字段
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = 'pushCountryCode';
+            document.getElementById('pushCountryFilter').after(hidden);
+        }
+
+        // 如果之前未初始化，则初始化
+        if (!window._pushCountryAutocompleteInited) {
+            setupCountryAutocomplete('pushCountryFilter', 'countryDatalist', 'pushCountryCode');
+            window._pushCountryAutocompleteInited = true;
+        }
+    });
 
     // 显示国家分组模态框
     async function showCountryGroupModal(trainingId) {
@@ -683,7 +826,8 @@
                 <button class="btn btn-sm btn-secondary cancel-new-training">${safeT('t_cancel')}</button>
             </td>
         `;
-
+        
+        setupCountryAutocomplete('newCountry', 'countryDatalist', 'newCountryCode');
         // 翻译新行中的 data-i18n-placeholder 属性
         if (window.i18n && typeof window.i18n.translateElement === 'function') {
             window.i18n.translateElement(newRow);
@@ -824,28 +968,42 @@
     document.getElementById('confirmPushBtn').onclick = async () => {
         const start = document.getElementById('start_time').value;
         const end = document.getElementById('end_time').value;
-        if(!start || !end) {
+        if (!start || !end) {
             alert('请填写开始和结束时间');
             return;
         }
-        // 将本地时间字符串转为 ISO 字符串（后端会解析为UTC）
+
         const startISO = new Date(start).toISOString();
         const endISO = new Date(end).toISOString();
+
+        // 收集选中的用户ID
+        const selectedUserIds = Array.from(document.querySelectorAll('.push-user-checkbox:checked')).map(cb => cb.value);
+
         const res = await fetch('/api/admin/trainings', {
             method: 'PUT',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({id: currentTrainingId, start_time: startISO, end_time: endISO, is_active: true})
+            body: JSON.stringify({
+                id: currentTrainingId,
+                start_time: startISO,
+                end_time: endISO,
+                is_active: true,
+                user_ids: selectedUserIds.length > 0 ? selectedUserIds : null   // 没有勾选则传递 null
+            })
         });
-        if(res.ok) {
+
+        if (res.ok) {
             bootstrap.Modal.getInstance(document.getElementById('pushModal')).hide();
             loadTrainings();
-            alert('推送成功，考生端将显示该培训签到');
-        } else alert('推送失败');
+            alert('推送成功，已发送通知邮件给选定用户' + (selectedUserIds.length ? '' : '（全部注册用户）'));
+        } else {
+            const err = await res.json();
+            alert('推送失败: ' + (err.message || '网络错误'));
+        }
     };
 
     // 初始化国家列表和季度列表0429增加校验
     document.addEventListener('DOMContentLoaded', async () => {
-        await populateCountryDatalist('countryDatalist');
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await loadQuarterOptions();
         setupQuarterInput();
     });
