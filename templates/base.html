@@ -17,11 +17,62 @@
     <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
 
     <style>
+
+        #countryTagsContainer .tag {
+        display: inline-flex;
+        align-items: center;
+        background: #e9ecef;
+        border-radius: 4px;
+        padding: 2px 8px;
+        margin: 2px;
+        font-size: 13px;
+        }
+        #countryTagsContainer .tag .remove-tag {
+        margin-left: 5px;
+        cursor: pointer;
+        font-weight: bold;
+        }
+
         html {
             font-size: 14px;   /* 全局基准，Bootstrap 5 默认 16px */
         }
         .card-title { font-size: 1rem; }
         .btn { font-size: 0.875rem; }
+
+        .country-autocomplete-wrapper {
+            position: relative;
+        }
+        .country-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 1050;
+            background: #fff;
+            border: 1px solid #ced4da;
+            border-top: none;
+            max-height: 200px;
+            overflow-y: auto;
+            display: none;
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        .country-suggestions li {
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .country-suggestions li:hover {
+            background-color: #f0f0f0;
+        }
+
+        .list-group-item.disabled-link, .list-group-item.disabled-link:hover {
+            cursor: not-allowed;
+            background-color: #f8f9fa;
+            opacity: 0.7;
+        }
     </style>
 
     <!-- 🔧 页面级自定义样式插槽 -->
@@ -186,6 +237,19 @@
             return date.toLocaleString();
         }
         
+        // 全局前端统一时间转换函数
+        function utcToLocalDatetimeLocal(isoString) {
+            if (!isoString) return '';
+            const date = new Date(isoString);
+            if (isNaN(date.getTime())) return '';
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        }
+
         // 全局函数：将页面上所有带有 class="local-time" 且 data-utc 属性的元素转换为本地时区显示
         function convertAllTimesToLocal() {
             const elements = document.querySelectorAll('.local-time[data-utc]');
@@ -312,7 +376,136 @@
                 datalist.appendChild(optCode);
             });
         }
+        
+        /**
+         * 初始化国家输入框的自动提示（跟随用户输入动态过滤，不提前展示全部）
+         * @param {string} inputId - 输入框元素的 ID
+         * @param {string} datalistId - 对应 datalist 的 ID
+         * @param {string} hiddenId - (可选) 隐藏字段的 ID，用于存储国家代码
+         */
+        async function setupCountryAutocomplete(inputId, datalistId, hiddenId = null) {
+            const input = document.getElementById(inputId);
+            const datalist = document.getElementById(datalistId);
+            if (!input || !datalist) return;
 
+            // 隐藏原生 datalist，不再使用
+            datalist.innerHTML = '';
+            datalist.style.display = 'none';
+
+            // 确保国家列表已加载
+            await loadCountryList();
+
+            // 给输入框的父容器添加相对定位，用于下拉面板定位
+            const wrapper = input.parentElement;
+            if (wrapper && !wrapper.classList.contains('country-autocomplete-wrapper')) {
+                wrapper.classList.add('country-autocomplete-wrapper');
+            }
+
+            // 创建自定义下拉面板（ul）
+            const suggestionList = document.createElement('ul');
+            suggestionList.className = 'country-suggestions';
+            suggestionList.id = inputId + '_suggestions';
+            // 插入到 input 后面
+            if (wrapper) {
+                wrapper.appendChild(suggestionList);
+            } else {
+                input.parentNode.insertBefore(suggestionList, input.nextSibling);
+            }
+
+            // 填充下拉面板内容
+            function renderSuggestions(q) {
+                suggestionList.innerHTML = '';
+                if (q.length === 0) {
+                    suggestionList.style.display = 'none';
+                    return;
+                }
+                const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
+                const matched = window.countryList.filter(c =>
+                    c.name_zh.toLowerCase().includes(q) ||
+                    c.name_en.toLowerCase().includes(q) ||
+                    c.code.toLowerCase().includes(q)
+                ).slice(0, 10);
+
+                if (matched.length === 0) {
+                    suggestionList.style.display = 'none';
+                    return;
+                }
+
+                matched.forEach(c => {
+                    const li = document.createElement('li');
+                    const display = (lang === 'zh') ? c.name_zh : c.name_en;
+                    li.textContent = display;
+                    li.dataset.code = c.code;
+                    li.dataset.nameZh = c.name_zh;
+                    li.dataset.nameEn = c.name_en;
+                    // 点击选项时填充输入框
+                    li.addEventListener('mousedown', function(e) {
+                        e.preventDefault();
+                        input.value = display;
+                        if (hiddenId) {
+                            document.getElementById(hiddenId).value = c.code;
+                        }
+                        suggestionList.style.display = 'none';
+                        // 触发一次 input 事件，保持联动
+                        input.dispatchEvent(new Event('input', {bubbles: true}));
+                    });
+                    suggestionList.appendChild(li);
+                });
+                suggestionList.style.display = 'block';
+            }
+
+            // 输入事件：实时更新下拉列表
+            input.addEventListener('input', function() {
+                const q = this.value.trim().toLowerCase();
+                renderSuggestions(q);
+            });
+
+            // 点击页面其他地方隐藏下拉
+            document.addEventListener('click', function(e) {
+                if (!wrapper.contains(e.target) && e.target !== input) {
+                    suggestionList.style.display = 'none';
+                }
+            });
+
+            // 失焦时标准化（但不提示，不清空输入框）
+            input.addEventListener('blur', function() {
+                setTimeout(() => {
+                    const val = input.value.trim();
+                    if (!val) {
+                        if (hiddenId) document.getElementById(hiddenId).value = '';
+                        return;
+                    }
+                    // 精确匹配国家列表
+                    const matched = window.countryList.find(c =>
+                        c.name_zh === val ||
+                        c.name_en.toLowerCase() === val.toLowerCase() ||
+                        c.code === val.toUpperCase()
+                    );
+                    if (matched) {
+                        const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
+                        input.value = (lang === 'zh') ? matched.name_zh : matched.name_en;
+                        if (hiddenId) document.getElementById(hiddenId).value = matched.code;
+                    } else {
+                        // 保留用户输入，只清空隐藏字段
+                        if (hiddenId) document.getElementById(hiddenId).value = '';
+                    }
+                    suggestionList.style.display = 'none';
+                }, 150);
+            });
+
+            // 初始值标准化（如果有）
+            const initVal = input.value.trim();
+            if (initVal) {
+                const matched = window.countryList.find(c =>
+                    c.name_zh === initVal || c.name_en.toLowerCase() === initVal.toLowerCase() || c.code === initVal.toUpperCase()
+                );
+                if (matched) {
+                    const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
+                    input.value = (lang === 'zh') ? matched.name_zh : matched.name_en;
+                    if (hiddenId) document.getElementById(hiddenId).value = matched.code;
+                }
+            }
+        }
         // 3. 国家输入框失焦校验（自动匹配标准名称，写入隐藏字段）
         // 全局函数：校验国家输入，支持直接传元素或传 inputId, hiddenId
         async function validateCountryInput(inputArg, hiddenId) {
@@ -356,13 +549,49 @@
                 input.value = '';
                 if (hidden) hidden.value = '';
                 if (typeof showToast === 'function') {
-                    showToast('国家不在列表中，请重新选择', 'warning');
+                    showToast(t('t_country_requred'), 'warning');
                 } else {
-                    alert('国家不在列表中，请重新选择');
+                    alert(t('t_country_requred'));
                 }
                 return false;
             }
         }
+
+        // 全局国家模糊匹配函数，支持直接传元素或传 inputId, hiddenId
+        /**
+         * 根据用户输入的国家文本，返回用于后端过滤的国家参数字符串
+         * - 若匹配到精确代码（如 NP），返回 "NP"
+         * - 若匹配到标准名称（如 尼泊尔 / Nepal），返回 "NP"
+         * - 若模糊匹配到多个国家，返回逗号分隔的代码列表，如 "NP,LK"
+         * - 若无匹配，返回 "___NONE___" 使后端返回空结果
+         */
+        function resolveCountryParam(inputValue) {
+            if (!inputValue) return '';
+            const val = inputValue.trim();
+            if (!val) return '';
+
+            // 1. 精确代码（大小写不敏感）
+            const exactCode = window.countryList?.find(c => c.code === val.toUpperCase());
+            if (exactCode) return exactCode.code;
+
+            // 2. 精确名称（中文 / 英文）
+            const exactName = window.countryList?.find(c => c.name_zh === val || c.name_en.toLowerCase() === val.toLowerCase());
+            if (exactName) return exactName.code;
+
+            // 3. 模糊包含（中 / 英 / 代码）
+            const lowerVal = val.toLowerCase();
+            const matched = window.countryList?.filter(c =>
+                c.name_zh.toLowerCase().includes(lowerVal) ||
+                c.name_en.toLowerCase().includes(lowerVal) ||
+                c.code.toLowerCase().includes(lowerVal)
+            ).map(c => c.code) || [];
+
+            if (matched.length > 0) return matched.join(',');
+
+            // 4. 无匹配 → 返回空结果
+            return '___NONE___';
+        }
+
     </script>
 </body>
 </html>
