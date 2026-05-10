@@ -1,3 +1,4 @@
+<!-- templates/admin/import_preview.html -->
 {% extends "base.html" %}
 {% block title %}题库导入预览{% endblock %}
 {% block extra_css %}
@@ -12,27 +13,29 @@
 {% block content %}
 <div class="card shadow-sm">
   <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap">
-    <h5 class="mb-0">📄 考试预览（可编辑）</h5>
+    <h5 class="mb-0">📄 <span data-i18n="exam_preview">考试预览（可编辑）</span></h5>
     <div>
-      <button type="button" class="btn btn-outline-secondary me-2" id="backBtn">← 返回</button>
+      <!-- <button type="button" class="btn btn-outline-secondary me-2" id="backBtn">← 返回</button> -->
+      <button class="btn btn-sm btn-outline-secondary ms-2" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
       {% if edit_mode %}
-        <button type="button" class="btn btn-primary" id="updateBtn">💾 保存修改</button>
+        <button type="button" class="btn btn-primary" id="updateBtn">💾 <span data-i18n="Save_modifications">保存修改</span></button>
       {% else %}
-        <button type="button" class="btn btn-success" id="saveBtn">✅ 确认导入数据库</button>
-        <button type="button" class="btn btn-info" id="saveDraftBtn">📝 保存为草稿</button>
+        <button type="button" class="btn btn-success" id="saveBtn">✅ <span data-i18n="confirm_to_import_data">确认导入数据库</span></button>
+        <button type="button" class="btn btn-info" id="saveDraftBtn">📝 <span data-i18n="save_draft">保存草稿</span></button>
       {% endif %}
     </div>
   </div>
   <div class="card-body">
     <div class="row mb-3">
       <div class="col-md-6">
-        <label class="form-label fw-bold" for="examTitleInput">📌 考试名称</label>
+        <label class="form-label fw-bold" for="examTitleInput">📌 <span data-i18n="exam_name">考试名称</span></label>
         <input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
-        <div class="form-text">可编辑，将作为考试的名称</div>
+        <div class="form-text"><span data-i18n="editable_using_for_name_exam">可编辑，将作为考试的名称</span></div>
       </div>
       <div class="col-md-6">
         <label class="form-label" for="countryInput" data-i18n="country">国家</label>
-        <input type="text" id="countryInput" class="form-control" list="countryDatalist" placeholder="请输入或选择国家" data-code-input="countryCode" autocomplete="off" value="{{ exam_country_name or '' }}">
+        <input type="text" id="countryInput" class="form-control" list="countryDatalist" 
+        placeholder="请输入或选择国家" data-code-input="countryCode" autocomplete="off" value="{{ exam_country_name or '' }}">
         <datalist id="countryDatalist"></datalist>
         <input type="hidden" id="countryCode" value="{{ exam_country or '' }}">
       </div>
@@ -42,30 +45,37 @@
     <table class="table table-bordered edit-table mb-0">
       <thead class="table-dark">
         <tr>
-          <th style="width:40px">操作</th>
-          <th style="width:50px">题号</th>
-          <th style="width:80px">题型</th>
-          <th>题干</th>
-          <th>选项A</th><th>选项B</th><th>选项C</th><th>选项D</th>
-          <th>选项E</th><th>选项F</th><th>选项G</th><th>选项H</th><th>选项I</th>
-          <th>标准答案</th>
-          <th style="width:60px">分值</th>
+          <th style="width:40px"><span data-i18n="actions">操作</span></th>
+          <th style="width:50px"><span data-i18n="question_no">题号</span></th>
+          <th style="width:80px"><span data-i18n="question_type">题型</span></th>
+          <th><span data-i18n="question_stem">题干</span></th>
+          <th><span data-i18n="option">选项</span>A</th>
+          <th><span data-i18n="option">选项</span>B</th>
+          <th><span data-i18n="option">选项</span>C</th>
+          <th><span data-i18n="option">选项</span>D</th>
+          <th><span data-i18n="option">选项</span>E</th>
+          <th><span data-i18n="option">选项</span>F</th>
+          <th><span data-i18n="option">选项</span>G</th>
+          <th><span data-i18n="option">选项</span>H</th>
+          <th><span data-i18n="option">选项</span>I</th>
+          <th><span data-i18n="standard_answer">标准答案</span></th>
+          <th style="width:60px"><span data-i18n="str score">分值</span></th>
         </tr>
       </thead>
       <tbody id="qTableBody">
         {% for q in questions %}
         <tr data-index="{{ loop.index0 }}">
           <td class="row-actions">
-            <button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
-            <button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
-            <button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
+            <button class="btn btn-xs btn-secondary insert-above" data-i18n-title="title_insert_above" title="在上方插入">▲</button>
+            <button class="btn btn-xs btn-secondary insert-below" data-i18n-title="title_insert_below" title="在下方插入">▼</button>
+            <button class="btn btn-xs btn-danger delete-row" data-i18n-title="title_delete" title="删除">✖</button>
           </td>
           <td class="q-num">{{ q.num }}</td>
           <td>
             <select class="form-select form-select-sm q-type">
-              <option value="single" {% if q.type=='single' %}selected{% endif %}>单选</option>
-              <option value="multi" {% if q.type=='multi' %}selected{% endif %}>多选</option>
-              <option value="judge" {% if q.type=='judge' %}selected{% endif %}>判断</option>
+              <option value="single" {% if q.type=='single' %}selected{% endif %}><span data-i18n="single">单选</span></option>
+              <option value="multi" {% if q.type=='multi' %}selected{% endif %}><span data-i18n="multi">多选</span></option>
+              <option value="judge" {% if q.type=='judge' %}selected{% endif %}><span data-i18n="judge">判断</span></option>
             </select>
           </td>
           <td><textarea class="form-control form-control-sm q-content">{{ q.content }}</textarea></td>
@@ -86,7 +96,7 @@
     </table>
   </div>
   <div class="card-footer text-center">
-    <button type="button" class="btn btn-secondary" id="addRowBtn">➕ 新增题目（末尾）</button>
+    <button type="button" class="btn btn-secondary" id="addRowBtn">➕ <span data-i18n="new_question">新增题目（末尾）</span></button>
   </div>
 </div>
 {% endblock %}
@@ -109,16 +119,16 @@
   function createEmptyRow() {
     return `
       <td class="row-actions">
-        <button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
-        <button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
-        <button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
+        <button class="btn btn-xs btn-secondary insert-above" data-i18n_title="title_insert_above" title="在上方插入">▲</button>
+        <button class="btn btn-xs btn-secondary insert-below" data-i18n_title="title_insert_below" title="在下方插入">▼</button>
+        <button class="btn btn-xs btn-danger delete-row" data-i18n_title="title_delete" title="删除">✖</button>
       </td>
       <td class="q-num"></td>
       <td>
         <select class="form-select form-select-sm q-type">
-          <option value="single" selected>单选</option>
-          <option value="multi">多选</option>
-          <option value="judge">判断</option>
+          <option value="single" selected><span data-i18n="single">单选</span></option>
+          <option value="multi"><span data-i18n="multi">多选</span></option>
+          <option value="judge"><span data-i18n="judge">判断</span></option>
         </select>
       </td>
       <td><textarea class="form-control form-control-sm q-content"></textarea></td>
@@ -152,7 +162,7 @@
   // ---- 删除行 ----
   function deleteRow(row) {
     if (document.querySelectorAll('#qTableBody tr').length === 1) {
-      alert("至少保留一道题目");
+      alert(t('t_keep_one_question'));
       return;
     }
     row.remove();
@@ -200,9 +210,9 @@
 
   // ---- 通用校验 ----
   function validate(examTitle) {
-    if (!examTitle) { alert('请填写考试名称'); return false; }
+    if (!examTitle) { alert(t('t_fill_exam_name')); return false; }
     const questions = collectQuestionsData();
-    if (questions.length === 0) { alert('至少添加一道题目'); return false; }
+    if (questions.length === 0) { alert(t('t_add_one_question')); return false; }
     return true;
   }
 
@@ -220,10 +230,10 @@
     });
     const json = await res.json();
     if (json.success) {
-      alert(isDraft ? '考试已保存为草稿' : '导入成功');
+      alert(isDraft ? t('t_saved_as_draft') : t('t_import successful'));
       window.location.href = '{{ url_for("admin_exams_page") }}';
     } else {
-      alert('操作失败: ' + json.message);
+      alert(t('operation_failed') + json.message);
     }
   }
 
@@ -246,21 +256,34 @@
     });
     const json = await res.json();
     if (json.success) {
-      alert('保存成功');
+      alert(t('t_save_successful'));
       window.location.href = returnUrl;
     } else {
-      alert('更新失败: ' + json.message);
+      alert(t('t_update_failed') + json.message);
     }
   }
 
   // ---- 页面初始化 ----
   document.addEventListener('DOMContentLoaded', async () => {
     // 填充国家 datalist
-    await populateCountryDatalist('countryDatalist');
+    await setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCode');
     const countryInput = document.getElementById('countryInput');
     if (countryInput) {
-      countryInput.addEventListener('blur', () => validateCountryInput('countryInput', 'countryCode'));
-      if (countryInput.value) await validateCountryInput('countryInput', 'countryCode');
+        countryInput.addEventListener('blur', () => validateCountryInput('countryInput', 'countryCode'));
+        if (countryInput.value) {
+            validateCountryInput('countryInput', 'countryCode');
+        }
+    }
+
+    // 如果是编辑模式或已有国家代码，设置输入框显示值
+    const countryCode = document.getElementById('countryCode').value;
+    if (countryCode) {
+        const countries = await loadCountryList();  // 使用全局缓存的国家列表
+        const matched = countries.find(c => c.code === countryCode);
+        if (matched) {
+            const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
+            document.getElementById('countryInput').value = lang === 'zh' ? matched.name_zh : matched.name_en;
+        }
     }
 
     // 绑定行操作事件
@@ -284,10 +307,6 @@
       document.getElementById('saveDraftBtn').addEventListener('click', () => saveAsDraft(true));
     }
 
-    // 返回按钮
-    document.getElementById('backBtn').addEventListener('click', () => {
-      window.location.href = returnUrl;
-    });
   });
 </script>
 {% endblock %}
