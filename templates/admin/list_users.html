@@ -17,8 +17,7 @@
                 </div>
                 <div class="col-md-3">
                     <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                    data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" 
-                    autocomplete="off">
+                    data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off">
                     <datalist id="countryDatalist"></datalist>
                 </div>
                 <div class="col-md-2">
@@ -61,7 +60,11 @@
                     </style>
                     <thead class="table-light">
                         <tr>
-                            <th>ID</th>
+                            <th><span data-i18n="actions">操作</span></th>
+                            {% if session.get('role') == 'super_admin' %}
+                            <th class="super-only"><span data-i18n="power_scope">权限范围</span></th>
+                            {% endif %}
+                            <th><span data-i18n="role">角色</span></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="name_en">姓名</span></th>
                             <th><span data-i18n="email">邮箱</span></th>
@@ -74,8 +77,7 @@
                             <th><span data-i18n="is_partner">合作方?</span></th>
                             <th><span data-i18n="employee_id">工号</span></th>
                             <th><span data-i18n="birthday">生日</span></th>
-                            <th><span data-i18n="role">角色</span></th>
-                            <th><span data-i18n="actions">操作</span></th>
+                            <th>ID</th>
                         </tr>
                     </thead>
                     <tbody id="userTableBody">
@@ -169,6 +171,19 @@
                                 <option value="super_admin">超级管理员</option>
                             </select>
                         </div>
+                        <div class="col-md-6" id="adminCountriesGroup" style="display:none;">
+                            <label class="form-label" for="adminCountriesInput"><span data-i18n="power_scope_multiple">权限范围（可多选）</span></label>
+                            <div class="position-relative">
+                                <div id="countryTagsContainer" class="form-control d-flex flex-wrap align-items-start" 
+                                    style="min-height:38px; cursor:text; padding:4px;" 
+                                    onclick="document.getElementById('adminCountriesInput').focus()">
+                                    <input type="text" id="adminCountriesInput" class="border-0 flex-grow-1" 
+                                    style="outline:none; min-width:120px;" placeholder="输入国家搜索..." autocomplete="off">
+                                </div>
+                                <ul class="country-suggestions" id="countrySuggestions" style="display:none;"></ul>
+                            </div>
+                            <small class="text-muted"><span data-i18n="multiple_select_method">输入国家名称搜索，点击添加。可添加多个国家。</span></small>
+                        </div>
                         <div class="col-md-6">
                             <label class="form-label" for="phone"><span data-i18n="phone">手机号</span></label>
                             <input type="text" class="form-control" id="phone" autocomplete="tel">
@@ -211,7 +226,113 @@
     }
 
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
-   
+
+    // 存储当前选中的国家代码
+    let selectedAdminCountryCodes = [];
+    const countryAllList = []; // 将在 init 时填充
+
+    async function initAdminCountryTags(existingCodes = null) {
+        selectedAdminCountryCodes = existingCodes ? JSON.parse(existingCodes) : [];
+        const container = document.getElementById('countryTagsContainer');
+        const input = document.getElementById('adminCountriesInput');
+        const suggestionList = document.getElementById('countrySuggestions');
+        
+        // 加载全部国家列表
+        const countries = await loadCountryList();
+        window.countryList = countries; // 确保全局可用
+        
+        // 渲染已有标签
+        renderSelectedTags();
+
+        // 清除旧事件
+        input.replaceWith(input.cloneNode(true));
+        const newInput = document.getElementById('adminCountriesInput');
+        newInput.addEventListener('input', debounce(async function() {
+            const q = this.value.trim().toLowerCase();
+            suggestionList.innerHTML = '';
+            if (!q) { suggestionList.style.display = 'none'; return; }
+
+            const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
+            const matched = countries.filter(c => 
+                c.name_zh.toLowerCase().includes(q) || 
+                c.name_en.toLowerCase().includes(q) || 
+                c.code.toLowerCase().includes(q)
+            ).slice(0, 10);
+
+            if (matched.length === 0) {
+                suggestionList.style.display = 'none';
+                return;
+            }
+
+            suggestionList.innerHTML = matched.map(c => {
+                const display = (lang === 'zh') ? c.name_zh : c.name_en;
+                return `<li data-code="${c.code}" data-name="${display}" class="list-group-item list-group-item-action">${display} (${c.code})</li>`;
+            }).join('');
+            suggestionList.style.display = 'block';
+        }, 200));
+
+        // 点击建议项
+        suggestionList.addEventListener('click', function(e) {
+            const li = e.target.closest('li');
+            if (!li) return;
+            const code = li.dataset.code;
+            if (code && !selectedAdminCountryCodes.includes(code)) {
+                selectedAdminCountryCodes.push(code);
+                renderSelectedTags();
+                newInput.value = '';
+            }
+            suggestionList.style.display = 'none';
+        });
+
+        // 失焦藏起建议
+        newInput.addEventListener('blur', () => {
+            setTimeout(() => suggestionList.style.display = 'none', 200);
+        });
+        
+        // 焦点时如果输入框有值，重新过滤
+        newInput.addEventListener('focus', function() {
+            if (this.value.trim()) {
+                this.dispatchEvent(new Event('input'));
+            }
+        });
+    }
+
+    function renderSelectedTags() {
+        const container = document.getElementById('countryTagsContainer');
+        const input = document.getElementById('adminCountriesInput');
+        // 清除旧标签（保留 input）
+        const tags = container.querySelectorAll('.tag');
+        tags.forEach(t => t.remove());
+        
+        selectedAdminCountryCodes.forEach(code => {
+            const country = window.countryList?.find(c => c.code === code);
+            const display = country ? (window.i18n?.currentLang === 'en' ? country.name_en : country.name_zh) : code;
+            const tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.innerHTML = `${display} <span class="remove-tag" data-code="${code}">&times;</span>`;
+            container.insertBefore(tag, input);
+        });
+        
+        // 重新绑定删除事件
+        document.querySelectorAll('.remove-tag').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const code = this.dataset.code;
+                selectedAdminCountryCodes = selectedAdminCountryCodes.filter(c => c !== code);
+                renderSelectedTags();
+            });
+        });
+    }
+
+    // 防抖函数
+    function debounce(fn, delay) {
+        let timer;
+        return function(...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
     // 全局：动态更新邮箱必填属性
     function updateEmailRequired() {
         const emailInput = document.getElementById('email');
@@ -293,7 +414,19 @@
         }
         tbody.innerHTML = displayUsers.map(u => `
             <tr>
-                <td>${u.id.slice(0,8)}...</td>
+                <td>
+                    ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
+                    ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
+                    ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
+                </td>
+                ${CURRENT_USER_ROLE === 'super_admin' ? `
+                <td>${(u.admin_countries ? (() => { 
+                    try { const codes = JSON.parse(u.admin_countries); return codes.length ? codes.join(', ') : t('t_general'); } 
+                    catch(e) { return u.admin_countries; } })() : t('t_general'))}
+                </td>` : ''}
+                <td>
+                    ${u.role === 'super_admin' ? t('t_super_admin') : (u.role === 'admin' ? t('t_admin') : t('t_ordinary_user'))}
+                </td>
                 <td>${escapeHtml(u.country || '-')}</td>
                 <td>${escapeHtml(u.name_en || '-')}</td>
                 <td>${u.email && u.email.startsWith('noemail-') ? '' : escapeHtml(u.email)}</td>
@@ -306,14 +439,7 @@
                 <td>${u.is_partner ? t('t_yes') : t('t_no')}</td>
                 <td>${escapeHtml(u.employee_id || '-')}</td>
                 <td>${escapeHtml(u.birthday || '-')}</td>
-                <td>
-                    ${u.role === 'super_admin' ? t('t_super_admin') : (u.role === 'admin' ? t('t_admin') : t('t_ordinary_user'))}
-                </td>
-                <td>
-                    ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
-                    ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
-                    ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
-                 </td>
+                <td>${u.id.slice(0,8)}...</td>
             </tr>
         `).join('');
         
@@ -420,11 +546,21 @@
                     countryCodeHidden.value = '';
                 }
             }
+            
             // 绑定状态变化监听
             const userStatusSelect = document.getElementById('user_status');
             userStatusSelect.removeEventListener('change', updateEmailRequired);
             userStatusSelect.addEventListener('change', updateEmailRequired);
             updateEmailRequired(); // 根据当前状态设置
+
+            // 权限范围标签初始化
+            // 权限范围组件：仅超管编辑管理员时显示
+            if (CURRENT_USER_ROLE === 'super_admin' && user.role === 'admin') {
+                document.getElementById('adminCountriesGroup').style.display = '';
+                await initAdminCountryTags(user.admin_countries || '[]');
+            } else {
+                document.getElementById('adminCountriesGroup').style.display = 'none';
+            }
 
             new bootstrap.Modal(document.getElementById('addUserModal')).show();
         } catch (err) {
@@ -471,7 +607,14 @@
             is_partner: document.getElementById('isPartnerSelect').value
         };
         const userStatus = document.getElementById('user_status')?.value;
-            
+
+        // 权限范围
+        // 权限范围：只要是超管且编辑用户为管理员（或新建时角色为 admin）
+        const targetRole = document.getElementById('role').value;
+        if (CURRENT_USER_ROLE === 'super_admin' && targetRole === 'admin') {
+            // 无论组件是否显示，都尝试从 selectedAdminCountryCodes 取数据
+            formData.admin_countries = JSON.stringify(selectedAdminCountryCodes || []);
+        }
         // 只有 user_status 不是 'imported' 时，邮箱才是必填的
         if (!formData.email && userStatus !== 'imported') {
             alert(t('mail_no_empty'));
@@ -517,15 +660,29 @@
             // 新建模式
             document.getElementById('userForm').reset();
             document.getElementById('editUserId').value = '';
-            const countryInput = document.getElementById('userCountrySelect');
-            const countryCodeHidden = document.getElementById('countryCode');
-            if (countryInput) countryInput.value = '';
-            if (countryCodeHidden) countryCodeHidden.value = '';
-            if (typeof populateCountryDatalist === 'function') {
-                await populateCountryDatalist('countryDatalist');
-            }
             updateEmailRequired(); // 确保默认状态去掉 required
         }
+
+        // 根据角色控制权限范围组件显示
+        const roleSelect = document.getElementById('role');
+        const toggleAdminCountries = () => {
+            if (roleSelect.value === 'admin' && CURRENT_USER_ROLE === 'super_admin') {
+                document.getElementById('adminCountriesGroup').style.display = '';
+                if (!currentEditUserId) {
+                    // 新建管理员，初始化空标签
+                    initAdminCountryTags('[]');
+                }
+                // 编辑时由 openEditModal 处理初始化
+            } else {
+                document.getElementById('adminCountriesGroup').style.display = 'none';
+                selectedAdminCountryCodes = [];  // 清空
+            }
+        };
+        // 先禁用之前的监听，避免重复绑定
+        roleSelect.removeEventListener('change', toggleAdminCountries);
+        roleSelect.addEventListener('change', toggleAdminCountries);
+        // 执行一次，确保当前状态正确
+        toggleAdminCountries();
     });
 
     // 导入按钮点击 → 触发1文件选择
@@ -609,13 +766,11 @@
         });
     })();
 
-    document.getElementById('userCountrySelect')?.addEventListener('blur', () => {
-        validateCountryInput('userCountrySelect', 'countryCode');
-    });
-
     // 初始化国家列表
     document.addEventListener('DOMContentLoaded', async () => {
-        await populateCountryDatalist('countryDatalist');
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist');   // 筛选栏
+        // 同时初始化编辑模态框的国家
+        await setupCountryAutocomplete('userCountrySelect', 'countryDatalist', 'countryCode');
     });
 </script>
 {% endblock %}
