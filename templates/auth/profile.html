@@ -111,16 +111,7 @@
 {% block extra_js %}
 <script>
     document.addEventListener('DOMContentLoaded', async () => {
-        // 1. 填充国家 datalist
-        await populateCountryDatalist('countryDatalist');
-
-        // 2. 绑定失焦校验
-        const countryInput = document.getElementById('countrySelect');
-        if (countryInput) {
-            countryInput.addEventListener('blur', () => {
-                validateCountryInput('countrySelect', 'countryCode');
-            });
-        }
+        await setupCountryAutocomplete('countrySelect', 'countryDatalist', 'countryCode');
 
         // 3. 根据已有国家代码设置输入框的显示文本
         const userCountryCode = "{{ user.country or '' }}";
