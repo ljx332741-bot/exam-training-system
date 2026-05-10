@@ -52,6 +52,75 @@ app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
 app.debug = False  # 🔥 强制调试模式显示详细错误
 
+# ================= 全局函数 =================
+@app.route('/health')
+def health_check():
+    # 返回一个简单的 "OK" 和 200 状态码即可
+    return "OK", 200
+
+def get_allowed_countries():
+    """返回当前管理员允许的国家代码列表，若为超管或未设限制则返回 None"""
+    if session.get('role') == 'super_admin':
+        return None
+    data = session.get('admin_countries')
+    if not data:
+        return None
+    if isinstance(data, str):
+        try:
+            return json.loads(data)
+        except:
+            return []
+    return data
+
+
+def apply_country_filter(query, country_field='country'):
+    """若当前管理员有限制，则给查询添加国家过滤"""
+    allowed = get_allowed_countries()
+    if allowed is not None:
+        if not allowed:
+            query = query.eq(country_field, '__NONEXISTENT__')
+        else:
+            query = query.in_(country_field, allowed)
+    return query
+
+def local_to_utc(local_time_str, local_tz=None):
+    """
+    将本地时间字符串（格式：YYYY-MM-DDTHH:MM）转换为 UTC ISO 字符串。
+    如果未传时区，则使用环境变量 LOCAL_TIMEZONE 或默认 Asia/Kathmandu。
+    """
+    if not local_time_str:
+        return None
+    local_dt = datetime.fromisoformat(local_time_str)
+    tz_name = local_tz if local_tz else DEFAULT_LOCAL_TIMEZONE
+    local_tz_obj = pytz.timezone(tz_name)
+    local_dt_aware = local_tz_obj.localize(local_dt)
+    utc_dt = local_dt_aware.astimezone(timezone.utc)
+    return utc_dt.isoformat()
+
+def robust_parse_json(value):
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, str):
+                return robust_parse_json(parsed)
+            return parsed
+        except:
+            return {}
+    return {}
+
+def random_pick_questions(exam_id, count):
+    """1. 随机抽题工具函数（放在文件顶部或合适位置） 从指定考试中随机抽取 count 道题目，返回题目列表"""
+    db = get_supabase()
+    q_res = db.table("questions").select("*").eq("exam_id", exam_id).execute()
+    questions = q_res.data or []
+    if len(questions) <= count:
+        return questions
+    return random.sample(questions, count)
+
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
     """扫描所有已超时但未提交的考试，执行自动提交"""
@@ -147,49 +216,6 @@ def auto_submit_timeout_exams():
                 db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
             except:
                 pass
-
-@app.route('/health')
-def health_check():
-    # 返回一个简单的 "OK" 和 200 状态码即可
-    return "OK", 200
-
-def local_to_utc(local_time_str, local_tz=None):
-    """
-    将本地时间字符串（格式：YYYY-MM-DDTHH:MM）转换为 UTC ISO 字符串。
-    如果未传时区，则使用环境变量 LOCAL_TIMEZONE 或默认 Asia/Kathmandu。
-    """
-    if not local_time_str:
-        return None
-    local_dt = datetime.fromisoformat(local_time_str)
-    tz_name = local_tz if local_tz else DEFAULT_LOCAL_TIMEZONE
-    local_tz_obj = pytz.timezone(tz_name)
-    local_dt_aware = local_tz_obj.localize(local_dt)
-    utc_dt = local_dt_aware.astimezone(timezone.utc)
-    return utc_dt.isoformat()
-
-def robust_parse_json(value):
-    if not value:
-        return {}
-    if isinstance(value, dict):
-        return value
-    if isinstance(value, str):
-        try:
-            parsed = json.loads(value)
-            if isinstance(parsed, str):
-                return robust_parse_json(parsed)
-            return parsed
-        except:
-            return {}
-    return {}
-
-def random_pick_questions(exam_id, count):
-    """1. 随机抽题工具函数（放在文件顶部或合适位置） 从指定考试中随机抽取 count 道题目，返回题目列表"""
-    db = get_supabase()
-    q_res = db.table("questions").select("*").eq("exam_id", exam_id).execute()
-    questions = q_res.data or []
-    if len(questions) <= count:
-        return questions
-    return random.sample(questions, count)
 
 # 创建调度器实例
 scheduler = BackgroundScheduler()
@@ -384,6 +410,10 @@ def api_register():
         # return jsonify({"success": False, "message": "该邮箱已注册，请直接登录或更换邮箱"}), 400
         return jsonify({"success": False, "message": "email_already_registered", "params": []}), 400
     
+    country = d.get('country', '').strip().upper()
+    if not country:
+        return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
+
     # 2. 姓名 + 出生日期精确匹配 imported 用户（且尚未设置邮箱）
     query = db.table("users").select("*") \
         .eq("name_en", name_en) \
@@ -431,7 +461,8 @@ def api_register():
         "user_status": "registered",
         "is_active": True,
         "is_partner": True if is_partner_val.upper() == 'Y' else False,
-        "updated_at": datetime.now(timezone.utc).isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "country": country
     }
     # 如果前端传了出生日期，可更新（确保一致），但预授权已有生日则不必改
     if birthday:
@@ -443,7 +474,8 @@ def api_register():
     session.update({
         "user_id": target['id'],
         "user_email": email,
-        "role": target.get('role', 'user')
+        "role": target.get('role', 'user'),
+        "admin_countries": user.get('admin_countries', '')  # ✅ 新增
     })
     return jsonify({"success": True, "redirect": url_for('index')})
 
@@ -481,7 +513,8 @@ def login():
             session.update({
                 "user_id": user['id'],
                 "user_email": email,
-                "role": user.get('role', 'user')
+                "role": user.get('role', 'user'),
+                "admin_countries": user.get('admin_countries', '')   # ✅ 加入此行
             })
             flash({'msg': 'login_success', 'params': []}, 'success')
             return redirect(url_for('index'))
@@ -510,9 +543,14 @@ def index():
 @login_required
 def dashboard():
     db = get_supabase()
+    now = datetime.now(timezone.utc)
     try:
-        exams_res = db.table("exams").select("*").eq("is_active", True).execute()
-        exams = exams_res.data or []
+        exams_res = db.table("exams").select("*").execute()
+        exams = []
+        for ex in exams_res.data or []:
+            status = get_exam_status(ex)
+            if status in ('created', 'active'):   # 只显示已发布或进行中的考试
+                exams.append(ex)
         user_id = session['user_id']
 
         # 获取当前用户的所有考试状态
@@ -544,6 +582,17 @@ def dashboard():
             else:
                 ex['user_status']['started'] = False
                 ex['user_status']['is_submitted'] = False
+
+            # 计算是否可进入
+            start_time = ex.get('start_time')
+            can_enter = False
+            if start_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time)
+                    can_enter = now >= start_dt
+                except:
+                    can_enter = False
+            ex['can_enter'] = can_enter
 
         # 查询考试成绩
         results_res = db.table("exam_results").select("*").eq("user_id", session['user_id']).order("created_at", desc=True).limit(5).execute()
@@ -582,49 +631,63 @@ def take_exam(exam_id):
         db = get_supabase()
         user_id = session['user_id']
         now = datetime.now(timezone.utc)
+
+        # 1. 获取考试基本信息（有效期和时长）
+        exam_info = db.table("exams").select("start_time, end_time, duration").eq("id", exam_id).maybe_single().execute()
+        if not exam_info.data:
+            flash("考试不存在", "danger")
+            return redirect(url_for('dashboard'))
         
-        # 检查提交状态
+        exam = exam_info.data
+        start_time = exam.get('start_time')
+        end_time = exam.get('end_time')
+        duration_minutes = exam.get('duration', 60)
+
+        # 2. 检查考试是否已结束
+        if end_time:
+            end_dt = datetime.fromisoformat(end_time)
+            if now > end_dt:
+                flash({'msg': 'exam_ended', 'params': []}, 'warning')
+                return redirect(url_for('dashboard'))
+
+        # 3. 检查考试是否未开始
+        if start_time:
+            start_dt = datetime.fromisoformat(start_time)
+            if now < start_dt:
+                flash({'msg': 'exam_not_started', 'params': []}, 'warning')
+                return redirect(url_for('dashboard'))
+
+        # 4. 检查是否已交卷
         status = db.table("user_exam_status").select("*").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-        if status and hasattr(status, 'data') and status.data and status.data.get("is_submitted"):
+        if status and status.data and status.data.get("is_submitted"):
             flash("您已完成本场考试，无法再次进入。", "warning")
             return redirect(url_for('dashboard'))
         
-        # 获取考试总时长（默认60分钟）
-        try:
-            exam_info = db.table("exams").select("duration").eq("id", exam_id).maybe_single().execute()
-            duration_minutes = exam_info.data.get("duration", 60) if exam_info.data else 60
-        except Exception as e:
-            logger.warning(f"获取考试时长失败，使用默认60分钟: {e}")
-            duration_minutes = 60
         total_seconds = duration_minutes * 60
         
-        # 处理开始时间和重置标志
+        # 5. 处理开始时间和重置标志
         started_at = None
         reset_timer = False
-        reset_token = ''   # 初始化
+        reset_token = ''
 
-        if status and hasattr(status, 'data') and status.data:
+        if status and status.data:
             started_at = status.data.get("started_at")
             submitted_at = status.data.get("submitted_at")
             reset_at = status.data.get("reset_at")
             
-            # 判断是否为重置后首次进入
             if reset_at and (not submitted_at or reset_at > submitted_at):
                 reset_timer = True
-                reset_token = reset_at   # 保存重置标识
+                reset_token = reset_at
             else:
                 reset_token = ''
             
-            # 如果从未开始或重置了，则记录新的开始时间
             if not started_at or reset_timer:
                 started_at = now.isoformat()
-                # 更新开始时间，并清除 reset_at（防止刷新重复触发）
                 db.table("user_exam_status").update({
                     "started_at": started_at,
                     "reset_at": None
                 }).eq("user_id", user_id).eq("exam_id", exam_id).execute()
         else:
-            # 首次进入，插入记录
             started_at = now.isoformat()
             db.table("user_exam_status").insert({
                 "user_id": user_id,
@@ -633,10 +696,9 @@ def take_exam(exam_id):
                 "is_submitted": False
             }).execute()
         
-        # 计算剩余时间
+        # 6. 剩余时间计算
         if started_at:
             try:
-                # 兼容带时区的 ISO 格式
                 start_dt = datetime.fromisoformat(started_at)
                 elapsed = (now - start_dt).total_seconds()
             except:
@@ -645,49 +707,47 @@ def take_exam(exam_id):
         else:
             remaining = total_seconds
         
+        # 7. 超时处理
         if remaining <= 0:
-            # 检查是否已提交（避免重复操作）
-            if not (status and hasattr(status, 'data') and status.data and status.data.get("is_submitted")):
-                logger.info(f"⏰ 考试 {exam_id} 用户 {user_id} 超时，执行自动提交")
+            if not (status and status.data and status.data.get("is_submitted")):
+                logger.info(f"⏰ 考试 {exam_id} 用户 {user_id} 超时，自动提交")
                 try:
-                    # 从本地存储中无法获取答案，因此需要从数据库查询考生已保存的答案
-                    # 注意：由于考生未提交，答案可能未完整保存，此处从 exam_results 临时表或前端本地存储无法获取。
-                    # 简单做法：直接以当前已保存的答案进行评分（若无答案则判零分）
+                    # 尝试从草稿表获取答案
+                    draft = db.table("user_exam_drafts").select("answers").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
+                    answers = {}
+                    if draft and draft.data:
+                        raw = draft.data.get('answers')
+                        try:
+                            answers = json.loads(raw) if isinstance(raw, str) else raw
+                        except:
+                            answers = {}
                     
-                    # 获取该考生在本场考试中已保存的答案（如果有前端自动保存到数据库的功能）
-                    # 若无，则构造空答案字典，自动评分将给零分
-                    answers = {}  # 实际项目中可考虑从某处获取草稿答案
-                    
-                    # 调用评分函数
                     grade = exam.auto_grade(answers, exam_id)
-                    
-                    # 保存成绩
                     customs = {}
                     exam.save_result(user_id, exam_id, answers, grade['total'], grade['details'], customs)
                     
-                    # 更新状态为已提交
                     existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
                     update_data = {
                         "is_submitted": True,
-                        "submitted_at": datetime.utcnow().isoformat(),
+                        "submitted_at": datetime.now(timezone.utc).isoformat(),
                         "reset_at": None
                     }
-                    if existing.data:
+                    if existing and existing.data:
                         db.table("user_exam_status").update(update_data).eq("id", existing.data['id']).execute()
                     else:
                         update_data.update({"user_id": user_id, "exam_id": exam_id, "started_at": started_at})
                         db.table("user_exam_status").insert(update_data).execute()
-                        
-                    logger.info(f"✅ 超时自动提交完成：用户 {user_id}，得分 {grade['total']}")
-                    flash("考试时间已用尽，系统已自动提交您的试卷。", "info")
+                    
+                    logger.info(f"✅ 超时自动提交完成，得分 {grade['total']}")
+                    flash({'msg': 'flash_time_expired_exam_automatically', 'params': []}, "info")
                 except Exception as e:
                     logger.error(f"❌ 超时自动提交失败: {e}")
-                    flash("考试时间已用尽，但自动提交失败，请联系管理员。", "danger")
+                    flash({'msg': 'flash_time_expired_exam_automatic_failed', 'params': []}, "danger")
             else:
-                flash("您已完成本场考试，无法再次进入。", "warning")
+                flash({'msg': 'flash_completed_exam_cannot_reenter', 'params': []}, "warning")
             return redirect(url_for('dashboard'))
 
-        # 查询题目
+        # 8. 查询题目
         qs = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
         questions = qs.data or []
         for q in questions:
@@ -697,7 +757,7 @@ def take_exam(exam_id):
                 except:
                     q['options'] = {}
         
-        logger.info(f"考试 {exam_id} 用户 {user_id} 进入，剩余 {remaining} 秒 (重置={reset_timer})")
+        logger.info(f"考试 {exam_id} 用户 {user_id} 进入，剩余 {remaining} 秒")
         return render_template(
             'exam/take.html',
             exam_id=exam_id,
@@ -705,12 +765,12 @@ def take_exam(exam_id):
             duration_minutes=duration_minutes,
             server_remaining_seconds=remaining,
             reset_timer=reset_timer,
-            reset_token=reset_token,   # 仅当重置时传递
-            user_id=session['user_id'] # 前端需要用户ID来保存答案
+            reset_token=reset_token,
+            user_id=session['user_id']
         )
     except Exception as e:
         logger.error(f"take_exam 发生异常: {e}", exc_info=True)
-        flash("考试加载失败，请稍后重试", "danger")
+        flash({'msg': 'flash_loading_failed_try_later', 'params': []}, "danger")
         return redirect(url_for('dashboard'))
 
 @app.route('/api/exam/draft', methods=['POST'])
@@ -889,11 +949,13 @@ def admin_dashboard():
     """管理员仪表盘"""
     db = get_supabase()
     
-    # 1. 统计注册用户数量
+    # 1. 统计注册用户数量（仅统计被授权国家的激活用户）
+    users_base = db.table("users").select("id", count="exact").eq("is_active", True).is_("deleted_at", "null")
+    users_base = apply_country_filter(users_base, 'country')
     try:
-        users_count = db.table("users").select("id", count="exact").eq("is_active", True).execute().count
+        users_count = users_base.execute().count
     except:
-        users_count = db.table("users").select("id", count="exact").execute().count
+        users_count = db.table("users").select("id", count="exact").is_("deleted_at", "null").execute().count
 
     # 2. 统计考试状态计数（已创建、进行中、已关闭）
     stats_res = db.table("exams").select("status", count="exact").is_("deleted_at", "null").execute() # 改为（只统计未软删除的）
@@ -903,13 +965,17 @@ def admin_dashboard():
     
     # 3. 统计考试数量（exam_results 总记录数）
     # 3.1 统计全部考试数量
+    exams_base_total = db.table("exams").select("id", count="exact").is_("deleted_at", "null")
+    exams_base_total = apply_country_filter(exams_base_total, 'country')
     try:
-        exams_total = db.table("exams").select("id", count="exact").is_("deleted_at", "null").execute().count
+        exams_total = exams_base_total.execute().count
     except:
         exams_total = 0
     # 3.2 统计已完成考试数量
+    exams_base_completed = db.table("exam_results").select("id", count="exact").is_("deleted_at", "null")
+    exams_base_completed = apply_country_filter(exams_base_completed, 'country')
     try:
-        exams_completed = db.table("exam_results").select("id", count="exact").execute().count
+        exams_completed = exams_base_completed.execute().count
     except:
         exams_completed = 0
 
@@ -988,7 +1054,13 @@ def admin_dashboard():
         "trainings_count": trainings_count,
         "total_attendances": total_attendances
     }
-    
+    # 获取培训签到开关状态
+    try:
+        config_res = db.table("system_config").select("value").eq("key", "training_open").execute()
+        sign_in_open = config_res.data[0].get('value', 'false').lower() == 'true' if config_res.data else False
+    except:
+        sign_in_open = False
+        
     return render_template(
         'admin/dashboard.html',
         signs=signs.data or [],
@@ -1156,11 +1228,11 @@ def admin_import():
 def api_admin_import_users():
     """通过 Excel 批量导入用户（潜在学员），姓名必填，邮箱可选"""
     if 'file' not in request.files:
-        return jsonify({"success": False, "message": "未选择文件"}), 400
+        return jsonify({"success": False, "message": "jsonify_no_file_selected", "params": []}), 400
     
     file = request.files['file']
     if not file.filename.endswith(('.xlsx', '.xls')):
-        return jsonify({"success": False, "message": "仅支持 .xlsx 或 .xls 文件"}), 400
+        return jsonify({"success": False, "message": "jsonify_only_supports_files", "params": []}), 400
     
     db = get_supabase()
     
@@ -1447,14 +1519,28 @@ def edit_exam_preview(exam_id):
                 q['options'] = json.loads(q['options'])
             except:
                 q['options'] = {}
-    # 传递原考试名称
+
+    # 获取考试的国家，并尝试转换为显示名称（可选，但方便前端显示）
+    country_code = exam.get('country', '')
+    country_name = ''
+    if country_code:
+        # 可以从国家表查询（如果有）
+        try:
+            db = get_supabase()
+            c_res = db.table("countries").select("name_zh").eq("code", country_code).maybe_single().execute()
+            if c_res.data:
+                country_name = c_res.data['name_zh']
+        except:
+            pass
+    # 传递原考试名称和原考试国家到预览页
     return render_template('admin/import_preview.html',
                            questions=questions,
                            exam_title=exam['title'],
                            edit_mode=True,
                            original_exam_id=exam_id,
                            return_url=url_for('admin_dashboard'),
-                           exam_country=exam.get('country', '')
+                           exam_country=country_code,
+                           exam_country_name=country_name
                            )
 
 @app.route('/admin/exam/<int:exam_id>/update_full', methods=['PUT'])
@@ -2302,31 +2388,6 @@ def api_signin():
         "training_id": 1
     }).execute()
     return jsonify({"success": True})
-
-@app.route('/api/admin/training/toggle', methods=['POST'])
-@login_required
-@admin_required
-def api_training_toggle():
-    """切换培训签到开关"""
-    db = get_supabase()
-    open_state = request.json.get('open', False)
-    db.table("system_config").upsert({
-        "key": "training_open", 
-        "value": open_state
-    }).execute()
-    return jsonify({"success": True})
-
-'''
-@app.route('/api/admin/notify/<int:exam_id>', methods=['POST'])
-@login_required
-@admin_required
-def api_notify(exam_id):
-    """激活考试通知"""
-    db = get_supabase()
-    db.table("exams").update({"is_active": True}).eq("id", exam_id).execute()
-    res = db.table("training_signs").select("id").eq("training_id", 1).execute()
-    return jsonify({"success": True, "count": len(res.data)})
-'''
 
 @app.route('/favicon.ico')
 def favicon():
@@ -3326,6 +3387,26 @@ def api_interview_details(interview_id):
     all_res = query.execute()
     all_data = all_res.data or []
 
+    # ===== 国家权限过滤 =====
+    allowed = get_allowed_countries()
+    if allowed is not None:
+        if not allowed:
+            # 没有允许的国家，直接返回空
+            return jsonify({
+                "interview": {"id": interview_id, "title": interview.get('title'), "exam_title": exam_title, "reviewer": interview.get('reviewer', '')},
+                "data": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page
+            })
+        # 收集所有 user_id
+        all_user_ids = list(set(r['user_id'] for r in all_data))
+        # 查询这些用户的国家
+        users_country_res = db.table("users").select("id, country").in_("id", all_user_ids).execute()
+        allowed_ids = {u['id'] for u in (users_country_res.data or []) if u.get('country') in allowed}
+        # 过滤数据
+        all_data = [r for r in all_data if r['user_id'] in allowed_ids]
+    # ======================
     # 批量获取用户信息
     user_ids = list(set(r['user_id'] for r in all_data))
     users_map = {}
@@ -3472,34 +3553,61 @@ def api_admin_users():
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('search', '').strip()
     country = request.args.get('country', '')
+    user_status = request.args.get('status', '')
+    # 在 api_admin_users 函数开头添加
+    if 'ids' in request.args:
+        ids = request.args.get('ids').split(',')
+        if ids:
+            query = db.table("users").select("*").in_("id", ids)
+            # 应用国家权限和角色过滤（如果有）
+            query = apply_country_filter(query, 'country')
+            if session.get('role') != 'super_admin':
+                query = query.neq("role", "super_admin")
+            res = query.execute()
+            return jsonify({"data": res.data, "total": len(res.data)})
 
-    query = db.table("users").select("*", count="exact")
-    # 排除已删除用户
-    query = query.is_("deleted_at", "null")
-    # 非超级管理员不显示超级管理员
+    # 基础查询（排除已删除，过滤角色）
+    query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
+    # 应用国家限制
+    query = apply_country_filter(query, 'country')
+    # 非超管不显示超管
     if session.get('role') != 'super_admin':
         query = query.neq("role", "super_admin")
-    
-    if search:
-        query = query.or_(f"email.ilike.%{search}%,name_cn.ilike.%{search}%,name_en.ilike.%{search}%")
-    if country:
-        query = query.eq("country", country)
-    
-    # 分页
-    start = (page - 1) * per_page
-    end = start + per_page - 1
-    query = query.range(start, end).order("created_at", desc=True)
-
-    user_status = request.args.get('status', '')
     if user_status:
         query = query.eq("user_status", user_status)
 
-    res = query.execute()
-    total = res.count if hasattr(res, 'count') else len(res.data or [])
-    
+    if country:
+        if country == '___NONE___':
+            return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
+        if ',' in country:
+            codes = [c.strip() for c in country.split(',') if c.strip()]
+            if codes:
+                query = query.in_("country", codes)
+        else:
+            query = query.eq("country", country)      # 精确匹配代码
+
+    # 不分页，先拿全部数据（因为需要内存过滤）
+    full_res = query.order("created_at", desc=True).execute()
+    all_users = full_res.data or []
+    total_all = full_res.count if hasattr(full_res, 'count') else len(all_users)
+
+    # 内存搜索
+    if search:
+        search_lower = search.lower()
+        all_users = [u for u in all_users if 
+                     (u.get('email') and search_lower in u['email'].lower()) or
+                     (u.get('name_cn') and search_lower in u['name_cn'].lower()) or
+                     (u.get('name_en') and search_lower in u['name_en'].lower())]
+        total_all = len(all_users)
+
+    # 手动分页
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = all_users[start:end]
+
     return jsonify({
-        "data": res.data or [],
-        "total": total,
+        "data": paginated,
+        "total": total_all,
         "page": page,
         "per_page": per_page
     })
@@ -3663,6 +3771,7 @@ def api_admin_edit_user(user_id):
     # 只有超级管理员才能修改角色
     if session.get('role') == 'super_admin' and 'role' in data:
         update_data['role'] = data['role']
+        allowed_fields.append('admin_countries')   # ✅ 必须存在
     # 普通管理员提交的 role 字段会被忽略
 
     if 'email' in data:
@@ -3937,7 +4046,9 @@ def api_admin_exams_list():
     # 1. 查询所有符合条件的考试（不带状态过滤，因为状态需动态计算）
     query = db.table("exams").select("*", count="exact")
     if not include_deleted:
-        query = query.is_("deleted_at", "null")   # 只显示未软删除的
+        query = query.is_("deleted_at", "null")   # 只显示未软删除的    
+    # ✅ 应用国家限制
+    query = apply_country_filter(query, 'country')
     if name:
         query = query.ilike("title", f"%{name}%")
     if target_status:
@@ -4352,20 +4463,21 @@ def search_warehouses():
     if not q:
         return jsonify([])
     db = get_supabase()
-    res = db.table("users").select("wh_id, wh_name_en") \
-        .or_(f"wh_id.ilike.%{q}%,wh_name_en.ilike.%{q}%") \
-        .limit(10).execute()
-    suggestions = []
+    # 分别模糊查询 wh_id 和 wh_name_en 字段
+    r1 = db.table("users").select("wh_id, wh_name_en").ilike("wh_id", f"%{q}%").limit(5).execute()
+    r2 = db.table("users").select("wh_id, wh_name_en").ilike("wh_name_en", f"%{q}%").limit(5).execute()
+
     seen = set()
-    for row in (res.data or []):
+    suggestions = []
+    for row in (r1.data or []) + (r2.data or []):
         wh_id = row.get('wh_id', '')
         wh_name = row.get('wh_name_en', '')
         label = f"{wh_id} ({wh_name})" if wh_name else wh_id
-        if label not in seen:
+        if label and label not in seen:
             seen.add(label)
             suggestions.append(label)
-    return jsonify(suggestions)
-
+    return jsonify(suggestions[:10])
+    
 #----------3. 培训签到管理 API（类似考试清单，复用现有逻辑）---------
 # ================= 管理员培训管理路由 =================
 @app.route('/admin/trainings')
@@ -4391,6 +4503,7 @@ def api_admin_trainings():
         per_page = request.args.get('per_page', 20, type=int)
         
         query = db.table("trainings").select("*", count="exact")
+        query = apply_country_filter(query, 'country')
         if country:
             query = query.eq("country", country)
         if name:
@@ -4499,7 +4612,7 @@ def api_admin_trainings():
             "end_time": default_end,
             "header_template": {},
             # "is_active": True,
-            "dynamic_status": True,  # 新增字段，用于前端展示状态
+            # "dynamic_status": True,  # 新增字段，用于前端展示状态
             "country": data.get('country', ''),
             "quarter": data.get('quarter', '')
         }).execute()
@@ -4544,6 +4657,32 @@ def api_admin_trainings():
             update_data['quarter'] = data['quarter']
         if update_data:
             db.table("trainings").update(update_data).eq("id", tid).execute()
+
+        # 发送推送通知邮件（如果提供了 user_ids）
+        user_ids = data.get('user_ids')
+        if user_ids is not None:
+            # 如果为空列表，表示推送全部注册用户
+            if len(user_ids) == 0:
+                users_res = db.table("users").select("email, name_cn").eq("user_status", "registered").execute()
+            else:
+                users_res = db.table("users").select("email, name_cn").in_("id", user_ids).execute()
+            users = users_res.data or []
+            training_name = data.get('name') or tid  # 尽量获取培训名称，也可以从已查到的训练记录提取
+            # 重新获取培训名称（如果之前没有）
+            if 'name' not in data:
+                train_res = db.table("trainings").select("name").eq("id", tid).maybe_single().execute()
+                if train_res.data:
+                    training_name = train_res.data['name']
+                else:
+                    training_name = f"培训 {tid}"
+            for user in users:
+                try:
+                    subject = f"培训通知：{training_name}"
+                    body = f"您好 {user.get('name_cn', '用户')}，培训《{training_name}》已开放，签到时间为 {start_time} 至 {end_time}，请登录系统参加。"
+                    auth.send_email(user['email'], subject, body)
+                except Exception as e:
+                    logger.warning(f"发送邮件失败: {e}")
+
         return jsonify({"success": True})
     
     elif request.method == 'DELETE':
