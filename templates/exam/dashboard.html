@@ -43,27 +43,48 @@
         <div class="list-group list-group-flush">
           {% for ex in exams %}
             {% if not ex.user_status.is_submitted %}
-              <a href="{{ url_for('take_exam', exam_id=ex.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" data-exam-id="{{ ex.id }}">
-                <div>
-                  <span class="fw-semibold d-block">{{ ex.title }}</span>
-                  <small class="text-muted">
-                      {% if ex.created_at %}
+              {% set can_enter = ex.can_enter|default(false) %}
+              {% set already_started = ex.user_status.started|default(false) %}
+              {% if not can_enter and not already_started %}
+                {# 考试未开始，显示不可点击的“未开始”卡片 #}
+                <div class="list-group-item d-flex justify-content-between align-items-center py-3 bg-light text-muted" style="cursor: not-allowed;">
+                  <div>
+                    <span class="fw-semibold d-block">{{ ex.title }}</span>
+                    <small class="text-muted">
                       {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
                       <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }}<span data-i18n="score_unit">分</span> | 
                       {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
-                      <span class="local-time" data-utc="{{ ex.created_at }}">{{ ex.created_at[:19].replace('T', ' ') }}</span>
-                      {% endif %}
-                  </small>
+                      <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
+                      →
+                      <span class="local-time" data-utc="{{ ex.end_time }}">{{ ex.end_time[:19].replace('T', ' ') if ex.end_time else '--' }}</span>
+                    </small>
+                  </div>
+                  <span class="badge rounded-pill bg-secondary" data-i18n="not_started">未开始</span>
                 </div>
-                <span class="badge rounded-pill {% if ex.user_status.started %}bg-warning{% else %}bg-primary{% endif %}">
-                  {% if ex.user_status.started %}
-                    <span data-i18n="resume_exam">继续考试</span> 
-                    <span class="exam-timer" data-remaining="{{ ex.user_status.remaining }}">({{ (ex.user_status.remaining // 60) }}:{{ '%02d' % (ex.user_status.remaining % 60) }})</span>
-                  {% else %}
-                    <span data-i18n="start_exam">进入考试</span>
-                  {% endif %}
-                </span>
-              </a>
+              {% else %}
+                {# 考试已开始或已进入，显示可点击链接 #}
+                <a href="{{ url_for('take_exam', exam_id=ex.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" data-exam-id="{{ ex.id }}">
+                  <div>
+                    <span class="fw-semibold d-block">{{ ex.title }}</span>
+                    <small class="text-muted">
+                      {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
+                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }}<span data-i18n="score_unit">分</span> | 
+                      {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
+                      <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
+                      →
+                      <span class="local-time" data-utc="{{ ex.end_time }}">{{ ex.end_time[:19].replace('T', ' ') if ex.end_time else '--' }}</span>
+                    </small>
+                  </div>
+                  <span class="badge rounded-pill {% if already_started %}bg-warning{% else %}bg-primary{% endif %}">
+                    {% if already_started %}
+                      <span data-i18n="resume_exam">继续考试</span> 
+                      <span class="exam-timer" data-remaining="{{ ex.user_status.remaining }}">({{ (ex.user_status.remaining // 60) }}:{{ '%02d' % (ex.user_status.remaining % 60) }})</span>
+                    {% else %}
+                      <span data-i18n="start_exam">进入考试</span>
+                    {% endif %}
+                  </span>
+                </a>
+              {% endif %}
             {% endif %}
           {% endfor %}
         </div>
@@ -176,7 +197,7 @@
           </div>` : '';
         if (!t.signed) {
             statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
-            actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${t('sign_now')}</button>`;
+            actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${safeT('sign_now')}</button>`;
         } else if (t.needs_resign) {
             statusBadge = '<span class="badge bg-warning text-dark">' + safeT('need_re-sign') + '</span>';
             actionHtml = `<button
@@ -313,13 +334,13 @@
     // 提交签到
     document.getElementById('submitSignatureBtn').onclick = async () => {
         if (!signaturePad || signaturePad.isEmpty()) {
-            alert('请先进行手写签名');
+            alert(t('t_hand_write_sign_name'));
             return;
         }
         // 从后端获取的用户名（确保在页面加载时已定义）
         const userName = CURRENT_USER_NAME;
         if (!userName) {
-            alert('无法获取您的姓名，请先完善个人资料');
+            alert(t('t_sign_alert_tip'));
             return;
         }
         const dataURL = signaturePad.toDataURL('image/png');
@@ -335,11 +356,12 @@
         });
         const json = await res.json();
         if (json.success) {
-            alert(currentSignAction === 'resign' ? safeT('t_re_sign_successful') : safeT('t_sign_in_successful'));
+            alert(currentSignAction === 'resign' ? t('t_re_sign_successful') : t('t_sign_in_successful'));
             bootstrap.Modal.getInstance(document.getElementById('signatureModal')).hide();
             loadTrainings();
         } else {
-            alert(safeT('t_operation_failure') + (json.message || safeT('t_unknown_error')));
+            // alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
+            apiAlert(json);   // 使用全局翻译函数
         }
     };
 
