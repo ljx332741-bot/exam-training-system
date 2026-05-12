@@ -43,7 +43,7 @@
                     <button id="searchBtn" class="btn btn-primary"><span data-i18n="search">搜索</span></button>
                     <input type="checkbox" id="includeDeletedCheckbox" class="form-check-input">
                     <label class="form-check-label" for="includeDeletedCheckbox"><span data-i18n="show_deleted_exam">显示已删除考试</span></label>
-                    <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
+                    <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
                 <!-- <div class="col-md-2">
                     <div class="form-check">
@@ -656,7 +656,10 @@
                 }
             });
         }
-
+    });
+    
+    window.addEventListener('app:languageChanged', function() {
+        if (typeof loadExams === 'function') loadExams();
     });
 </script>
 {% endblock %}
