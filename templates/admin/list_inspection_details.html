@@ -4,25 +4,31 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-chat-dots"></i> 访谈详情 - <span id="examTitle">加载中...</span></h2>
+        <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_detail">访谈详情</span> - <span id="examTitle">加载中...</span></h2>
     </div>
 
     <!-- 筛选栏 -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <input type="text" id="searchName" class="form-control" placeholder="访谈人员姓名">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <input type="text" id="searchName" class="form-control" 
+                            data-i18n-placeholder="placeholder_interviewee_name" placeholder="访谈人员姓名">
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                            data-i18n-placeholder="placeholder_country" placeholder="国家">
+                            <datalist id="countryDatalist"></datalist>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2">
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" placeholder="国家">
-                    <datalist id="countryDatalist"></datalist>
+                    <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
-                <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary">搜索</button>
-                </div>
-                <div class="col-md-3 ms-auto">
-                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ 关闭返回</button>
+                <div class="col-md-5 d-flex justify-content-end">
+                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -35,26 +41,26 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>国家</th>
-                            <th>访谈人员姓名</th>
-                            <th>库房编码</th>
-                            <th>检查时间</th>
-                            <th>检查人员</th>
-                            <th>访谈问题数量</th>
-                            <th>答对问题数量</th>
-                            <th>备注</th>
-                            <th>反馈人</th>
-                            <th>操作</th>
+                            <th><span data-i18n="country">国家</span></th>
+                            <th><span data-i18n="name_en">姓名</span></th>
+                            <th><span data-i18n="wh_id">库房编码</span></th>
+                            <th><span data-i18n="check_at">检查时间</span></th>
+                            <th><span data-i18n="inspector">检查人员</span></th>
+                            <th><span data-i18n="ask_qty">访谈问题数量</span></th>
+                            <th><span data-i18n="answer_qty">答对问题数量</span></th>
+                            <th><span data-i18n="remark">备注</span></th>
+                            <th><span data-i18n="feedback_by">反馈人</span></th>
+                            <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="detailsTableBody">
-                        <tr><td colspan="10" class="text-center">加载中...</td></tr>
+                        <tr><td colspan="10" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
         <div class="card-footer d-flex justify-content-between align-items-center">
-            <div>共 <span id="totalCount">0</span> 条</div>
+            <div><span data-i18n="total_questions">共</span> <span id="totalCount">0</span> <span data-i18n="record">条记录</span></div>
             <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
         </div>
     </div>
@@ -65,14 +71,14 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">答题详情 - <span id="answersUserName"></span></h5>
+                <h5 class="modal-title"><span data-i18n="details">详情</span> - <span id="answersUserName"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="answersContent">
                 <!-- 动态填充 -->
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
             </div>
         </div>
     </div>
@@ -91,7 +97,7 @@
         const params = new URLSearchParams({ page: currentPage, per_page: 20, search, country });
         const res = await fetch(`/api/admin/interview/${interviewId}/details?${params}`);
         const data = await res.json();
-        document.getElementById('examTitle').innerText = data.interview?.exam_title || data.interview?.title || '未知考试';
+        document.getElementById('examTitle').innerText = data.interview?.exam_title || data.interview?.title || t('t_unknown_examination');
         renderTable(data.data);
         document.getElementById('totalCount').innerText = data.total;
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
@@ -117,8 +123,8 @@
                 <td>
                     <button class="btn btn-sm btn-outline-info view-answers-btn" 
                     data-user-id="${r.user_id}" 
-                    data-user-name="${escapeHtml(r.name)}">答题详情</button>
-                    ${r.has_submitted ? `<button class="btn btn-sm btn-outline-warning resample-btn" data-user-id="${r.user_id}">重新访谈</button>` : ''}
+                    data-user-name="${escapeHtml(r.name)}">${t('t_answer_detail')}</button>
+                    ${r.has_submitted ? `<button class="btn btn-sm btn-outline-warning resample-btn" data-user-id="${r.user_id}">${t('t_re_interview')}</button>` : ''}
                 </td>
             </tr>
         `).join('');
@@ -127,9 +133,9 @@
         document.querySelectorAll('.resample-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 const userId = btn.dataset.userId;
-                if (confirm('确定要重新为此学员生成新的访谈题目吗？原有答案将被保留。')) {
+                if (confirm(t('t_regenerate_interview_question_tip'))) {
                     await fetch(`/api/admin/interview/${interviewId}/resample/${userId}`, { method: 'POST' });
-                    alert('已重新生成访谈题目，学员可重新答题。');
+                    alert(t('t_question_regenerated'));
                     loadDetails();
                 }
             });
@@ -151,7 +157,7 @@
             const res = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/answers`);
             const data = await res.json();
             if (!data.answers || data.answers.length === 0) {
-                alert('暂无答题记录');
+                alert(t('t_no_answer_record_available'));
                 return;
             }
             document.getElementById('answersUserName').innerText = userName;
@@ -161,9 +167,9 @@
                 const statusIcon = item.is_correct ? '✅' : '❌';
                 const statusColor = item.is_correct ? 'text-success' : 'text-danger';
                 let optionsHtml = '';
-                const typeBadge = item.question_type === 'multi' ? '<span class="badge bg-warning ms-2">多选</span>' :
-                                item.question_type === 'judge' ? '<span class="badge bg-info ms-2">判断</span>' :
-                                '<span class="badge bg-primary ms-2">单选</span>';
+                const typeBadge = item.question_type === 'multi' ? `<span class="badge bg-warning ms-2">${t('t_multi')}</span>` :
+                                item.question_type === 'judge' ? `<span class="badge bg-info ms-2">${t('t_judge')}</span>` :
+                                `<span class="badge bg-primary ms-2">${t('t_single')}</span>`;
                 if (item.question_type !== 'judge' && item.options && typeof item.options === 'object') {
                     const opts = item.options;
                     const sortedKeys = Object.keys(opts).filter(k => opts[k] && opts[k].toString().trim());
@@ -180,7 +186,7 @@
                                 <strong>${questionNum}-[${item.question_num}]. ${item.question_content} ${typeBadge}</strong>
                                 ${optionsHtml}
                                 <div class="mt-2">
-                                    <span>答案：<strong>${item.user_answer || '未作答'}</strong></span>
+                                    <span>${t('t_answer')}：<strong>${item.user_answer || t('t_no_answer')}</strong></span>
                                     <span class="ms-3 ${statusColor}">${statusIcon}</span>
                                 </div>
                             </div>
@@ -193,7 +199,7 @@
             new bootstrap.Modal(document.getElementById('answersModal')).show();
         } catch (e) {
             console.error(e);
-            alert('加载答题详情失败');
+            alert(t('t_load_answer_detail_failed'));
         }
     }
 
