@@ -9,24 +9,27 @@
     <div class="card mb-3">
         <div class="card-body">
             <div class="row g-3 align-items-end">
-                <div class="col-md-3">
-                    <input type="text" id="filterName" class="form-control" 
-                    data-i18n-placeholder="placeholder_interview_title" placeholder="访谈名称">
-                </div>
-                <div class="col-md-2">
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                    data-i18n-placeholder="placeholder_country" placeholder="国家代码/名称">
-                    <datalist id="countryDatalist"></datalist>
-                    <input type="hidden" id="filterCountryCode">
+                <!-- 输入区域 -->
+                <div class="col-md-5">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <input type="text" id="filterName" class="form-control" 
+                            data-i18n-placeholder="placeholder_interview_title" placeholder="访谈名称">
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                            data-i18n-placeholder="placeholder_country" placeholder="国家代码/名称">
+                            <datalist id="countryDatalist"></datalist>
+                            <input type="hidden" id="filterCountryCode">
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2">
                     <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
-                <div class="col-md-2">
-                    <button class="btn btn-outline-secondary w-100" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
-                </div>
-                <div class="col-md-3">
-                    <button class="btn btn-success w-100" id="newInterviewBtn">➕ <span data-i18n="add_new_interviewee">新增访谈</span></button>
+                <div class="col-md-5 d-flex justify-content-end">
+                    <button class="btn btn-success me-2" id="newInterviewBtn">➕ <span data-i18n="add_new_interviewee">新增访谈</span></button>
+                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -141,10 +144,10 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-info" id="previewBtn">预览访谈内容</button>
-                <button class="btn btn-warning" id="saveDraftBtn">保存为草稿</button>
-                <button class="btn btn-success" id="saveAndPublishBtn">保存并发布</button>
-                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-info" id="previewBtn"><span data-i18n="preview_content">预览访谈内容</span></button>
+                <button class="btn btn-warning" id="saveDraftBtn"><span data-i18n="save_as_draft">保存为草稿</span></button>
+                <button class="btn btn-success" id="saveAndPublishBtn"><span data-i18n="save_public">保存并发布</span></button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
             </div>
         </div>
     </div>
@@ -218,10 +221,37 @@
     let editMode = false;
     let editingInterviewId = null;
 
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
     // ========== 初始化 ==========
     document.addEventListener('DOMContentLoaded', async () => {
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
+        await waitForI18n();                 // 确保 i18n 已就绪
+        window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
         loadInterviews();
+
+        // 语言切换时重新加载列表，实现实时翻译
+        let isInitialSubscribe = true;
+        window.i18n.subscribe(async () => {
+            if (isInitialSubscribe) {
+                isInitialSubscribe = false;
+                return;
+            }
+        });
     });
 
     // ========== 列表加载 ==========
@@ -694,6 +724,8 @@
             alert('更新失败');
         }
     });
-
+    window.addEventListener('app:languageChanged', function() {
+        if (typeof loadInterviews === 'function') loadInterviews();
+    });
 </script>
 {% endblock %}
