@@ -1,4 +1,4 @@
-﻿<!-- templates/admin/list_exams_scores.html -->
+<!-- templates/admin/list_exams_scores.html -->
 {% extends "base.html" %}
 {% block title %}{{ _('exam_scores_detail') }}{% endblock %}
 
@@ -6,28 +6,33 @@
 <div class="container-fluid px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><span data-i18n="exam_scores_detail">考生成绩详情</span> - <span id="examTitle">{{exam_title}}</span></h2>
-        <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
     </div>
 
     <!-- 过滤栏 -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <input type="text" id="searchInput" class="form-control" placeholder="考生姓名/邮箱">
-                </div>
-                <div class="col-md-3">
-                    <select id="submitMethodFilter" class="form-select">
-                        <option value="">全部提交方式</option>
-                        <option value="manual">考生提交</option>
-                        <option value="auto">超时自动提交</option>
-                    </select>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <input type="text" id="searchInput" class="form-control" 
+                            data-i18n-placeholder="placeholder_mail_name" placeholder="考生姓名/邮箱">
+                        </div>
+                        <div class="col-md-6">
+                            <select id="submitMethodFilter" class="form-select">
+                                <option value=""><span data-i18n="submit_method_all">全部提交方式</span></option>
+                                <option value="manual"><span data-i18n="student_submit">考生提交</span></option>
+                                <option value="auto"><span data-i18n="systme_submit">自动提交</span></option>
+                            </select>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary">搜索</button>
+                    <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
-                <div class="col-md-2">
-                    <button id="batchExportBtn" class="btn btn-success">批量导出选中PDF</button>
+                <div class="col-md-5 d-flex justify-content-end">
+                    <button id="batchExportBtn" class="btn btn-success me-2"><i class="bi bi-file-earmark-pdf"></i> <span data-i18n="batch_export">批量导出选中PDF</span></button>
+                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -41,28 +46,28 @@
                     <thead class="table-light">
                         <tr>
                             <th><input type="checkbox" id="selectAll"></th>
-                            <th>序号</th>
-                            <th>国家</th>
-                            <th>考生姓名</th>
-                            <th>邮箱</th>
-                            <th>状态</th>
-                            <th>考试开始时间</th>
-                            <th>提交时间</th>
-                            <th>提交方式</th>
-                            <th>用时(秒)</th>
-                            <th>得分</th>
-                            <th>阅卷人</th>
-                            <th>操作</th>
+                            <th><span data-i18n="sequence">序号</span></th>
+                            <th><span data-i18n="country">国家</span></th>
+                            <th><span data-i18n="name_en">姓名</span></th>
+                            <th><span data-i18n="email">邮箱</span></th>
+                            <th><span data-i18n="status">状态</span></th>
+                            <th><span data-i18n="exam_time_start">考试开始时间</span></th>
+                            <th><span data-i18n="submit_at">提交时间</span></th>
+                            <th><span data-i18n="submit_method">提交方式</span></th>
+                            <th><span data-i18n="time_s">用时(秒)</span>(秒)</th>
+                            <th><span data-i18n="candidate_score">得分</span></th>
+                            <th><span data-i18n="reviewer">阅卷人</span></th>
+                            <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="scoresTbody">
-                        <tr><td colspan="13" class="text-center">加载中...</td></tr>
+                        <tr><td colspan="13" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
         <div class="card-footer d-flex justify-content-between align-items-center">
-            <div>共 <span id="totalCount">0</span> 条记录</div>
+            <div><span data-i18n="total_questions">共</span> <span id="totalCount">0</span> <span data-i18n="record">条记录</span></div>
             <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
         </div>
     </div>
@@ -105,12 +110,12 @@
                 <td>${s.status}</td>
                 <td>${formatDate(s.started_at)}</td>
                 <td>${formatDate(s.submitted_at)}</td>
-                <td>${s.submit_method === 'manual' ? '考生提交' : '超时自动提交'}</td>
+                <td>${s.submit_method === 'manual' ? t('t_manual_submit') : t('t_auto_submit')}</td>
                 <td>${s.time_used ?? '-'}</td>
                 <td>${s.score}</td>
                 <td>${s.reviewer || '-'}</td>
                 <td>
-                    <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info" target="_blank">详情</a>
+                    <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info" target="_blank">${t('t_details')}</a>
                     <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
                 </td>
             </tr>
@@ -200,7 +205,9 @@
             alert(t('export_failed') || "导出失败");
         }
     };
-
     loadScores();
+    window.addEventListener('app:languageChanged', function() {
+        if (typeof loadScores === 'function') loadScores();
+    });
 </script>
 {% endblock %}
