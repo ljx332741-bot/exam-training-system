@@ -10,28 +10,32 @@
     <!-- 搜索筛选 -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <input type="text" id="searchInput" class="form-control" 
-                    data-i18n-placeholder="placeholder_mail_name" placeholder="搜索邮箱/姓名">
-                </div>
-                <div class="col-md-3">
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                    data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off">
-                    <datalist id="countryDatalist"></datalist>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <input type="text" id="searchInput" class="form-control" 
+                            data-i18n-placeholder="placeholder_mail_name" placeholder="搜索邮箱/姓名">
+                        </div>
+                        <div class="col-md-6">
+                            <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                            data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off">
+                            <datalist id="countryDatalist"></datalist>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary"><span data-i18n="search">搜索</span></button>
+                    <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
-                <div class="col-md-4">
-                    <button class="btn btn-sm btn-outline-secondary ms-2" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
-                    <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                <div class="col-md-5 d-flex justify-content-end">
+                    <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addUserModal">
                         <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
                     </button>
-                    <button class="btn btn-sm btn-outline-success" id="importBtn">
+                    <button class="btn btn-outline-success me-2" id="importBtn">
                         <i class="bi bi-file-earmark-excel"></i><span data-i18n="batch_import">批量导入</span>
                     </button>
                     <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
+                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -192,8 +196,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
                 <button type="button" class="btn btn-primary" id="saveUserBtn"><span data-i18n="save">保存</span></button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
             </div>
         </div>
     </div>
@@ -211,8 +215,8 @@
                 <p><span data-i18n="generate_new_pw_tip">将生成新密码并发送到用户邮箱，确定继续吗？</span></p>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
                 <button type="button" class="btn btn-warning" id="confirmResetBtn"><span data-i18n="confirm_reset">确定重置</span></button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
             </div>
         </div>
     </div>
