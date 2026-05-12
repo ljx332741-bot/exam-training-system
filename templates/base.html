@@ -198,9 +198,55 @@
 
     <!-- 🛠️ 全局辅助脚本 -->
     <script>
+
+        function setAppLanguage(lang) {
+            if (!window.i18n) return;
+            if (typeof window.i18n.setLang === 'function') {
+                window.i18n.setLang(lang);
+            } else {
+                // 兼容无 setLang 的情况
+                window.i18n.currentLang = lang;
+                if (typeof window.i18n.applyTranslations === 'function') {
+                    window.i18n.applyTranslations();
+                }
+                // 手动触发所有订阅者（如果有）
+                if (window.i18n._subscribers && Array.isArray(window.i18n._subscribers)) {
+                    window.i18n._subscribers.forEach(cb => cb(lang));
+                }
+            }
+            localStorage.setItem('app_lang', lang);
+        }
+
+        // 全局：恢复语言并强制刷新动态内容
+        function restoreLanguage() {
+            if (!window.i18n) return;
+            var savedLang = localStorage.getItem('app_lang');
+            if (savedLang && window.i18n.currentLang !== savedLang) {
+                // 语言不一致，调用 setLanguage 触发完整刷新
+                window.i18n.setLanguage(savedLang);
+            } else {
+                // 语言一致，只刷新静态翻译，并触发自定义事件让动态内容重新加载
+                window.i18n.applyTranslations();
+                window.dispatchEvent(new CustomEvent('app:languageChanged', { detail: { lang: window.i18n.currentLang } }));
+            }
+        }
+
         // 解决 "Blocked aria-hidden on an element because its descendant retained focus" 警告
         // 来源：https://forum.bootstrapstudio.io/t/avoid-accessibility-warnings-in-bootstrap-modals/12333#p-42261-the-problem-2
         document.addEventListener('DOMContentLoaded', function () {
+            // 恢复上次选择的语言
+            restoreLanguage();
+            var langBtn = document.getElementById('langSwitchBtn');
+            if (langBtn) {
+                // 移除之前的监听器避免重复绑定（使用新的事件）
+                langBtn.removeEventListener('click', langBtn._langHandler);
+                langBtn._langHandler = function() {
+                    var newLang = window.i18n.currentLang === 'zh' ? 'en' : 'zh';
+                    setAppLanguage(newLang);
+                };
+                langBtn.addEventListener('click', langBtn._langHandler);
+            }
+
             document.querySelectorAll('.modal').forEach((modal) => {
                 modal.addEventListener('hide.bs.modal', () => {
                     document.activeElement.blur();
@@ -215,6 +261,20 @@
             }, 3000);
         });
 
+        // 全局翻译辅助函数（支持占位符）
+        function t(key, ...args) {
+            let msg = window.i18n?.t(key) || key;
+            for (let i = 0; i < args.length; i++) {
+                msg = msg.replace(new RegExp(`\\{${i}\\}`, 'g'), args[i]);
+            }
+            return msg;
+        }
+
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                restoreLanguage();
+            }
+        });
         // 全局翻译辅助函数+flash
         function translateFlashMessages() {
             if (window.i18n && typeof window.i18n.t === 'function' && window.i18n.translations && Object.keys(window.i18n.translations).length > 0) {
@@ -276,15 +336,6 @@
             });
             el.textContent = localString;
             });
-        }
-
-        // 全局翻译辅助函数（支持占位符）
-        function t(key, ...args) {
-            let msg = window.i18n?.t(key) || key;
-            for (let i = 0; i < args.length; i++) {
-                msg = msg.replace(new RegExp(`\\{${i}\\}`, 'g'), args[i]);
-            }
-            return msg;
         }
 
         /**
