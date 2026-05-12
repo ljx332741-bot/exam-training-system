@@ -1,17 +1,17 @@
-﻿<!-- templates/admin/list_training_attendance.html -->
+<!-- templates/admin/list_training_attendance.html -->
 {% extends "base.html" %}
 {% block title %}培训签到详情{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="mb-4">
-        <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> 培训签到表</h2>
+        <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_record">培训签到表</span></h2>
         <div class="d-flex justify-content-end gap-2 no-print">
-            <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
-            <button class="btn btn-success" onclick="window.print();"><i class="bi bi-printer"></i> 浏览器导出 PDF（打印）</button>
+            <button class="btn btn-success" onclick="window.print();"><i class="bi bi-printer"></i> <span data-i18n="brower_export_pdf">打印</span></button>
             <a id="pdfExportBtn" class="btn btn-success" href="#" target="_blank">
-                <i class="bi bi-printer"></i> 专用导出 PDF
+                <i class="bi bi-download"></i> <span data-i18n="expert_pdf">PDF专用</span>
             </a>
+            <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
         </div> 
     </div>
 
@@ -24,16 +24,16 @@
                 <table class="table table-bordered align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th>序号</th>
-                            <th>部门/合作伙伴</th>
-                            <th>姓名+工号</th>
-                            <th>签名</th>
-                            <th class="print-hide">签到时间</th>
-                            <th class="print-hide">操作</th>
+                            <th>序号No</th>
+                            <th>部门/合作伙伴（双语）Department/Partner</th>
+                            <th>姓名+工号Name + Employee ID </th>
+                            <th>签名Signature</th>
+                            <th class="print-hide"><span data-i18n="sign_in_period">签到时间</span></th>
+                            <th class="print-hide"><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="attendanceTbody">
-                        <tr><td colspan="5" class="text-center">加载中...</td></tr>
+                        <tr><td colspan="5" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -151,7 +151,7 @@
         const data = await res.json();
 
         if (!data.training) {
-            document.getElementById('attendanceTbody').innerHTML = '<tr><td colspan="5">培训不存在</td></tr>';
+            document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="5">${t('t_no_training_exist')}</td></tr>`;
             return;
         }
 
@@ -186,7 +186,7 @@
         const tbody = document.getElementById('attendanceTbody');
         const records = data.attendances || [];
         if (records.length === 0) {
-            tbody.innerHTML = '<td><td colspan="5">暂无签到记录</td></tr>';
+            tbody.innerHTML = `<td><td colspan="5">${t('t_no_sign_in_record_available')}</td></tr>`;
             return;
         }
         tbody.innerHTML = '';
@@ -196,7 +196,7 @@
             // 签名单元格：有签名显示图片，无签名显示提示文字
             const signatureCell = r.signature_url
                 ? `<img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'">`
-                : '<span class="text-warning fw-bold">待重新签字</span>';
+                : `<span class="text-warning fw-bold">${t('t_pending_re_signature')}</span>`;
 
             const row = tbody.insertRow();
             row.innerHTML = `
@@ -207,7 +207,7 @@
                 <td class="print-hide">${new Date(r.sign_time).toLocaleString()}</td>
                 <td class="print-hide">
                     <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
-                        <i class="bi bi-pencil-square"></i> 重新签字
+                        <i class="bi bi-pencil-square"></i> ${t('t_re_signature')}
                     </button>
                 </td>
             `;
@@ -217,15 +217,15 @@
         document.querySelectorAll('.reset-sign-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const attId = e.currentTarget.dataset.id;
-                if (!confirm('确定要让该学员重新手写签名吗？原签名将被清除。')) return;
+                if (!confirm(t('t_re_sign_prompt'))) return;
                 const res = await fetch(`/api/admin/training/attendance/${attId}/reset-signature`, { method: 'POST' });
                 const json = await res.json();
                 if (json.success) {
-                    alert('已推送重新签字，学员端将显示重新签字提示。');
+                    alert(t('t_re_sign_pushed_prompt'));
                     // 刷新页面或更新当前行签名显示
                     loadDetail();
                 } else {
-                    alert('操作失败：' + (json.message || '未知错误'));
+                    alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
                 }
             });
         });
