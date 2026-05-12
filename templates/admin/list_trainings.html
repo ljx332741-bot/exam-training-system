@@ -11,31 +11,35 @@
     <!-- 过滤栏 -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="row g-3">
-                <div class="col-md-3">
-                    <input type="text" id="filterName" class="form-control" 
-                    data-i18n-placeholder="placeholder_training_name"
-                    placeholder="培训名称">
-                </div>
-                <div class="col-md-3">
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                    data-i18n-placeholder="placeholder_country"
-                    placeholder="国家" autocomplete="off">
-                    <input type="hidden" id="filterCountryCode">
-                    <datalist id="countryDatalist"></datalist>
+            <div class="row g-3 align-items-end">
+                <div class="col-md-5">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <input type="text" id="filterName" class="form-control" 
+                            data-i18n-placeholder="placeholder_training_name"
+                            placeholder="培训名称">
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                            data-i18n-placeholder="placeholder_country"
+                            placeholder="国家" autocomplete="off">
+                            <input type="hidden" id="filterCountryCode">
+                            <datalist id="countryDatalist"></datalist>
+                        </div>
+                        <div class="col-md-4">
+                            <input type="text" id="filterQuarter" class="form-control" list="quarterDatalist" 
+                            data-i18n-placeholder="placeholder_quarter"
+                            placeholder="季度 (如2025Q1)">
+                            <datalist id="quarterDatalist"></datalist>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-2">
-                    <input type="text" id="filterQuarter" class="form-control" list="quarterDatalist" 
-                    data-i18n-placeholder="placeholder_quarter"
-                    placeholder="季度 (如2025Q1)">
-                    <datalist id="quarterDatalist"></datalist>
+                    <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
-                <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary"><span data-i18n="search">搜索</span></button>
-                </div>
-                <div class="col-md-2">
-                    <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
-                    <button class="btn btn-primary" id="newTrainingBtn"><i class="bi bi-plus-circle"></i> <span data-i18n="new_training">新增培训</span></button>
+                <div class="col-md-5 d-flex justify-content-end">
+                    <button class="btn btn-primary me-2" id="newTrainingBtn"><i class="bi bi-plus-circle"></i> <span data-i18n="new_training">新增培训</span></button>
+                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -1056,5 +1060,10 @@
             }
         });
     })();
+
+    window.addEventListener('app:languageChanged', function() {
+        if (typeof loadTrainings === 'function') loadTrainings();
+    });
+
 </script>
 {% endblock %}
