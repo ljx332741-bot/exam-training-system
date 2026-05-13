@@ -33,6 +33,7 @@ from utils.status import get_exam_status
 from utils.common import match_country_code, quarter_to_date_range
 from utils.training_helpers import get_training_country_templates_status
 
+print("DEVELOPER_USER_ID from env =", os.environ.get('DEVELOPER_USER_ID'))
 # ================= 1. 日志配置（在 app 创建之前） =================
 logging.basicConfig(
     level=logging.DEBUG,
@@ -1666,10 +1667,10 @@ def admin_exam_settings(exam_id):
         exam_res = db.table("exams").select("title").eq("id", exam_id).execute()
         exam_title = exam_res.data[0]['title'] if exam_res.data else "考试"
         for uid in user_ids:
-            user_res = db.table("users").select("email, name_cn").eq("id", uid).execute()
+            user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
             if user_res.data:
                 email = user_res.data[0]['email']
-                name = user_res.data[0].get('name_cn', '用户')
+                name = user_res.data[0].get('name_en', '用户')
                 subject = f"考试通知：{exam_title}"
                 body = f"您好 {name}，您有一场考试《{exam_title}》，有效期从 {start_time} 到 {end_time}，请登录系统参加。"
                 try:
@@ -1715,31 +1716,56 @@ def update_exam_duration(exam_id):
 @admin_required
 def admin_exam_status(exam_id):
     db = get_supabase()
-    users_res = db.table("users").select("id, email, name_cn, company").execute()
+    allowed = get_allowed_countries()
+
+    # 获取所有用户（只限制国家权限）
+    query = db.table("users").select("id, email, name_en, country").is_("deleted_at", "null")
+    if allowed is not None:
+        if not allowed:
+            return jsonify([])
+        query = query.in_("country", allowed)
+    users_res = query.execute()
     users = users_res.data or []
+
+    # 获取该考试的分配关系
+    assign_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
+    assigned_user_ids = {a['user_id'] for a in (assign_res.data or [])}
+
+    # 获取该考试的考试状态（开始时间、是否提交等）
+    status_res = db.table("user_exam_status").select("user_id, started_at, is_submitted, submitted_at").eq("exam_id", exam_id).execute()
+    status_dict = {}
+    for s in (status_res.data or []):
+        status_dict[s['user_id']] = s
     
-    status_res = db.table("user_exam_status").select("*").eq("exam_id", exam_id).execute()
-    status_dict = {s['user_id']: s for s in (status_res.data or [])}
-    
-    # 获取成绩记录，包括 ID
+    # 获取成绩记录（仅已提交的才有成绩）
     results_res = db.table("exam_results").select("id, user_id, total_score").eq("exam_id", exam_id).execute()
-    results_dict = {}
-    for r in (results_res.data or []):
-        results_dict[r['user_id']] = {'result_id': r['id'], 'score': r['total_score']}
+    results_dict = {r['user_id']: {'result_id': r['id'], 'score': r['total_score']} for r in (results_res.data or [])}
     
     data = []
     for u in users:
         uid = u['id']
-        status = status_dict.get(uid, {})
+        # 判断考试状态
+        if uid not in assigned_user_ids:
+            exam_status = 'not_assigned'   # 未推送
+        else:
+            user_status = status_dict.get(uid, {})
+            if user_status.get('is_submitted'):
+                exam_status = 'submitted'   # 已提交
+            elif user_status.get('started_at'):
+                exam_status = 'in_progress' # 考试中
+            else:
+                exam_status = 'pending'     # 待考试（已推送但未开始）
+
         result_info = results_dict.get(uid, {})
         data.append({
             "user_id": uid,
             "email": u.get('email'),
-            "name": u.get('name_cn') or u.get('email'),
-            "is_submitted": status.get('is_submitted', False),
-            "submitted_at": status.get('submitted_at'),
+            "name": u.get('name_en') or u.get('email'),
+            "is_submitted": status_dict.get(uid, {}).get('is_submitted', False),
+            "submitted_at": status_dict.get(uid, {}).get('submitted_at'),
             "score": result_info.get('score'),
-            "result_id": result_info.get('result_id')  # 新增成绩ID
+            "result_id": result_info.get('result_id'),
+            "exam_status": exam_status   # 新增字段
         })
     return jsonify(data)
 
@@ -1761,8 +1787,8 @@ def admin_result_detail(result_id):
     user_id = result['user_id']
 
     # 2. 获取用户信息
-    user_res = db.table("users").select("email, name_cn").eq("id", user_id).maybe_single().execute()
-    user_info = user_res.data if user_res.data else {"email": "未知", "name_cn": "未知"}
+    user_res = db.table("users").select("email, name_en").eq("id", user_id).maybe_single().execute()
+    user_info = user_res.data if user_res.data else {"email": "未知", "name_en": "未知"}
     
     # 3. 获取考试信息
     exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
@@ -1812,8 +1838,8 @@ def exam_result_detail(result_id):
     user_id = result['user_id']
     
     # 获取用户信息
-    user_res = db.table("users").select("email, name_cn").eq("id", user_id).maybe_single().execute()
-    user_info = user_res.data if user_res.data else {"email": "未知", "name_cn": "未知"}
+    user_res = db.table("users").select("email, name_en").eq("id", user_id).maybe_single().execute()
+    user_info = user_res.data if user_res.data else {"email": "未知", "name_en": "未知"}
     
     # 获取考试信息
     exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
@@ -2194,8 +2220,8 @@ def admin_batch_export_by_result():
                 result_res = db.table("exam_results").select("user_id").eq("id", rid).execute()
                 if result_res.data:
                     user_id = result_res.data[0]['user_id']
-                    user_res = db.table("users").select("name_cn").eq("id", user_id).execute()
-                    name = user_res.data[0].get('name_cn', user_id) if user_res.data else str(user_id)
+                    user_res = db.table("users").select("name_en").eq("id", user_id).execute()
+                    name = user_res.data[0].get('name_en', user_id) if user_res.data else str(user_id)
                     filename = f"{name}_{rid}.pdf"
                     zf.writestr(filename, pdf_bytes)
                 else:
@@ -3001,8 +3027,8 @@ def api_admin_interviews():
         end_time = data.get('end_time')
 
         # ✅ 将本地时间转为 UTC 存储
-        start_time_utc = local_to_utc(start_time) if start_time else None
-        end_time_utc = local_to_utc(end_time) if end_time else None
+        start_time_utc = start_time if start_time else None
+        end_time_utc = end_time if end_time else None
 
         status = 'draft' if is_draft else 'active'
         if start_time and end_time:
@@ -3060,7 +3086,7 @@ def api_admin_interviews():
             if field in data:
                 val = data[field]
                 if field in ('start_time', 'end_time') and val:
-                    val = local_to_utc(val)      # ✅ 转为 UTC
+                    val = val     # ✅ 转为 UTC
                 update_data[field] = val
         if update_data:
             db.table("interviews").update(update_data).eq("id", inv_id).execute()
@@ -3583,6 +3609,8 @@ def can_modify_user(target_user, current_user, action='edit'):
     target_user: 目标用户的字典或ID（需包含 is_protected, id）
     current_user: 当前登录用户信息（如从 session 中获取）
     """
+    dev_id = os.environ.get('DEVELOPER_USER_ID')
+    print(f"DEBUG: DEVELOPER_USER_ID = {dev_id}")
     # 开发者凭据：可以从环境变量读取一个特定的用户ID或邮箱
     DEVELOPER_USER_ID = os.environ.get('DEVELOPER_USER_ID')
     if DEVELOPER_USER_ID and current_user['id'] == DEVELOPER_USER_ID:
@@ -3821,6 +3849,8 @@ def api_admin_edit_user(user_id):
     data = request.json
     db = get_supabase()
 
+    if target_user.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，只有本人可以编辑"}), 403
     # 1. 获取目标用户信息（包括 is_protected）
     target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
     if not target_user_res.data:
@@ -3901,7 +3931,8 @@ def api_admin_delete_user(user_id):
     """删除用户：已导入 → 硬删除；已注册 → 软删除"""
     if user_id == session['user_id']:
         return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
-
+    if target.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
     db = get_supabase()
 
     # 获取目标用户信息（包括 is_protected）
@@ -3959,9 +3990,10 @@ def api_admin_reset_user_password(user_id):
     """重置用户密码（生成新密码并发送邮件）"""
     import secrets, string
     db = get_supabase()
-
+    if target_user.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，无法重置密码"}), 403
     # 获取用户信息（包括 is_protected）
-    user_res = db.table("users").select("email, name_cn, is_protected").eq("id", user_id).maybe_single().execute()
+    user_res = db.table("users").select("email, name_en, is_protected").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target_user = user_res.data
@@ -4050,9 +4082,9 @@ def api_admin_exam_update(exam_id):
     data = request.json
     update_data = {}
     if 'start_time' in data:
-        update_data['start_time'] = local_to_utc(data['start_time']) if data['start_time'] else None
+        update_data['start_time'] = data['start_time'] if data['start_time'] else None
     if 'end_time' in data:
-        update_data['end_time'] = local_to_utc(data['end_time']) if data['end_time'] else None
+        update_data['end_time'] = data['end_time'] if data['end_time'] else None
     if 'duration' in data:
         update_data['duration'] = data['duration']
 
@@ -4090,10 +4122,10 @@ def admin_push_exam_with_settings(exam_id):
     # 更新考试有效期和时长
     update_data = {}
     if start_time_local is not None:
-        update_data['start_time'] = local_to_utc(start_time_local)
+        update_data['start_time'] = start_time_local
         logger.info(f"本地开始时间: {start_time_local}, UTC: {update_data['start_time']}")
     if end_time_local is not None:
-        update_data['end_time'] = local_to_utc(end_time_local)
+        update_data['end_time'] = end_time_local
     if duration is not None:
         update_data['duration'] = duration
     if start_time_local and end_time_local:
@@ -4137,10 +4169,10 @@ def admin_push_exam_with_settings(exam_id):
         # 发送邮件通知
         exam_title = exam_data.get('title', '考试')
         for uid in user_ids:
-            user_res = db.table("users").select("email, name_cn").eq("id", uid).execute()
+            user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
             if user_res.data:
                 email = user_res.data[0]['email']
-                name = user_res.data[0].get('name_cn', '用户')
+                name = user_res.data[0].get('name_en', '用户')
                 subject = f"考试通知：{exam_title}"
                 body = f"您好 {name}，考试《{exam_title}》已设置，有效期从 {start_time_local} 到 {end_time_local}，时长为 {duration} 分钟。请登录系统参加。"
                 try:
@@ -4182,7 +4214,7 @@ def api_admin_exams_list():
     if name:
         query = query.ilike("title", f"%{name}%")
     if creator:
-        users_res = db.table("users").select("id").ilike("name_cn", f"%{creator}%").execute()
+        users_res = db.table("users").select("id").ilike("name_en", f"%{creator}%").execute()
         creator_ids = [u['id'] for u in (users_res.data or [])]
         if creator_ids:
             query = query.in_("created_by", creator_ids)
@@ -4269,8 +4301,8 @@ def api_admin_exams_list():
         min_score = min_res.data[0]['total_score'] if min_res.data else None
         creator_name = ''
         if exam.get('created_by'):
-            creator_res = db.table("users").select("name_cn").eq("id", exam['created_by']).maybe_single().execute()
-            creator_name = creator_res.data.get('name_cn', '') if creator_res.data else ''
+            creator_res = db.table("users").select("name_en").eq("id", exam['created_by']).maybe_single().execute()
+            creator_name = creator_res.data.get('name_en', '') if creator_res.data else ''
         exams_with_status.append({
             "id": exam_id, "title": exam['title'], "status": dynamic_status,
             "start_time": exam.get('start_time'), "end_time": exam.get('end_time'),
@@ -4440,8 +4472,8 @@ def admin_batch_export_pdf(exam_id):
             pdf_bytes = generate_single_user_pdf(exam_id, uid)
             if pdf_bytes:
                 # 获取考生姓名
-                user_res = db.table("users").select("name_cn, email").eq("id", uid).execute()
-                name = user_res.data[0].get('name_cn', uid) if user_res.data else uid
+                user_res = db.table("users").select("name_en, email").eq("id", uid).execute()
+                name = user_res.data[0].get('name_en', uid) if user_res.data else uid
                 result_id = get_latest_result_id(exam_id, uid)  # 需实现该函数
                 filename = f"{name}_{exam_id}_{result_id}.pdf"
                 zf.writestr(filename, pdf_bytes)
@@ -4486,10 +4518,10 @@ def admin_push_exam(exam_id):
     exam_res = db.table("exams").select("title").eq("id", exam_id).execute()
     exam_title = exam_res.data[0]['title'] if exam_res.data else "考试"
     for uid in user_ids:
-        user_res = db.table("users").select("email, name_cn").eq("id", uid).execute()
+        user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
         if user_res.data:
             email = user_res.data[0]['email']
-            name = user_res.data[0].get('name_cn', '用户')
+            name = user_res.data[0].get('name_en', '用户')
             subject = f"新考试通知：{exam_title}"
             body = f"您好 {name}，您有一场考试《{exam_title}》已开放，有效期从 {start_time} 到 {end_time}，请登录系统参加。"
             # 调用邮件发送函数（已有的 auth.send_email）
@@ -4635,8 +4667,7 @@ def admin_trainings():
 @login_required
 @admin_required
 def api_admin_trainings():
-    db = get_supabase()
-    
+    db = get_supabase()    
     if request.method == 'GET':
         # 获取过滤参数
         country_filter = request.args.get('country', '')   # 前端选择的国家筛选（代码或名称）
@@ -4732,10 +4763,31 @@ def api_admin_trainings():
             signed_count = db.table("training_attendances").select("id", count="exact").eq("training_id", t['id']).execute().count or 0
             t['signed_count'] = signed_count
             t['dynamic_status'] = get_training_status(t)   # 需要定义该函数
-            # 模板一致性检查（原有逻辑）
+            # 仅对未指定国家的培训（t.country 为空）检查模板一致性
+            # 是否存在多个国家模板
+            # ---------- 修复：正确判断模板一致性 ----------
             if not t.get('country'):
-                # ... 省略，保持原有代码 ...
-                pass
+                # 查询该培训下所有已配置的国家模板
+                ct_res = db.table("training_country_templates")\
+                    .select("country, header_template")\
+                    .eq("training_id", t['id'])\
+                    .execute()
+                
+                templates = ct_res.data or []
+                # 情况1：无任何国家模板 → 可录入（不禁用）
+                if not templates:
+                    t['has_inconsistent_templates'] = False
+                else:
+                    # 情况2：存在≥2个不同模板 → 禁用主表头录入，提示先统一
+                    unique_templates = set()
+                    for ct in templates:
+                        tpl = ct.get('header_template', {})
+                        # 转为字符串便于比较（忽略键顺序）
+                        unique_templates.add(json.dumps(tpl, sort_keys=True))
+                    t['has_inconsistent_templates'] = len(unique_templates) > 1
+            else:
+                # 已指定国家的培训，主表头录入始终可用（国家模板由分组页管理）
+                t['has_inconsistent_templates'] = False
 
         return jsonify({
             "data": paginated,
@@ -4743,6 +4795,72 @@ def api_admin_trainings():
             "page": page,
             "per_page": per_page
         })
+    elif request.method == 'POST':
+        data = request.json
+        name = data.get('name')
+        if not name:
+            return jsonify({"success": False, "message": "培训名称不能为空"}), 400
+        default_start = datetime.now(timezone.utc).isoformat()
+        default_end = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        res = db.table("trainings").insert({
+            "name": name,
+            "start_time": default_start,
+            "end_time": default_end,
+            "header_template": {},
+            # "is_active": True,
+            "dynamic_status": True,  # 新增字段，用于前端展示状态
+            "country": data.get('country', ''),
+            "quarter": data.get('quarter', '')
+        }).execute()
+        return jsonify({"success": True, "id": res.data[0]['id']})
+    
+    elif request.method == 'PUT':
+        data = request.json
+        tid = data.get('id')
+        if tid is None or tid == 'None' or str(tid).lower() == 'null':
+            return jsonify({"success": False, "message": "无效的培训ID"}), 400
+        try:
+            tid = int(tid)
+        except (ValueError, TypeError):
+            return jsonify({"success": False, "message": "培训ID必须是整数"}), 400
+
+        country_code = data.get('country_code')  # 可选，国家代码
+        header_template = data.get('header_template')
+        if header_template is not None:
+            if country_code:
+                set_training_country_template(tid, country_code, header_template)
+            else:
+                # 保存到培训主表的 header_template（原有逻辑）
+                db.table("trainings").update({"header_template": header_template}).eq("id", tid).execute()
+            return jsonify({"success": True})
+
+        if not tid:
+            return jsonify({"success": False, "message": "缺少培训ID"}), 400
+        update_data = {}
+        if 'name' in data:
+            db.table("trainings").update({"name": data['name']}).eq("id", tid).execute()
+        if 'header_template' in data:
+            db.table("trainings").update({"header_template": data['header_template']}).eq("id", tid).execute()
+        if 'start_time' in data:
+            update_data['start_time'] = data['start_time']
+        if 'end_time' in data:
+            update_data['end_time'] = data['end_time']
+        if 'is_active' in data:
+            update_data['is_active'] = data['is_active']
+        if 'country' in data:
+            update_data['country'] = data['country']
+        if 'quarter' in data:
+            update_data['quarter'] = data['quarter']
+        if update_data:
+            db.table("trainings").update(update_data).eq("id", tid).execute()
+        return jsonify({"success": True})
+    
+    elif request.method == 'DELETE':
+        tid = request.args.get('id')
+        if not tid:
+            return jsonify({"success": False, "message": "缺少培训ID"}), 400
+        db.table("trainings").delete().eq("id", tid).execute()
+        return jsonify({"success": True})
 
 @app.route('/api/admin/training/<int:training_id>/attendance_by_country')
 @login_required
