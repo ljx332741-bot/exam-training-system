@@ -3578,6 +3578,28 @@ def get_interview_user_answers(interview_id, user_id):
 
 #----------1. 用户管理 API---------
 # ================= 用户管理 API =================
+def can_modify_user(target_user, current_user, action='edit'):
+    """检查当前用户是否有权限修改目标用户
+    target_user: 目标用户的字典或ID（需包含 is_protected, id）
+    current_user: 当前登录用户信息（如从 session 中获取）
+    """
+    # 开发者凭据：可以从环境变量读取一个特定的用户ID或邮箱
+    DEVELOPER_USER_ID = os.environ.get('DEVELOPER_USER_ID')
+    if DEVELOPER_USER_ID and current_user['id'] == DEVELOPER_USER_ID:
+        return True   # 开发者本人可以操作任何账号
+    # 如果目标用户是受保护的，则禁止任何其他超管操作
+    if target_user.get('is_protected'):
+        return False
+    return True
+
+def get_current_user():
+    """从 session 获取当前用户信息"""
+    return {
+        'id': session.get('user_id'),
+        'role': session.get('role'),
+        'is_protected': False   # 当前用户不可能是保护账号（因为保护账号只能在数据库设）
+    }
+
 @app.route('/admin/users')
 @login_required
 @admin_required
@@ -3798,15 +3820,23 @@ def api_admin_edit_user(user_id):
     """编辑用户信息"""
     data = request.json
     db = get_supabase()
-    
-    # 获取目标用户信息
-    target_user_res = db.table("users").select("role").eq("id", user_id).maybe_single().execute()
+
+    # 1. 获取目标用户信息（包括 is_protected）
+    target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
     if not target_user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
-    target_role = target_user_res.data.get('role', 'user')
-    
-    # 权限判断
+    target_user = target_user_res.data
+
+    # 2. 权限检查（开发者保护）
+    current_user = get_current_user()
+    if not can_modify_user(target_user, current_user, 'edit'):
+        return jsonify({"success": False, "message": "该账号被保护，无法编辑"}), 403
+
+    # 3. 获取原角色（用于后续权限判断）
+    target_role = target_user.get('role', 'user')
     current_role = session.get('role')
+
+    # 4. 普通管理员不能编辑超级管理员或其他管理员（除了自己）
     if current_role != 'super_admin':
         # 普通管理员不能编辑超级管理员和管理员（除了自己）
         if target_role in ('admin', 'super_admin') and user_id != session['user_id']:
@@ -3817,7 +3847,7 @@ def api_admin_edit_user(user_id):
             return jsonify({"success": False, "message": "权限不足，无法修改角色"}), 403
         # 普通管理员也不能修改user_status为admin？user_status字段只是导入/注册，不需要限制
     
-    # 允许超管修改所有字段，普通管理员修改部分字段（除role外）
+    # 5. 构建更新数据 允许超管修改所有字段，普通管理员修改部分字段（除role外）
     update_data = {}
     allowed_fields = ['name_en', 'company', 'department', 'employee_id', 'birthday', 'country', 'phone', 
                       'wh_type', 'wh_id', 'wh_name_en', 'user_status', 'is_partner']
@@ -3873,12 +3903,18 @@ def api_admin_delete_user(user_id):
         return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
 
     db = get_supabase()
-    # 获取目标用户的角色和当前状态
-    target_res = db.table("users").select("role, user_status").eq("id", user_id).maybe_single().execute()
+
+    # 获取目标用户信息（包括 is_protected）
+    target_res = db.table("users").select("role, user_status, is_protected").eq("id", user_id).maybe_single().execute()
     if not target_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
-
     target = target_res.data
+
+    # 权限检查（开发者保护）
+    current_user = get_current_user()
+    if not can_modify_user(target, current_user, 'delete'):
+        return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
+
     target_role = target.get('role', 'user')
     current_role = session.get('role')
 
@@ -3915,7 +3951,6 @@ def api_admin_delete_user(user_id):
     except Exception as e:
         logger.error(f"软删除失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
-    #-----------------
 
 @app.route('/api/admin/users/<user_id>/reset_password', methods=['POST'])
 @login_required
@@ -3924,13 +3959,22 @@ def api_admin_reset_user_password(user_id):
     """重置用户密码（生成新密码并发送邮件）"""
     import secrets, string
     db = get_supabase()
-    
-    # 获取用户信息
-    user_res = db.table("users").select("email, name_cn").eq("id", user_id).execute()
+
+    # 获取用户信息（包括 is_protected）
+    user_res = db.table("users").select("email, name_cn, is_protected").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
-    user = user_res.data[0]
-    
+    target_user = user_res.data
+
+    # 权限检查（开发者保护）
+    current_user = get_current_user()
+    if not can_modify_user(target_user, current_user, 'reset_password'):
+        return jsonify({"success": False, "message": "该账号被保护，无法重置密码"}), 403
+
+    email = target_user.get('email')
+    if not email:
+        return jsonify({"success": False, "message": "该用户没有邮箱，无法重置密码"}), 400
+
     new_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
     password_hash = auth.hash_password(new_password)
     
@@ -3939,7 +3983,7 @@ def api_admin_reset_user_password(user_id):
         # 发送邮件
         subject = "您的考试系统密码已重置"
         body = f"""
-        尊敬的 {user.get('name_cn') or user.get('email')}：
+        尊敬的 {user.get('name_en') or user.get('email')}：
         
         您的考试系统密码已被管理员重置。
         
