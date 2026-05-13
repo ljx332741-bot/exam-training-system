@@ -230,6 +230,7 @@
     }
 
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
+    const CURRENT_USER_ID = "{{ session.get('user_id') }}";
 
     // 存储当前选中的国家代码
     let selectedAdminCountryCodes = [];
@@ -390,16 +391,19 @@
 
     // 定义辅助函数用于超级用户管理
     function canEditUser(user) {
+        if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
         if (CURRENT_USER_ROLE === 'super_admin') return true;
         if (user.role === 'admin' || user.role === 'super_admin') return false;
         return true; // 普通用户可编辑
     }
     function canDeleteUser(user) {
-        if (CURRENT_USER_ROLE === 'super_admin') return user.id !== '{{ session.user_id }}';
+        if (user.is_protected) return false;
+        if (CURRENT_USER_ROLE === 'super_admin') return user.id !== CURRENT_USER_ID;
         if (user.role === 'admin' || user.role === 'super_admin') return false;
-        return user.id !== '{{ session.user_id }}';
+        return user.id !== CURRENT_USER_ID;
     }
     function canResetPwd(user) {
+        if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
         // 普通管理员不能重置管理员密码
         if (CURRENT_USER_ROLE === 'super_admin') return true;
         return user.role === 'user';
