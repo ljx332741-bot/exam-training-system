@@ -506,8 +506,8 @@
     // 保存设置（不推送）
     document.getElementById('saveSettingBtn')?.addEventListener('click', async () => {
         const examId = currentExamIdForSetting;
-        const startTime = document.getElementById('settingStartTime').value;
-        const endTime = document.getElementById('settingEndTime').value;
+        const startTime = localDateTimeToUTC(document.getElementById('settingStartTime').value);
+        const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
         const duration = parseInt(document.getElementById('settingDuration').value);
         if (!duration || duration <= 0) {
             alert(t('t_enter_valid_duration'));
@@ -530,8 +530,8 @@
     // 保存并推送
     document.getElementById('confirmSettingBtn')?.addEventListener('click', async () => {
         const examId = currentExamIdForSetting;
-        const startTime = document.getElementById('settingStartTime').value;
-        const endTime = document.getElementById('settingEndTime').value;
+        const startTime = localDateTimeToUTC(document.getElementById('settingStartTime').value);
+        const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
         const duration = parseInt(document.getElementById('settingDuration').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
         if (!duration || duration <= 0) {
