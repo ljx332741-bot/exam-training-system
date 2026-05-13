@@ -490,7 +490,7 @@ def api_register():
         "user_id": target['id'],
         "user_email": email,
         "role": target.get('role', 'user'),
-        "admin_countries": user.get('admin_countries', '')  # ✅ 新增
+        "admin_countries": target.get('admin_countries', '')  # ✅ 新增
     })
     return jsonify({"success": True, "redirect": url_for('index')})
 
@@ -4771,7 +4771,6 @@ if __name__ == "__main__":
     app.run(
         host="0.0.0.0",
         port=port,
-        debug=True,          # 🔑 必须为 True 显示详细错误
-        use_reloader=False,  # 禁用重载器避免日志混乱
+        debug=False,          # 🔑 必须为 True 显示详细错误
         threaded=True        # 支持并发请求
     )
