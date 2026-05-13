@@ -377,35 +377,7 @@
 
 {% block extra_js %}
   <script>
-      
-  // 将 UTC 时间字符串转换为本地时间字符串（格式：YYYY-MM-DD HH:MM:SS）
-  function formatLocalTime(utcString) {
-      if (!utcString || utcString === 'null' || utcString === 'None') return '--';
-      try {
-          // 支持 ISO 8601 格式，如 "2026-04-28T08:00:00+00:00"
-          const date = new Date(utcString);
-          if (isNaN(date.getTime())) return '无效时间';
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, '0');
-          const day = String(date.getDate()).padStart(2, '0');
-          const hours = String(date.getHours()).padStart(2, '0');
-          const minutes = String(date.getMinutes()).padStart(2, '0');
-          const seconds = String(date.getSeconds()).padStart(2, '0');
-          return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-      } catch (e) {
-          console.warn('时间转换失败:', utcString, e);
-          return '错误';
-      }
-  }
 
-  // 转换页面上所有 .local-time 元素
-  function convertAllTimesToLocal() {
-      document.querySelectorAll('.local-time[data-utc]').forEach(el => {
-          const utcStr = el.getAttribute('data-utc');
-          el.textContent = formatLocalTime(utcStr);
-      });
-  }
-  
   // 绑定PDF批量导出按钮事件
   document.querySelectorAll('.batch-export').forEach(btn => {
       btn.addEventListener('click', () => batchExport(btn.dataset.id));
@@ -444,19 +416,6 @@
   // 3.考试管理属性设置时长有效期人员选择通知推送或保存模态框
     // 3.1 打开设置模态框，加载现有数据
     let currentExamIdForSetting = null;
-
-    // 将 UTC 字符串转换为本地 datetime-local 格式
-    function utcToLocalDatetimeLocal(utcString) {
-        if (!utcString) return '';
-        const date = new Date(utcString);
-        if (isNaN(date.getTime())) return '';
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const hours = String(date.getHours()).padStart(2, '0');
-        const minutes = String(date.getMinutes()).padStart(2, '0');
-        return `${year}-${month}-${day}T${hours}:${minutes}`;
-    }
 
     async function openSettingModal(examId) {
       currentExamIdForSetting = examId;
@@ -541,8 +500,8 @@
     // 3.3.1 保存设置（不推送更新有效期和时长）
     document.getElementById('saveSettingBtn').addEventListener('click', async () => {
         const examId = currentExamIdForSetting;
-        const startTime = document.getElementById('settingStartTime').value;
-        const endTime = document.getElementById('settingEndTime').value;
+        const startTime = localDateTimeToUTC(document.getElementById('settingStartTime').value);
+        const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
         const duration = parseInt(document.getElementById('settingDuration').value);
         if (!duration || duration <= 0) {
             alert(t('t_enter_valid_duration'));
@@ -566,8 +525,8 @@
     // 3.3.2 保存并推送（更新有效期、时长、考生列表，并发送邮件）
     document.getElementById('confirmSettingBtn').addEventListener('click', async () => {
         const examId = currentExamIdForSetting;
-        const startTime = document.getElementById('settingStartTime').value;
-        const endTime = document.getElementById('settingEndTime').value;
+        const startTime = localDateTimeToUTC(document.getElementById('settingStartTime').value);
+        const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
         const duration = parseInt(document.getElementById('settingDuration').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
         if (!duration || duration <= 0) {
@@ -689,7 +648,7 @@
       }
 
       if (filtered.length === 0) {
-          container.innerHTML = '<div class="text-center text-muted py-3">没有匹配的考生记录</div>';
+          container.innerHTML = `<div class="text-center text-muted py-3">${t('t_no_matching_find')}</div>`;
           return;
       }
 
@@ -699,9 +658,9 @@
                   <tr>
                     <th>${t('candidate')}</th>
                     <th>${t('email')}</th>
-                    <th>库房编码</th>
-                    <th>合作方</th>
-                    <th>国家</th>
+                    <th>${t('t_wh_id')}</th>
+                    <th>${t('t_is_partner')}</th>
+                    <th>${t('t_country')}</th>
                     <th>${t('status')}</th>
                     <th>${t('candidate_score')}</th>
                     <th>${t('submitted_at')}</th>
@@ -715,10 +674,25 @@
           const submitted = u.is_submitted;
           const scoreDisplay = (u.score !== null && u.score !== undefined) ? u.score : '-';
           const submitTime = u.submitted_at ? u.submitted_at.slice(0, 16).replace('T', ' ') : '-';
-          const statusBadge = submitted
-              ? `<span class="badge bg-success">${t('submitted')}</span>`
-              : `<span class="badge bg-warning">${t('unsubmitted')}</span>`;
-          const partnerText = u.is_partner ? '是' : '否';
+          let statusBadge = '';
+          let statusText = '';
+          switch (u.exam_status) {
+              case 'not_assigned':
+                  statusBadge = '<span class="badge bg-secondary">' + t('t_not_assigned') + '</span>';
+                  break;
+              case 'pending':
+                  statusBadge = '<span class="badge bg-info">' + t('t_pending_exam') + '</span>';
+                  break;
+              case 'in_progress':
+                  statusBadge = '<span class="badge bg-warning text-dark">' + t('t_in_progress') + '</span>';
+                  break;
+              case 'submitted':
+                  statusBadge = '<span class="badge bg-success">' + t('t_submitted') + '</span>';
+                  break;
+              default:
+                  statusBadge = '<span class="badge bg-secondary">-</span>';
+          }
+          const partnerText = u.is_partner ? t('t_yes') : t('t_no');
           const detailLink = u.result_id
               ? `<a href="/admin/result/${u.result_id}" class="btn btn-sm btn-outline-info" target="_blank">📋 ${t('details')}</a>`
               : '';
@@ -920,23 +894,6 @@
               renderExamStatusTable();
           });
       }
-      // 为状态筛选的库房输入框添加动态建议
-      /**
-      const whStatusInput = document.getElementById('statusFilterWh');
-      if (whStatusInput) {
-          whStatusInput.addEventListener('input', async function () {
-              const q = this.value.trim();
-              const datalist = document.getElementById('whDatalist');
-              if (q.length === 0) { datalist.innerHTML = ''; return; }
-              try {
-                  const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
-                  const items = await res.json();
-                  datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
-              } catch (e) {
-                  console.error('搜索库房失败', e);
-              }
-          });
-      } */
   });
 
   // Excel培训测评导出按钮事件
@@ -1067,6 +1024,15 @@
           alert(t('t_batch_export_pdf_failed'));
       }
   }
+
+  // 监听语言变化事件，重新加载动态数据
+  window.addEventListener('app:languageChanged', function() {
+      // 重新加载当前页面的动态列表
+      if (typeof loadExams === 'function') loadExams();
+      if (typeof loadTrainings === 'function') loadTrainings();
+      if (typeof loadExamStatusData === 'function' && currentExamId) loadExamStatusData(currentExamId);
+      // 如果有其他动态表格函数，也在这里调用
+  });
 
 </script>
 {% endblock %}
