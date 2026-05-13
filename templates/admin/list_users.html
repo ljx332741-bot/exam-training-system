@@ -19,8 +19,10 @@
                         </div>
                         <div class="col-md-6">
                             <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                            data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off">
+                            data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off"
+                            data-code-input="filterCountryCode">
                             <datalist id="countryDatalist"></datalist>
+                            <input type="hidden" id="filterCountryCode" value="">
                         </div>
                     </div>
                 </div>
@@ -756,9 +758,24 @@
             });
     });
 
+    // 在搜索按钮事件中
     document.getElementById('searchBtn').addEventListener('click', () => {
         currentSearch = document.getElementById('searchInput').value;
-        currentCountry = document.getElementById('filterCountry').value;
+        // 优先使用标准化后的代码，若用户未选择则直接使用输入框原始值（但最好通过校验）
+        let countryCode = document.getElementById('filterCountryCode').value;
+        if (!countryCode) {
+            // 如果隐藏字段为空，尝试实时转换（避免用户直接回车）
+            const rawText = document.getElementById('filterCountry').value.trim();
+            if (rawText) {
+                countryCode = resolveCountryParam(rawText);
+                if (countryCode && countryCode !== '___NONE___') {
+                    document.getElementById('filterCountryCode').value = countryCode;
+                } else {
+                    countryCode = ''; // 无效输入，清空筛选
+                }
+            }
+        }
+        currentCountry = countryCode;
         currentPage = 1;
         loadUsers();
     });
@@ -776,7 +793,7 @@
 
     // 初始化国家列表
     document.addEventListener('DOMContentLoaded', async () => {
-        await setupCountryAutocomplete('filterCountry', 'countryDatalist');   // 筛选栏
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');   // 筛选栏
         // 同时初始化编辑模态框的国家
         await setupCountryAutocomplete('userCountrySelect', 'countryDatalist', 'countryCode');
     });
