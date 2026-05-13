@@ -38,8 +38,7 @@
     <div class="card shadow-sm border-0 h-100">
       <div class="card-header bg-white fw-bold"><i class="bi bi-pencil-square me-2"></i><span data-i18n="pending_exams">待参加考试</span></div>
       <div class="card-body">
-        {% set active_exams = exams | selectattr("is_active", "equalto", true) | list %}
-        {% if active_exams %}
+        {% if exams %}
         <div class="list-group list-group-flush">
           {% for ex in exams %}
             {% if not ex.user_status.is_submitted %}
@@ -102,7 +101,14 @@
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-hover align-middle mb-0">
-            <thead class="table-light"><tr><th><span data-i18n="exam_name">考试名称</span></th><th><span data-i18n="score">得分</span></th><th><span data-i18n="submitted_at">提交时间</span></th><th><span data-i18n="actions">操作</span></th></tr></thead>
+            <thead class="table-light">
+              <tr>
+                <th><span data-i18n="exam_name">考试名称</span></th>
+                <th><span data-i18n="get_score">得分</span></th>
+                <th><span data-i18n="submitted_at">提交时间</span></th>
+                <th><span data-i18n="actions">操作</span></th>
+              </tr>
+            </thead>
             <tbody>
               {% for r in results | default([]) %}
               <tr>
@@ -372,63 +378,33 @@
             loadMyInterviews();
           });
         }
+        convertAllTimesToLocal();
     });
 
-  // 全局函数：将页面上所有带有 class="local-time" 且 data-utc 属性的元素转换为本地时区显示
-  function convertAllTimesToLocal() {
-    const elements = document.querySelectorAll('.local-time[data-utc]');
-    elements.forEach(el => {
-      const utcString = el.getAttribute('data-utc');
-      if (!utcString) return;
-      
-      const utcDate = new Date(utcString);
-      // 检查日期是否有效
-      if (isNaN(utcDate.getTime())) {
-        console.warn('无效的UTC时间字符串:', utcString);
-        return;
-      }
-      
-      // 转换为本地时间字符串（格式：YYYY-MM-DD HH:MM:SS，24小时制）
-      const localString = utcDate.toLocaleString(undefined, {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-      });
-      el.textContent = localString;
+    // 签到按钮逻辑
+    // 修改 loadTrainings 中的签到按钮事件，不再清除画板（每次打开模态框会重新初始化）
+    document.querySelectorAll('.sign-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            currentTrainingId = btn.dataset.id;
+            new bootstrap.Modal(document.getElementById('signatureModal')).show();
+            // 不在此时清空画板，由模态框 shown 事件负责重新初始化
+        });
     });
-  }
 
-  // 页面加载完成后执行转换
-  document.addEventListener('DOMContentLoaded', convertAllTimesToLocal);
-
-  // 签到按钮逻辑
-  // 修改 loadTrainings 中的签到按钮事件，不再清除画板（每次打开模态框会重新初始化）
-  document.querySelectorAll('.sign-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-          currentTrainingId = btn.dataset.id;
-          new bootstrap.Modal(document.getElementById('signatureModal')).show();
-          // 不在此时清空画板，由模态框 shown 事件负责重新初始化
-      });
-  });
-
-  // 动态更新倒计时
-  function updateAllTimers() {
-      document.querySelectorAll('.exam-timer').forEach(timerSpan => {
-          let remaining = parseInt(timerSpan.dataset.remaining);
-          if (remaining > 0) {
-              remaining--;
-              timerSpan.dataset.remaining = remaining;
-              const minutes = Math.floor(remaining / 60);
-              const seconds = remaining % 60;
-              timerSpan.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
-              }
-          })
-      };
-  // 每秒更新一次
-  setInterval(updateAllTimers, 1000);
+    // 动态更新倒计时
+    function updateAllTimers() {
+        document.querySelectorAll('.exam-timer').forEach(timerSpan => {
+            let remaining = parseInt(timerSpan.dataset.remaining);
+            if (remaining > 0) {
+                remaining--;
+                timerSpan.dataset.remaining = remaining;
+                const minutes = Math.floor(remaining / 60);
+                const seconds = remaining % 60;
+                timerSpan.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
+                }
+            })
+        };
+    // 每秒更新一次
+    setInterval(updateAllTimers, 1000);
 </script>
 {% endblock %}
