@@ -208,7 +208,7 @@
                         <datalist id="countryDatalist"></datalist>
                     </div>
                     <div class="col-md-2">
-                        <button id="pushLoadUsersBtn" class="btn btn-secondary w-100"><span data-i18n="refresh_list">刷新列表</span>/button>
+                        <button id="pushLoadUsersBtn" class="btn btn-secondary w-100"><span data-i18n="refresh_list">刷新列表</span></button>
                     </div>
                 </div>
                 <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd;">
@@ -970,15 +970,16 @@
 
     // 确认推送（设置有效期）
     document.getElementById('confirmPushBtn').onclick = async () => {
-        const start = document.getElementById('start_time').value;
-        const end = document.getElementById('end_time').value;
-        if (!start || !end) {
+        const startLocal = document.getElementById('start_time').value;
+        const endLocal = document.getElementById('end_time').value;
+        if (!startLocal || !endLocal) {
             alert('请填写开始和结束时间');
             return;
         }
 
-        const startISO = new Date(start).toISOString();
-        const endISO = new Date(end).toISOString();
+        // 使用统一函数将本地时间转为 UTC 字符串
+        const startISO = localDateTimeToUTC(startLocal);
+        const endISO = localDateTimeToUTC(endLocal);
 
         // 收集选中的用户ID
         const selectedUserIds = Array.from(document.querySelectorAll('.push-user-checkbox:checked')).map(cb => cb.value);
