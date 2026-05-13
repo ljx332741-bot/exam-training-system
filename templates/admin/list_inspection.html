@@ -549,8 +549,8 @@
         const examId = document.getElementById('selectedExamId').value;
         const questionCount = parseInt(document.getElementById('questionCount').value) || 5;
         const reviewer = document.getElementById('reviewerInput').value;
-        const startTime = document.getElementById('startTime').value;
-        const endTime = document.getElementById('endTime').value;
+        const startTime = localDateTimeToUTC(document.getElementById('startTime').value);
+        const endTime = localDateTimeToUTC(document.getElementById('endTime').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
         if (!examId) { alert('请选择考试'); return; }
         if (userIds.length === 0) { alert('请选择学员'); return; }
@@ -703,8 +703,8 @@
 
     document.getElementById('saveEditBtn').addEventListener('click', async () => {
         const invId = document.getElementById('editInterviewId').value;
-        const startTime = document.getElementById('editStartTime').value;
-        const endTime = document.getElementById('editEndTime').value;
+        const startTime = localDateTimeToUTC(document.getElementById('editStartTime').value);
+        const endTime = localDateTimeToUTC(document.getElementById('editEndTime').value);
         const reviewer = document.getElementById('editReviewer').value;
         const payload = { id: invId };
         if (startTime) payload.start_time = startTime;
