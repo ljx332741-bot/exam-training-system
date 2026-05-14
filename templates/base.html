@@ -13,11 +13,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" rel="stylesheet">
 
-    <!-- 前端依赖（引入 signature_pad 培训签到手写签名库 -->
-    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
-
     <style>
-
         #countryTagsContainer .tag {
         display: inline-flex;
         align-items: center;
@@ -192,10 +188,26 @@
 
     <!-- ⚙️ CDN JS 引入 -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
     
     <!-- 🛠️ 全局辅助脚本 -->
     <script>
 
+        // 等待 i18n 就绪工具函数
+        function waitForI18n() {
+            return new Promise((resolve) => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    resolve();
+                    return;
+                }
+                const check = setInterval(() => {
+                    if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 50);
+            });
+        }
         function setAppLanguage(lang) {
             if (!window.i18n) return;
             if (typeof window.i18n.setLang === 'function') {
@@ -299,6 +311,7 @@
             const localDate = new Date(year, month - 1, day, hour, minute);
             return localDate.toISOString();
         }
+
         // 将 UTC 字符串转换为用户本地时间字符串（用于显示）
         function utcToLocalString(utcString) {
             if (!utcString) return '-';
