@@ -12,29 +12,34 @@
             <div class="col-md-6">
               <label class="form-label" for="email"><span data-i18n="email_add">邮箱地址</span> <span class="text-danger">*</span></label>
               <input type="email" name="email" id="email" class="form-control" 
-              placeholder="@gmail, @hotmail, @qq, @sina, @icloud" required autocomplete="email">
+              placeholder="@gmail, @hotmail, @qq, @sina, @icloud" required autocomplete="email"
+              style="font-size: 0.875rem;">
             </div>
             <div class="col-md-6">
               <label class="form-label" for="otp"><span data-i18n="verification_code">验证码</span> <span class="text-danger">*</span> 
                 <button type="button" id="regOtpBtn" class="btn btn-sm btn-outline-primary float-end"><span data-i18n="get">获取</span></button>
               </label>
               <input type="text" name="otp" id="otp" class="form-control" maxlength="6" pattern="\d{6}" 
-              data-i18n-placeholder="placeholder_otp_number" required placeholder="6位数字" autocomplete="one-time-code">
+              data-i18n-placeholder="placeholder_otp_number" required placeholder="6位数字" autocomplete="one-time-code"
+              style="font-size: 0.875rem;">
             </div>
             <div class="col-md-6">
               <label class="form-label" for="password"><span data-i18n="password">密码</span> <span class="text-danger">*</span></label>
-              <input type="password" name="password" id="password" class="form-control" required minlength="6" autocomplete="new-password">
+              <input type="password" name="password" id="password" class="form-control" required minlength="6" 
+              data-i18n-placeholder="placeholder_password_rule" placeholder="密码长度至少6位" autocomplete="new-password" 
+              style="font-size: 0.875rem;">
             </div>
             <div class="col-md-6">
               <label class="form-label" for="confirm_password"><span data-i18n="confirm_password">确认密码</span> <span class="text-danger">*</span></label>
-              <input type="password" name="confirm_password" id="confirm_password" class="form-control" required autocomplete="new-password">
+              <input type="password" name="confirm_password" id="confirm_password" class="form-control" required 
+              data-i18n-placeholder="placeholder_consistent_need" placeholder="密码录入需保持一致" autocomplete="new-password">
             </div>
-            <div small class="text-muted" data-i18n="password_rule">密码长度至少6位</small></div>
             <div class="col-12"><hr class="my-2"></div>
             <div class="col-md-6">
-              <label class="form-label" for="regName"><span data-i18n="name_en">姓名</span> <small class="text-muted"><span data-i18n="name_en_tip">(支持长文本)</span></small></label>
+              <label class="form-label" for="regName"><span data-i18n="name_en">姓名</span> <span class="text-danger">*</span><small class="text-muted"><span data-i18n="name_en_tip">(支持长文本)</span></small></label>
               <input type="text" name="name_en" id="regName" class="form-control" list="nameSuggestions" 
-                data-i18n-placeholder="placeholder_name_spell" placeholder="John Alexander Smith" autocomplete="off">
+                data-i18n-placeholder="placeholder_name_spell" placeholder="John Alexander Smith" autocomplete="off"
+                style="font-size: 0.875rem;">
               <datalist id="nameSuggestions"></datalist>
             </div>
             <div class="col-md-6">
@@ -51,22 +56,22 @@
               <label class="form-label" for="regCountrySelect"><span data-i18n="country">国家</span> <span class="text-danger">*</span></label>
               <input type="text" id="regCountrySelect" class="form-control" list="countryDatalist" 
                 data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off"
-                data-code-input="regCountryCode" required>
+                data-code-input="regCountryCode" required style="font-size: 0.875rem;">
               <datalist id="countryDatalist"></datalist>
               <input type="hidden" name="country" id="regCountryCode">
               <div class="invalid-feedback"><span data-i18n="choice_your_country">请选择您的国家</span></div>
             </div>
-            <fieldset class="col-12">
-              <legend class="form-label"><span data-i18n="is_partner_q">您是服务商吗？</span></legend>
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="is_partner" id="partnerYes" value="Y" checked>
-                <label class="form-check-label" for="partnerYes"><span data-i18n="partner_yes">是</span></label>
-              </div>
-              <div class="form-check form-check-inline">
-                <input class="form-check-input" type="radio" name="is_partner" id="partnerNo" value="N">
-                <label class="form-check-label" for="partnerNo"><span data-i18n="partner_no">否</span></label>
-              </div>
-            </fieldset>
+            <div class="col-12">
+              <label class="form-label fs-6 fw-bold" for="partnerYes"><span data-i18n="is_partner_q">您是服务商吗？</span> <span class="text-danger">*</span></label>             
+                <span class="form-check form-check-inline ms-2">
+                  <input class="form-check-input" type="radio" name="is_partner" id="partnerYes" value="Y" checked>
+                  <label class="form-check-label" for="partnerYes"><span data-i18n="partner_yes">是</span></label>
+                </span>
+                <span class="form-check form-check-inline">
+                  <input class="form-check-input" type="radio" name="is_partner" id="partnerNo" value="N">
+                  <label class="form-check-label" for="partnerNo"><span data-i18n="partner_no">否</span></label>
+                </span>
+            </div>
           </div>
           <button type="submit" class="btn btn-success w-100 mt-4 py-2">✅ <span data-i18n="complete_registration">完成注册</span></button>
         </form>
