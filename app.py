@@ -2963,6 +2963,7 @@ def api_admin_interviews():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
 
+        # 基础查询（分页）
         query = db.table("interviews").select("*", count="exact").is_("deleted_at", "null")
         if name:
             query = query.ilike("title", f"%{name}%")
@@ -2972,10 +2973,26 @@ def api_admin_interviews():
         res = query.range(start, end).execute()
         total = res.count if hasattr(res, 'count') else len(res.data or [])
 
-        interviews = []
+        interviews = res.data or []   # 当前页的访谈列表
+
+        # 获取管理员国家权限
+        allowed = get_allowed_countries()
+
+        # 收集当前页所有访谈涉及的用户ID，用于批量查询国家
+        all_user_ids = set()
+        for inv in interviews:
+            user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
+            all_user_ids.update(r['user_id'] for r in (user_res.data or []))
+
+        # 批量查询用户国家（仅当有国家权限限制时）
+        user_country_map = {}
+        if allowed is not None and all_user_ids:
+            users_res = db.table("users").select("id, country").in_("id", list(all_user_ids)).execute()
+            user_country_map = {u['id']: u.get('country') for u in (users_res.data or [])}
+
         now = datetime.now(timezone.utc)
-        for inv in (res.data or []):
-            # 动态计算状态（与考试规则一致）
+        for inv in interviews:
+            # 动态计算状态
             start_time = inv.get('start_time')
             end_time = inv.get('end_time')
             if not start_time or not end_time:
@@ -2993,10 +3010,14 @@ def api_admin_interviews():
                 except:
                     inv['status'] = 'draft'
 
-            # 统计去重人数
-            res_users = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
-            unique_users = set(r['user_id'] for r in (res_users.data or []))
-            inv['interviewee_count'] = len(unique_users)
+            # 统计去重人数（应用国家权限过滤）
+            user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
+            user_ids = [r['user_id'] for r in (user_res.data or [])]
+            if allowed is not None:
+                filtered_ids = [uid for uid in user_ids if user_country_map.get(uid) in allowed]
+                inv['interviewee_count'] = len(set(filtered_ids))
+            else:
+                inv['interviewee_count'] = len(set(user_ids))
 
             # 附加考试信息
             exam_info = {}
@@ -3006,7 +3027,7 @@ def api_admin_interviews():
                     exam_info = exam_res.data
             inv['exam_title'] = exam_info.get('title', '')
             inv['country'] = exam_info.get('country', '')
-            interviews.append(inv)
+
         return jsonify({"data": interviews, "total": total, "page": page, "per_page": per_page})
 
     elif request.method == 'POST':
@@ -3034,13 +3055,13 @@ def api_admin_interviews():
         if start_time and end_time:
             status = 'active'  # 简单处理，后续根据时间自动判定
 
+        user_ids = data.get('user_ids', [])
         if user_ids:
             # 校验所有用户均为已注册
             valid_users = db.table("users").select("id").in_("id", user_ids).eq("user_status", "registered").execute()
             if len(valid_users.data or []) != len(user_ids):
                 return jsonify({"success": False, "message": "所选考生中包含未注册的用户"}), 400
 
-        user_ids = data.get('user_ids', [])
         interviewee_count = len(user_ids)
         interview_insert = db.table("interviews").insert({
             "title": title,
@@ -3255,6 +3276,7 @@ def interview_preview():
     db = get_supabase()
     data = request.json
     exam_id = data.get('exam_id')
+    
     # 检查题库是否存在
     q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
     if not q_check.data:
@@ -3277,30 +3299,33 @@ def interview_preview():
         user_name = ''
         if user_res.data:
             user_name = user_res.data.get('name_cn') or user_res.data.get('name_en', '')
+        # 随机抽取题目
         questions = random_pick_questions(exam_id, question_count)
-        logger.info(f"用户 {uid} 抽题 {len(questions)} 道")
-        # 过滤掉不必要的字段，仅保留前端需要的内容
+        # 处理题目数据，确保 options 为字典，并筛选必要字段
         questions_light = []
         for q in questions:
+            # 解析 options（可能为字符串 JSON）
+            opts = q.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    opts = json.loads(opts)
+                except:
+                    opts = {}
+            # 过滤空选项
+            if opts:
+                opts = {k: v for k, v in opts.items() if v and v.strip()}
             questions_light.append({
                 'num': q.get('num'),
                 'content': q.get('content_cn') or q.get('content') or q.get('content_raw', '无题目内容'),
-                'type': q.get('type', 'single')         # ✅ 传递题型
+                'type': q.get('type', 'single'),
+                'options': opts   # 前端可能需要展示选项
             })
-
         preview.append({
             "user_id": uid,
             "user_name": user_name,
-            "questions": questions
+            "questions": questions_light
         })
-    questions.sort(key=lambda x: x.get('num', 0))
-    for idx, q in enumerate(questions, 1):
-        q['num'] = idx
-        if q.get('options'):
-            q['options'] = {k: v for k, v in q['options'].items() if v.strip()}
-        else:
-            q['options'] = {}
-
+    
     return jsonify({"exam_title": exam_title, "preview": preview})
 
 @app.route('/api/my/interviews')
@@ -4762,31 +4787,34 @@ def api_admin_trainings():
         for t in paginated:
             signed_count = db.table("training_attendances").select("id", count="exact").eq("training_id", t['id']).execute().count or 0
             t['signed_count'] = signed_count
-            t['dynamic_status'] = get_training_status(t)   # 需要定义该函数
-            # 仅对未指定国家的培训（t.country 为空）检查模板一致性
-            # 是否存在多个国家模板
-            # ---------- 修复：正确判断模板一致性 ----------
+            t['dynamic_status'] = get_training_status(t)
+            
             if not t.get('country'):
-                # 查询该培训下所有已配置的国家模板
-                ct_res = db.table("training_country_templates")\
-                    .select("country, header_template")\
-                    .eq("training_id", t['id'])\
-                    .execute()
+                # 查询该培训下所有签到学员的国家（去重）
+                # 获取签到用户ID
+                att_users = db.table("training_attendances").select("user_id").eq("training_id", t['id']).execute()
+                user_ids = [u['user_id'] for u in (att_users.data or [])] if att_users.data else []
+                countries = set()
+                if user_ids:
+                    users_res = db.table("users").select("country").in_("id", user_ids).execute()
+                    countries = {u['country'] for u in (users_res.data or []) if u.get('country')}
                 
-                templates = ct_res.data or []
-                # 情况1：无任何国家模板 → 可录入（不禁用）
-                if not templates:
-                    t['has_inconsistent_templates'] = False
+                # 如果存在多个不同的国家，则禁用主表头录入
+                if len(countries) > 1:
+                    t['has_inconsistent_templates'] = True
                 else:
-                    # 情况2：存在≥2个不同模板 → 禁用主表头录入，提示先统一
-                    unique_templates = set()
-                    for ct in templates:
-                        tpl = ct.get('header_template', {})
-                        # 转为字符串便于比较（忽略键顺序）
-                        unique_templates.add(json.dumps(tpl, sort_keys=True))
-                    t['has_inconsistent_templates'] = len(unique_templates) > 1
+                    # 否则，检查国家模板表是否有不一致
+                    ct_res = db.table("training_country_templates").select("country, header_template").eq("training_id", t['id']).execute()
+                    templates = ct_res.data or []
+                    if not templates:
+                        t['has_inconsistent_templates'] = False
+                    else:
+                        unique_templates = set()
+                        for ct in templates:
+                            tpl = ct.get('header_template', {})
+                            unique_templates.add(json.dumps(tpl, sort_keys=True))
+                        t['has_inconsistent_templates'] = len(unique_templates) > 1
             else:
-                # 已指定国家的培训，主表头录入始终可用（国家模板由分组页管理）
                 t['has_inconsistent_templates'] = False
 
         return jsonify({
@@ -4808,7 +4836,7 @@ def api_admin_trainings():
             "end_time": default_end,
             "header_template": {},
             # "is_active": True,
-            "dynamic_status": True,  # 新增字段，用于前端展示状态
+            # "dynamic_status": True,  # 新增字段，用于前端展示状态
             "country": data.get('country', ''),
             "quarter": data.get('quarter', '')
         }).execute()
