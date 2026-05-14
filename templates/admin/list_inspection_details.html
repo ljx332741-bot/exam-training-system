@@ -228,8 +228,15 @@
 
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
+        await waitForI18n(); // 等待国际化资源加载完成
         await populateCountryDatalist('countryDatalist');
         loadDetails();
+    });
+
+    // 监听语言切换事件，重新加载数据以更新按钮文字
+    window.addEventListener('app:languageChanged', () => {
+        currentPage = 1;   // 可选：重置到第一页
+        loadDetails();      // 重新加载数据，会重新调用 renderTable 和 t()
     });
 
     function escapeHtml(str) {
