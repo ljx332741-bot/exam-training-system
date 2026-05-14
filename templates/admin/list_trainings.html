@@ -184,7 +184,7 @@
                 <input type="datetime-local" class="form-control mb-3" id="end_time">
                 
                 <hr>
-                <h6>选择推送对象（可选）</h6>
+                <h6><span data-i18n="select_push_recipient">选择推送对象（可选）</span></h6>
                 <div class="row g-2 mb-2">
                     <div class="col-md-3">
                         <input type="text" id="pushUserSearch" class="form-control"
@@ -363,8 +363,23 @@
             row.setAttribute('data-id', t.id);
 
             const inconsistent = t.has_inconsistent_templates || false;
-            const headerBtnDisabled = inconsistent ? 'disabled' : '';
-            const headerBtnTitle = inconsistent ? '存在多个国家的不同表头模板，无法统一编辑' : '';
+            let headerBtnHtml = '';
+            if (inconsistent) {
+                headerBtnHtml = `<span class="d-inline-block" title="存在多个国家的不同表头模板，无法统一编辑，请在分组详情页分别录入">
+                                    <button class="btn btn-sm btn-outline-secondary header-btn" 
+                                            data-id="${t.id}" 
+                                            disabled 
+                                            style="pointer-events: auto; cursor: not-allowed; opacity: 0.65;">
+                                        📋 ${safeT('t_header_input')}
+                                    </button>
+                                </span>`;
+            } else {
+                headerBtnHtml = `<button class="btn btn-sm btn-outline-info header-btn" 
+                                        data-id="${t.id}"
+                                        title="录入表头字段">
+                                    📋 ${safeT('t_header_input')}
+                                </button>`;
+            }
 
             // 序号：1,2,3...（按当前顺序，最新在上，序号1）
             const seq = index + 1;
@@ -404,18 +419,25 @@
                 </td>
                 <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary edit-name-btn" data-id="${t.id}">${safeT('t_edit_name')}</button>
-                    <button class="btn btn-sm btn-outline-info header-btn" 
-                            data-id="${t.id}"
-                            ${t.has_inconsistent_templates ? 'disabled' : ''}
-                            title="${t.has_inconsistent_templates ? '存在多个国家模板，请在分组详情页分别录入' : '录入表头字段'}">
-                        📋 ${safeT('t_header_input')}
-                    </button>
-                    <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}" data-start="${t.start_time || ''}" data-end="${t.end_time || ''}">${safeT('t_push')}</button>
-                    ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary">${safeT('t_details')}</a>` : 
-                    `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}">${safeT('t_details_by_country')}</button>`}
-                    <button class="btn btn-sm btn-outline-secondary copy-training-btn" data-id="${t.id}">${safeT('t_copy')}</button>
-                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${t.id}">${safeT('t_delete')}</button>
+                    ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary" data-i18n-key="t_details">${safeT('t_details')}</a>` : 
+                    `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}" data-i18n-key="t_details_by_country">${safeT('t_details_by_country')}</button>`}
+                    ${inconsistent ? 
+                        `<button class="btn btn-sm btn-outline-info header-btn" 
+                                data-id="${t.id}"
+                                style="pointer-events: none; opacity: 0.65;"
+                                title="存在多个国家的不同表头模板，无法统一编辑，请在分组详情页分别录入" data-i18n-key="t_header_input">
+                            📋 ${safeT('t_header_input')}
+                        </button>` : 
+                        `<button class="btn btn-sm btn-outline-info header-btn data-i18n-key="t_header_input"" 
+                                data-id="${t.id}"
+                                title="录入表头字段">
+                            📋 ${safeT('t_header_input')}
+                        </button>`
+                    }
+                    <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}" data-start="${t.start_time || ''}" data-end="${t.end_time || ''}" data-i18n-key="t_push">${safeT('t_push')}</button>
+                    <button class="btn btn-sm btn-outline-primary edit-name-btn" data-id="${t.id}" data-i18n-key="t_edit_name">${safeT('t_edit_name')}</button>
+                    <button class="btn btn-sm btn-outline-secondary copy-training-btn" data-id="${t.id}" data-i18n-key="t_copy">${safeT('t_copy')}</button>
+                    <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${t.id}" data-i18n-key="t_delete">${safeT('t_delete')}</button>
                   </td>
             `;
         });
@@ -955,14 +977,6 @@
             document.getElementById('currentEditCountry').value = '';
             // 刷新培训列表（更新一级菜单的禁用状态）
             loadTrainings();
-            // 如果分组模态框还开着，刷新其内容
-            if (result.success) {
-                alert(`✅ ${country ? `【${country}】` : ''}表头保存成功`);
-                bootstrap.Modal.getInstance(document.getElementById('headerModal')).hide();
-                document.getElementById('currentEditTrainingId').value = '';
-                document.getElementById('currentEditCountry').value = '';
-                loadTrainings();
-            }
         } else {
             alert('❌ 保存失败: ' + (result.message || '未知错误'));
         }
@@ -1063,6 +1077,14 @@
     })();
 
     window.addEventListener('app:languageChanged', function() {
+        function updateDynamicTranslations() {
+            document.querySelectorAll('[data-i18n-key]').forEach(el => {
+                const key = el.getAttribute('data-i18n-key');
+                if (key && typeof safeT === 'function') {
+                    el.textContent = safeT(key);
+                }
+            });
+        }
         if (typeof loadTrainings === 'function') loadTrainings();
     });
 
