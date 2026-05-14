@@ -163,6 +163,127 @@
 {% endblock %}
 
 {% block extra_js %}
+<style>
+    /* 卡片通用美化 */
+    .card-dashboard {
+        border: none;
+        border-radius: 16px;
+        transition: transform 0.2s, box-shadow 0.2s;
+        overflow: hidden;
+        background: white;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    }
+    .card-dashboard:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+    }
+    /* 左侧彩色条 */
+    .card-status-bar {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 6px;
+        height: 100%;
+        border-radius: 16px 0 0 16px;
+    }
+    .card-status-bar.warning { background: #ff9800; }
+    .card-status-bar.success { background: #4caf50; }
+    .card-status-bar.danger { background: #f44336; }
+    .card-status-bar.secondary { background: #9e9e9e; }
+    .card-status-bar.primary { background: #2196f3; }
+    
+    /* 卡片内容 */
+    .card-dashboard .card-body {
+        padding: 1.25rem;
+        position: relative;
+        z-index: 1;
+    }
+    .card-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .card-title i {
+        font-size: 1.2rem;
+        opacity: 0.8;
+    }
+    .card-meta {
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin-bottom: 0.75rem;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .card-meta .date-range {
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+    .badge-status {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.6rem;
+        border-radius: 20px;
+        font-weight: 500;
+    }
+    .progress-indicator {
+        margin: 0.75rem 0;
+        font-size: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .progress-bar-custom {
+        flex: 1;
+        height: 4px;
+        background: #e9ecef;
+        border-radius: 2px;
+        overflow: hidden;
+    }
+    .progress-bar-custom > div {
+        height: 100%;
+        background: #4caf50;
+        border-radius: 2px;
+    }
+    .btn-gradient {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        color: white;
+        transition: transform 0.1s, box-shadow 0.2s;
+    }
+    .btn-gradient:hover {
+        transform: scale(1.02);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        color: white;
+    }
+    .btn-outline-gradient {
+        background: transparent;
+        border: 1px solid #667eea;
+        color: #667eea;
+        transition: all 0.2s;
+    }
+    .btn-outline-gradient:hover {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-color: transparent;
+        color: white;
+    }
+    /* 签到卡片专用 */
+    .training-card .card-meta i {
+        margin-right: 0.2rem;
+    }
+    /* 访谈卡片专用 */
+    .interview-card .question-count {
+        background: #f8f9fa;
+        padding: 0.2rem 0.6rem;
+        border-radius: 30px;
+        font-size: 0.7rem;
+        font-weight: 500;
+    }
+</style>
 <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
 <script>
   function safeT(key, fallback = '') {
@@ -215,6 +336,7 @@
             statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
         }
 
+        /**
         card.innerHTML = `
           <div class="card-body">
             <h5 class="card-title">${escapeHtml(t.name)}</h5>
@@ -224,7 +346,42 @@
             </p>
             ${actionHtml}
           </div>
+        `; */
+        // 修改 card.innerHTML 部分------------------0514---------------------------
+        card.innerHTML = `
+            <div class="card-dashboard training-card position-relative">
+                <div class="card-status-bar ${getStatusBarClass(t)}"></div>
+                <div class="card-body">
+                    <div class="card-title">
+                        <i class="bi bi-calendar-check-fill text-primary"></i>
+                        ${escapeHtml(t.name)}
+                        <span class="badge-status ${getStatusBadgeClass(t)}">${statusBadge}</span>
+                    </div>
+                    <div class="card-meta">
+                        <div class="date-range">
+                            <i class="bi bi-calendar-range"></i>
+                            <span>${new Date(t.start_time).toLocaleString()} → ${new Date(t.end_time).toLocaleString()}</span>
+                        </div>
+                        ${t.signed ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
+                    </div>
+                    ${!t.signed ? `<div class="mt-2">${actionHtml}</div>` : (t.needs_resign ? `<div class="mt-2">${actionHtml}</div>` : '')}
+                </div>
+            </div>
         `;
+
+        // 新增辅助函数获取左侧条颜色类和徽章类
+        function getStatusBarClass(t) {
+            if (!t.signed) return 'warning';
+            if (t.needs_resign) return 'danger';
+            return 'success';
+        }
+        function getStatusBadgeClass(t) {
+            if (!t.signed) return 'bg-warning text-dark';
+            if (t.needs_resign) return 'bg-danger text-white';
+            return 'bg-success text-white';
+        }
+        // -----------------------------0514---------------------------
+        
         col.appendChild(card);
         container.appendChild(col);
       });
@@ -267,6 +424,7 @@
                 col.className = 'col-md-6 col-lg-4';
                 const card = document.createElement('div');
                 card.className = 'card h-100 shadow-sm';
+                /**
                 card.innerHTML = `
                     <div class="card-body">
                         <h5 class="card-title">${escapeHtml(inv.title)}</h5>
@@ -280,7 +438,42 @@
                           ${inv.is_completed ? safeT('js_completed') : safeT('js_start_interview')}
                         </a>
                     </div>
+                `; */
+                // 修改 card.innerHTML 部分
+                const isCompleted = inv.is_completed;
+                const statusClass = isCompleted ? 'success' : 'primary';
+                const btnClass = isCompleted ? 'btn-secondary' : 'btn-gradient';
+                const btnText = isCompleted ? safeT('js_completed') : safeT('js_start_interview');
+                const progressPercent = isCompleted ? 100 : 0; // 可扩展实际答题进度
+
+                card.innerHTML = `
+                    <div class="card-dashboard interview-card position-relative">
+                        <div class="card-status-bar ${statusClass}"></div>
+                        <div class="card-body">
+                            <div class="card-title">
+                                <i class="bi bi-chat-dots-fill text-info"></i>
+                                ${escapeHtml(inv.title)}
+                                <span class="question-count">${inv.question_count || '?'} ${safeT('t_question')}</span>
+                            </div>
+                            <div class="card-meta">
+                                <div class="date-range">
+                                    <i class="bi bi-clock"></i>
+                                    <span>${new Date(inv.start_time).toLocaleString()} → ${new Date(inv.end_time).toLocaleString()}</span>
+                                </div>
+                            </div>
+                            <div class="progress-indicator">
+                                <span>${isCompleted ? '✅' : '📋'} ${isCompleted ? safeT('js_completed') : safeT('js_in_progress')}</span>
+                                <div class="progress-bar-custom"><div style="width: ${progressPercent}%;"></div></div>
+                            </div>
+                            <div class="mt-2">
+                                <a href="${isCompleted ? '#' : '/interview/take/' + inv.id}" 
+                                  class="btn ${btnClass} btn-sm w-100 ${isCompleted ? 'disabled' : ''}"
+                                  ${isCompleted ? 'disabled' : ''}>${btnText}</a>
+                            </div>
+                        </div>
+                    </div>
                 `;
+
                 col.appendChild(card);
                 container.appendChild(col);
             });
