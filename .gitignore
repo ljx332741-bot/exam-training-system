@@ -1,33 +1,47 @@
-# Python 
-__pycache__/ 
-*.py[cod] 
-*$py.class 
-*.so 
-.Python 
-env/ 
-venv/ 
-*.egg-info/ 
-dist/ 
-build/ 
- 
-# �������� & ��Կ 
-.env 
-*.key 
-*.pem 
-reviewers.json 
- 
-# ��־ & ��ʱ�ļ� 
-*.log 
-tmp/ 
-temp/ 
-*.tmp 
-*.swp 
- 
-# IDE 
-.idea/ 
-.vscode/ 
-*.sublime-project 
- 
-# OS 
-.DS_Store 
-Thumbs.db 
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# 环境变量和敏感配置
+.env
+.env.*
+!.env.example
+config.local.py
+secrets.py
+
+# Supabase 相关（如果代码中硬编码了）
+supabase_key.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志和数据库
+*.log
+*.sqlite
+*.db
+logs/
+
+# 临时文件
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.coverage
+
+# Render 相关
+render.yaml
+
+reviewers.json

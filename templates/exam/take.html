@@ -44,7 +44,7 @@
       </span>
     </div>
     <div class="d-flex align-items-center gap-3">
-      <div id="timer" class="timer-box text-primary"><span data-i18n="time_remaining">剩余</span>：--:--</div>
+      <div id="timer" class="timer-box text-primary"><span data-i18n="remaining">剩余</span>：--:--</div>
       <button type="button" class="btn btn-sm btn-outline-secondary" id="toggle-nav">📋 <span data-i18n="question_no_nav">题号导航</span></button>
     </div>
   </div>
@@ -56,8 +56,8 @@
         {% for q in questions %}
         <div class="card question-card mb-4 d-none" id="q-card-{{ loop.index0 }}" data-index="{{ loop.index0 }}" data-qid="{{ q.id }}">
           <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
-            <span class="fw-bold"><span data-i18n="question_prefix">第</span> {{ loop.index }} <span data-i18n="question_suffix">题</span></span>
-            <span class="badge bg-info text-dark">{{ q.type }}<span data-i18n="question_type_ti">题</span></span>
+              <span class="fw-bold"><span data-i18n="question_prefix">第</span> {{ loop.index }} <span data-i18n="question_suffix">题</span></span>
+              <span class="badge bg-info text-dark question-type-badge" data-type="{{ q.type }}"></span>
           </div>
           <div class="card-body">
             <!-- 题干双语 -->
@@ -89,10 +89,21 @@
                 {% endif %}
               {% endfor %}
             {% elif q.type == 'judge' %}
-              <div class="form-check"><input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_T" value="T"><label class="form-check-label option-label" for="q{{ q.id }}_T"><span class="text-cn">✅ 正确</span><span class="text-en text-muted">Correct</span></label></div>
-              <div class="form-check"><input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_F" value="F"><label class="form-check-label option-label" for="q{{ q.id }}_F"><span class="text-cn">❌ 错误</span><span class="text-en text-muted">Incorrect</span></label></div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_T" value="T">
+                <label class="form-check-label option-label" for="q{{ q.id }}_T">
+                  <span class="text-cn">✅ 正确</span><span class="text-en text-muted">Correct</span>
+                </label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_F" value="F">
+                <label class="form-check-label option-label" for="q{{ q.id }}_F">
+                  <span class="text-cn">❌ 错误</span><span class="text-en text-muted">Incorrect</span>
+                </label>
+              </div>
             {% else %}
-              <input type="text" class="form-control form-control-lg" name="q_{{ q.id }}" placeholder="请输入答案 / Enter your answer">
+              <input type="text" class="form-control form-control-lg" name="q_{{ q.id }}" 
+              data-i18n-placeholder="placeholder_enter_answer" placeholder="请输入答案">
             {% endif %}
           </div>
         </div>
@@ -107,7 +118,7 @@
           </div>
         </div>
         <div class="text-center mb-4">
-          <button type="button" class="btn btn-success btn-lg px-5 rounded-pill shadow-sm" id="submit-btn">✅ <span data-i18n="submit_exam">确认交卷 / Submit</span></button>
+          <button type="button" class="btn btn-success btn-lg px-5 rounded-pill shadow-sm" id="submit-btn">✅ <span data-i18n="submit_exam">确认交卷</span></button>
         </div>
       </form>
     </div>
@@ -115,7 +126,7 @@
     <!-- 📑 侧边导航面板 -->
     <div class="col-lg-4" id="nav-panel" style="display: none;">
       <div class="card sticky-nav shadow-sm">
-        <div class="card-header fw-bold bg-white">📑 <span data-i18n="question_nav">题目导航 / Navigation</span></div>
+        <div class="card-header fw-bold bg-white">📑 <span data-i18n="question_nav">题目导航</span></div>
         <div class="card-body">
           <div class="d-flex flex-wrap justify-content-center" id="nav-grid">
             {% for q in questions %}
@@ -124,10 +135,10 @@
           </div>
           <hr class="my-3">
           <div class="d-flex flex-wrap gap-2 small justify-content-center">
-            <span class="badge bg-success">已作答 Answered</span>
-            <span class="badge bg-warning text-dark">已标记 Flagged</span>
-            <span class="badge bg-primary">当前 Current</span>
-            <span class="badge bg-light text-dark border">未作答 Pending</span>
+            <span class="badge bg-success" data-i18n="answered">已作答</span>
+            <span class="badge bg-warning text-dark" data-i18n="flagged">已标记</span>
+            <span class="badge bg-primary" data-i18n="current">当前</span>
+            <span class="badge bg-light text-dark border" data-i18n="pending">未作答</span>
           </div>
         </div>
       </div>
@@ -140,16 +151,16 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">⚠️ 确认提交试卷？/ Submit Exam?</h5>
+        <h5 class="modal-title">⚠️ <span data-i18n="confirm_to_submit_examination">确认提交试卷？</span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="mb-2">已完成：<span id="answered-count" class="fw-bold text-success">0</span> / {{ questions|length }} 题</p>
-        <p class="text-danger small mb-0">提交后将锁定答案，无法再次修改。 / Answers will be locked after submission.</p>
+        <p class="mb-2"><span data-i18n="completed">已完成</span>：<span id="answered-count" class="fw-bold text-success">0</span> / {{ questions|length }} <span data-i18n="question_suffix">题</span></p>
+        <p class="text-danger small mb-0"><span data-i18n="answers_will_lock_after_submission">提交后将锁定答案，无法再次修改。</span></p>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-light" data-bs-dismiss="modal">继续答题 / Continue</button>
-        <button type="button" class="btn btn-success" id="confirm-submit">确认提交 / Submit</button>
+        <button type="button" class="btn btn-light" data-bs-dismiss="modal"><span data-i18n="continue">继续答题</span></button>
+        <button type="button" class="btn btn-success" id="confirm-submit"><span data-i18n="confirm_submit">确认提交</span></button>
       </div>
     </div>
   </div>
@@ -159,6 +170,26 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+
+  function safeT(key, fallback = '') {
+      if (window.i18n && typeof window.i18n.t === 'function') {
+          return window.i18n.t(key) || fallback || key;
+      }
+      return fallback || key;
+  }
+  // 题型翻译映射
+  const QUESTION_TYPE_MAP = {
+      'single': { zh: '单选题', en: 'Single' },
+      'multi': { zh: '多选题', en: 'Multi' },
+      'judge': { zh: '判断题', en: 'Judge' }
+  };
+
+  // 获取题型翻译文本
+  function getQuestionTypeText(type) {
+      const typeInfo = QUESTION_TYPE_MAP[type] || { zh: type, en: type };
+      return `${typeInfo.zh} / ${typeInfo.en}`;
+  }
+
 // 后端传递的重置标志（必须在全局作用域声明）
 const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
 const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
@@ -195,7 +226,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // ==================== 重置处理（仅重置后首次进入时执行） ====================
   // const resetHandled = localStorage.getItem(RESET_HANDLED_KEY);  // 用于标记重置清除是否已执行（防止刷新时重复清除）
   if (RESET_TIMER || (RESET_TOKEN && RESET_TOKEN !== lastResetToken)) {
-    console.log('🔄 检测到考试重置，清除所有本地缓存');
+    console.log(safeT('t_detected_exam_reset_clear_cache'));
     // 删除所有以 exam_{EXAM_ID}_ 开头的 localStorage 键
     Object.keys(localStorage).forEach(key => {
         if (key.startsWith(`${STORAGE_PREFIX}_`)) {
@@ -217,10 +248,10 @@ document.addEventListener('DOMContentLoaded', function() {
     } else {
         sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, Date.now().toString());
     }
-} else if (!RESET_TIMER) {
-    // 正常进入，清除可能残留的会话标记（不影响重置后的首次进入）
-    sessionStorage.removeItem(`${STORAGE_PREFIX}_reset_token`);
-}
+  } else if (!RESET_TIMER) {
+      // 正常进入，清除可能残留的会话标记（不影响重置后的首次进入）
+      sessionStorage.removeItem(`${STORAGE_PREFIX}_reset_token`);
+  }
 
   // ====================恢复本地状态（防刷新丢失） 状态变量声明 ====================
   let current = 0;
@@ -257,7 +288,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
       }
     } catch(e) {
-      console.warn('恢复答案失败:', e);
+      console.warn(safeT('t_recover_answer_failed'), e);
     }
   }
 
@@ -280,7 +311,7 @@ document.addEventListener('DOMContentLoaded', function() {
   function updateTimerDisplay() {
     const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
     const s = (timeLeft % 60).toString().padStart(2, '0');
-    timerEl.textContent = `剩余：${m}:${s}`;
+    timerEl.textContent = `${safeT('t_remaining')}：${m}:${s}`;
   }
   updateTimerDisplay();
 
@@ -291,7 +322,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (timeLeft <= 300) timerEl.classList.add('timer-warning');
     if (timeLeft <= 0) {
       clearInterval(tick);
-      alert('⏰ 考试时间到！系统将自动提交。');
+      alert(safeT('t_time_is_up_auto_submit'));
       document.getElementById('exam-form').submit();
     }
   }, 1000);
@@ -312,7 +343,22 @@ document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('prev-btn').disabled = current === 0;
     document.getElementById('next-btn').disabled = current === TOTAL - 1;
     document.getElementById('answered-count').textContent = answered.size;
-    document.getElementById('flag-btn').innerHTML = flagged.has(current) ? '🚩 取消标记' : '🚩 标记疑难题';
+    document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('t_unflag') : safeT('t_flag');
+  }
+
+  // 刷新题型文本（根据当前语言）
+  function refreshQuestionTypes() {
+      document.querySelectorAll('.question-type-badge').forEach(el => {
+          const type = el.dataset.type;
+          // 根据题型映射到翻译键
+          const typeKeyMap = {
+              'single': 't_single',
+              'multi': 't_multi',
+              'judge': 't_judge'
+          };
+          const key = typeKeyMap[type] || 't_single';
+          el.textContent = safeT(key);
+      });
   }
 
   // 💾 保存状态
@@ -338,7 +384,7 @@ document.addEventListener('DOMContentLoaded', function() {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
-    }).catch(e => console.warn('上传草稿失败:', e));
+    }).catch(e => console.warn(safeT('t_upload_draft_failed'), e));
   }
 
   // 刷新已回答状态
@@ -404,7 +450,7 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   // 防误关页
-  window.onbeforeunload = () => "考试进行中，离开页面将丢失未保存进度！";
+  window.onbeforeunload = () => safeT('t_exam_active_leave_page_lost_answer');
 
   // 定期自动保存
   setInterval(saveState, 15000);
@@ -412,6 +458,14 @@ document.addEventListener('DOMContentLoaded', function() {
   // 初始化界面
   refreshAnsweredStatus();
   updateUI();
+  refreshQuestionTypes()
+  if (window.i18n) {
+    window.i18n.subscribe(() => {
+      updateUI();
+      refreshQuestionTypes()
+    });
+  }
 });
+
 </script>
 {% endblock %}
