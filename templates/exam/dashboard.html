@@ -51,7 +51,7 @@
                     <span class="fw-semibold d-block">{{ ex.title }}</span>
                     <small class="text-muted">
                       {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
-                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }}<span data-i18n="score_unit">分</span> | 
+                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }} | 
                       {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
                       <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
                       →
@@ -335,19 +335,7 @@
         } else {
             statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
         }
-
-        /**
-        card.innerHTML = `
-          <div class="card-body">
-            <h5 class="card-title">${escapeHtml(t.name)}</h5>
-            <p class="card-text small">
-              ${safeT('period')}：${new Date(t.start_time).toLocaleString()} - ${new Date(t.end_time).toLocaleString()}<br>
-              ${statusBadge} ${signTimeHtml}
-            </p>
-            ${actionHtml}
-          </div>
-        `; */
-        // 修改 card.innerHTML 部分------------------0514---------------------------
+        
         card.innerHTML = `
             <div class="card-dashboard training-card position-relative">
                 <div class="card-status-bar ${getStatusBarClass(t)}"></div>
@@ -380,7 +368,6 @@
             if (t.needs_resign) return 'bg-danger text-white';
             return 'bg-success text-white';
         }
-        // -----------------------------0514---------------------------
         
         col.appendChild(card);
         container.appendChild(col);
@@ -424,22 +411,6 @@
                 col.className = 'col-md-6 col-lg-4';
                 const card = document.createElement('div');
                 card.className = 'card h-100 shadow-sm';
-                /**
-                card.innerHTML = `
-                    <div class="card-body">
-                        <h5 class="card-title">${escapeHtml(inv.title)}</h5>
-                        <p class="card-text small">
-                            ${safeT('period')}：${new Date(inv.start_time).toLocaleString()} - ${new Date(inv.end_time).toLocaleString()}
-                        </p>
-                        <a 
-                          href="${inv.is_completed ? '#' : '/interview/take/' + inv.id}" 
-                          class="btn btn-sm ${inv.is_completed ? 'btn-secondary' : 'btn-primary'}"
-                          ${inv.is_completed ? 'disabled' : ''}>
-                          ${inv.is_completed ? safeT('js_completed') : safeT('js_start_interview')}
-                        </a>
-                    </div>
-                `; */
-                // 修改 card.innerHTML 部分
                 const isCompleted = inv.is_completed;
                 const statusClass = isCompleted ? 'success' : 'primary';
                 const btnClass = isCompleted ? 'btn-secondary' : 'btn-gradient';
@@ -574,7 +545,6 @@
         convertAllTimesToLocal();
     });
 
-    // 签到按钮逻辑
     // 修改 loadTrainings 中的签到按钮事件，不再清除画板（每次打开模态框会重新初始化）
     document.querySelectorAll('.sign-btn').forEach(btn => {
         btn.addEventListener('click', () => {

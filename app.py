@@ -3751,6 +3751,7 @@ def api_admin_add_user():
     birthday = data.get('birthday', '') or None
     employee_id = data.get('employee_id', '').strip() or None
     user_status = data.get('user_status', 'imported')
+    db = get_supabase()
 
     # 姓名必填
     if not name_en:
@@ -3759,8 +3760,6 @@ def api_admin_add_user():
     # 邮箱条件校验
     if not email and user_status != 'imported':
         return jsonify({"success": False, "message": "mail_cannot_empty", "params": []}), 400
-
-    db = get_supabase()
 
     # 检查重复：姓名相同，且（生日相同 或 工号相同）
     tmp_query = db.table("users").select("id").eq("name_en", name_en)
@@ -3873,15 +3872,14 @@ def api_admin_edit_user(user_id):
     """编辑用户信息"""
     data = request.json
     db = get_supabase()
-
-    if target_user.get('is_protected') and user_id != session['user_id']:
-        return jsonify({"success": False, "message": "该账号被保护，只有本人可以编辑"}), 403
     # 1. 获取目标用户信息（包括 is_protected）
     target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
     if not target_user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target_user = target_user_res.data
 
+    if target_user.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，只有本人可以编辑"}), 403
     # 2. 权限检查（开发者保护）
     current_user = get_current_user()
     if not can_modify_user(target_user, current_user, 'edit'):
@@ -3954,10 +3952,6 @@ def api_admin_edit_user(user_id):
 @admin_required
 def api_admin_delete_user(user_id):
     """删除用户：已导入 → 硬删除；已注册 → 软删除"""
-    if user_id == session['user_id']:
-        return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
-    if target.get('is_protected') and user_id != session['user_id']:
-        return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
     db = get_supabase()
 
     # 获取目标用户信息（包括 is_protected）
@@ -3966,6 +3960,11 @@ def api_admin_delete_user(user_id):
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target = target_res.data
 
+    if user_id == session['user_id']:
+        return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
+    if target.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
+        
     # 权限检查（开发者保护）
     current_user = get_current_user()
     if not can_modify_user(target, current_user, 'delete'):
@@ -4015,14 +4014,14 @@ def api_admin_reset_user_password(user_id):
     """重置用户密码（生成新密码并发送邮件）"""
     import secrets, string
     db = get_supabase()
-    if target_user.get('is_protected') and user_id != session['user_id']:
-        return jsonify({"success": False, "message": "该账号被保护，无法重置密码"}), 403
     # 获取用户信息（包括 is_protected）
     user_res = db.table("users").select("email, name_en, is_protected").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target_user = user_res.data
 
+    if target_user.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，无法重置密码"}), 403
     # 权限检查（开发者保护）
     current_user = get_current_user()
     if not can_modify_user(target_user, current_user, 'reset_password'):

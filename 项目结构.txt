@@ -5,8 +5,10 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 ├── requirements.txt                         # 依赖清单
 ├── Procfile                                 # Render 启动配置
 ├── .env                                     # 重要依赖
+├── .gitignore                               # 忽略内容
 ├── reviewer.txt                             # 阅卷人
 ├── reviewers.json                           # 阅卷人static
+├── .git/                                    # Git 仓库
 ├── static/
 │   ├── i18n/ 
 │   │   ├── en.json                        # 词典英文
@@ -43,12 +45,12 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   │   └── dashboard.html                 # 学员面板
 │   │
 │   └── admin/
-│        ├── import.html                    # Word导入界面
-│        ├── import_preview.html            # Word导入，拷贝，编辑预览
 │        ├── result_detail.html             # 得分详情
 │        ├── list_users.html                # 用户注册统计卡片详情页
+│        ├── import.html                    # Word导入界面
 │        ├── list_exams.html                # 考试统计卡片一级菜单
 │        ├── list_exams_scores.html         # 考试统计卡片二级菜单
+│        ├── import_preview.html            # Word导入，拷贝，编辑预览
 │        ├── list_trainings.html            # 培训签到管理
 │        ├── list_training_attendance.html  # 培训签到详情页
 │        ├── attendance_pdf.html            # 培训签到详情专用PDF导出
