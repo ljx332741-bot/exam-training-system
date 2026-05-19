@@ -811,6 +811,11 @@ def take_exam(exam_id):
                 except:
                     q['options'] = {}
         
+        # 9. 获取用户信息
+        user_info_res = db.table("users").select("name_en, email").eq("id", user_id).single().execute()
+        user_info = user_info_res.data
+        user_display_name = f"{user_info.get('name_en', '')} ({session.get('user_email', '')})" if user_info.get('name_en') else session.get('user_email', 'User')
+
         logger.info(f"考试 {exam_id} 用户 {user_id} 进入，剩余 {remaining} 秒")
         return render_template(
             'exam/take.html',
