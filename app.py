@@ -11,6 +11,7 @@ import pytz
 import pdfkit
 import openpyxl
 import random
+import base64, re
 from flask import make_response
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -21,7 +22,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file
 )
-
+from supabase import create_client
 from datetime import datetime, timezone
 from flask import jsonify, request
 from functools import wraps
@@ -811,6 +812,11 @@ def take_exam(exam_id):
                 except:
                     q['options'] = {}
         
+        # 9. 获取用户信息
+        user_info_res = db.table("users").select("name_en, email").eq("id", user_id).single().execute()
+        user_info = user_info_res.data
+        user_display_name = f"{user_info.get('name_en', '')} ({session.get('user_email', '')})" if user_info.get('name_en') else session.get('user_email', 'User')
+
         logger.info(f"考试 {exam_id} 用户 {user_id} 进入，剩余 {remaining} 秒")
         return render_template(
             'exam/take.html',
@@ -2486,6 +2492,36 @@ def shutdown():
     return 'Server shutting down...'
 
 # ================= 培训签到核心 API =================
+def upload_signature(signature_base64, training_id, user_id):
+    """共用统一的签名上传函数"""
+    try:
+        header, encoded = signature_base64.split(',', 1)
+        img_data = base64.b64decode(encoded)
+        storage_path = f"signatures/{training_id}/{user_id}.png"
+        
+        # 使用 service_role key 创建客户端
+        storage_client = create_client(
+            Config.SUPABASE_URL,
+            os.environ.get('SUPABASE_SERVICE_KEY', Config.SUPABASE_KEY)
+        )
+        supabase_storage = storage_client.storage.from_("signatures")
+        
+        # 先删除旧文件（避免覆盖权限问题）
+        try:
+            supabase_storage.remove([storage_path])
+            logger.info(f"已删除旧签名: {storage_path}")
+        except Exception as e:
+            logger.debug(f"删除旧签名（可能不存在）: {e}")
+        
+        # 上传新文件
+        supabase_storage.upload(storage_path, img_data, {"content-type": "image/png"})
+        public_url = supabase_storage.get_public_url(storage_path)
+        logger.info(f"签名上传成功: {public_url}")
+        return public_url
+        
+    except Exception as e:
+        logger.error(f"上传签名失败: {e}")
+        raise e
 
 @app.route('/api/trainings/available')
 @login_required
@@ -2604,16 +2640,9 @@ def api_training_sign():
         return jsonify({"success": False, "message": "培训验证失败"}), 500
     
     # 保存签名图片到 Supabase Storage
-    import base64, re
     try:
-        header, encoded = signature_base64.split(',', 1)
-        img_data = base64.b64decode(encoded)
-        storage_path = f"signatures/{training_id}/{user_id}.png"
-        supabase_storage = db.storage.from_("signatures")
-        supabase_storage.upload(storage_path, img_data, {"content-type": "image/png"})
-        public_url = supabase_storage.get_public_url(storage_path)
+        public_url = upload_signature(signature_base64, training_id, user_id)
     except Exception as e:
-        logger.error(f"上传签名失败: {e}")
         return jsonify({"success": False, "message": "签名保存失败"}), 500
     
     # 插入签到记录
@@ -2747,24 +2776,9 @@ def api_resign_training():
         return jsonify({"success": False, "message": "签名已存在，无需重新签字"}), 400
     
     # 上传新签名（先删除旧文件，再上传，避免 Duplicate 或 update 不兼容）
-    import base64
     try:
-        header, encoded = signature_base64.split(',', 1)
-        img_data = base64.b64decode(encoded)
-        storage_path = f"signatures/{training_id}/{user_id}.png"
-        supabase_storage = db.storage.from_("signatures")
-
-        # 尝试删除已存在的签名文件（忽略失败）
-        try:
-            supabase_storage.remove([storage_path])
-        except Exception as e:
-            logger.warning(f"删除旧签名失败（可能文件不存在）: {e}")
-
-        # 上传新签名
-        supabase_storage.upload(storage_path, img_data, {"content-type": "image/png"})
-        public_url = supabase_storage.get_public_url(storage_path)
+        public_url = upload_signature(signature_base64, training_id, user_id)
     except Exception as e:
-        logger.error(f"重新上传签名失败: {e}")
         return jsonify({"success": False, "message": "签名保存失败"}), 500
     
     # 更新签到记录
