@@ -39,7 +39,7 @@
       <h4 class="mb-1 fw-bold"><span data-i18n="exam_system_title">📝 在线考试系统 / Online Exam</span></h4>
       <span class="question-meta">
         👤 {{ session.get('User', 'user_email') }} | 
-        📄 <span data-i18n="total_questions">共</span> {{ questions|length }} <span data-i18n="questions_unit">题</span> | 
+        📄 <span data-i18n="total_questions">共</span> {{ questions|length }} <span data-i18n="question_unit">题</span> | 
         ⭐ <span data-i18n="full_score">满分</span> {{ total_score | default(100) }}
       </span>
     </div>
