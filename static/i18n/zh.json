@@ -271,7 +271,7 @@
   "submit": "提交",
   "language": "语言",
   "total_questions": "共",
-  "questions_unit": "题",
+  "question_unit": "题",
   "full_score": "满分",
   "next": "下一题",
   "prev": "上一题",
