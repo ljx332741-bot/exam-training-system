@@ -826,7 +826,8 @@ def take_exam(exam_id):
             server_remaining_seconds=remaining,
             reset_timer=reset_timer,
             reset_token=reset_token,
-            user_id=session['user_id']
+            user_id=session['user_id'],
+            user_display_name=user_display_name
         )
     except Exception as e:
         logger.error(f"take_exam 发生异常: {e}", exc_info=True)
