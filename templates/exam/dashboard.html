@@ -51,7 +51,7 @@
                     <span class="fw-semibold d-block">{{ ex.title }}</span>
                     <small class="text-muted">
                       {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
-                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }}<span data-i18n="score_unit">分</span> | 
+                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }} | 
                       {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
                       <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
                       →
