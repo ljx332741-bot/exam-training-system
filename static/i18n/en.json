@@ -271,7 +271,7 @@
   "submit": "Submit",
   "language": "Language",
   "total_questions": "Total",
-  "questions_unit": "Q.",
+  "question_unit": "Q.",
   "full_score": "Full Score",
   "next": "Next",
   "prev": "Previous",
