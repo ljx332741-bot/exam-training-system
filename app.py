@@ -33,6 +33,8 @@ from config import Config
 from utils.status import get_exam_status
 from utils.common import match_country_code, quarter_to_date_range
 from utils.training_helpers import get_training_country_templates_status
+from dotenv import load_dotenv
+load_dotenv() # 加载 .env 文件中的环境变量 这行代码不会影响生产环境（Render 上没有 .env 文件）
 
 print("DEVELOPER_USER_ID from env =", os.environ.get('DEVELOPER_USER_ID'))
 # ================= 1. 日志配置（在 app 创建之前） =================
@@ -48,12 +50,19 @@ DEFAULT_LOCAL_TIMEZONE = os.environ.get('LOCAL_TIMEZONE', 'Asia/Kathmandu')
 logger = logging.getLogger(__name__)
 logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
 
+# 从环境变量读取所有配置（本地开发从 .env 读取，生产环境从 Render 读取）
+HOST = os.environ.get('HOST', '127.0.0.1')
+PORT = int(os.environ.get('PORT', 5000))
+DEBUG = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
 # ================= 2. 🔑 关键：先创建 Flask 应用实例 =================
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
-app.debug = False  # 🔥 强制调试模式显示详细错误
+app.debug = DEBUG  # 🔥 根据环境配置决定是否调试
 
+# 启动时打印配置（便于调试）
+print(f"⚙️ 启动配置: host={HOST}, port={PORT}, debug={DEBUG}")
 # ================= 全局函数 =================
 @app.route('/health')
 def health_check():
@@ -2823,31 +2832,61 @@ def get_training_country_template(training_id):
 @login_required
 @admin_required
 def save_training_country_template(training_id):
-    """2. 保存国家模板接口"""
+    """2. 保存国家模板接口 保存培训表头模板"""
     data = request.json
     country = data.get('country')
     template = data.get('template')
-    if not country or template is None:
-        return jsonify({"error": "缺少 country 或 template 参数"}), 400
+    
+    if not training_id:
+        return jsonify({"success": False, "message": "培训ID无效"}), 400
+    
+    if template is None:
+        return jsonify({"success": False, "message": "缺少 template 参数"}), 400
+    
     db = get_supabase()
-    # 查询是否存在已有记录
-    check_res = db.table("training_country_templates")\
-        .select("id")\
-        .eq("training_id", training_id)\
-        .eq("country", country)\
-        .execute()
-    if check_res.data and len(check_res.data) > 0:
-        # 更新
-        db.table("training_country_templates")\
-            .update({"header_template": template, "updated_at": datetime.now(timezone.utc).isoformat()})\
-            .eq("id", check_res.data[0]['id'])\
+    
+    try:
+        # 情况1：没有指定国家 → 保存到培训主表的 header_template
+        if not country or country == 'null' or country == 'undefined' or country == '':
+            db.table("trainings").update({
+                "header_template": template
+            }).eq("id", training_id).execute()
+            logger.info(f"保存培训主表头: training_id={training_id}")
+            return jsonify({"success": True})
+        
+        # 情况2：指定了国家 → 保存到国家模板表
+        check_res = db.table("training_country_templates")\
+            .select("id")\
+            .eq("training_id", training_id)\
+            .eq("country", country)\
             .execute()
-    else:
-        # 插入
-        db.table("training_country_templates")\
-            .insert({"training_id": training_id, "country": country, "header_template": template})\
-            .execute()
-    return jsonify({"success": True})
+        
+        if check_res.data and len(check_res.data) > 0:
+            # 更新现有记录
+            db.table("training_country_templates")\
+                .update({
+                    "header_template": template, 
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })\
+                .eq("id", check_res.data[0]['id'])\
+                .execute()
+            logger.info(f"更新国家模板: training_id={training_id}, country={country}")
+        else:
+            # 插入新记录
+            db.table("training_country_templates")\
+                .insert({
+                    "training_id": training_id, 
+                    "country": country, 
+                    "header_template": template
+                })\
+                .execute()
+            logger.info(f"插入国家模板: training_id={training_id}, country={country}")
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        logger.error(f"保存表头失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @app.route('/admin/training/<int:training_id>/attendance/print')
 @login_required
@@ -4971,12 +5010,10 @@ def admin_questions_stats():
 
 # ================= 启动入口 =================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    
     app.run(
-        host="0.0.0.0",
+        host=host,
         port=port,
-        debug=False,          # 🔑 必须为 True 显示详细错误
-        
-        threaded=True        # 支持并发请求
+        debug=DEBUG,
+        use_reloader=False,  # 生产环境禁用重载器
+        threaded=True
     )

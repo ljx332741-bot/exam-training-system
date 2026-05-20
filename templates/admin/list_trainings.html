@@ -110,7 +110,10 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-light">
-                <h5 class="modal-title"><span data-i18n="training_header_input">📋 培训表头录入</span></h5>
+                <h5 class="modal-title">
+                    <span data-i18n="training_header_input">📋 培训表头录入</span>
+                    <span id="headerModalTrainingName" class="ms-2 text-muted small"></span>
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -351,13 +354,16 @@
         const data = await res.json();
         renderTrainingsTable(data.data);
         document.getElementById('totalCount').innerText = data.total;
+        currentPage = data.page;  // ✅ 更新当前页码
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
  
     function renderTrainingsTable(trainings) {
         const tbody = document.getElementById('trainingsTbody');
+        const perPage = 20; // 与后端分页大小一致
         tbody.innerHTML = '';
         trainings.forEach((t, index) => {
+            const rowNumber = (currentPage - 1) * perPage + index + 1;
             const quarter = getQuarterFromDate(t.start_time);
             const row = tbody.insertRow();
             row.setAttribute('data-id', t.id);
@@ -382,7 +388,7 @@
             }
 
             // 序号：1,2,3...（按当前顺序，最新在上，序号1）
-            const seq = index + 1;
+            // const seq = index + 1;
             // 动态状态映射
             let statusText = '', statusClass = '';
             switch (t.dynamic_status) {
@@ -407,7 +413,7 @@
                     statusClass = 'bg-light text-dark';
             }
             row.innerHTML = `
-                <td>${t.id}</td>
+                <td class="seq-column">${rowNumber}</td>  <!-- 使用连续序号 -->
                 <td class="country-cell" title="${escapeHtml(t.country || safeT('t_general'))}">${escapeHtml(t.country || safeT('t_general'))}</td>
                 <td class="name-cell" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
                 <td>${quarter}</td>
@@ -481,36 +487,101 @@
 
     // ---------- 行内编辑名称 ----------
     function attachRowEvents() {
-        // 编辑名称
+        // 编辑名称按钮事件
         document.querySelectorAll('.edit-name-btn').forEach(btn => {
             btn.onclick = (e) => {
                 e.stopPropagation();
                 const trainingId = btn.dataset.id;
-                const nameCell = document.querySelector(`td.name-cell[data-id="${trainingId}"]`);
-                const original = nameCell.innerText;
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.value = original;
-                input.classList.add('form-control', 'form-control-sm');
-                nameCell.innerHTML = '';
-                nameCell.appendChild(input);
-                const saveEdit = async () => {
-                    const newName = input.value.trim();
-                    if (newName && newName !== original) {
-                        const res = await fetch('/api/admin/trainings', {
-                            method: 'PUT',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ id: trainingId, name: newName })
-                        });
-                        if (res.ok) loadTrainings();
-                        else alert('修改失败');
+                const row = btn.closest('tr');
+                const nameCell = row.querySelector('.name-cell');
+                const countryCell = row.querySelector('.country-cell');
+                
+                const originalName = nameCell.innerText;
+                const originalCountry = countryCell.innerText;
+                
+                // 获取当前有效期（从 time-range 列获取）
+                const timeRangeCell = row.querySelector('.time-range');
+                const timeRangeText = timeRangeCell.innerText;
+                const [startTime, endTime] = timeRangeText.split(' - ').map(s => s.trim());
+                
+                // 生成唯一 ID 用于动态元素
+                const uniqueId = Date.now();
+                const countryInputId = `edit_country_${uniqueId}`;
+                const countryCodeHiddenId = `edit_country_code_${uniqueId}`;
+                
+                // 替换为编辑表单
+                nameCell.innerHTML = `<input type="text" class="form-control form-control-sm edit-name-input" value="${escapeHtml(originalName)}">`;
+                countryCell.innerHTML = `
+                    <input type="text" id="${countryInputId}" class="form-control form-control-sm" list="countryDatalist" value="${escapeHtml(originalCountry)}">
+                    <input type="hidden" id="${countryCodeHiddenId}" value="">
+                `;
+                
+                // ✅ 复用 base.html 中的 setupCountryAutocomplete
+                setupCountryAutocomplete(countryInputId, 'countryDatalist', countryCodeHiddenId);
+                
+                // 有效期编辑
+                const startDate = startTime.split(' ')[0];
+                const endDate = endTime.split(' ')[0];
+                timeRangeCell.innerHTML = `
+                    <input type="datetime-local" class="form-control form-control-sm edit-start-time" value="${startDate}T00:00">
+                    -
+                    <input type="datetime-local" class="form-control form-control-sm edit-end-time" value="${endDate}T00:00">
+                `;
+                
+                // 保存/取消按钮
+                const actionsCell = row.querySelector('td:last-child');
+                actionsCell.innerHTML = `
+                    <button class="btn btn-sm btn-success save-edit-btn">保存</button>
+                    <button class="btn btn-sm btn-secondary cancel-edit-btn">取消</button>
+                `;
+                
+                // 保存编辑
+                actionsCell.querySelector('.save-edit-btn').onclick = async () => {
+                    const newName = nameCell.querySelector('.edit-name-input').value.trim();
+                    const newCountryCode = document.getElementById(countryCodeHiddenId).value;
+                    const newCountryDisplay = document.getElementById(countryInputId).value;
+                    const newStartTime = timeRangeCell.querySelector('.edit-start-time').value;
+                    const newEndTime = timeRangeCell.querySelector('.edit-end-time').value;
+                    
+                    if (!newName) {
+                        alert(safeT('t_training_name_cannot_empty'));
+                        return;
+                    }
+                    
+                    // 验证国家
+                    if (newCountryDisplay && !newCountryCode) {
+                        alert(safeT('t_country_requred'));
+                        return;
+                    }
+                    
+                    // 转换时间为 UTC
+                    const startISO = newStartTime ? localDateTimeToUTC(newStartTime) : null;
+                    const endISO = newEndTime ? localDateTimeToUTC(newEndTime) : null;
+                    
+                    const res = await fetch('/api/admin/trainings', {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            id: trainingId,
+                            name: newName,
+                            country: newCountryCode || null,
+                            start_time: startISO,
+                            end_time: endISO
+                        })
+                    });
+                    
+                    if (res.ok) {
+                        loadTrainings();
                     } else {
-                        nameCell.innerText = original;
+                        const error = await res.json();
+                        alert('修改失败: ' + (error.message || '未知错误'));
                     }
                 };
-                input.addEventListener('blur', saveEdit);
-                input.addEventListener('keypress', (e) => { if (e.key === 'Enter') saveEdit(); });
-                input.focus();
+                
+                // 取消编辑
+                actionsCell.querySelector('.cancel-edit-btn').onclick = () => {
+                    loadTrainings();
+                };
             };
         });
 
@@ -710,9 +781,7 @@
             });
         });
 
-        // 4. 绑定“导出PDF”按钮（新窗口打开打印页面）多余代码因为与查看详情功能重复
-
-        // 5. 绑定“表头录入”按钮（复用一级菜单逻辑）
+        // 4. 绑定“表头录入”按钮（复用一级菜单逻辑）
         document.querySelectorAll('.group-header-btn').forEach(btn => {
             btn.addEventListener('click', () => {
                 const tid = btn.dataset.trainingId;
@@ -734,13 +803,30 @@
         modal.show();
     }
 
+    // 添加辅助函数获取培训名称和国家代码
+    async function getTrainingDetails(trainingId) {
+        try {
+            const res = await fetch(`/api/admin/trainings?id=${trainingId}`);
+            const data = await res.json();
+            const trainingsList = Array.isArray(data) ? data : (data.data || []);
+            const training = trainingsList.find(t => t.id == trainingId);
+            return {
+                name: training ? training.name : '',
+                country: training ? training.country : ''
+            };
+        } catch (err) {
+            console.error('获取培训信息失败', err);
+            return { name: '', country: '' };
+        }
+    }
+
     async function openCountryHeaderModal(trainingId, countryCode) {
         // 直接调用统一的表头录入入口，传入国家代码
         openHeaderModalForTraining(trainingId, countryCode);
     }
 
     // 打开表头录入模态框（稳健版：先关闭父模态框，避免嵌套冲突）
-    function openHeaderModalForTraining(trainingId, countryCode = null) {
+    async function openHeaderModalForTraining(trainingId, countryCode = null) {
         window.currentCountryCodeForHeader = countryCode;
         window.currentTrainingIdForHeader = trainingId;
         if (!countryCode) {
@@ -748,6 +834,13 @@
         }
         const modalElement = document.getElementById('headerModal');
         if (!modalElement) return;
+
+        // 获取培训名称和国家代码
+        const { name: trainingName, country: trainingCountry } = await getTrainingDetails(trainingId);
+
+        // 格式化显示：[国家代码]培训名称
+        const displayText = trainingCountry ? `[${trainingCountry}] ${trainingName}` : trainingName;
+        document.getElementById('headerModalTrainingName').textContent = ` - ${displayText}`;
 
         // ✅ 关键修复：先隐藏并销毁已存在的实例，防止遮罩累积
         const existingInstance = bootstrap.Modal.getInstance(modalElement);
@@ -906,12 +999,21 @@
                 alert(safeT('t_country_requred'));
                 return;
             }
+            // ✅ 关键修复：将本地时间转换为 UTC 字符串
+            let startISO = null;
+            let endISO = null;
+            if (start) {
+                startISO = localDateTimeToUTC(start);
+            }
+            if (end) {
+                endISO = localDateTimeToUTC(end);
+            }
 
             const payload = {
                 name: name,
                 country: countryCode || null,
-                start_time: start || null,
-                end_time: end || null,
+                start_time: startISO,
+                end_time: endISO,
                 header_template: copiedHeaderTemplate || {}   // 复制原培训的表头模板（如果有）
             };
             const res = await fetch('/api/admin/trainings', {

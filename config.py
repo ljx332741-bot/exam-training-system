@@ -14,7 +14,8 @@ class Config:
     # 🗄️ Supabase
     SUPABASE_URL = os.environ.get("SUPABASE_URL")
     SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-    
+    #SUPABASE_SERVICE_KEY = os.environ.get('SUPABASE_SERVICE_KEY', '') #0519新增
+
     # 📧 邮件服务配置（核心！）
     EMAIL_PROVIDER = os.environ.get("EMAIL_PROVIDER", "brevo")  # "brevo" or "smtp"
     
