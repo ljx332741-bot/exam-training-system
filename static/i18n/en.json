@@ -157,7 +157,7 @@
   "t_pushed": "Pushed",
   "t_unknown": "Unknown",
   "t_general": "General",
-  "t_edit_name": "Edit Name",
+  "t_edit_name": "Edit Row",
   "t_header_input": "Header input",
   "t_details_by_country": "Details(By country)",
   "t_training_delete_tip": "Confirm to delete this training? All sign in records also will be cleaned.",
