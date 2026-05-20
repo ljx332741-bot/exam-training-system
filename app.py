@@ -4877,18 +4877,31 @@ def api_admin_trainings():
             "page": page,
             "per_page": per_page
         })
+
     elif request.method == 'POST':
         data = request.json
         name = data.get('name')
         if not name:
             return jsonify({"success": False, "message": "培训名称不能为空"}), 400
-        default_start = datetime.now(timezone.utc).isoformat()
-        default_end = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    
+        # ✅ 修复：使用前端传递的时间，如果没有则使用默认值
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+
+        # 如果前端没有传递时间，才使用默认值
+        if not start_time:
+            start_time = datetime.now(timezone.utc).isoformat()
+        if not end_time:
+            end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+        print(f"📥 接收到创建培训请求: {data}")
+        print(f"start_time: {data.get('start_time')}, end_time: {data.get('end_time')}")
+        
         res = db.table("trainings").insert({
             "name": name,
-            "start_time": default_start,
-            "end_time": default_end,
-            "header_template": {},
+            "start_time": start_time,      # ✅ 使用前端传递的值
+            "end_time": end_time,          # ✅ 使用前端传递的值
+            "header_template": data.get('header_template', {}),
             # "is_active": True,
             # "dynamic_status": True,  # 新增字段，用于前端展示状态
             "country": data.get('country', ''),
@@ -4906,6 +4919,7 @@ def api_admin_trainings():
         except (ValueError, TypeError):
             return jsonify({"success": False, "message": "培训ID必须是整数"}), 400
 
+        # ✅ 处理 header_template 保存
         country_code = data.get('country_code')  # 可选，国家代码
         header_template = data.get('header_template')
         if header_template is not None:
@@ -4923,9 +4937,9 @@ def api_admin_trainings():
             db.table("trainings").update({"name": data['name']}).eq("id", tid).execute()
         if 'header_template' in data:
             db.table("trainings").update({"header_template": data['header_template']}).eq("id", tid).execute()
-        if 'start_time' in data:
+        if 'start_time' in data and data['start_time'] is not None:
             update_data['start_time'] = data['start_time']
-        if 'end_time' in data:
+        if 'end_time' in data and data['end_time'] is not None:
             update_data['end_time'] = data['end_time']
         if 'is_active' in data:
             update_data['is_active'] = data['is_active']

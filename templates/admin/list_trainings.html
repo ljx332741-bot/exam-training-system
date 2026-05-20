@@ -502,7 +502,23 @@
                 // 获取当前有效期（从 time-range 列获取）
                 const timeRangeCell = row.querySelector('.time-range');
                 const timeRangeText = timeRangeCell.innerText;
-                const [startTime, endTime] = timeRangeText.split(' - ').map(s => s.trim());
+        
+                // 解析时间范围（格式如 "2025-01-15 10:00:00 - 2025-01-15 14:00:00"）
+                let startTime = '';
+                let endTime = '';
+                const timeParts = timeRangeText.split(' - ');
+                if (timeParts.length === 2) {
+                    // 解析开始时间
+                    const startDate = new Date(timeParts[0].trim());
+                    if (!isNaN(startDate.getTime())) {
+                        startTime = startDate.toISOString().slice(0, 16);
+                    }
+                    // 解析结束时间
+                    const endDate = new Date(timeParts[1].trim());
+                    if (!isNaN(endDate.getTime())) {
+                        endTime = endDate.toISOString().slice(0, 16);
+                    }
+                }
                 
                 // 生成唯一 ID 用于动态元素
                 const uniqueId = Date.now();
@@ -519,13 +535,11 @@
                 // ✅ 复用 base.html 中的 setupCountryAutocomplete
                 setupCountryAutocomplete(countryInputId, 'countryDatalist', countryCodeHiddenId);
                 
-                // 有效期编辑
-                const startDate = startTime.split(' ')[0];
-                const endDate = endTime.split(' ')[0];
+                // 正确填充有效期编辑框
                 timeRangeCell.innerHTML = `
-                    <input type="datetime-local" class="form-control form-control-sm edit-start-time" value="${startDate}T00:00">
+                    <input type="datetime-local" class="form-control form-control-sm edit-start-time" value="${startTime}">
                     -
-                    <input type="datetime-local" class="form-control form-control-sm edit-end-time" value="${endDate}T00:00">
+                    <input type="datetime-local" class="form-control form-control-sm edit-end-time" value="${endTime}">
                 `;
                 
                 // 保存/取消按钮
@@ -919,8 +933,35 @@
         // ✅ 安全提取预填值，全部设默认空字符串
         const prefillCountry = prefillData ? (prefillData.country || '') : '';
         const prefillName = prefillData ? (prefillData.name || '') : '';
-        const prefillStart = prefillData ? (prefillData.start_time || '') : '';
-        const prefillEnd = prefillData ? (prefillData.end_time || '') : '';
+    
+        // ✅ 关键修复1：新增时自动填充起止时间
+        let prefillStart = '';
+        let prefillEnd = '';
+        
+        if (prefillData && prefillData.start_time) {
+            // 复制培训：使用原培训的时间
+            prefillStart = prefillData.start_time;
+            prefillEnd = prefillData.end_time;
+        } else {
+            // 新增培训：自动填充时间
+            const now = new Date();
+            // 转换为本地 datetime-local 格式 (YYYY-MM-DDTHH:MM)
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            prefillStart = `${year}-${month}-${day}T${hours}:${minutes}`;
+            // 结束时间 = 当前时间 + 4 小时
+            const endTime = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+            const endYear = endTime.getFullYear();
+            const endMonth = String(endTime.getMonth() + 1).padStart(2, '0');
+            const endDay = String(endTime.getDate()).padStart(2, '0');
+            const endHours = String(endTime.getHours()).padStart(2, '0');
+            const endMinutes = String(endTime.getMinutes()).padStart(2, '0');
+            prefillEnd = `${endYear}-${endMonth}-${endDay}T${endHours}:${endMinutes}`;
+        }
+        
         let copiedHeaderTemplate = prefillData ? prefillData.header_template : null;
 
         newRow.innerHTML = `
