@@ -14,6 +14,9 @@ ENV/
 !.env.example
 config.local.py
 secrets.py
+1 launcher_fast_run.bat
+dev_launcher.py
+launcher.py
 
 # Supabase 相关（如果代码中硬编码了）
 supabase_key.txt
