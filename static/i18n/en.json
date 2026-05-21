@@ -32,6 +32,7 @@
 "submit_method": "Submit method",
 "time_s": "Time(s)",
 "reviewer": "Reviewer",
+"placeholder_reviewer": "Name (ID)",
 "t_manual_submit": "Manual submit",
 "t_auto_submit": "Auto submit",
 "preview_content": "Preview content",

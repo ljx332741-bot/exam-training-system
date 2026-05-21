@@ -1,7 +1,9 @@
 # utils/common.py
-from datetime import datetime, timezone, timedelta
 import re
+import os
+import json
 from services.db import get_supabase
+from datetime import datetime, timezone, timedelta
 
 def match_country_code(input_text):
     """将用户输入的国家文本（中文、英文、代码）匹配为标准国家代码"""
@@ -59,3 +61,66 @@ def get_quarter_from_date(date_iso):
         return f"{dt.year}Q{quarter}"
     except:
         return None
+
+# 阅卷人配置文件路径（项目根目录）
+REVIEWER_CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reviewers.json')
+
+def load_reviewers_config():
+    """
+    加载阅卷人配置文件
+    返回: dict 格式如 {"default": "管理员", "NP": "Birendra", ...}
+    """
+    if os.path.exists(REVIEWER_CONFIG_FILE):
+        try:
+            with open(REVIEWER_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"加载阅卷人配置文件失败: {e}")
+            return {}
+    return {}
+
+def get_reviewer_by_country(user_country=None, exam_reviewer=None, url_reviewer=None):
+    """
+    获取阅卷人（多级优先级）
+    
+    优先级:
+    1. URL 参数 reviewer (前端传递)
+    2. 考试表中的 reviewer 字段 (管理员推送时设置)
+    3. reviewer.json 中匹配考生国家的配置
+    4. reviewer.json 中的 default 配置
+    5. 环境变量 DEFAULT_REVIEWER
+    6. 硬编码默认值 "管理员"
+    
+    参数:
+        user_country: 考生国家代码 (如 "NP", "LK")
+        exam_reviewer: 考试表中存储的阅卷人
+        url_reviewer: URL 参数传递的阅卷人
+    
+    返回:
+        str: 阅卷人字符串
+    """
+    # 优先级1：URL 参数
+    if url_reviewer and url_reviewer.strip():
+        return url_reviewer.strip()
+    
+    # 优先级2：考试表中的 reviewer
+    if exam_reviewer and exam_reviewer.strip():
+        return exam_reviewer.strip()
+    
+    # 优先级3：从配置文件读取
+    config = load_reviewers_config()
+    if config:
+        # 匹配考生国家
+        if user_country and user_country in config:
+            return config[user_country]
+        # 默认配置
+        if 'default' in config:
+            return config['default']
+    
+    # 优先级4：环境变量
+    env_reviewer = os.environ.get('DEFAULT_REVIEWER')
+    if env_reviewer:
+        return env_reviewer
+    
+    # 优先级5：硬编码默认值
+    return "Administrator"
