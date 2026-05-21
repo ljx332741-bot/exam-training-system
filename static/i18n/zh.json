@@ -32,6 +32,7 @@
 "submit_method": "提交方式",
 "time_s": "用时(秒)",
 "reviewer": "阅卷人",
+"placeholder_reviewer": "姓名 (工号)",
 "t_manual_submit": "考生提交",
 "t_auto_submit": "自动提交",
 "preview_content": "预览访谈内容",

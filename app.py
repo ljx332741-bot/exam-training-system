@@ -31,7 +31,7 @@ from services import auth, exam, export
 from services.export import find_wkhtmltopdf
 from config import Config
 from utils.status import get_exam_status
-from utils.common import match_country_code, quarter_to_date_range
+from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country
 from utils.training_helpers import get_training_country_templates_status
 from dotenv import load_dotenv
 load_dotenv() # 加载 .env 文件中的环境变量 这行代码不会影响生产环境（Render 上没有 .env 文件）
@@ -146,6 +146,32 @@ def random_pick_questions(exam_id, count):
     if len(questions) <= count:
         return questions
     return random.sample(questions, count)
+
+def get_default_reviewer_by_country(country_code):
+    """根据国家代码获取默认阅卷人（取该国第一个管理员）"""
+    if not country_code:
+        return None
+    
+    db = get_supabase()
+    # 查询该国第一个管理员（role = 'admin' 或 'super_admin'）
+    # 取姓名 + 工号格式
+    res = db.table("users") \
+        .select("name_en, employee_id") \
+        .eq("country", country_code) \
+        .eq("user_status", "registered") \
+        .in_("role", ["admin", "super_admin"]) \
+        .limit(1) \
+        .execute()
+    
+    if res.data and len(res.data) > 0:
+        admin = res.data[0]
+        name = admin.get('name_en', '')
+        emp_id = admin.get('employee_id', '')
+        if name and emp_id:
+            return f"{name} ({emp_id})"
+        elif name:
+            return name
+    return None
 
 # ================= 后台定时任务：自动提交超时考试 =================
 def auto_submit_timeout_exams():
@@ -441,22 +467,25 @@ def api_register():
         return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
 
     # 2. 姓名 + 出生日期精确匹配 imported 用户（且尚未设置邮箱）
-    query = db.table("users").select("*") \
+    base_query = db.table("users").select("*") \
         .eq("name_en", name_en) \
         .eq("user_status", "imported") \
         .is_("email", "null") \
         .is_("deleted_at", "null")   # ✅ 防止匹配到已删除用户
 
-    # 根据是否提供生日进行不同匹配
+    pool = base_query.execute()
+    users = pool.data or []
+
+    # 在 Python 中过滤生日条件
     if birthday:
         # 提供生日：要求导入记录的生日为空或者与提供的生日一致
-        query = query.or_(f"birthday.is.null,birthday.eq.{birthday}")
+        matched_users = [u for u in users if u.get('birthday') is None or u.get('birthday') == birthday]
     else:
         # 未提供生日：要求导入记录的生日为空
-        query = query.is_("birthday", "null")
-
-    pool = query.execute()
-    count = len(pool.data or [])
+        matched_users = [u for u in users if u.get('birthday') is None]
+    
+    count = len(matched_users)
+    target = matched_users[0] if matched_users else None
 
     if count == 0:
         if birthday:
@@ -480,7 +509,6 @@ def api_register():
         return jsonify({"success": False, "message": "otp_invalid", "params": []})
 
     # 4. 更新记录，完成注册
-    target = pool.data[0]
     update_fields = {
         "email": email,
         "password_hash": auth.hash_password(password),
@@ -2116,14 +2144,12 @@ def admin_export_pdf_by_result(result_id):
     questions = questions_res.data or []
     
     # 阅卷人
-    reviewer = "管理员"
-    reviewer_file = os.path.join(os.path.dirname(__file__), 'reviewer.txt')
-    if os.path.exists(reviewer_file):
-        with open(reviewer_file, 'r', encoding='utf-8') as f:
-            reviewer = f.read().strip()
-    reviewer_param = request.args.get('reviewer')
-    if reviewer_param:
-        reviewer = reviewer_param
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=request.args.get('reviewer')
+    )
     
     # 生成 PDF
     try:
@@ -2195,11 +2221,12 @@ def generate_pdf_by_result_id(result_id):
     questions = questions_res.data or []
 
     # 阅卷人
-    reviewer = "管理员"
-    reviewer_file = os.path.join(os.path.dirname(__file__), 'reviewer.txt')
-    if os.path.exists(reviewer_file):
-        with open(reviewer_file, 'r', encoding='utf-8') as f:
-            reviewer = f.read().strip()
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=None
+    )
 
     # 生成 PDF 并返回字节数据
     from services import export
@@ -2305,15 +2332,12 @@ def exam_export_pdf(result_id):
     questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
     questions = questions_res.data or []
     
-    # 阅卷人（学员端可以从 customs 字段读取，或固定为“系统”）
-    reviewer = "管理员"
-    reviewer_file = os.path.join(os.path.dirname(__file__), 'reviewer.txt')
-    if os.path.exists(reviewer_file):
-        with open(reviewer_file, 'r', encoding='utf-8') as f:
-            reviewer = f.read().strip()
-    reviewer_param = request.args.get('reviewer')
-    if reviewer_param:
-        reviewer = reviewer_param
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=request.args.get('reviewer')
+    )
     
     try:
         pdf_buffer = export.generate_user_pdf(
@@ -2429,16 +2453,12 @@ def admin_export_user_pdf(exam_id, user_id):
     questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
     questions = questions_res.data or []
     
-    # ---------- 读取阅卷人（从共享文件或默认）----------
-    reviewer = "管理员"
-    reviewer_file = os.path.join(os.path.dirname(__file__), 'reviewer.txt')
-    if os.path.exists(reviewer_file):
-        with open(reviewer_file, 'r', encoding='utf-8') as f:
-            reviewer = f.read().strip()
-    # 也可以从请求参数获取（例如前端传递 ?reviewer=xxx），优先级更高
-    reviewer_param = request.args.get('reviewer')
-    if reviewer_param:
-        reviewer = reviewer_param
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=request.args.get('reviewer')
+    )
 
     # 生成 PDF（捕获异常）
     try:
@@ -3816,31 +3836,124 @@ def api_admin_add_user():
 
     db = get_supabase()
 
-    # 检查重复：姓名相同，且（生日相同 或 工号相同）
-    tmp_query = db.table("users").select("id").eq("name_en", name_en)
-    if birthday and employee_id:
-        tmp_query = tmp_query.or_(f"birthday.eq.{birthday},employee_id.eq.{employee_id}")
-    elif birthday:
-        tmp_query = tmp_query.eq("birthday", birthday)
-    elif employee_id:
-        tmp_query = tmp_query.eq("employee_id", employee_id)
-    else:
-        # 无生日无工号，只要姓名相同也算重复（避免纯姓名重复）
-        pass  # 继续往下，后边判断 tmp_query 是否存在记录
+    # ========== 新增：检测用户是否存在（包括软删除） ==========
+    # 查询所有匹配姓名的用户（包括已删除的）
+    existing_users = db.table("users").select("*").eq("name_en", name_en).execute()
+    existing_users_list = existing_users.data or []
 
-    if birthday or employee_id:  # 有辅助信息时才进行精确重复检测
-        existing = tmp_query.execute()
-        if existing.data:
+    # 分离活跃用户和已删除用户
+    active_users = [u for u in existing_users_list if u.get('deleted_at') is None]
+    deleted_users = [u for u in existing_users_list if u.get('deleted_at') is not None]
+
+    # 1. 检查是否有活跃用户（未删除）存在
+    for active in active_users:
+        active_birthday = active.get('birthday')
+        active_employee_id = active.get('employee_id')
+        
+        # 情况1：生日相同 或 工号相同 → 认为重复，拒绝添加
+        if (birthday and active_birthday == birthday) or (employee_id and active_employee_id == employee_id):
             return jsonify({"success": False, "message": "duplicate_user_found", "params": []}), 400
-    else:
-        # 无生日无工号，只要姓名相同就认为可能重复，给出警告（可允许保存？根据需求，不允许）
-        existing = db.table("users").select("id").eq("name_en", name_en).execute()
-        if existing.data:
+        
+        # 情况2：无生日无工号，且姓名相同 → 认为重复，拒绝添加
+        if not birthday and not employee_id:
             return jsonify({"success": False, "message": "duplicate_user_found", "params": []}), 400
+        
+        # 情况3：生日不同或工号不同，允许新增（继续检查下一个）
+        continue
+
+    # 2. 如果有已删除的用户，允许重新添加（恢复账号）
+    if deleted_users:
+        # 可以选择复用已删除用户的 ID，或者创建新 ID
+        # 这里选择复用第一个匹配的已删除用户 ID，并恢复其数据
+        existing_deleted = deleted_users[0]
+        
+        # 更新该用户的信息，恢复为活跃状态
+        update_data = {
+            "email": email,
+            "user_status": user_status,
+            "is_active": False if user_status == 'imported' else True,
+            "deleted_at": None,  # 清除软删除标记
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": session['user_id']
+        }
+        
+        # 更新其他字段（如果提供）
+        if birthday:
+            update_data["birthday"] = birthday
+        if employee_id:
+            update_data["employee_id"] = employee_id
+        if data.get('company'):
+            update_data["company"] = data.get('company')
+        if data.get('department'):
+            update_data["department"] = data.get('department')
+        if data.get('country'):
+            update_data["country"] = data.get('country')
+        if data.get('phone'):
+            update_data["phone"] = data.get('phone')
+        if data.get('role'):
+            update_data["role"] = data.get('role')
+        if data.get('wh_type'):
+            update_data["wh_type"] = data.get('wh_type')
+        if data.get('wh_id'):
+            update_data["wh_id"] = data.get('wh_id')
+        if data.get('wh_name_en'):
+            update_data["wh_name_en"] = data.get('wh_name_en')
+        if data.get('is_partner'):
+            update_data["is_partner"] = data.get('is_partner') == 'Y'
+        
+        try:
+            db.table("users").update(update_data).eq("id", existing_deleted['id']).execute()
+            logger.info(f"恢复已删除用户: {name_en}, ID: {existing_deleted['id']}")
+            
+            # 如果需要发送邮件通知（仅当有邮箱时）
+            if email:
+                import secrets, string
+                temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
+                password_hash = auth.hash_password(temp_password)
+                db.table("users").update({"password_hash": password_hash}).eq("id", existing_deleted['id']).execute()
+
+                # 邮件主题 / Email Subject
+                subject = "您的考试系统账号已创建Your exam system account has been created"
+                
+                # 邮件正文 / Email Body
+                body = f"""
+                # ---------------------------- 中文版 ----------------------------
+                尊敬的 {name_en or email}：
+                
+                您的在线考试系统账号已由管理员创建。
+                
+                登录邮箱：{email}
+                临时密码：{temp_password}
+                
+                请尽快登录系统并修改密码。
+                
+                登录地址：{request.host_url}
+                
+                # ---------------------------- English Version ----------------------------
+                Dear {name_en or email},
+                
+                Your online exam system account has been created by the administrator.
+                
+                Login Email: {email}
+                Temporary Password: {temp_password}
+                
+                Please log in and change your password as soon as possible.
+                
+                Login URL: {request.host_url}
+                """
+                try:
+                    auth.send_email(email, subject, body)
+                except Exception as e:
+                    logger.warning(f"发送邮件失败: {e}")
+            
+            return jsonify({"success": True, "user_id": existing_deleted['id'], "restored": True})
+        except Exception as e:
+            logger.error(f"恢复用户失败: {e}")
+            return jsonify({"success": False, "message": str(e)}), 500
 
     # 邮箱唯一性检查
     if email:
-        exist = db.table("users").select("id").eq("email", email).execute()
+        exist = db.table("users").select("id").eq("email", email).is_("deleted_at", "null").execute()
         if exist.data:
             return jsonify({"success": False, "message": "email_already_registered", "params": []}), 400
 
@@ -3928,14 +4041,14 @@ def api_admin_edit_user(user_id):
     data = request.json
     db = get_supabase()
 
-    if target_user.get('is_protected') and user_id != session['user_id']:
-        return jsonify({"success": False, "message": "该账号被保护，只有本人可以编辑"}), 403
     # 1. 获取目标用户信息（包括 is_protected）
     target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
     if not target_user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target_user = target_user_res.data
 
+    if target_user.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，只有本人可以编辑"}), 403
     # 2. 权限检查（开发者保护）
     current_user = get_current_user()
     if not can_modify_user(target_user, current_user, 'edit'):
@@ -4010,8 +4123,6 @@ def api_admin_delete_user(user_id):
     """删除用户：已导入 → 硬删除；已注册 → 软删除"""
     if user_id == session['user_id']:
         return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
-    if target.get('is_protected') and user_id != session['user_id']:
-        return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
     db = get_supabase()
 
     # 获取目标用户信息（包括 is_protected）
@@ -4019,6 +4130,9 @@ def api_admin_delete_user(user_id):
     if not target_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target = target_res.data
+
+    if target.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
 
     # 权限检查（开发者保护）
     current_user = get_current_user()
@@ -4069,13 +4183,13 @@ def api_admin_reset_user_password(user_id):
     """重置用户密码（生成新密码并发送邮件）"""
     import secrets, string
     db = get_supabase()
-    if target_user.get('is_protected') and user_id != session['user_id']:
-        return jsonify({"success": False, "message": "该账号被保护，无法重置密码"}), 403
     # 获取用户信息（包括 is_protected）
     user_res = db.table("users").select("email, name_en, is_protected").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target_user = user_res.data
+    if target_user.get('is_protected') and user_id != session['user_id']:
+        return jsonify({"success": False, "message": "该账号被保护，无法重置密码"}), 403
 
     # 权限检查（开发者保护）
     current_user = get_current_user()
@@ -4190,6 +4304,7 @@ def admin_push_exam_with_settings(exam_id):
     end_time_local = data.get('end_time')
     duration = data.get('duration')
     user_ids = data.get('user_ids', [])
+    reviewer = data.get('reviewer', '')  # ✅ 新增：获取阅卷人
     db = get_supabase()
 
     # 获取考试信息（用于国家和标题）
@@ -4214,6 +4329,15 @@ def admin_push_exam_with_settings(exam_id):
         # 如果没有有效期，视为草稿，关闭激活状态
         update_data['is_active'] = False
         update_data['status'] = 'draft'
+
+    # ✅ 新增：更新阅卷人（如果有值）
+    if reviewer:
+        update_data['reviewer'] = reviewer
+    else:
+        # 如果没有指定阅卷人，尝试根据国家自动获取默认阅卷人
+        default_reviewer = get_default_reviewer_by_country(exam_data.get('country'))
+        if default_reviewer:
+            update_data['reviewer'] = default_reviewer
 
     if update_data:
         db.table("exams").update(update_data).eq("id", exam_id).execute()
@@ -4389,7 +4513,7 @@ def api_admin_exams_list():
             "assigned_count": assigned_count, "submitted_count": submitted_count,
             "max_score": max_score, "min_score": min_score, "retake_count": 0,
             "reviewer": exam.get('reviewer', ''), "created_by_name": creator_name,
-            "quarter": exam.get('quarter', ''), "deleted_at": exam.get('deleted_at'),
+            "quarter": exam.get('quarter', ''), "deleted_at": exam.get('deleted_at'), 
             "country": exam.get('country', '')
         })
 
@@ -4664,11 +4788,12 @@ def generate_single_user_pdf(exam_id, user_id):
     questions = questions_res.data or []
 
     # 6. 阅卷人（默认）
-    reviewer = "管理员"
-    reviewer_file = os.path.join(os.path.dirname(__file__), 'reviewer.txt')
-    if os.path.exists(reviewer_file):
-        with open(reviewer_file, 'r', encoding='utf-8') as f:
-            reviewer = f.read().strip()
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=None  # 批量导出时没有 URL 参数
+    )
 
     # 7. 生成PDF字节流
     from services import export
