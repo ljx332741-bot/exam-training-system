@@ -17,6 +17,7 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │
 │
 ├── utils/
+│   ├── permissions.py                      # 权限工具函数
 │   ├── common.py                           # 国家和季度处理逻辑的工具函数
 │   ├── training_helpers.py                 # 培训信息获取的工具函数
 │   └── status.py                           # 后端统一考试状态计算函数
