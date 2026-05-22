@@ -45,13 +45,6 @@
                     <label class="form-check-label" for="includeDeletedCheckbox"><span data-i18n="show_deleted_exam">显示已删除考试</span></label>
                     <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
-                <!-- <div class="col-md-2">
-                    <div class="form-check">
-                        <input type="checkbox" id="includeDeletedCheckbox" class="form-check-input">
-                        <label class="form-check-label" for="includeDeletedCheckbox"><span data-i18n="show_deleted_exam">显示已删除考试</span></label>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭返回</span></button>
-                    </div>
-                </div> -->
             </div>
         </div>
     </div>
@@ -242,6 +235,14 @@
             btn.addEventListener('click', () => copyExam(btn.dataset.id));
         });
 
+        // 编辑
+        document.querySelectorAll('.edit-exam-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const examId = btn.dataset.id;
+                window.location.href = `/admin/exam/edit/${examId}`;
+            });
+        });
+
         // 批量导出 PDF
         document.querySelectorAll('.batch-export').forEach(btn => {
             btn.addEventListener('click', () => batchExport(btn.dataset.id));
@@ -320,6 +321,7 @@
             const showPush = ['draft', 'created', 'active'].includes(ex.status) || 
                              (ex.status === 'closed' && ex.assigned_count === 0);
             const showExport = ['active', 'closed'].includes(ex.status);
+            const showEdit = ['draft', 'created', 'active'].includes(ex.status);
             const showDelete = CURRENT_USER_ROLE === 'super_admin';
             let actionButtons = '';
             if (isDeleted) {
@@ -329,7 +331,8 @@
                     ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${t('t_details')}</button>` : ''}
                     ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
                     <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
-                    ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
+                    ${showDetail ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
+                    ${showEdit ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
                     ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
                 `;
             }

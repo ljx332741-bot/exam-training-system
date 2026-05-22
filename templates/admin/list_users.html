@@ -110,6 +110,7 @@
             <div class="modal-body">
                 <form id="userForm">
                     <input type="hidden" id="editUserId">
+                    <input type="hidden" id="existingAdminCountries" value="[]">
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label" for="email"><span data-i18n="email">邮箱</span> *</label>
@@ -178,7 +179,11 @@
                             </select>
                         </div>
                         <div class="col-md-6" id="adminCountriesGroup" style="display:none;">
-                            <label class="form-label" for="adminCountriesInput"><span data-i18n="power_scope_multiple">权限范围（可多选）</span></label>
+                            <label class="form-label" for="adminCountriesInput">
+                                <span data-i18n="power_scope_multiple">权限范围（可多选）</span>
+                                <span class="text-danger">*</span>
+                                <small class="text-muted">超管/管理员必须设置</small>
+                            </label>
                             <div class="position-relative">
                                 <div id="countryTagsContainer" class="form-control d-flex flex-wrap align-items-start" 
                                     style="min-height:38px; cursor:text; padding:4px;" 
@@ -227,57 +232,147 @@
 
 {% block extra_js %}
 <script>
-    function isSuperAdmin() {
-        return CURRENT_USER_ROLE === 'super_admin';
-    }
-
+    // 全局变量
+    // 获取当前登录用户的角色
+    const IS_DEVELOPER = {{ is_developer | tojson }};
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     const CURRENT_USER_ID = "{{ session.get('user_id') }}";
 
-    // 存储当前选中的国家代码
-    let selectedAdminCountryCodes = [];
-    const countryAllList = []; // 将在 init 时填充
+    // 角色层级定义
+    const ROLE_HIERARCHY = {
+        'developer': { can_create: ['user', 'admin', 'super_admin', 'developer'], need_country_scope: false },
+        'super_admin': { can_create: ['user', 'admin', 'super_admin'], need_country_scope: true },
+        'admin': { can_create: ['user'], need_country_scope: true },
+        'user': { can_create: [], need_country_scope: false }
+    };
 
-    async function initAdminCountryTags(existingCodes = null) {
-        selectedAdminCountryCodes = existingCodes ? JSON.parse(existingCodes) : [];
+    // 判断当前用户是否可以创建目标角色
+    function canCreateRole(targetRole) {
+        const currentRole = CURRENT_USER_ROLE;
+        
+        // 开发者可以创建任何角色
+        if (currentRole === 'developer') return true;
+        
+        // 超管可以创建 user, admin, super_admin
+        if (currentRole === 'super_admin') {
+            return ['user', 'admin', 'super_admin'].includes(targetRole);
+        }
+        
+        // 管理员只能创建 user
+        if (currentRole === 'admin') {
+            return targetRole === 'user';
+        }
+        
+        return false;
+    }
+
+    // 判断目标角色是否需要权限范围
+    function roleNeedsCountryScope(role) {
+        return role === 'admin' || role === 'super_admin';
+    }
+
+    // 获取角色选项列表（根据当前用户权限）
+    function getAvailableRoles() {
+        const currentRole = CURRENT_USER_ROLE;
+        
+        if (currentRole === 'developer') {
+            return [
+                { value: 'user', label: '普通用户' },
+                { value: 'admin', label: '管理员' },
+                { value: 'super_admin', label: '超级管理员' },
+                { value: 'developer', label: '开发者' }
+            ];
+        }
+        
+        if (currentRole === 'super_admin') {
+            return [
+                { value: 'user', label: '普通用户' },
+                { value: 'admin', label: '管理员' },
+                { value: 'super_admin', label: '超级管理员' }
+            ];
+        }
+        
+        if (currentRole === 'admin') {
+            return [
+                { value: 'user', label: '普通用户' }
+            ];
+        }
+        
+        return [{ value: 'user', label: '普通用户' }];
+    }
+
+    // 渲染角色下拉框
+    function renderRoleSelect(selectedRole = 'user') {
+        const roleSelect = document.getElementById('role');
+        const availableRoles = getAvailableRoles();
+        
+        roleSelect.innerHTML = '';
+        availableRoles.forEach(role => {
+            const option = document.createElement('option');
+            option.value = role.value;
+            option.textContent = role.label;
+            if (role.value === selectedRole) {
+                option.selected = true;
+            }
+            roleSelect.appendChild(option);
+        });
+    }
+
+    async function initAdminCountryTags(existingCodesJson = '[]') {
+        // 解析已有的国家代码
+        let existingCodes = [];
+        try {
+            existingCodes = JSON.parse(existingCodesJson);
+        } catch(e) {
+            existingCodes = [];
+        }
+        selectedAdminCountryCodes = [...existingCodes];
+        
         const container = document.getElementById('countryTagsContainer');
         const input = document.getElementById('adminCountriesInput');
         const suggestionList = document.getElementById('countrySuggestions');
         
-        // 加载全部国家列表
+        if (!container || !input) return;
+        
+        // 加载国家列表
         const countries = await loadCountryList();
-        window.countryList = countries; // 确保全局可用
+        window.countryList = countries;
         
         // 渲染已有标签
         renderSelectedTags();
-
-        // 清除旧事件
-        input.replaceWith(input.cloneNode(true));
-        const newInput = document.getElementById('adminCountriesInput');
+        
+        // 移除旧的输入框事件，避免重复绑定
+        const newInput = input.cloneNode(true);
+        input.parentNode.replaceChild(newInput, input);
+        
+        // 绑定输入事件
         newInput.addEventListener('input', debounce(async function() {
             const q = this.value.trim().toLowerCase();
             suggestionList.innerHTML = '';
-            if (!q) { suggestionList.style.display = 'none'; return; }
-
+            if (!q) {
+                suggestionList.style.display = 'none';
+                return;
+            }
+            
             const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
             const matched = countries.filter(c => 
                 c.name_zh.toLowerCase().includes(q) || 
                 c.name_en.toLowerCase().includes(q) || 
                 c.code.toLowerCase().includes(q)
             ).slice(0, 10);
-
+            
             if (matched.length === 0) {
                 suggestionList.style.display = 'none';
                 return;
             }
-
+            
             suggestionList.innerHTML = matched.map(c => {
                 const display = (lang === 'zh') ? c.name_zh : c.name_en;
                 return `<li data-code="${c.code}" data-name="${display}" class="list-group-item list-group-item-action">${display} (${c.code})</li>`;
             }).join('');
             suggestionList.style.display = 'block';
         }, 200));
-
+        
         // 点击建议项
         suggestionList.addEventListener('click', function(e) {
             const li = e.target.closest('li');
@@ -290,37 +385,49 @@
             }
             suggestionList.style.display = 'none';
         });
-
-        // 失焦藏起建议
+        
+        // 失焦隐藏建议
         newInput.addEventListener('blur', () => {
             setTimeout(() => suggestionList.style.display = 'none', 200);
         });
         
-        // 焦点时如果输入框有值，重新过滤
+        // 焦点时重新过滤
         newInput.addEventListener('focus', function() {
             if (this.value.trim()) {
                 this.dispatchEvent(new Event('input'));
             }
         });
+        
+        // 更新全局引用
+        document.getElementById('adminCountriesInput').focus();
     }
 
+    // 存储当前选中的国家代码
+    let selectedAdminCountryCodes = [];
+    const countryAllList = []; // 将在 init 时填充
+    
+    // 渲染已选中的标签
     function renderSelectedTags() {
         const container = document.getElementById('countryTagsContainer');
         const input = document.getElementById('adminCountriesInput');
+        if (!container || !input) return;
+        
         // 清除旧标签（保留 input）
         const tags = container.querySelectorAll('.tag');
         tags.forEach(t => t.remove());
         
+        const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
+        
         selectedAdminCountryCodes.forEach(code => {
             const country = window.countryList?.find(c => c.code === code);
-            const display = country ? (window.i18n?.currentLang === 'en' ? country.name_en : country.name_zh) : code;
+            const display = country ? (lang === 'en' ? country.name_en : country.name_zh) : code;
             const tag = document.createElement('span');
             tag.className = 'tag';
             tag.innerHTML = `${display} <span class="remove-tag" data-code="${code}">&times;</span>`;
             container.insertBefore(tag, input);
         });
         
-        // 重新绑定删除事件
+        // 绑定删除事件
         document.querySelectorAll('.remove-tag').forEach(btn => {
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -350,6 +457,19 @@
             } else {
                 emailInput.setAttribute('required', 'required');
             }
+        }
+    }
+
+    // 获取权限范围的显示文本
+    function getCountryScopeDisplay(countriesJson) {
+        if (!countriesJson) return '无限制';
+        try {
+            const codes = JSON.parse(countriesJson);
+            if (!codes.length) return '无限制';
+            // 可以转换为国家名称显示
+            return codes.join(', ');
+        } catch(e) {
+            return countriesJson;
         }
     }
 
@@ -500,10 +620,16 @@
     async function openEditModal(userId) {
         currentEditUserId = userId;
         try {
-            // 使用专用接口获取单个用户（需要后端支持，见下文）
             const res = await fetch(`/api/admin/users/${userId}`);
             if (!res.ok) throw new Error('获取用户失败');
             const user = await res.json();
+            
+            // 保存已有的权限范围到隐藏字段（供模态框使用）
+            const existingCountries = user.admin_countries || '[]';
+            const hiddenInput = document.getElementById('existingAdminCountries');
+            if (hiddenInput) {
+                hiddenInput.value = existingCountries;
+            }
             
             // 依据 user_status 控制邮箱必填
             const emailInput = document.getElementById('email');
@@ -512,15 +638,17 @@
             } else {
                 emailInput.setAttribute('required', 'required');
             }
-                    
+            
+            // 角色选择器（根据当前用户权限决定是否可修改）
             const roleSelect = document.getElementById('role');
-            // 从模板传入的 session 角色（将在后面说明如何获取）
-            if (typeof CURRENT_USER_ROLE !== 'undefined' && CURRENT_USER_ROLE !== 'super_admin') {
-                roleSelect.disabled = true;       // 普通管理员不能改角色
+            if (CURRENT_USER_ROLE !== 'super_admin' && !IS_DEVELOPER) {
+                roleSelect.disabled = true;
+            } else {
+                roleSelect.disabled = false;
             }
-
+            
             // 填充表单字段
-            document.getElementById('email').value = user.email;
+            document.getElementById('email').value = user.email || '';
             document.getElementById('phone').value = user.phone || '';
             document.getElementById('name_en').value = user.name_en || '';
             document.getElementById('company').value = user.company || '';
@@ -528,32 +656,22 @@
             document.getElementById('employee_id').value = user.employee_id || '';
             document.getElementById('birthday').value = user.birthday || '';
             document.getElementById('role').value = user.role || 'user';
-            // 新增字段
             document.getElementById('wh_type').value = user.wh_type || '';
             document.getElementById('wh_id').value = user.wh_id || '';
             document.getElementById('wh_name_en').value = user.wh_name_en || '';
             document.getElementById('user_status').value = user.user_status || 'imported';
-            document.getElementById('isPartnerSelect').value = user.is_partner || 'N';
-                
-            // 处理国家字段：设置输入框显示文本和隐藏代码
+            document.getElementById('isPartnerSelect').value = user.is_partner ? 'Y' : 'N';
+            
+            // 处理国家字段
             const countryInput = document.getElementById('userCountrySelect');
             const countryCodeHidden = document.getElementById('countryCode');
-            if (countryInput && countryCodeHidden) {
-                if (user.country) {
-                    // 需要将国家代码转换为显示名称（利用已缓存的国家列表）
-                    const countries = await loadCountryList(); // 全局函数，需在 base.html 中实现
-                    const matched = countries.find(c => c.code === user.country);
-                    if (matched) {
-                        const currentLang = window.i18n?.currentLang || 'zh';
-                        countryInput.value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
-                        countryCodeHidden.value = matched.code;
-                    } else {
-                        countryInput.value = '';
-                        countryCodeHidden.value = '';
-                    }
-                } else {
-                    countryInput.value = '';
-                    countryCodeHidden.value = '';
+            if (countryInput && countryCodeHidden && user.country) {
+                const countries = await loadCountryList();
+                const matched = countries.find(c => c.code === user.country);
+                if (matched) {
+                    const currentLang = window.i18n?.currentLang || 'zh';
+                    countryInput.value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
+                    countryCodeHidden.value = matched.code;
                 }
             }
             
@@ -561,21 +679,16 @@
             const userStatusSelect = document.getElementById('user_status');
             userStatusSelect.removeEventListener('change', updateEmailRequired);
             userStatusSelect.addEventListener('change', updateEmailRequired);
-            updateEmailRequired(); // 根据当前状态设置
-
-            // 权限范围标签初始化
-            // 权限范围组件：仅超管编辑管理员时显示
-            if (CURRENT_USER_ROLE === 'super_admin' && user.role === 'admin') {
-                document.getElementById('adminCountriesGroup').style.display = '';
-                await initAdminCountryTags(user.admin_countries || '[]');
-            } else {
-                document.getElementById('adminCountriesGroup').style.display = 'none';
-            }
-
+            updateEmailRequired();
+            
+            // 权限范围组件的显示由模态框的 show 事件处理
+            // 这里只需要确保数据已准备好
+            
             new bootstrap.Modal(document.getElementById('addUserModal')).show();
+            
         } catch (err) {
-            console.error(t('t_user_loading_failed'), err);
-            alert(t('t_user_loading_failed'));
+            console.error('加载用户失败:', err);
+            alert('加载用户失败');
         }
     }
 
@@ -598,7 +711,8 @@
             });
     }
 
-    document.getElementById('saveUserBtn').addEventListener('click', () => {
+    // ==================== 编辑用户时加载权限范围 ====================
+    document.getElementById('saveUserBtn').addEventListener('click', async () => {
         const formData = {
             email: document.getElementById('email').value.trim(),
             phone: document.getElementById('phone').value,
@@ -608,44 +722,61 @@
             employee_id: document.getElementById('employee_id').value,
             birthday: document.getElementById('birthday').value,
             country: document.getElementById('countryCode').value,
-            // 只有当角色下拉框未被禁用时才传递角色（即超级管理员或自己编辑自己）
-            ...(document.getElementById('role').disabled ? {} : { role: document.getElementById('role').value }),
             wh_type: document.getElementById('wh_type').value,
             wh_id: document.getElementById('wh_id').value,
             wh_name_en: document.getElementById('wh_name_en').value,
             user_status: document.getElementById('user_status').value,
-            is_partner: document.getElementById('isPartnerSelect').value
+            is_partner: document.getElementById('isPartnerSelect').value,
+            role: document.getElementById('role').value
         };
-        const userStatus = document.getElementById('user_status')?.value;
-
-        // 权限范围
-        // 权限范围：只要是超管且编辑用户为管理员（或新建时角色为 admin）
-        const targetRole = document.getElementById('role').value;
-        if (CURRENT_USER_ROLE === 'super_admin' && targetRole === 'admin') {
-            // 无论组件是否显示，都尝试从 selectedAdminCountryCodes 取数据
-            formData.admin_countries = JSON.stringify(selectedAdminCountryCodes || []);
-        }
-        // 只有 user_status 不是 'imported' 时，邮箱才是必填的
-        if (!formData.email && userStatus !== 'imported') {
-            alert(t('mail_no_empty'));
+        
+        const userStatus = document.getElementById('user_status').value;
+        const selectedRole = formData.role;
+        
+        // ========== 角色权限校验 ==========
+        if (!canCreateRole(selectedRole)) {
+            alert(`您没有权限创建 ${selectedRole} 角色`);
             return;
         }
+        
+        // ========== 权限范围校验 ==========
+        if (roleNeedsCountryScope(selectedRole)) {
+            // 检查是否选择了权限范围
+            if (!selectedAdminCountryCodes || selectedAdminCountryCodes.length === 0) {
+                alert(`${selectedRole === 'admin' ? '管理员' : '超级管理员'} 必须设置权限范围（国家）`);
+                return;
+            }
+            formData.admin_countries = JSON.stringify(selectedAdminCountryCodes);
+        } else {
+            formData.admin_countries = null;
+        }
+        
+        // 只有 user_status 不是 'imported' 时，邮箱才是必填的
+        if (!formData.email && userStatus !== 'imported') {
+            alert('邮箱不能为空');
+            return;
+        }
+        
         const url = currentEditUserId ? `/api/admin/users/${currentEditUserId}` : '/api/admin/users';
         const method = currentEditUserId ? 'PUT' : 'POST';
         
-        fetch(url, {
-            method: method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(formData)
-        }).then(res => res.json()).then(data => {
+        try {
+            const response = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+            
+            const data = await response.json();
+            
             if (data.success) {
                 if (currentEditUserId) {
-                    alert(t('update_success'));
+                    alert('更新成功');
                 } else {
                     if (data.temp_password) {
-                        alert(t('add_success', data.temp_password));
+                        alert(`添加成功！临时密码：${data.temp_password}`);
                     } else {
-                        alert(t('add_success_no_pwd'));
+                        alert('添加成功');
                     }
                 }
                 bootstrap.Modal.getInstance(document.getElementById('addUserModal')).hide();
@@ -653,46 +784,137 @@
                 currentEditUserId = null;
                 document.getElementById('userForm').reset();
             } else {
-                alert(t('operation_failed') + data.message);
+                // 使用翻译函数显示错误
+                const errorMsg = data.message || '操作失败';
+                alert(errorMsg);
             }
-        });
+        } catch (err) {
+            alert('网络错误：' + err.message);
+        }
     });
 
-    // 新建用户时清空国家相关字段
+    // 模态框显示逻辑
     document.getElementById('addUserModal').addEventListener('show.bs.modal', async () => {
-        // 绑定邮箱必填状态变化
+        // 1. 绑定邮箱必填状态变化
         const userStatusSelect = document.getElementById('user_status');
         userStatusSelect.removeEventListener('change', updateEmailRequired);
         userStatusSelect.addEventListener('change', updateEmailRequired);
         updateEmailRequired();
-
-        if (!currentEditUserId) {
-            // 新建模式
-            document.getElementById('userForm').reset();
-            document.getElementById('editUserId').value = '';
-            updateEmailRequired(); // 确保默认状态去掉 required
-        }
-
-        // 根据角色控制权限范围组件显示
+        
+        // 2. 获取角色选择器
         const roleSelect = document.getElementById('role');
+        const adminCountriesGroup = document.getElementById('adminCountriesGroup');
+        const requiredMark = adminCountriesGroup?.querySelector('.text-danger');
+        
+        // 3. 定义权限范围组件显示/隐藏逻辑
         const toggleAdminCountries = () => {
-            if (roleSelect.value === 'admin' && CURRENT_USER_ROLE === 'super_admin') {
-                document.getElementById('adminCountriesGroup').style.display = '';
+            const selectedRole = roleSelect.value;
+            const needsScope = roleNeedsCountryScope(selectedRole);
+            
+            if (needsScope) {
+                // 需要权限范围的角色：admin 或 super_admin
+                adminCountriesGroup.style.display = '';
+                if (requiredMark) requiredMark.style.display = 'inline';
+                
+                // 如果是新建模式，初始化空标签
                 if (!currentEditUserId) {
-                    // 新建管理员，初始化空标签
                     initAdminCountryTags('[]');
                 }
-                // 编辑时由 openEditModal 处理初始化
             } else {
-                document.getElementById('adminCountriesGroup').style.display = 'none';
-                selectedAdminCountryCodes = [];  // 清空
+                // 普通用户：隐藏权限范围组件
+                adminCountriesGroup.style.display = 'none';
+                if (requiredMark) requiredMark.style.display = 'none';
+                selectedAdminCountryCodes = [];
             }
         };
-        // 先禁用之前的监听，避免重复绑定
-        roleSelect.removeEventListener('change', toggleAdminCountries);
-        roleSelect.addEventListener('change', toggleAdminCountries);
-        // 执行一次，确保当前状态正确
-        toggleAdminCountries();
+        
+        // 4. 定义角色变化时的完整处理逻辑
+        const handleRoleChange = () => {
+            const selectedRole = roleSelect.value;
+            const needsScope = roleNeedsCountryScope(selectedRole);
+            
+            // 控制权限范围组件的显示
+            if (needsScope) {
+                adminCountriesGroup.style.display = '';
+                if (requiredMark) requiredMark.style.display = 'inline';
+                
+                // 新建模式下初始化空标签
+                if (!currentEditUserId) {
+                    initAdminCountryTags('[]');
+                }
+            } else {
+                adminCountriesGroup.style.display = 'none';
+                if (requiredMark) requiredMark.style.display = 'none';
+                selectedAdminCountryCodes = [];
+            }
+        };
+        
+        // 5. 根据当前模式（新建/编辑）初始化
+        if (!currentEditUserId) {
+            // ========== 新建模式 ==========
+            document.getElementById('userForm').reset();
+            document.getElementById('editUserId').value = '';
+            updateEmailRequired();
+            
+            // 根据当前用户权限渲染可选角色
+            renderRoleSelect('user');
+            
+            // 默认隐藏权限范围组件（普通用户不需要）
+            adminCountriesGroup.style.display = 'none';
+            if (requiredMark) requiredMark.style.display = 'none';
+            selectedAdminCountryCodes = [];
+            
+            // 绑定角色变化事件
+            roleSelect.removeEventListener('change', handleRoleChange);
+            roleSelect.addEventListener('change', handleRoleChange);
+            
+        } else {
+            // ========== 编辑模式 ==========
+            // 编辑模式下，角色选择可能被禁用（取决于权限）
+            const targetUserRole = document.getElementById('role').value;
+            
+            // 如果当前用户不是开发者且目标角色权限更高，禁用角色修改
+            if (!IS_DEVELOPER) {
+                if (CURRENT_USER_ROLE === 'super_admin') {
+                    // 超管可以修改任何非开发者的角色
+                    if (targetUserRole !== 'developer') {
+                        renderRoleSelect(targetUserRole);
+                        roleSelect.disabled = false;
+                    } else {
+                        roleSelect.disabled = true;  // 不能修改开发者
+                    }
+                } else if (CURRENT_USER_ROLE === 'admin') {
+                    // 管理员不能修改角色
+                    roleSelect.disabled = true;
+                }
+            } else {
+                // 开发者可以修改任何角色
+                renderRoleSelect(targetUserRole);
+                roleSelect.disabled = false;
+            }
+            
+            // 如果目标角色需要权限范围，加载已有数据
+            if (roleNeedsCountryScope(targetUserRole)) {
+                adminCountriesGroup.style.display = '';
+                if (requiredMark) requiredMark.style.display = 'inline';
+                
+                // 加载已有的权限范围数据
+                const existingCountriesJson = document.getElementById('existingAdminCountries')?.value || '[]';
+                await initAdminCountryTags(existingCountriesJson);
+            } else {
+                adminCountriesGroup.style.display = 'none';
+                if (requiredMark) requiredMark.style.display = 'none';
+            }
+            
+            // 绑定角色变化事件（如果角色可选）
+            if (!roleSelect.disabled) {
+                roleSelect.removeEventListener('change', handleRoleChange);
+                roleSelect.addEventListener('change', handleRoleChange);
+            }
+        }
+        
+        // 6. 执行一次初始状态
+        handleRoleChange();
     });
 
     // 导入按钮点击 → 触发1文件选择

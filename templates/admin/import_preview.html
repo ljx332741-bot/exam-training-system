@@ -13,9 +13,30 @@
 {% block content %}
 <div class="card shadow-sm">
   <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap">
-    <h5 class="mb-0">📄 <span data-i18n="exam_preview">考试预览（可编辑）</span></h5>
+    <h5 class="mb-0">
+      {% if edit_mode %}
+        📝 <span data-i18n="edit_exam">编辑考试</span>
+      {% else %}
+        📄 <span data-i18n="exam_preview">考试预览（可编辑）</span>
+      {% endif %}
+    </h5>
     <div>
-      <!-- <button type="button" class="btn btn-outline-secondary me-2" id="backBtn">← 返回</button> -->
+      <!-- ✅ 新增：显示考试状态 -->
+      {% if exam_status %}
+      <span class="badge 
+        {% if exam_status == 'draft' %}bg-secondary
+        {% elif exam_status == 'created' %}bg-info
+        {% elif exam_status == 'active' %}bg-success
+        {% elif exam_status == 'closed' %}bg-danger
+        {% endif %} me-2">
+        {% if exam_status == 'draft' %}<span data-i18n="draft">草稿</span>
+        {% elif exam_status == 'created' %}<span data-i18n="not_started">未开始</span>
+        {% elif exam_status == 'active' %}<span data-i18n="ongoing">进行中</span>
+        {% elif exam_status == 'closed' %}<span data-i18n="closed">已关闭</span>
+        {% endif %}
+      </span>
+      {% endif %}
+      
       <button class="btn btn-sm btn-outline-secondary ms-2" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
       {% if edit_mode %}
         <button type="button" class="btn btn-primary" id="updateBtn">💾 <span data-i18n="Save_modifications">保存修改</span></button>
@@ -27,25 +48,72 @@
   </div>
   <div class="card-body">
     <div class="row mb-3">
-      <div class="col-md-6">
+      <div class="col-md-4">
         <label class="form-label fw-bold" for="examTitleInput">📌 <span data-i18n="exam_name">考试名称</span></label>
         <input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
         <div class="form-text"><span data-i18n="editable_using_for_name_exam">可编辑，将作为考试的名称</span></div>
       </div>
-      <div class="col-md-6">
+      
+      <div class="col-md-3">
+        <label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
+        <input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1">
+      </div>
+      
+      <div class="col-md-3">
+        <label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
+        <input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)">
+      </div>
+      
+      <div class="col-md-2">
         <label class="form-label" for="countryInput" data-i18n="country">国家</label>
         <input type="text" id="countryInput" class="form-control" list="countryDatalist" 
-        placeholder="请输入或选择国家" data-code-input="countryCode" autocomplete="off" value="{{ exam_country_name or '' }}">
+        data-i18n-placeholder="placeholder_select_or_input" placeholder="请输入或选择国家" data-code-input="countryCode" 
+        autocomplete="off" value="{{ exam_country_name or '' }}">
         <datalist id="countryDatalist"></datalist>
         <input type="hidden" id="countryCode" value="{{ exam_country or '' }}">
       </div>
     </div>
+    
+    <!-- ✅ 新增：有效期设置（仅草稿和未开始状态可编辑） -->
+    {% if exam_status in ['draft', 'created'] %}
+    <div class="row mb-3">
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
+        <input type="datetime-local" id="startTimeInput" class="form-control" value="{{ exam_start_time|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>
+        <input type="datetime-local" id="endTimeInput" class="form-control" value="{{ exam_end_time|default('') }}">
+      </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info small">
+      <i class="bi bi-info-circle"></i> 
+      {% if exam_status == 'active' %}
+        考试正在进行中，只能修改考试名称、时长、阅卷人和题目（如允许）。
+      {% else %}
+        考试已结束，无法编辑。
+      {% endif %}
+    </div>
+    {% endif %}
+    
+    <!-- ✅ 新增：题目编辑权限提示 -->
+    {% if edit_mode and not can_edit_questions %}
+    <div class="alert alert-warning small">
+      <i class="bi bi-exclamation-triangle"></i> 
+      考试正在进行中，题目不可修改。如需修改题目，请先重置考试状态。
+    </div>
+    {% endif %}
   </div>
+
+  <!-- 题目表格（根据权限显示） -->
   <div class="card-body p-0 table-responsive">
     <table class="table table-bordered edit-table mb-0">
       <thead class="table-dark">
         <tr>
+          {% if can_edit_questions %}
           <th style="width:40px"><span data-i18n="actions">操作</span></th>
+          {% endif %}
           <th style="width:50px"><span data-i18n="question_no">题号</span></th>
           <th style="width:80px"><span data-i18n="question_type">题型</span></th>
           <th><span data-i18n="question_stem">题干</span></th>
@@ -65,53 +133,60 @@
       <tbody id="qTableBody">
         {% for q in questions %}
         <tr data-index="{{ loop.index0 }}">
+          {% if can_edit_questions %}
           <td class="row-actions">
             <button class="btn btn-xs btn-secondary insert-above" data-i18n-title="title_insert_above" title="在上方插入">▲</button>
             <button class="btn btn-xs btn-secondary insert-below" data-i18n-title="title_insert_below" title="在下方插入">▼</button>
             <button class="btn btn-xs btn-danger delete-row" data-i18n-title="title_delete" title="删除">✖</button>
           </td>
+          {% endif %}
           <td class="q-num">{{ q.num }}</td>
           <td>
-            <select class="form-select form-select-sm q-type">
+            <select class="form-select form-select-sm q-type" {% if not can_edit_questions %}disabled{% endif %}>
               <option value="single" {% if q.type=='single' %}selected{% endif %}><span data-i18n="single">单选</span></option>
               <option value="multi" {% if q.type=='multi' %}selected{% endif %}><span data-i18n="multi">多选</span></option>
               <option value="judge" {% if q.type=='judge' %}selected{% endif %}><span data-i18n="judge">判断</span></option>
             </select>
           </td>
-          <td><textarea class="form-control form-control-sm q-content">{{ q.content }}</textarea></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H','') }}"></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I','') }}"></td>
-          <td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}"></td>
-          <td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1"></td>
+          <td><textarea class="form-control form-control-sm q-content" {% if not can_edit_questions %}readonly{% endif %}>{{ q.content }}</textarea></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1" {% if not can_edit_questions %}readonly{% endif %}></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+  {% if can_edit_questions %}
   <div class="card-footer text-center">
     <button type="button" class="btn btn-secondary" id="addRowBtn">➕ <span data-i18n="new_question">新增题目（末尾）</span></button>
   </div>
+  {% endif %}
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-  // ---- 全局变量 ----
-  let isEditMode = {{ edit_mode | default(false) | tojson }};
-  let examId = {{ original_exam_id | default(0) }};
+  // ==================== 获取模板变量 ====================
+  const isEditMode = {{ edit_mode | default(false) | tojson }};
+  const examId = {{ original_exam_id | default(0) }};
+  const canEditQuestions = {{ can_edit_questions | default(true) | tojson }};
+  const examStatus = '{{ exam_status | default("") }}';
   let returnUrl = "{{ return_url | default(url_for('admin_dashboard')) }}";
 
-  // ---- 辅助函数：重新编号题号 ----
+  // ==================== 辅助函数：重新编号题号 ====================
   function renumberRows() {
     document.querySelectorAll('#qTableBody tr').forEach((tr, idx) => {
-      tr.querySelector('.q-num').innerText = idx + 1;
+      const numCell = tr.querySelector('.q-num');
+      if (numCell) numCell.innerText = idx + 1;
     });
   }
 
@@ -132,22 +207,28 @@
         </select>
       </td>
       <td><textarea class="form-control form-control-sm q-content"></textarea></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="A"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="B"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="C"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="D"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="E"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="F"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="G"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="H"></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="I"></td>
-      <td><input class="form-control form-control-sm q-ans"></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="A" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="B" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="C" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="D" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="E" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="F" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="G" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="H" value=""></td>
+      <td><input class="form-control form-control-sm q-opt" data-key="I" value=""></td>
+      <td><input class="form-control form-control-sm q-ans" value=""></td>
       <td><input type="number" class="form-control form-control-sm q-score" value="5" min="1"></td>
     `;
   }
-
-  // ---- 插入新行 ----
+  
+  // ==================== 插入新行 ====================
   function insertRow(targetRow, position) {
+    // ✅ 如果不可编辑题目，禁止插入
+    if (!canEditQuestions) {
+      alert(t('t_cannot_edit_questions'));
+      return;
+    }
+    
     const newRow = document.createElement('tr');
     newRow.innerHTML = createEmptyRow();
     if (position === 'above') {
@@ -158,9 +239,15 @@
     renumberRows();
     attachRowEvents(newRow);
   }
-
-  // ---- 删除行 ----
+  
+  // ==================== 删除行 ====================
   function deleteRow(row) {
+    // ✅ 如果不可编辑题目，禁止删除
+    if (!canEditQuestions) {
+      alert(t('t_cannot_edit_questions'));
+      return;
+    }
+    
     if (document.querySelectorAll('#qTableBody tr').length === 1) {
       alert(t('t_keep_one_question'));
       return;
@@ -168,145 +255,274 @@
     row.remove();
     renumberRows();
   }
-
-  // ---- 绑定行内按钮事件（新行需要调用） ----
+  
+  // ==================== 绑定行内按钮事件 ====================
   function attachRowEvents(row) {
-    row.querySelector('.insert-above')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      insertRow(row, 'above');
-    });
-    row.querySelector('.insert-below')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      insertRow(row, 'below');
-    });
-    row.querySelector('.delete-row')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      deleteRow(row);
-    });
+    // ✅ 只有可编辑题目时才绑定事件
+    if (!canEditQuestions) return;
+    
+    const insertAboveBtn = row.querySelector('.insert-above');
+    const insertBelowBtn = row.querySelector('.insert-below');
+    const deleteRowBtn = row.querySelector('.delete-row');
+    
+    if (insertAboveBtn) {
+      insertAboveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        insertRow(row, 'above');
+      });
+    }
+    
+    if (insertBelowBtn) {
+      insertBelowBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        insertRow(row, 'below');
+      });
+    }
+    
+    if (deleteRowBtn) {
+      deleteRowBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deleteRow(row);
+      });
+    }
   }
-
-  // ---- 为所有现有行绑定事件 ----
+  
+  // ==================== 为所有现有行绑定事件 ====================
   function bindAllRowEvents() {
     document.querySelectorAll('#qTableBody tr').forEach(row => attachRowEvents(row));
   }
 
-  // ---- 收集题目数据 ----
+  // ==================== 收集题目数据 ====================
   function collectQuestionsData() {
+    // ✅ 如果不可编辑题目，返回空数组（不提交题目数据）
+    if (!canEditQuestions) {
+      return [];
+    }
+    
     const data = [];
     document.querySelectorAll('#qTableBody tr').forEach(tr => {
-      const opts = {};
-      tr.querySelectorAll('.q-opt').forEach(inp => opts[inp.dataset.key] = inp.value);
+      const optsInput = tr.querySelector('.q-opt');
+      let options = {};
+      
+      // 解析选项字符串（格式：A. 内容; B. 内容）
+      const optInputs = tr.querySelectorAll('.q-opt');
+      optInputs.forEach(input => {
+        const key = input.getAttribute('data-key');
+        const value = input.value.trim();
+        if (value) {
+          options[key] = value;
+        }
+      });
+      
       data.push({
         num: parseInt(tr.querySelector('.q-num').innerText),
         type: tr.querySelector('.q-type').value,
         content: tr.querySelector('.q-content').value,
-        options: opts,
+        options: options,
         answer: tr.querySelector('.q-ans').value.toUpperCase(),
-        score: parseInt(tr.querySelector('.q-score').value)
+        score: parseInt(tr.querySelector('.q-score').value) || 5
       });
     });
     return data;
   }
 
-  // ---- 通用校验 ----
+  // ==================== 通用校验 ====================
   function validate(examTitle) {
-    if (!examTitle) { alert(t('t_fill_exam_name')); return false; }
-    const questions = collectQuestionsData();
-    if (questions.length === 0) { alert(t('t_add_one_question')); return false; }
+    if (!examTitle) {
+      alert(t('t_fill_exam_name'));
+      return false;
+    }
+    
+    // ✅ 只有可编辑题目时才校验题目
+    if (canEditQuestions) {
+      const questions = collectQuestionsData();
+      if (questions.length === 0) {
+        alert(t('t_add_one_question'));
+        return false;
+      }
+    }
+    
     return true;
   }
 
-  // ---- 保存为草稿（创建新考试） ----
+  // ==================== 保存为草稿（导入模式）====================
   async function saveAsDraft(isDraft = true) {
     const examTitle = document.getElementById('examTitleInput').value.trim();
     if (!validate(examTitle)) return;
-    const questions = collectQuestionsData();
+    
     const countryCode = document.getElementById('countryCode').value;
-    const url = isDraft ? `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=true` : `/admin/import/save?title=${encodeURIComponent(examTitle)}`;
+    let questions = [];
+    
+    // ✅ 只有可编辑题目时才收集题目数据
+    if (canEditQuestions) {
+      questions = collectQuestionsData();
+    } else {
+      // 不可编辑题目时，从服务器获取现有题目
+      try {
+        const res = await fetch(`/api/admin/exam/${examId}/questions`);
+        const data = await res.json();
+        questions = data.questions || [];
+      } catch (e) {
+        console.error('获取现有题目失败', e);
+      }
+    }
+    
+    const url = isDraft ? `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=true` 
+                        : `/admin/import/save?title=${encodeURIComponent(examTitle)}`;
+    
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ questions, country_code: countryCode })
     });
+    
     const json = await res.json();
     if (json.success) {
-      alert(isDraft ? t('t_saved_as_draft') : t('t_import successful'));
+      alert(isDraft ? t('t_saved_as_draft') : t('t_import_successful'));
       window.location.href = '{{ url_for("admin_exams_page") }}';
     } else {
-      alert(t('operation_failed') + json.message);
+      alert(t('operation_failed') + (json.message || ''));
     }
   }
 
-  // ---- 编辑模式：保存修改 ----
+  // ==================== 编辑模式：保存修改 ====================
   async function updateExam() {
     const examTitle = document.getElementById('examTitleInput').value.trim();
-    if (!validate(examTitle)) return;
-    const questions = collectQuestionsData();
+    const duration = parseInt(document.getElementById('durationInput')?.value || 60);
+    const reviewer = document.getElementById('reviewerInput')?.value || '';
     const countryCode = document.getElementById('countryCode').value;
-    const isDraft = false; // 可根据需要添加草稿选项
+    
+    if (!validate(examTitle)) return;
+    
+    // 构建更新数据
+    const updateData = {
+      title: examTitle,
+      duration: duration,
+      reviewer: reviewer,
+      country_code: countryCode
+    };
+    
+    // 草稿和未开始状态可以更新有效期
+    if (examStatus === 'draft' || examStatus === 'created') {
+      const startTimeInput = document.getElementById('startTimeInput');
+      const endTimeInput = document.getElementById('endTimeInput');
+      if (startTimeInput && startTimeInput.value) {
+        updateData.start_time = localDateTimeToUTC(startTimeInput.value);
+      }
+      if (endTimeInput && endTimeInput.value) {
+        updateData.end_time = localDateTimeToUTC(endTimeInput.value);
+      }
+    }
+    
+    // ✅ 只有可编辑题目时才收集和提交题目数据
+    if (canEditQuestions) {
+      const questions = collectQuestionsData();
+      if (questions.length === 0) {
+        alert(t('t_add_one_question'));
+        return;
+      }
+      updateData.questions = questions;
+    } else {
+      // 不可编辑题目时，不提交题目数据（后端会保留原题目）
+      updateData.skip_questions = true;
+    }
+    
     const res = await fetch(`/admin/exam/${examId}/update_full`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: examTitle,
-        country_code: countryCode,
-        questions: questions,
-        is_draft: isDraft
-      })
+      body: JSON.stringify(updateData)
     });
+    
     const json = await res.json();
     if (json.success) {
       alert(t('t_save_successful'));
-      window.location.href = returnUrl;
+      window.location.href = '{{ url_for("admin_exams_page") }}';
     } else {
-      alert(t('t_update_failed') + json.message);
+      alert(t('t_update_failed') + (json.message || ''));
     }
   }
 
-  // ---- 页面初始化 ----
+  // ==================== 页面初始化 ====================
   document.addEventListener('DOMContentLoaded', async () => {
     // 填充国家 datalist
     await setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCode');
+    
     const countryInput = document.getElementById('countryInput');
     if (countryInput) {
-        countryInput.addEventListener('blur', () => validateCountryInput('countryInput', 'countryCode'));
-        if (countryInput.value) {
-            validateCountryInput('countryInput', 'countryCode');
-        }
+      countryInput.addEventListener('blur', () => validateCountryInput('countryInput', 'countryCode'));
+      if (countryInput.value) {
+        validateCountryInput('countryInput', 'countryCode');
+      }
     }
-
-    // 如果是编辑模式或已有国家代码，设置输入框显示值
-    const countryCode = document.getElementById('countryCode').value;
-    if (countryCode) {
-        const countries = await loadCountryList();  // 使用全局缓存的国家列表
-        const matched = countries.find(c => c.code === countryCode);
-        if (matched) {
-            const lang = (window.i18n?.currentLang === 'en') ? 'en' : 'zh';
-            document.getElementById('countryInput').value = lang === 'zh' ? matched.name_zh : matched.name_en;
-        }
+    
+    // ✅ 只有可编辑题目时才绑定行操作和添加按钮
+    if (canEditQuestions) {
+      bindAllRowEvents();
+      
+      // 绑定新增行（末尾）
+      const addRowBtn = document.getElementById('addRowBtn');
+      if (addRowBtn) {
+        addRowBtn.addEventListener('click', () => {
+          const tbody = document.getElementById('qTableBody');
+          const newRow = document.createElement('tr');
+          newRow.innerHTML = createEmptyRow();
+          tbody.appendChild(newRow);
+          renumberRows();
+          attachRowEvents(newRow);
+        });
+      }
     }
-
-    // 绑定行操作事件
-    bindAllRowEvents();
-
-    // 绑定新增行（末尾）
-    document.getElementById('addRowBtn').addEventListener('click', () => {
-      const tbody = document.getElementById('qTableBody');
-      const newRow = document.createElement('tr');
-      newRow.innerHTML = createEmptyRow();
-      tbody.appendChild(newRow);
-      renumberRows();
-      attachRowEvents(newRow);
-    });
-
+    
     // 根据模式绑定不同保存按钮
     if (isEditMode) {
-      document.getElementById('updateBtn').addEventListener('click', updateExam);
+      const updateBtn = document.getElementById('updateBtn');
+      if (updateBtn) {
+        updateBtn.addEventListener('click', updateExam);
+      }
     } else {
-      document.getElementById('saveBtn').addEventListener('click', () => saveAsDraft(false));
-      document.getElementById('saveDraftBtn').addEventListener('click', () => saveAsDraft(true));
+      const saveBtn = document.getElementById('saveBtn');
+      const saveDraftBtn = document.getElementById('saveDraftBtn');
+      if (saveBtn) saveBtn.addEventListener('click', () => saveAsDraft(false));
+      if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => saveAsDraft(true));
+    }
+    
+    // ✅ 如果不可编辑题目，禁用所有输入框（视觉反馈）
+    if (!canEditQuestions) {
+      const questionInputs = document.querySelectorAll('#qTableBody input, #qTableBody select, #qTableBody textarea');
+      questionInputs.forEach(input => {
+        input.disabled = true;
+        input.style.backgroundColor = '#e9ecef';
+        input.style.cursor = 'not-allowed';
+      });
+    }
+    
+    // 如果是进行中状态，显示提示
+    if (examStatus === 'active') {
+      const alertDiv = document.createElement('div');
+      alertDiv.className = 'alert alert-warning alert-dismissible fade show mt-3';
+      alertDiv.innerHTML = `
+        <i class="bi bi-exclamation-triangle"></i>
+        <span data-i18n="active_exam_edit_warning">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.querySelector('.card-body').prepend(alertDiv);
     }
 
+    // 语言切换时重新加载表格
+    if (window.i18n) {
+        // 方式1：使用自定义事件
+        window.addEventListener('app:languageChanged', function() {
+            console.log('语言切换，重新加载培训列表');
+            loadTrainings();
+        });
+        
+        // 方式2：使用订阅（备用）
+        if (typeof window.i18n.subscribe === 'function') {
+            window.i18n.subscribe(function() {
+                loadTrainings();
+            });
+        }
+    }
   });
 </script>
 {% endblock %}
