@@ -8,6 +8,76 @@
   .edit-table .q-content { min-height: 40px; }
   .row-actions { white-space: nowrap; }
   .row-actions button { margin: 0 2px; padding: 2px 6px; font-size: 12px; }
+  
+  /* 紧凑型状态提示 - 整行显示 */
+  .status-hint-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+    padding: 6px 12px;
+    margin-top: 8px;
+    border-radius: 6px;
+    line-height: 1.4;
+  }
+  .status-hint-bar i {
+    font-size: 0.85rem;
+    flex-shrink: 0;
+  }
+  .status-hint-bar .hint-text {
+    flex: 1;
+  }
+  .status-hint-bar .hint-action {
+    flex-shrink: 0;
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.05);
+    white-space: nowrap;
+  }
+  /* 手机端自动换行 */
+  @media (max-width: 768px) {
+    .status-hint-bar {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+    .status-hint-bar .hint-action {
+      white-space: normal;
+      align-self: flex-start;
+    }
+  }
+  
+  /* 不同状态的颜色 */
+  .status-hint-info {
+    background-color: #e7f3ff;
+    border-left: 3px solid #0d6efd;
+    color: #084298;
+  }
+  .status-hint-warning {
+    background-color: #fff3cd;
+    border-left: 3px solid #ffc107;
+    color: #856404;
+  }
+  .status-hint-secondary {
+    background-color: #e9ecef;
+    border-left: 3px solid #6c757d;
+    color: #495057;
+  }
+  .status-hint-success {
+    background-color: #d1e7dd;
+    border-left: 3px solid #198754;
+    color: #0f5132;
+  }
+  
+  /* 考试名称行 - 保持原有布局但让提示更紧凑 */
+  .exam-title-row {
+    margin-bottom: 0.5rem;
+  }
+  .exam-title-row .form-text {
+    margin-top: 2px;
+    font-size: 0.7rem;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -47,7 +117,7 @@
     </div>
   </div>
   <div class="card-body">
-    <div class="row mb-3">
+    <div class="row exam-title-row">
       <div class="col-md-4">
         <label class="form-label fw-bold" for="examTitleInput">📌 <span data-i18n="exam_name">考试名称</span></label>
         <input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
@@ -56,52 +126,77 @@
       
       <div class="col-md-3">
         <label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
-        <input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1">
+        <input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
       </div>
       
       <div class="col-md-3">
         <label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
-        <input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)">
+        <input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
       </div>
       
       <div class="col-md-2">
         <label class="form-label" for="countryInput" data-i18n="country">国家</label>
         <input type="text" id="countryInput" class="form-control" list="countryDatalist" 
         data-i18n-placeholder="placeholder_select_or_input" placeholder="请输入或选择国家" data-code-input="countryCode" 
-        autocomplete="off" value="{{ exam_country_name or '' }}">
+        autocomplete="off" value="{{ exam_country_name or '' }}" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
         <datalist id="countryDatalist"></datalist>
         <input type="hidden" id="countryCode" value="{{ exam_country or '' }}">
       </div>
     </div>
     
-    <!-- ✅ 新增：有效期设置（仅草稿和未开始状态可编辑） -->
-    {% if exam_status in ['draft', 'created'] %}
-    <div class="row mb-3">
-      <div class="col-md-6">
-        <label class="form-label fw-bold" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
-        <input type="datetime-local" id="startTimeInput" class="form-control" value="{{ exam_start_time|default('') }}">
-      </div>
-      <div class="col-md-6">
-        <label class="form-label fw-bold" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>
-        <input type="datetime-local" id="endTimeInput" class="form-control" value="{{ exam_end_time|default('') }}">
-      </div>
-    </div>
-    {% else %}
-    <div class="alert alert-info small">
-      <i class="bi bi-info-circle"></i> 
+    <!-- ✅ 紧凑型状态提示 - 整行显示，不占用太多空间 -->
+    {% if edit_mode %}
       {% if exam_status == 'active' %}
-        考试正在进行中，只能修改考试名称、时长、阅卷人和题目（如允许）。
-      {% else %}
-        考试已结束，无法编辑。
+      <div class="status-hint-bar status-hint-warning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span class="hint-text"><span data-i18n="active_exam_hint">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span></span>
+        {% if not can_edit_questions %}
+        <span class="hint-action"><span data-i18n="need_reset_status">如需修改题目，请先重置考试状态</span></span>
+        {% endif %} 
+      </div>
       {% endif %}
-    </div>
+      
+      {% if exam_status == 'created' and not can_edit_questions %}
+      <div class="status-hint-bar status-hint-warning">
+        <i class="bi bi-exclamation-triangle-fill"></i>
+        <span class="hint-text"><span data-i18n="created_exam_hint">考试尚未开始，除题目外其他信息均可编辑。如需修改题目，请先重置考试状态。</span></span>
+      </div>
+      {% endif %}
+      
+      {% if exam_status == 'draft' %}
+      <div class="status-hint-bar status-hint-info">
+        <i class="bi bi-pencil-square"></i>
+        <span class="hint-text">📝 <span data-i18n="draft_exam_hint">考试为草稿状态，所有内容均可编辑。</span></span>
+        <span class="hint-action"><span data-i18n="can_set_time">可设置开始/结束时间</span></span>
+      </div>
+      {% endif %}
+      
+      {% if exam_status == 'closed' %}
+      <div class="status-hint-bar status-hint-secondary">
+        <i class="bi bi-lock-fill"></i>
+        <span class="hint-text">🔒 <span data-i18n="closed_exam_hint">考试已结束，所有内容均为只读状态，无法修改。</span></span>
+      </div>
+      {% endif %}
+    {% else %}
+      <!-- 导入模式提示 -->
+      <div class="status-hint-bar status-hint-info">
+        <i class="bi bi-info-circle-fill"></i>
+        <span class="hint-text">📋 <span data-i18n="import_mode_hint">导入模式：可编辑考试名称、时长、阅卷人、国家及所有题目。</span></span>
+        <span class="hint-action"><span data-i18n="save_hint">点击"保存草稿"或"确认导入"完成</span></span>
+      </div>
     {% endif %}
     
-    <!-- ✅ 新增：题目编辑权限提示 -->
-    {% if edit_mode and not can_edit_questions %}
-    <div class="alert alert-warning small">
-      <i class="bi bi-exclamation-triangle"></i> 
-      考试正在进行中，题目不可修改。如需修改题目，请先重置考试状态。
+    <!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
+    {% if edit_mode and exam_status in ['draft', 'created'] %}
+    <div class="row mt-2">
+      <div class="col-md-6">
+        <label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
+        <input type="datetime-local" id="startTimeInput" class="form-control form-control-sm" value="{{ exam_start_time|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold small" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>  
+        <input type="datetime-local" id="endTimeInput" class="form-control form-control-sm" value="{{ exam_end_time|default('') }}">
+      </div>
     </div>
     {% endif %}
   </div>
@@ -111,7 +206,7 @@
     <table class="table table-bordered edit-table mb-0">
       <thead class="table-dark">
         <tr>
-          {% if can_edit_questions %}
+          {% if can_edit_questions and exam_status != 'closed' %}
           <th style="width:40px"><span data-i18n="actions">操作</span></th>
           {% endif %}
           <th style="width:50px"><span data-i18n="question_no">题号</span></th>
@@ -133,7 +228,7 @@
       <tbody id="qTableBody">
         {% for q in questions %}
         <tr data-index="{{ loop.index0 }}">
-          {% if can_edit_questions %}
+          {% if can_edit_questions and exam_status != 'closed' %}
           <td class="row-actions">
             <button class="btn btn-xs btn-secondary insert-above" data-i18n-title="title_insert_above" title="在上方插入">▲</button>
             <button class="btn btn-xs btn-secondary insert-below" data-i18n-title="title_insert_below" title="在下方插入">▼</button>
@@ -142,35 +237,43 @@
           {% endif %}
           <td class="q-num">{{ q.num }}</td>
           <td>
-            <select class="form-select form-select-sm q-type" {% if not can_edit_questions %}disabled{% endif %}>
+            <select class="form-select form-select-sm q-type" {% if not can_edit_questions or exam_status == 'closed' %}disabled{% endif %}>
               <option value="single" {% if q.type=='single' %}selected{% endif %}><span data-i18n="single">单选</span></option>
               <option value="multi" {% if q.type=='multi' %}selected{% endif %}><span data-i18n="multi">多选</span></option>
               <option value="judge" {% if q.type=='judge' %}selected{% endif %}><span data-i18n="judge">判断</span></option>
             </select>
           </td>
-          <td><textarea class="form-control form-control-sm q-content" {% if not can_edit_questions %}readonly{% endif %}>{{ q.content }}</textarea></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I', '') }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}" {% if not can_edit_questions %}readonly{% endif %}></td>
-          <td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1" {% if not can_edit_questions %}readonly{% endif %}></td>
+          <td><textarea class="form-control form-control-sm q-content" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}>{{ q.content }}</textarea></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+          <td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  {% if can_edit_questions %}
+  {% if can_edit_questions and exam_status != 'closed' %}
   <div class="card-footer text-center">
     <button type="button" class="btn btn-secondary" id="addRowBtn">➕ <span data-i18n="new_question">新增题目（末尾）</span></button>
   </div>
   {% endif %}
 </div>
+
+<!-- 如果考试已结束，显示全局禁用提示 -->
+{% if edit_mode and exam_status == 'closed' %}
+<div class="alert alert-secondary text-center mt-3">
+  <i class="bi bi-lock-fill"></i> 
+  🔒 <span data-i18n="exam_closed_full_info">本考试已结束，所有内容均为只读状态，无法进行任何修改。</span>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block extra_js %}
@@ -223,8 +326,8 @@
   
   // ==================== 插入新行 ====================
   function insertRow(targetRow, position) {
-    // ✅ 如果不可编辑题目，禁止插入
-    if (!canEditQuestions) {
+    // ✅ 如果不可编辑题目或考试已结束，禁止插入
+    if (!canEditQuestions || examStatus === 'closed') {
       alert(t('t_cannot_edit_questions'));
       return;
     }
@@ -242,8 +345,8 @@
   
   // ==================== 删除行 ====================
   function deleteRow(row) {
-    // ✅ 如果不可编辑题目，禁止删除
-    if (!canEditQuestions) {
+    // ✅ 如果不可编辑题目或考试已结束，禁止删除
+    if (!canEditQuestions || examStatus === 'closed') {
       alert(t('t_cannot_edit_questions'));
       return;
     }
@@ -258,8 +361,8 @@
   
   // ==================== 绑定行内按钮事件 ====================
   function attachRowEvents(row) {
-    // ✅ 只有可编辑题目时才绑定事件
-    if (!canEditQuestions) return;
+    // ✅ 只有可编辑题目且考试未结束时才绑定事件
+    if (!canEditQuestions || examStatus === 'closed') return;
     
     const insertAboveBtn = row.querySelector('.insert-above');
     const insertBelowBtn = row.querySelector('.insert-below');
@@ -294,14 +397,13 @@
 
   // ==================== 收集题目数据 ====================
   function collectQuestionsData() {
-    // ✅ 如果不可编辑题目，返回空数组（不提交题目数据）
-    if (!canEditQuestions) {
+    // ✅ 如果不可编辑题目或考试已结束，返回空数组
+    if (!canEditQuestions || examStatus === 'closed') {
       return [];
     }
     
     const data = [];
     document.querySelectorAll('#qTableBody tr').forEach(tr => {
-      const optsInput = tr.querySelector('.q-opt');
       let options = {};
       
       // 解析选项字符串（格式：A. 内容; B. 内容）
@@ -333,8 +435,8 @@
       return false;
     }
     
-    // ✅ 只有可编辑题目时才校验题目
-    if (canEditQuestions) {
+    // ✅ 只有可编辑题目且考试未结束时才校验题目
+    if (canEditQuestions && examStatus !== 'closed') {
       const questions = collectQuestionsData();
       if (questions.length === 0) {
         alert(t('t_add_one_question'));
@@ -353,10 +455,10 @@
     const countryCode = document.getElementById('countryCode').value;
     let questions = [];
     
-    // ✅ 只有可编辑题目时才收集题目数据
-    if (canEditQuestions) {
+    // ✅ 只有可编辑题目且考试未结束时才收集题目数据
+    if (canEditQuestions && examStatus !== 'closed') {
       questions = collectQuestionsData();
-    } else {
+    } else if (examId) {
       // 不可编辑题目时，从服务器获取现有题目
       try {
         const res = await fetch(`/api/admin/exam/${examId}/questions`);
@@ -387,6 +489,12 @@
 
   // ==================== 编辑模式：保存修改 ====================
   async function updateExam() {
+    // 考试已结束，禁止保存
+    if (examStatus === 'closed') {
+      alert(t('exam_closed_cannot_edit'));
+      return;
+    }
+    
     const examTitle = document.getElementById('examTitleInput').value.trim();
     const duration = parseInt(document.getElementById('durationInput')?.value || 60);
     const reviewer = document.getElementById('reviewerInput')?.value || '';
@@ -414,8 +522,8 @@
       }
     }
     
-    // ✅ 只有可编辑题目时才收集和提交题目数据
-    if (canEditQuestions) {
+    // ✅ 只有可编辑题目且考试未结束时才收集和提交题目数据
+    if (canEditQuestions && examStatus !== 'closed') {
       const questions = collectQuestionsData();
       if (questions.length === 0) {
         alert(t('t_add_one_question'));
@@ -455,8 +563,8 @@
       }
     }
     
-    // ✅ 只有可编辑题目时才绑定行操作和添加按钮
-    if (canEditQuestions) {
+    // ✅ 只有可编辑题目且考试未结束时才绑定行操作和添加按钮
+    if (canEditQuestions && examStatus !== 'closed') {
       bindAllRowEvents();
       
       // 绑定新增行（末尾）
@@ -486,8 +594,8 @@
       if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => saveAsDraft(true));
     }
     
-    // ✅ 如果不可编辑题目，禁用所有输入框（视觉反馈）
-    if (!canEditQuestions) {
+    // ✅ 如果不可编辑题目或考试已结束，禁用所有输入框（视觉反馈）
+    if (!canEditQuestions || examStatus === 'closed') {
       const questionInputs = document.querySelectorAll('#qTableBody input, #qTableBody select, #qTableBody textarea');
       questionInputs.forEach(input => {
         input.disabled = true;
@@ -495,34 +603,21 @@
         input.style.cursor = 'not-allowed';
       });
     }
-    
-    // 如果是进行中状态，显示提示
-    if (examStatus === 'active') {
-      const alertDiv = document.createElement('div');
-      alertDiv.className = 'alert alert-warning alert-dismissible fade show mt-3';
-      alertDiv.innerHTML = `
-        <i class="bi bi-exclamation-triangle"></i>
-        <span data-i18n="active_exam_edit_warning">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-      `;
-      document.querySelector('.card-body').prepend(alertDiv);
-    }
 
     // 语言切换时重新加载表格
+    /**
     if (window.i18n) {
-        // 方式1：使用自定义事件
         window.addEventListener('app:languageChanged', function() {
             console.log('语言切换，重新加载培训列表');
             loadTrainings();
         });
         
-        // 方式2：使用订阅（备用）
         if (typeof window.i18n.subscribe === 'function') {
             window.i18n.subscribe(function() {
                 loadTrainings();
             });
         }
-    }
+    } */
   });
 </script>
 {% endblock %}

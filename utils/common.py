@@ -5,6 +5,9 @@ import json
 from services.db import get_supabase
 from datetime import datetime, timezone, timedelta
 
+import logging
+logger = logging.getLogger(__name__)
+
 def match_country_code(input_text):
     """将用户输入的国家文本（中文、英文、代码）匹配为标准国家代码"""
     if not input_text:
@@ -63,8 +66,9 @@ def get_quarter_from_date(date_iso):
         return None
 
 # 阅卷人配置文件路径（项目根目录）
-REVIEWER_CONFIG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'reviewers.json')
-
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REVIEWER_CONFIG_FILE = os.path.join(PROJECT_ROOT, 'reviewers.json')
+'''
 def load_reviewers_config():
     """
     加载阅卷人配置文件
@@ -78,6 +82,21 @@ def load_reviewers_config():
             print(f"加载阅卷人配置文件失败: {e}")
             return {}
     return {}
+'''
+def load_reviewers_config():
+    """加载阅卷人配置文件"""
+    if os.path.exists(REVIEWER_CONFIG_FILE):
+        try:
+            with open(REVIEWER_CONFIG_FILE, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                logger.info(f"[阅卷人] 配置文件加载成功: {list(config.keys())}")
+                return config
+        except (json.JSONDecodeError, IOError) as e:
+            logger.info(f"加载阅卷人配置文件失败: {e}")
+            return {}
+    else:
+        logger.info(f"[DEBUG] 文件不存在: {REVIEWER_CONFIG_FILE}")
+    return {}
 
 def get_reviewer_by_country(user_country=None, exam_reviewer=None, url_reviewer=None):
     """
@@ -86,8 +105,8 @@ def get_reviewer_by_country(user_country=None, exam_reviewer=None, url_reviewer=
     优先级:
     1. URL 参数 reviewer (前端传递)
     2. 考试表中的 reviewer 字段 (管理员推送时设置)
-    3. reviewer.json 中匹配考生国家的配置
-    4. reviewer.json 中的 default 配置
+    3. reviewers.json 中匹配考生国家的配置
+    4. reviewers.json 中的 default 配置
     5. 环境变量 DEFAULT_REVIEWER
     6. 硬编码默认值 "管理员"
     
@@ -99,23 +118,31 @@ def get_reviewer_by_country(user_country=None, exam_reviewer=None, url_reviewer=
     返回:
         str: 阅卷人字符串
     """
+    def is_valid(value):
+        return value and value.strip() and value != "None"
+
     # 优先级1：URL 参数
-    if url_reviewer and url_reviewer.strip():
+    if is_valid(url_reviewer):
         return url_reviewer.strip()
     
     # 优先级2：考试表中的 reviewer
-    if exam_reviewer and exam_reviewer.strip():
+    if is_valid(exam_reviewer):
         return exam_reviewer.strip()
-    
+
     # 优先级3：从配置文件读取
     config = load_reviewers_config()
+
     if config:
         # 匹配考生国家
         if user_country and user_country in config:
+            result = config[user_country]
             return config[user_country]
         # 默认配置
         if 'default' in config:
-            return config['default']
+            result = config['default']
+            return result
+    else:
+        logger.warning(f"[阅卷人] 配置文件为空或不存在")
     
     # 优先级4：环境变量
     env_reviewer = os.environ.get('DEFAULT_REVIEWER')

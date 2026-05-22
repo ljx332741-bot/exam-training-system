@@ -2004,7 +2004,7 @@ def update_exam_full(exam_id):
     """更新现有考试的信息和题目（支持部分更新）"""
     data = request.json
     db = get_supabase()
-    
+
     # 获取原考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
@@ -2027,6 +2027,7 @@ def update_exam_full(exam_id):
         update_data['duration'] = data['duration']
     if 'reviewer' in data:
         update_data['reviewer'] = data['reviewer']
+        logger.info(f"更新考试阅卷人: {data['reviewer']}")
     if 'country_code' in data:
         update_data['country'] = data['country_code']
     
@@ -2854,6 +2855,15 @@ def admin_export_user_pdf(exam_id, user_id):
         exam_reviewer=exam_data.get('reviewer'),
         url_reviewer=request.args.get('reviewer')
     )
+
+
+    # ✅ 添加调试日志
+    logger.info(f"========== 阅卷人调试 ==========")
+    logger.info(f"考生国家: {user_data.get('country')}")
+    logger.info(f"考试表 reviewer: {exam_data.get('reviewer')}")
+    logger.info(f"URL reviewer: {request.args.get('reviewer')}")
+    logger.info(f"最终 reviewer: {reviewer}")
+    logger.info(f"================================")
 
     # 生成 PDF（捕获异常）
     try:
@@ -4788,11 +4798,16 @@ def api_admin_exam_update(exam_id):
 @admin_required
 def admin_push_exam_with_settings(exam_id):
     data = request.json
+    logger.info(f"接收到的推送数据: {data}")  # ✅ 添加这行，查看前端是否传递了 reviewer
+
     start_time_local = data.get('start_time')
     end_time_local = data.get('end_time')
     duration = data.get('duration')
     user_ids = data.get('user_ids', [])
     reviewer = data.get('reviewer', '')  # ✅ 新增：获取阅卷人
+
+    logger.info(f"获取到的 reviewer 值: {reviewer}")  # ✅ 添加这行
+
     db = get_supabase()
 
     # 获取考试信息（用于国家和标题）
@@ -4819,16 +4834,30 @@ def admin_push_exam_with_settings(exam_id):
         update_data['status'] = 'draft'
 
     # ✅ 新增：更新阅卷人（如果有值）
-    if reviewer:
+    if reviewer and reviewer.strip():
         update_data['reviewer'] = reviewer
-    else:
+        logger.info(f"使用前端传递的阅卷人: {reviewer}")
+    elif not exam_data.get('reviewer'):
         # 如果没有指定阅卷人，尝试根据国家自动获取默认阅卷人
-        default_reviewer = get_default_reviewer_by_country(exam_data.get('country'))
-        if default_reviewer:
+        default_reviewer = get_default_reviewer_by_country(
+            user_country=exam_data.get('country'),
+            exam_reviewer=None,
+            url_reviewer=None
+            )
+        if default_reviewer and default_reviewer != "Administrator":
             update_data['reviewer'] = default_reviewer
+            logger.info(f"使用默认阅卷人: {default_reviewer}")
+        else:
+            # 最后的保底
+            update_data['reviewer'] = "Administrator"
+            logger.info(f"使用保底阅卷人: Administrator")
+    else:
+        # 保留考试表原有的 reviewer
+        logger.info(f"保留原有阅卷人: {exam_data.get('reviewer')}")
 
     if update_data:
         db.table("exams").update(update_data).eq("id", exam_id).execute()
+        ogger.info(f"更新考试 {exam_id} 的数据: {update_data}")
 
     # 可选：按国家过滤考生（如果不需要，可以注释掉整个块）
     def get_user_country(uid):
@@ -5283,6 +5312,13 @@ def generate_single_user_pdf(exam_id, user_id):
         exam_reviewer=exam_data.get('reviewer'),
         url_reviewer=None  # 批量导出时没有 URL 参数
     )
+
+    # ✅ 添加调试日志
+    logger.info(f"========== generate_single_user_pdf 阅卷人 ==========")
+    logger.info(f"考生国家: {user_data.get('country')}")
+    logger.info(f"考试表 reviewer: {exam_data.get('reviewer')}")
+    logger.info(f"最终 reviewer: {reviewer}")
+    logger.info(f"=================================================")
 
     # 7. 生成PDF字节流
     from services import export
