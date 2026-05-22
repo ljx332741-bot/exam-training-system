@@ -1,4 +1,6 @@
-{"total_exams": "考试总数",
+{"edit_exam": "编辑考试",
+"duration_minutes": "时长(分)",
+"total_exams": "考试总数",
 "training_count": "场培训",
 "total_sign_ins": "总签到",
 "today_sign_ins": "今日签到",

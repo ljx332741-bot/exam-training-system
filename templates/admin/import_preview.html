@@ -29,10 +29,10 @@
         {% elif exam_status == 'active' %}bg-success
         {% elif exam_status == 'closed' %}bg-danger
         {% endif %} me-2">
-        {% if exam_status == 'draft' %}草稿
-        {% elif exam_status == 'created' %}未开始
-        {% elif exam_status == 'active' %}进行中
-        {% elif exam_status == 'closed' %}已关闭
+        {% if exam_status == 'draft' %}<span data-i18n="draft">草稿</span>
+        {% elif exam_status == 'created' %}<span data-i18n="not_started">未开始</span>
+        {% elif exam_status == 'active' %}<span data-i18n="ongoing">进行中</span>
+        {% elif exam_status == 'closed' %}<span data-i18n="closed">已关闭</span>
         {% endif %}
       </span>
       {% endif %}
@@ -67,7 +67,8 @@
       <div class="col-md-2">
         <label class="form-label" for="countryInput" data-i18n="country">国家</label>
         <input type="text" id="countryInput" class="form-control" list="countryDatalist" 
-        placeholder="请输入或选择国家" data-code-input="countryCode" autocomplete="off" value="{{ exam_country_name or '' }}">
+        data-i18n-placeholder="placeholder_select_or_input" placeholder="请输入或选择国家" data-code-input="countryCode" 
+        autocomplete="off" value="{{ exam_country_name or '' }}">
         <datalist id="countryDatalist"></datalist>
         <input type="hidden" id="countryCode" value="{{ exam_country or '' }}">
       </div>
@@ -505,6 +506,22 @@
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
       `;
       document.querySelector('.card-body').prepend(alertDiv);
+    }
+
+    // 语言切换时重新加载表格
+    if (window.i18n) {
+        // 方式1：使用自定义事件
+        window.addEventListener('app:languageChanged', function() {
+            console.log('语言切换，重新加载培训列表');
+            loadTrainings();
+        });
+        
+        // 方式2：使用订阅（备用）
+        if (typeof window.i18n.subscribe === 'function') {
+            window.i18n.subscribe(function() {
+                loadTrainings();
+            });
+        }
     }
   });
 </script>

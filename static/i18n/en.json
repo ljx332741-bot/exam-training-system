@@ -1,4 +1,6 @@
-{"total_exams": "Total Exams",
+{"edit_exam": "Edit Exam",
+"duration_minutes": "Duration(m)",
+"total_exams": "Total Exams",
 "training_count": "Trainings",
 "total_sign_ins": "Total Sign-ins",
 "today_sign_ins": "Today",
