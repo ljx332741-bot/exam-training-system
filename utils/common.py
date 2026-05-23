@@ -151,3 +151,40 @@ def get_reviewer_by_country(user_country=None, exam_reviewer=None, url_reviewer=
     
     # 优先级5：硬编码默认值
     return "Administrator"
+
+def format_admin_countries_display(admin_countries_json):
+    """
+    将 admin_countries JSON 字符串格式化为可读的显示文本
+    """
+    if not admin_countries_json:
+        return '无限制'
+    
+    try:
+        # 解析 JSON
+        if isinstance(admin_countries_json, str):
+            country_codes = json.loads(admin_countries_json)
+        else:
+            country_codes = admin_countries_json
+        
+        if not country_codes or len(country_codes) == 0:
+            return '无限制'
+        
+        # 获取国家名称映射
+        db = get_supabase()
+        countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+        country_map = {c['code']: c for c in (countries_res.data or [])}
+        
+        # 转换为显示名称（优先使用中文名）
+        display_names = []
+        for code in country_codes:
+            if code in country_map:
+                # 可以根据需要选择语言
+                name = country_map[code].get('name_zh') or country_map[code].get('name_en')
+                display_names.append(name or code)
+            else:
+                display_names.append(code)
+        
+        return ', '.join(display_names)
+        
+    except (json.JSONDecodeError, TypeError, Exception):
+        return '无限制'

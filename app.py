@@ -13,7 +13,7 @@ import openpyxl
 import random
 import base64, re
 import secrets, string
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date
 from dateutil import parser
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
@@ -26,9 +26,12 @@ from functools import wraps
 from services.db import get_supabase
 from services import auth, exam, export
 from services.export import find_wkhtmltopdf
+from services.auth import hash_password
 from config import Config
 from utils.status import get_exam_status
-from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country
+from utils.common import (
+    match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display
+)
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.permissions import (
     is_developer, get_developer_id, has_role, can_manage_role,
@@ -97,7 +100,6 @@ def utc_to_local_filter(utc_string):
     if not utc_string:
         return ''
     try:
-        from datetime import datetime
         import pytz
         # 解析时间
         if utc_string.endswith('Z'):
@@ -509,10 +511,74 @@ def profile():
             return redirect(url_for('login'))
         
         return redirect(url_for('profile'))
-    
-    # GET 请求：显示表单
-    user_res = db.table('users').select('*').eq('id', user_id).single().execute()
-    user = user_res.data
+
+    if request.method == 'GET':
+        user_res = db.table('users').select('*').eq('id', user_id).single().execute()
+        user = user_res.data
+        
+        if user:
+            # ========== 处理国家显示（中英文） ==========
+            if user.get('country'):
+                try:
+                    c_res = db.table("countries").select("name_zh, name_en").eq("code", user['country']).maybe_single().execute()
+                    if c_res and c_res.data:
+                        user['country_display_zh'] = c_res.data.get('name_zh')
+                        user['country_display_en'] = c_res.data.get('name_en')
+                        user['country_display'] = user['country_display_zh']  # 默认中文
+                    else:
+                        user['country_display_zh'] = user['country']
+                        user['country_display_en'] = user['country']
+                        user['country_display'] = user['country']
+                except Exception as e:
+                    logger.warning(f"获取国家名称失败: {e}")
+                    user['country_display_zh'] = user['country']
+                    user['country_display_en'] = user['country']
+                    user['country_display'] = user['country']
+            else:
+                user['country_display_zh'] = '未设置'
+                user['country_display_en'] = 'Not Set'
+                user['country_display'] = '未设置'
+        
+        # 处理权限范围显示（中英文）
+        admin_countries = user.get('admin_countries')
+        if admin_countries:
+            try:
+                if isinstance(admin_countries, str):
+                    country_codes = json.loads(admin_countries)
+                else:
+                    country_codes = admin_countries
+                
+                if country_codes and len(country_codes) > 0:
+                    # 获取国家名称映射
+                    countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+                    country_map = {c['code']: c for c in (countries_res.data or [])}
+                    
+                    names_zh = []
+                    names_en = []
+                    for code in country_codes:
+                        if code in country_map:
+                            names_zh.append(country_map[code].get('name_zh', code))
+                            names_en.append(country_map[code].get('name_en', code))
+                        else:
+                            names_zh.append(code)
+                            names_en.append(code)
+                    
+                    user['admin_countries_display_zh'] = ', '.join(names_zh) if names_zh else '无限制'
+                    user['admin_countries_display_en'] = ', '.join(names_en) if names_en else 'Unrestricted'
+                    user['admin_countries_display'] = user['admin_countries_display_zh']
+                else:
+                    user['admin_countries_display_zh'] = '无限制'
+                    user['admin_countries_display_en'] = 'Unrestricted'
+                    user['admin_countries_display'] = '无限制'
+            except:
+                user['admin_countries_display_zh'] = '无限制'
+                user['admin_countries_display_en'] = 'Unrestricted'
+                user['admin_countries_display'] = '无限制'
+        else:
+            user['admin_countries_display_zh'] = '无限制'
+            user['admin_countries_display_en'] = 'Unrestricted'
+            user['admin_countries_display'] = '无限制'
+
     return render_template('auth/profile.html', user=user)
 
 # ================= 8. 认证 API =================
@@ -1149,7 +1215,6 @@ def submit_exam(exam_id):
 def admin_dashboard():
     """管理员仪表盘"""
     db = get_supabase()
-    from utils.permissions import get_admin_allowed_countries, is_developer
     
     # 获取当前管理员的权限范围
     allowed_countries = get_admin_allowed_countries()
@@ -1271,7 +1336,6 @@ def admin_dashboard():
         total_attendances = attend_count.count or 0
     
     # 今日签到数量
-    from datetime import date
     today = date.today().isoformat()
     if allowed_countries is not None and allowed_countries:
         if allowed_user_ids:
@@ -1715,7 +1779,6 @@ def api_admin_import_users():
                 error_rows.append(f"第{row_idx}行: {role}角色的权限范围不能为空")
                 continue
             
-            from utils.permissions import parse_countries_input
             countries_list = parse_countries_input(admin_countries_raw)
             if not countries_list:
                 error_rows.append(f"第{row_idx}行: 权限范围解析失败，请填写有效的国家代码或名称")
@@ -1761,7 +1824,6 @@ def api_admin_import_users():
         # ========== ✅ 关键修复：设置默认密码哈希 ==========
         # 为 imported 用户设置一个默认的密码哈希（不可登录）
         # 使用一个固定的占位符哈希，表示该用户尚未注册
-        from services.auth import hash_password
         DEFAULT_PLACEHOLDER_HASH = hash_password('__IMPORTED_USER_PLACEHOLDER__')
         
         user_data['password_hash'] = DEFAULT_PLACEHOLDER_HASH
@@ -1774,7 +1836,6 @@ def api_admin_import_users():
         user_data['is_protected'] = (role == 'developer')
         
         # 确保 created_at 有值
-        from datetime import datetime, timezone
         user_data['created_at'] = datetime.now(timezone.utc).isoformat()
         
         # ========== 移除值为空字符串的字段 ==========
@@ -2746,7 +2807,6 @@ def generate_pdf_by_result_id(result_id):
     )
 
     # 生成 PDF 并返回字节数据
-    from services import export
     pdf_buffer = export.generate_user_pdf(
         user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
         user_email=user_data.get('email', ''),
@@ -5135,7 +5195,6 @@ def api_quarters():
     # 查询所有考试的 start_time 和 end_time（只取非空）
     res = db.table("exams").select("start_time, end_time").execute()
     quarters = set()
-    from datetime import datetime
     for exam in res.data or []:
         for field in ['start_time', 'end_time']:
             time_str = exam.get(field)
@@ -5423,7 +5482,6 @@ def generate_single_user_pdf(exam_id, user_id):
     logger.info(f"=================================================")
 
     # 7. 生成PDF字节流
-    from services import export
     pdf_buffer = export.generate_user_pdf(
         user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
         user_email=user_data.get('email', ''),
@@ -5585,7 +5643,6 @@ def api_admin_trainings():
         
         # 4. 前端选择的额外国家筛选（与权限取交集）
         if country_filter:
-            from utils.common import match_country_code
             filter_country_code = match_country_code(country_filter) if country_filter else None
             if filter_country_code:
                 # 获取该国家下的用户ID
@@ -5606,7 +5663,6 @@ def api_admin_trainings():
 
         # 5. 季度过滤（内存中）
         if quarter:
-            from utils.common import quarter_to_date_range
             q_start, q_end = quarter_to_date_range(quarter)
             if q_start and q_end:
                 q_start_dt = datetime.fromisoformat(q_start)

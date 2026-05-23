@@ -1,4 +1,6 @@
-{"jsonify_no_authority_creat_exam_this_county": "No authority to creat exam in this country",
+{"power_scope_tip": "No modify, please contact admin",
+"country_change_tip": "Contact admin if need change",
+"jsonify_no_authority_creat_exam_this_county": "No authority to creat exam in this country",
 "jsonify_no_country_permission": "No country permission",
 "jsonify_no_authority_copy_exam": "No authority to copy exam in this country",
 "jsonify_exam_copy_failure": "Exam copy failure",

@@ -1,4 +1,6 @@
-{"jsonify_no_authority_creat_exam_this_county": "无权在该国家创建考试",
+{"power_scope_tip": "权限范围不可自行修改，请联系上级管理员",
+"country_change_tip": "国家信息不可自行修改，请联系管理员",
+"jsonify_no_authority_creat_exam_this_county": "无权在该国家创建考试",
 "jsonify_no_country_permission": "无国家权限",
 "jsonify_no_authority_copy_exam": "无权复制创建考试",
 "jsonify_exam_copy_failure": "复制考试失败",
