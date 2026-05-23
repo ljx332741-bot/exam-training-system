@@ -4854,7 +4854,7 @@ def admin_push_exam_with_settings(exam_id):
 
     if update_data:
         db.table("exams").update(update_data).eq("id", exam_id).execute()
-        ogger.info(f"更新考试 {exam_id} 的数据: {update_data}")
+        logger.info(f"更新考试 {exam_id} 的数据: {update_data}")
 
     # 可选：按国家过滤考生（如果不需要，可以注释掉整个块）
     def get_user_country(uid):
