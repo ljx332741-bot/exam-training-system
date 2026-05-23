@@ -116,6 +116,7 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
             .correct-mark {{ color: #198754; font-weight: bold; font-family: 'Segoe UI Symbol', 'Arial Unicode MS', sans-serif; }}
             .incorrect-mark {{ color: #dc3545; font-weight: bold; font-family: 'Segoe UI Symbol', 'Arial Unicode MS', sans-serif; }}
             .footer {{ margin-top: 40px; font-size: 12px; color: #6c757d; text-align: right; }}
+            .print-hide {{ display: none; }}
         </style>
     </head>
     <body>
@@ -153,9 +154,6 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
                     options = {}
 
             qid = str(q['id'])
-
-            # 在获取答案前添加调试------
-            logger.debug(f"answers type: {type(answers)}, sample keys: {list(answers.keys())[:3] if isinstance(answers, dict) else 'not dict'}")
 
             if not isinstance(answers, dict):
                 try:
@@ -207,13 +205,13 @@ def generate_user_pdf(user_name, user_email, exam_title, score, questions, answe
             # 显示考生答案及对错
             html += f'''
             <div class="user-answer">
-                考生答案：{user_display} 
+                考生答案CA：{user_display} 
                 <span class="{'correct-mark' if is_correct else 'incorrect-mark'}">{mark}</span>
             </div>
             '''
 
     html += """
-        <div class="footer">本成绩单由在线考试系统自动生成，具有考试凭证效力。</div>
+        <div class="footer print-hide">本成绩单由在线考试系统自动生成，具有考试凭证效力。</div>
     </body>
     </html>
     """
