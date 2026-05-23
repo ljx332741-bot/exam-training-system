@@ -3444,7 +3444,6 @@ def api_admin_interviews():
 
         # 基础查询（分页）
         query = db.table("interviews").select("*", count="exact").is_("deleted_at", "null")
-        query = apply_country_filter(query, 'country')  # ✅ 添加过滤
         if name:
             query = query.ilike("title", f"%{name}%")
         query = query.order("created_at", desc=True)
