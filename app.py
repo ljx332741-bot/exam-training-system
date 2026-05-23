@@ -12,26 +12,27 @@ import pdfkit
 import openpyxl
 import random
 import base64, re
-from flask import make_response
-from datetime import datetime, timezone, timedelta
-from functools import wraps
+import secrets, string
+from datetime import datetime, timezone, timedelta, date
 from dateutil import parser
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
 from flask import (
     Flask, render_template, request, redirect, url_for, 
-    session, flash, jsonify, send_file
+    session, flash, jsonify, send_file, make_response
 )
 from supabase import create_client
-from datetime import datetime, timezone
-from flask import jsonify, request
 from functools import wraps
 from services.db import get_supabase
 from services import auth, exam, export
 from services.export import find_wkhtmltopdf
+from services.auth import hash_password
 from config import Config
 from utils.status import get_exam_status
-from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country
+from utils.common import (
+    match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display
+)
+from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.permissions import (
     is_developer, get_developer_id, has_role, can_manage_role,
     can_view_user, get_admin_allowed_countries, set_admin_allowed_countries,
@@ -99,7 +100,6 @@ def utc_to_local_filter(utc_string):
     if not utc_string:
         return ''
     try:
-        from datetime import datetime
         import pytz
         # 解析时间
         if utc_string.endswith('Z'):
@@ -511,10 +511,74 @@ def profile():
             return redirect(url_for('login'))
         
         return redirect(url_for('profile'))
-    
-    # GET 请求：显示表单
-    user_res = db.table('users').select('*').eq('id', user_id).single().execute()
-    user = user_res.data
+
+    if request.method == 'GET':
+        user_res = db.table('users').select('*').eq('id', user_id).single().execute()
+        user = user_res.data
+        
+        if user:
+            # ========== 处理国家显示（中英文） ==========
+            if user.get('country'):
+                try:
+                    c_res = db.table("countries").select("name_zh, name_en").eq("code", user['country']).maybe_single().execute()
+                    if c_res and c_res.data:
+                        user['country_display_zh'] = c_res.data.get('name_zh')
+                        user['country_display_en'] = c_res.data.get('name_en')
+                        user['country_display'] = user['country_display_zh']  # 默认中文
+                    else:
+                        user['country_display_zh'] = user['country']
+                        user['country_display_en'] = user['country']
+                        user['country_display'] = user['country']
+                except Exception as e:
+                    logger.warning(f"获取国家名称失败: {e}")
+                    user['country_display_zh'] = user['country']
+                    user['country_display_en'] = user['country']
+                    user['country_display'] = user['country']
+            else:
+                user['country_display_zh'] = '未设置'
+                user['country_display_en'] = 'Not Set'
+                user['country_display'] = '未设置'
+        
+        # 处理权限范围显示（中英文）
+        admin_countries = user.get('admin_countries')
+        if admin_countries:
+            try:
+                if isinstance(admin_countries, str):
+                    country_codes = json.loads(admin_countries)
+                else:
+                    country_codes = admin_countries
+                
+                if country_codes and len(country_codes) > 0:
+                    # 获取国家名称映射
+                    countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+                    country_map = {c['code']: c for c in (countries_res.data or [])}
+                    
+                    names_zh = []
+                    names_en = []
+                    for code in country_codes:
+                        if code in country_map:
+                            names_zh.append(country_map[code].get('name_zh', code))
+                            names_en.append(country_map[code].get('name_en', code))
+                        else:
+                            names_zh.append(code)
+                            names_en.append(code)
+                    
+                    user['admin_countries_display_zh'] = ', '.join(names_zh) if names_zh else '无限制'
+                    user['admin_countries_display_en'] = ', '.join(names_en) if names_en else 'Unrestricted'
+                    user['admin_countries_display'] = user['admin_countries_display_zh']
+                else:
+                    user['admin_countries_display_zh'] = '无限制'
+                    user['admin_countries_display_en'] = 'Unrestricted'
+                    user['admin_countries_display'] = '无限制'
+            except:
+                user['admin_countries_display_zh'] = '无限制'
+                user['admin_countries_display_en'] = 'Unrestricted'
+                user['admin_countries_display'] = '无限制'
+        else:
+            user['admin_countries_display_zh'] = '无限制'
+            user['admin_countries_display_en'] = 'Unrestricted'
+            user['admin_countries_display'] = '无限制'
+
     return render_template('auth/profile.html', user=user)
 
 # ================= 8. 认证 API =================
@@ -1151,7 +1215,6 @@ def submit_exam(exam_id):
 def admin_dashboard():
     """管理员仪表盘"""
     db = get_supabase()
-    from utils.permissions import get_admin_allowed_countries, is_developer
     
     # 获取当前管理员的权限范围
     allowed_countries = get_admin_allowed_countries()
@@ -1273,7 +1336,6 @@ def admin_dashboard():
         total_attendances = attend_count.count or 0
     
     # 今日签到数量
-    from datetime import date
     today = date.today().isoformat()
     if allowed_countries is not None and allowed_countries:
         if allowed_user_ids:
@@ -1717,7 +1779,6 @@ def api_admin_import_users():
                 error_rows.append(f"第{row_idx}行: {role}角色的权限范围不能为空")
                 continue
             
-            from utils.permissions import parse_countries_input
             countries_list = parse_countries_input(admin_countries_raw)
             if not countries_list:
                 error_rows.append(f"第{row_idx}行: 权限范围解析失败，请填写有效的国家代码或名称")
@@ -1763,7 +1824,6 @@ def api_admin_import_users():
         # ========== ✅ 关键修复：设置默认密码哈希 ==========
         # 为 imported 用户设置一个默认的密码哈希（不可登录）
         # 使用一个固定的占位符哈希，表示该用户尚未注册
-        from services.auth import hash_password
         DEFAULT_PLACEHOLDER_HASH = hash_password('__IMPORTED_USER_PLACEHOLDER__')
         
         user_data['password_hash'] = DEFAULT_PLACEHOLDER_HASH
@@ -1776,7 +1836,6 @@ def api_admin_import_users():
         user_data['is_protected'] = (role == 'developer')
         
         # 确保 created_at 有值
-        from datetime import datetime, timezone
         user_data['created_at'] = datetime.now(timezone.utc).isoformat()
         
         # ========== 移除值为空字符串的字段 ==========
@@ -1815,6 +1874,74 @@ def admin_import_save():
     db = get_supabase()
     country_code = request.json.get('country_code', '')  # 新增
 
+    
+    # ✅ 新增：检查管理员是否有权限创建该国家的考试
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    
+    # 获取用户的权限范围
+    user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
+    user_data = user_res.data if user_res and user_res.data else {}
+    
+    # 计算允许的国家列表
+    allowed = None
+    if current_role == 'super_admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+    elif current_role == 'admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+        
+        # 如果没有设置权限范围，使用用户所在国家
+        if not allowed:
+            user_country = user_data.get('country')
+            if user_country:
+                allowed = [user_country]
+            else:
+                allowed = []
+    
+    # ✅ 详细日志
+    logger.info("=" * 50)
+    logger.info("考试导入保存 POST 请求")
+    logger.info(f"用户ID: {current_user_id}, 角色: {current_role}")
+    logger.info(f"数据库 admin_countries: {user_data.get('admin_countries')}")
+    logger.info(f"数据库 user_country: {user_data.get('country')}")
+    logger.info(f"计算后 allowed: {allowed}")
+    logger.info(f"请求中的 country_code: {country_code}")
+    logger.info(f"考试标题: {exam_title}, is_draft: {is_draft}")
+    
+    # ✅ 权限检查
+    if current_role == 'admin':
+        if not allowed or len(allowed) == 0:
+            logger.warning(f"管理员 {current_user_id} 没有任何国家权限，禁止创建考试")
+            return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
+        
+        if not country_code:
+            logger.warning(f"未指定国家，但管理员权限范围={allowed}")
+            return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
+        
+        if country_code not in allowed:
+            logger.warning(f"权限拒绝: country_code={country_code} 不在 {allowed} 中")
+            return jsonify({"success": False, "message": "jsonify_no_authority_creat_exam_this_county", "params": []}), 403
+        
+        logger.info(f"权限检查通过: {country_code} 在 {allowed} 中")
+    
+    elif current_role == 'super_admin':
+        if allowed and len(allowed) > 0:
+            if not country_code:
+                return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
+            if country_code not in allowed:
+                return jsonify({"success": False, "message": "jsonify_no_authority_creat_exam_this_county", "params": []}), 403
+
+
     try:
         # ✅ 1. 创建新考试记录（不指定 ID，让数据库自增）
         exam_insert = db.table("exams").insert({
@@ -1823,7 +1950,6 @@ def admin_import_save():
             "country": country_code,   # 存储国家代码
             "status": "draft" if is_draft else "active"   # 草稿状态为 draft
         }).execute()
-        
         if not exam_insert.data:
             raise Exception("创建考试失败")
         new_exam_id = exam_insert.data[0]['id']   # 获取自增生成的 ID
@@ -1857,6 +1983,48 @@ def copy_exam(exam_id):
     if not exam_res.data:
         return jsonify({"success": False, "message": "原考试不存在"}), 404
     exam = exam_res.data
+    
+    # ✅ 新增：检查管理员是否有权限创建该国家的考试
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    original_country = exam.get('country', '')
+    
+    # 获取用户的权限范围
+    user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
+    user_data = user_res.data if user_res and user_res.data else {}
+    
+    # 计算允许的国家列表
+    allowed = None
+    if current_role == 'super_admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+    elif current_role == 'admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+        
+        if not allowed:
+            user_country = user_data.get('country')
+            if user_country:
+                allowed = [user_country]
+            else:
+                allowed = []
+    
+    # ✅ 权限检查
+    if current_role == 'admin':
+        if not allowed or len(allowed) == 0:
+            return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
+        
+        if original_country and original_country not in allowed:
+            logger.warning(f"权限拒绝: 原考试国家={original_country} 不在 {allowed} 中")
+            return jsonify({"success": False, "message": "jsonify_no_authority_copy_exam", "params": []}), 403
 
     # 2. 创建新考试（复制除自增ID和时间戳外的字段）
     new_exam_data = {
@@ -1876,7 +2044,7 @@ def copy_exam(exam_id):
     new_exam_data = {k: v for k, v in new_exam_data.items() if v is not None}
     insert_res = db.table("exams").insert(new_exam_data).execute()
     if not insert_res.data:
-        return jsonify({"success": False, "message": "复制考试失败"}), 500
+        return jsonify({"success": False, "message": "jsonify_exam_copy_failure", "params": []}), 500
     new_exam_id = insert_res.data[0]['id']
 
     # 3. 复制原考试的所有题目
@@ -1899,6 +2067,7 @@ def copy_exam(exam_id):
             new_questions.append(new_q)
         db.table("questions").insert(new_questions).execute()
 
+    logger.info(f"✅ 复制考试成功: 原考试ID={exam_id}, 新考试ID={new_exam_id}, 国家={exam.get('country')}")
     return jsonify({"success": True, "new_id": new_exam_id})
 
 @app.route('/admin/exam/copy_preview/<int:exam_id>')
@@ -2008,14 +2177,14 @@ def update_exam_full(exam_id):
     # 获取原考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
-        return jsonify({"success": False, "message": "考试不存在"}), 404
+        return jsonify({"success": False, "message": "jsonify_no_such_exam", "params": []}), 404
     
     original = exam_res.data
     current_status = get_exam_status(original)
     
     # 已关闭的考试不能编辑
     if current_status == 'closed':
-        return jsonify({"success": False, "message": "已关闭的考试不能编辑"}), 403
+        return jsonify({"success": False, "message": "jsonify_closed_exams_cannot_edited", "params": []}), 403
     
     # 构建更新数据
     update_data = {}
@@ -2080,7 +2249,7 @@ def admin_exam_settings(exam_id):
     data = request.json
     start_time = data.get('start_time')
     end_time = data.get('end_time')
-    duration = data.get('duration')
+    duration = data.get('duration', 60)
     user_ids = data.get('user_ids', [])
     db = get_supabase()
     
@@ -2106,15 +2275,28 @@ def admin_exam_settings(exam_id):
         # 获取考试标题
         exam_res = db.table("exams").select("title").eq("id", exam_id).execute()
         exam_title = exam_res.data[0]['title'] if exam_res.data else "考试"
+        reviewer = exam_res.data[0].get('reviewer', '管理员') if exam_res.data else "管理员"
+
         for uid in user_ids:
             user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
             if user_res.data:
                 email = user_res.data[0]['email']
-                name = user_res.data[0].get('name_en', '用户')
-                subject = f"考试通知：{exam_title}"
-                body = f"您好 {name}，您有一场考试《{exam_title}》，有效期从 {start_time} 到 {end_time}，请登录系统参加。"
                 try:
-                    auth.send_email(email, subject, body)
+                    send_bilingual_notification(
+                        email=email,
+                        scenario=EmailScenario.EXAM_ASSIGNMENT,
+                        params={
+                            "name": user_res.data[0].get('name_en', '用户'),
+                            "exam_title": exam_title,
+                            "start_display": _format_time(start_time),
+                            "end_display": _format_time(end_time),
+                            "duration": str(duration),
+                            "reviewer": reviewer,
+                            "host_url": request.host_url,
+                        },
+                        host_url=request.host_url,
+                        auth_module=auth
+                    )
                 except Exception as e:
                     logger.warning(f"发送邮件失败: {e}")
     
@@ -2625,7 +2807,6 @@ def generate_pdf_by_result_id(result_id):
     )
 
     # 生成 PDF 并返回字节数据
-    from services import export
     pdf_buffer = export.generate_user_pdf(
         user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
         user_email=user_data.get('email', ''),
@@ -4371,42 +4552,22 @@ def api_admin_add_user():
             
             # 如果需要发送邮件通知（仅当有邮箱时）
             if email:
-                import secrets, string
                 temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(10))
                 password_hash = auth.hash_password(temp_password)
                 db.table("users").update({"password_hash": password_hash}).eq("id", existing_deleted['id']).execute()
-
-                # 邮件主题 / Email Subject
-                subject = "您的考试系统账号已创建Your exam system account has been created"
-                
-                # 邮件正文 / Email Body
-                body = f"""
-                # ---------------------------- 中文版 ----------------------------
-                尊敬的 {name_en or email}：
-                
-                您的在线考试系统账号已由管理员创建。
-                
-                登录邮箱：{email}
-                临时密码：{temp_password}
-                
-                请尽快登录系统并修改密码。
-                
-                登录地址：{request.host_url}
-                
-                # ---------------------------- English Version ----------------------------
-                Dear {name_en or email},
-                
-                Your online exam system account has been created by the administrator.
-                
-                Login Email: {email}
-                Temporary Password: {temp_password}
-                
-                Please log in and change your password as soon as possible.
-                
-                Login URL: {request.host_url}
-                """
                 try:
-                    auth.send_email(email, subject, body)
+                    send_bilingual_notification(
+                        email=email,
+                        scenario=EmailScenario.USER_CREATED,
+                        params={
+                            "name": name_en or email,
+                            "email": email,
+                            "temp_password": temp_password,
+                            "host_url": request.host_url,
+                        },
+                        host_url=request.host_url,
+                        auth_module=auth
+                    )
                 except Exception as e:
                     logger.warning(f"发送邮件失败: {e}")
             
@@ -4426,7 +4587,6 @@ def api_admin_add_user():
     temp_password = ''
     password_hash = ''
     if email:
-        import secrets, string
         alphabet = string.ascii_letters + string.digits
         temp_password = ''.join(secrets.choice(alphabet) for _ in range(10))
         password_hash = auth.hash_password(temp_password)
@@ -4459,37 +4619,18 @@ def api_admin_add_user():
         # 发送邮件通知（仅当邮箱存在）
         if email:
             try:
-                # 邮件主题 / Email Subject
-                subject = "您的考试系统账号已创建Your exam system account has been created"
-                
-                # 邮件正文 / Email Body
-                body = f"""
-                # ---------------------------- 中文版 ----------------------------
-                尊敬的 {name_en or email}：
-                
-                您的在线考试系统账号已由管理员创建。
-                
-                登录邮箱：{email}
-                临时密码：{temp_password}
-                
-                请尽快登录系统并修改密码。
-                
-                登录地址：{request.host_url}
-                
-                # ---------------------------- English Version ----------------------------
-                Dear {name_en or email},
-                
-                Your online exam system account has been created by the administrator.
-                
-                Login Email: {email}
-                Temporary Password: {temp_password}
-                
-                Please log in and change your password as soon as possible.
-                
-                Login URL: {request.host_url}
-                """
-                
-                auth.send_email(email, subject, body)
+                send_bilingual_notification(
+                    email=email,
+                    scenario=EmailScenario.USER_CREATED,
+                    params={
+                        "name": name_en or email,
+                        "email": email,
+                        "temp_password": temp_password,
+                        "host_url": request.host_url,
+                    },
+                    host_url=request.host_url,
+                    auth_module=auth
+                )
             except Exception as e:
                 logger.warning(f"发送邮件失败: {e}")
         
@@ -4676,7 +4817,6 @@ def api_admin_delete_user(user_id):
 @admin_required
 def api_admin_reset_user_password(user_id):
     """重置用户密码（生成新密码并发送邮件）"""
-    import secrets, string
     db = get_supabase()
     # 获取用户信息（包括 is_protected）
     user_res = db.table("users").select("email, name_en, is_protected").eq("id", user_id).maybe_single().execute()
@@ -4703,19 +4843,17 @@ def api_admin_reset_user_password(user_id):
     try:
         db.table("users").update({"password_hash": password_hash}).eq("id", user_id).execute()
         # 发送邮件
-        subject = "您的考试系统密码已重置"
-        body = f"""
-        尊敬的 {user.get('name_en') or user.get('email')}：
-        
-        您的考试系统密码已被管理员重置。
-        
-        新密码：{new_password}
-        
-        请登录后尽快修改密码。
-        
-        登录地址：{request.host_url}
-        """
-        auth.send_email(user['email'], subject, body)
+        send_bilingual_notification(
+            email=email,
+            scenario=EmailScenario.PASSWORD_RESET,
+            params={
+                "name": target_user.get('name_en') or email,
+                "new_password": new_password,
+                "host_url": request.host_url,
+            },
+            host_url=request.host_url,
+            auth_module=auth
+        )
         return jsonify({"success": True, "new_password": new_password})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
@@ -4838,7 +4976,7 @@ def admin_push_exam_with_settings(exam_id):
         logger.info(f"使用前端传递的阅卷人: {reviewer}")
     elif not exam_data.get('reviewer'):
         # 如果没有指定阅卷人，尝试根据国家自动获取默认阅卷人
-        default_reviewer = get_default_reviewer_by_country(
+        default_reviewer = get_reviewer_by_country(
             user_country=exam_data.get('country'),
             exam_reviewer=None,
             url_reviewer=None
@@ -4892,10 +5030,22 @@ def admin_push_exam_with_settings(exam_id):
             if user_res.data:
                 email = user_res.data[0]['email']
                 name = user_res.data[0].get('name_en', '用户')
-                subject = f"考试通知：{exam_title}"
-                body = f"您好 {name}，考试《{exam_title}》已设置，有效期从 {start_time_local} 到 {end_time_local}，时长为 {duration} 分钟。请登录系统参加。"
                 try:
-                    auth.send_email(email, subject, body)
+                    send_bilingual_notification(
+                        email=email,
+                        scenario=EmailScenario.EXAM_ASSIGNMENT,
+                        params={
+                            "name": name,
+                            "exam_title": exam_title,
+                            "start_display": _format_time(start_time_local),
+                            "end_display": _format_time(end_time_local),
+                            "duration": str(duration),
+                            "reviewer": reviewer,
+                            "host_url": request.host_url,
+                        },
+                        host_url=request.host_url,
+                        auth_module=auth
+                    )
                 except Exception as e:
                     logger.warning(f"发送邮件失败: {e}")
 
@@ -5047,7 +5197,6 @@ def api_quarters():
     # 查询所有考试的 start_time 和 end_time（只取非空）
     res = db.table("exams").select("start_time, end_time").execute()
     quarters = set()
-    from datetime import datetime
     for exam in res.data or []:
         for field in ['start_time', 'end_time']:
             time_str = exam.get(field)
@@ -5237,16 +5386,31 @@ def admin_push_exam(exam_id):
     # 发送邮件通知（异步或同步）
     exam_res = db.table("exams").select("title").eq("id", exam_id).execute()
     exam_title = exam_res.data[0]['title'] if exam_res.data else "考试"
+    reviewer = exam_res.data[0].get('reviewer', '管理员') if exam_res.data else "管理员"
+    duration = data.get('duration', 60)
+
     for uid in user_ids:
         user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
         if user_res.data:
             email = user_res.data[0]['email']
             name = user_res.data[0].get('name_en', '用户')
-            subject = f"新考试通知：{exam_title}"
-            body = f"您好 {name}，您有一场考试《{exam_title}》已开放，有效期从 {start_time} 到 {end_time}，请登录系统参加。"
             # 调用邮件发送函数（已有的 auth.send_email）
             try:
-                auth.send_email(email, subject, body)
+                send_bilingual_notification(
+                    email=email,
+                    scenario=EmailScenario.EXAM_ASSIGNMENT,
+                    params={
+                        "name": name,
+                        "exam_title": exam_title,
+                        "start_display": _format_time(start_time),
+                        "end_display": _format_time(end_time),
+                        "duration": str(duration),
+                        "reviewer": reviewer,
+                        "host_url": request.host_url,
+                    },
+                    host_url=request.host_url,
+                    auth_module=auth
+                )
             except Exception as e:
                 logger.warning(f"发送邮件失败: {e}")
 
@@ -5320,7 +5484,6 @@ def generate_single_user_pdf(exam_id, user_id):
     logger.info(f"=================================================")
 
     # 7. 生成PDF字节流
-    from services import export
     pdf_buffer = export.generate_user_pdf(
         user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
         user_email=user_data.get('email', ''),
@@ -5390,6 +5553,24 @@ def search_warehouses():
 def admin_trainings():
     """培训管理页面一级菜单可新增培训"""
     return render_template('admin/list_trainings.html')
+
+@app.route('/api/admin/refresh_permissions')
+@login_required
+@admin_required
+def refresh_permissions():
+    """刷新当前用户的权限范围（当后台修改权限后调用）"""
+    db = get_supabase()
+    user_id = session['user_id']
+    
+    res = db.table("users").select("admin_countries, role, country").eq("id", user_id).maybe_single().execute()
+    if res.data:
+        user = res.data
+        session['admin_countries'] = user.get('admin_countries')
+        session['user_country'] = user.get('country')
+        session['role'] = user.get('role')
+        return jsonify({"success": True, "admin_countries": user.get('admin_countries')})
+    
+    return jsonify({"success": False, "message": "用户不存在"}), 404
 
 @app.route('/api/admin/trainings', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @login_required
@@ -5464,7 +5645,6 @@ def api_admin_trainings():
         
         # 4. 前端选择的额外国家筛选（与权限取交集）
         if country_filter:
-            from utils.common import match_country_code
             filter_country_code = match_country_code(country_filter) if country_filter else None
             if filter_country_code:
                 # 获取该国家下的用户ID
@@ -5485,7 +5665,6 @@ def api_admin_trainings():
 
         # 5. 季度过滤（内存中）
         if quarter:
-            from utils.common import quarter_to_date_range
             q_start, q_end = quarter_to_date_range(quarter)
             if q_start and q_end:
                 q_start_dt = datetime.fromisoformat(q_start)
@@ -5558,14 +5737,75 @@ def api_admin_trainings():
         data = request.json
         name = data.get('name')
         if not name:
-            return jsonify({"success": False, "message": "培训名称不能为空"}), 400
+            return jsonify({"success": False, "message": "jsonify_training_name_cannot_empty", "params": []}), 400
         
-        # ✅ 管理员创建培训时，检查国家权限
+        # ✅ 从数据库实时获取管理员的权限范围，而不是依赖 session
+        current_user_id = session.get('user_id')
+        current_role = session.get('role')
+        
+        # 获取用户的权限范围（直接从数据库）
+        user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
+        user_data = user_res.data if user_res and user_res.data else {}
+        
+        # 计算允许的国家列表
+        allowed = None
+        if current_role == 'super_admin':
+            admin_countries = user_data.get('admin_countries')
+            if admin_countries:
+                try:
+                    allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                except:
+                    allowed = None
+            # 超管如果没有设置权限范围，则无限制
+        elif current_role == 'admin':
+            admin_countries = user_data.get('admin_countries')
+            if admin_countries:
+                try:
+                    allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                except:
+                    allowed = None
+            
+            # 如果没有设置权限范围，使用用户所在国家
+            if not allowed:
+                user_country = user_data.get('country')
+                if user_country:
+                    allowed = [user_country]
+                else:
+                    allowed = []
+        
         training_country = data.get('country')
-        if training_country:
-            allowed = get_admin_allowed_countries()
-            if allowed is not None and training_country not in allowed:
-                return jsonify({"success": False, "message": "无权在该国家创建培训"}), 403
+        
+        # 详细日志
+        logger.info("=" * 50)
+        logger.info("创建培训 POST 请求")
+        logger.info(f"用户ID: {current_user_id}, 角色: {current_role}")
+        logger.info(f"数据库 admin_countries: {user_data.get('admin_countries')}")
+        logger.info(f"数据库 user_country: {user_data.get('country')}")
+        logger.info(f"计算后 allowed: {allowed}")
+        logger.info(f"请求中的 training_country: {training_country}")
+        
+        # # 权限检查
+        if allowed is not None:
+            if not allowed:
+                logger.warning(f"管理员没有任何国家权限，禁止创建培训")
+                return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
+            
+            # 检查指定的国家是否在允许范围内
+            if not training_country:
+                # 未指定国家，但管理员有权限范围，拒绝
+                logger.warning(f"未指定国家，但管理员权限范围={allowed}")
+                return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
+            
+            if training_country not in allowed:
+                logger.warning(f"权限拒绝: {training_country} 不在 {allowed} 中")
+                return jsonify({"success": False, "message": "jsonify_no_authority_creat_training_this_county", "params": []}), 403
+        else:
+            logger.info("无权限限制（超管或开发者）")
+
+        # 如果没有传递国家，且管理员有默认国家，则使用默认国家
+        if not training_country and allowed and len(allowed) == 1:
+            training_country = allowed[0]
+            logger.info(f"自动使用默认国家: {training_country}")
         
         start_time = data.get('start_time')
         end_time = data.get('end_time')
@@ -5580,7 +5820,7 @@ def api_admin_trainings():
             "start_time": start_time,
             "end_time": end_time,
             "header_template": data.get('header_template', {}),
-            "country": data.get('country', ''),
+            "country": training_country,
             "quarter": data.get('quarter', '')
         }).execute()
         
@@ -5605,7 +5845,7 @@ def api_admin_trainings():
             allowed = get_admin_allowed_countries()
             original_country = original.data.get('country')
             if allowed is not None and original_country and original_country not in allowed:
-                return jsonify({"success": False, "message": "无权修改该培训"}), 403
+                return jsonify({"success": False, "message": "jsonify_no_authority_modify_training", "params": []}), 403
         
         # 处理 header_template 保存
         country_code = data.get('country_code')
@@ -5615,7 +5855,7 @@ def api_admin_trainings():
                 # 检查国家权限
                 allowed = get_admin_allowed_countries()
                 if allowed is not None and country_code not in allowed:
-                    return jsonify({"success": False, "message": "无权在该国家设置表头模板"}), 403
+                    return jsonify({"success": False, "message": "jsonify_no_authorith_set_up_header_template", "params": []}), 403
                 set_training_country_template(tid, country_code, header_template)
             else:
                 db.table("trainings").update({"header_template": header_template}).eq("id", tid).execute()
@@ -5637,7 +5877,7 @@ def api_admin_trainings():
             new_country = data['country']
             allowed = get_admin_allowed_countries()
             if allowed is not None and new_country and new_country not in allowed:
-                return jsonify({"success": False, "message": "无权将培训改到该国家"}), 403
+                return jsonify({"success": False, "message": "jsonify_no_authorith_transfer_training_to_country", "params": []}), 403
             update_data['country'] = new_country
         if 'quarter' in data:
             update_data['quarter'] = data['quarter']
@@ -5651,7 +5891,7 @@ def api_admin_trainings():
     elif request.method == 'DELETE':
         tid = request.args.get('id')
         if not tid:
-            return jsonify({"success": False, "message": "缺少培训ID"}), 400
+            return jsonify({"success": False, "message": "jsonify_lack_training_id", "params": []}), 400
         
         # ✅ 删除前检查权限
         original = db.table("trainings").select("country").eq("id", tid).maybe_single().execute()
@@ -5659,7 +5899,7 @@ def api_admin_trainings():
             allowed = get_admin_allowed_countries()
             original_country = original.data.get('country')
             if allowed is not None and original_country and original_country not in allowed:
-                return jsonify({"success": False, "message": "无权删除该培训"}), 403
+                return jsonify({"success": False, "message": "jsonify_no_authorith_delete_training", "params": []}), 403
         
         db.table("trainings").delete().eq("id", tid).execute()
         logger.info(f"删除培训成功: id={tid}")

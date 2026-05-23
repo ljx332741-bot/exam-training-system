@@ -603,21 +603,6 @@
         input.style.cursor = 'not-allowed';
       });
     }
-
-    // 语言切换时重新加载表格
-    /**
-    if (window.i18n) {
-        window.addEventListener('app:languageChanged', function() {
-            console.log('语言切换，重新加载培训列表');
-            loadTrainings();
-        });
-        
-        if (typeof window.i18n.subscribe === 'function') {
-            window.i18n.subscribe(function() {
-                loadTrainings();
-            });
-        }
-    } */
   });
 </script>
 {% endblock %}

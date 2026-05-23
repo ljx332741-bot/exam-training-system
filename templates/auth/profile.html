@@ -31,23 +31,29 @@
                         <!-- 第二行：国家，公司/合作伙伴 -->
                         <div class="d-flex flex-wrap gap-3 mb-3">
                             <div class="flex-grow-1" style="min-width: 200px;">
-                                <label class="form-label" for="countrySelect" data-i18n="country">国家</label>
-                                <input type="text" id="countrySelect" class="form-control" 
-                                value="{{ user.country_display or '' }}" readonly disabled>
+                                <label class="form-label" for="countryDisplay" data-i18n="country">国家</label>
+                                <input type="text" id="countryDisplay" class="form-control" 
+                                value="{{ user.country_display or '未设置' }}" 
+                                data-value-zh="{{ user.country_display_zh or '未设置' }}"
+                                data-value-en="{{ user.country_display_en or 'Not Set' }}"
+                                readonly disabled>
                                 <input type="hidden" name="country" id="countryCode" value="{{ user.country or '' }}">
-                                <small class="text-muted">国家信息不可自行修改，请联系管理员</small>
+                                <small class="text-muted"><span data-i18n="country_change_tip">国家信息不可自行修改，请联系管理员</span></small>
                             </div>
                             <!-- 如果是超管或管理员，显示权限范围（只读） -->
                             {% if user.role in ['admin', 'super_admin'] %}
                             <div class="flex-grow-1" style="min-width: 200px;">
-                                <label class="form-label" data-i18n="power_scope">权限范围</label>
-                                <input type="text" class="form-control" 
-                                    value="{{ user.admin_countries_display or '无限制' }}" readonly disabled>
-                                <small class="text-muted">权限范围不可自行修改，请联系上级管理员</small>
+                                <label class="form-label" for="powerScopeDisplay" data-i18n="power_scope">权限范围</label>
+                                <input type="text" id="powerScopeDisplay" class="form-control" 
+                                value="{{ user.admin_countries_display or '无限制' }}"
+                                data-value-zh="{{ user.admin_countries_display_zh or '无限制' }}"
+                                data-value-en="{{ user.admin_countries_display_en or 'Unrestricted' }}"
+                                    readonly disabled>
+                                <small class="text-muted"><span data-i18n="power_scope_tip">权限范围不可自行修改，请联系上级管理员</span></small>
                             </div>
                             {% endif %}
                             <div class="flex-grow-1" style="min-width: 200px;">
-                                <label class="form-label" for="company"><span data-i18n="company">公司/合作伙伴</span></label>
+                                <label class="form-label" for="company" data-i18n="company">公司/合作伙伴</label>
                                 <input type="text" name="company" id="company" class="form-control" value="{{ user.company or '' }}" autocomplete="organization">
                             </div>
                         </div>
@@ -93,6 +99,12 @@
                 <div class="card-body">
                     <form method="POST" action="{{ url_for('profile') }}">
                         <input type="hidden" name="action" value="change_password">
+    
+                        <!-- ✅ 添加隐藏的用户名字段，供密码管理器识别 -->
+                        <input type="text" name="username" value="{{ user.email }}" style="display: none;">
+                        <!-- 或者使用 hidden 属性 -->
+                        <input type="text" name="email" value="{{ user.email }}" hidden>
+                        
                         <div class="mb-3">
                             <label class="form-label" for="old_password" data-i18n="old_password">原密码</label>
                             <input type="password" name="old_password" id="old_password" class="form-control" required autocomplete="current-password">
@@ -113,30 +125,51 @@
         </div>
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-        await setupCountryAutocomplete('countrySelect', 'countryDatalist', 'countryCode');
-
-        // 3. 根据已有国家代码设置输入框的显示文本
-        const userCountryCode = "{{ user.country or '' }}";
-        if (userCountryCode) {
-            const countries = await loadCountryList();
-            const matched = countries.find(c => c.code === userCountryCode);
-            if (matched) {
-                const currentLang = window.i18n?.currentLang || 'zh';
-                document.getElementById('countrySelect').value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
-                document.getElementById('countryCode').value = matched.code;
+    // 更新显示字段的函数
+    async function updateDisplayFields() {
+        const currentLang = window.i18n?.currentLang || 'zh';
+        
+        // 更新国家显示
+        const countryDisplay = document.getElementById('countryDisplay');
+        if (countryDisplay) {
+            const zhValue = countryDisplay.getAttribute('data-value-zh');
+            const enValue = countryDisplay.getAttribute('data-value-en');
+            if (zhValue && enValue) {
+                countryDisplay.value = currentLang === 'zh' ? zhValue : enValue;
             }
         }
-
-        // 4. 国际化翻译
+        
+        // 更新权限范围显示
+        const powerScopeDisplay = document.getElementById('powerScopeDisplay');
+        if (powerScopeDisplay) {
+            const zhValue = powerScopeDisplay.getAttribute('data-value-zh');
+            const enValue = powerScopeDisplay.getAttribute('data-value-en');
+            if (zhValue && enValue) {
+                powerScopeDisplay.value = currentLang === 'zh' ? zhValue : enValue;
+            }
+        }
+    }
+    
+    document.addEventListener('DOMContentLoaded', async () => {
+        // 初始化显示
+        await updateDisplayFields();
+        
+        // 国际化翻译静态元素
         if (window.i18n) { 
             window.i18n.applyTranslations();
         }
     });
+    
+    // 监听语言切换事件
+    if (window.i18n) {
+        window.i18n.subscribe(async () => {
+            await updateDisplayFields();
+            window.i18n.applyTranslations();
+        });
+    }
 </script>
 {% endblock %}
