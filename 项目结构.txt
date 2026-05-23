@@ -11,12 +11,12 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   ├── i18n/ 
 │   │   ├── en.json                        # 词典英文
 │   │   ├── zh.json                        # 词典中文
-│   │   └──  i18n.js                       # 
+│   │   └── i18n.js                       # 
 │   │
 │   └── images/
 │
-│
 ├── utils/
+│   ├── email_notifier.py                   # 邮件通知工具函数
 │   ├── permissions.py                      # 权限工具函数
 │   ├── common.py                           # 国家和季度处理逻辑的工具函数
 │   ├── training_helpers.py                 # 培训信息获取的工具函数

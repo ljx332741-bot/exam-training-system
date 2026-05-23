@@ -463,10 +463,10 @@
 
     // 获取权限范围的显示文本
     function getCountryScopeDisplay(countriesJson) {
-        if (!countriesJson) return '无限制';
+        if (!countriesJson) return t('t_unrestricted');
         try {
             const codes = JSON.parse(countriesJson);
-            if (!codes.length) return '无限制';
+            if (!codes.length) return t('t_unrestricted');
             // 可以转换为国家名称显示
             return codes.join(', ');
         } catch(e) {
@@ -622,7 +622,7 @@
         currentEditUserId = userId;
         try {
             const res = await fetch(`/api/admin/users/${userId}`);
-            if (!res.ok) throw new Error('获取用户失败');
+            if (!res.ok) throw new Error(t('t_failed_obtain_information'));
             const user = await res.json();
             
             // ✅ 保存数据到全局变量，供 shown.bs.modal 使用
@@ -642,8 +642,8 @@
             new bootstrap.Modal(document.getElementById('addUserModal')).show();
             
         } catch (err) {
-            console.error('加载用户失败:', err);
-            alert('加载用户失败');
+            console.error(t('t_failed_load_user'), err);
+            alert(t('t_failed_load_user'));
             currentEditUserId = null;
             document.getElementById('editUserId').value = '';
         }
@@ -692,7 +692,7 @@
         
         // ========== 角色权限校验 ==========
         if (!canCreateRole(selectedRole)) {
-            alert(`您没有权限创建 ${selectedRole} 角色`);
+            alert(t('t_no_permission_create_role', { role: selectedRole }));
             return;
         }
         
@@ -700,7 +700,7 @@
         if (roleNeedsCountryScope(selectedRole)) {
             // 检查是否选择了权限范围
             if (!selectedAdminCountryCodes || selectedAdminCountryCodes.length === 0) {
-                alert(`${selectedRole === 'admin' ? '管理员' : '超级管理员'} 必须设置权限范围（国家）`);
+                alert(`${selectedRole === 'admin' ? t('t_admin') : t('t_super_admin')} ${t('t_permissions_must_within_scope')}`);
                 return;
             }
             formData.admin_countries = JSON.stringify(selectedAdminCountryCodes);
@@ -710,7 +710,7 @@
         
         // 只有 user_status 不是 'imported' 时，邮箱才是必填的
         if (!formData.email && userStatus !== 'imported') {
-            alert('邮箱不能为空');
+            alert(t('t_email_cannot_empty'));
             return;
         }
         
@@ -728,12 +728,12 @@
             
             if (data.success) {
                 if (currentEditUserId) {
-                    alert('更新成功');
+                    alert(t('t_update_successful'));
                 } else {
                     if (data.temp_password) {
-                        alert(`添加成功！临时密码：${data.temp_password}`);
+                        alert(`${t('t_add_success_temp_pw')}${data.temp_password}`);
                     } else {
-                        alert('添加成功');
+                        alert(t('t_added_successfully'));
                     }
                 }
                 // ✅ 关闭模态框
@@ -754,11 +754,11 @@
                 document.getElementById('userForm').reset();
             } else {
                 // 使用翻译函数显示错误
-                const errorMsg = data.message || '操作失败';
+                const errorMsg = data.message || t('t_operation_failed');
                 alert(errorMsg);
             }
         } catch (err) {
-            alert('网络错误：' + err.message);
+            alert(t('t_network_error') + err.message);
         }
     });
 
@@ -1026,7 +1026,7 @@
                 }
                 loadUsers();  // 刷新列表
             } else {
-                alert('导入失败: ' + (result.message || '未知错误'));
+                alert('导入失败: ' + (result.message || t('t_unknown_error')));
             }
         } catch (err) {
             alert('网络错误: ' + err.message);
