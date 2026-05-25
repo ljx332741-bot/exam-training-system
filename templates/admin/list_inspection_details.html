@@ -5,8 +5,9 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_detail">访谈详情</span> - <span id="examTitle">加载中...</span></h2>
+        <h5><i class="mt-2 text-muted"></i>         <span data-i18n="inspector">检查人员</span>: <span id="interviewReviewer">-</span> &nbsp;|&nbsp;
+        <span data-i18n="feedback_person">反馈人</span>: <span id="interviewFeedback">-</span></h5>
     </div>
-
     <!-- 筛选栏 -->
     <div class="card mb-3">
         <div class="card-body">
@@ -41,15 +42,14 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th><input type="checkbox" id="selectAll"></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="name_en">姓名</span></th>
                             <th><span data-i18n="wh_id">库房编码</span></th>
                             <th><span data-i18n="check_at">检查时间</span></th>
-                            <th><span data-i18n="inspector">检查人员</span></th>
                             <th><span data-i18n="ask_qty">访谈问题数量</span></th>
                             <th><span data-i18n="answer_qty">答对问题数量</span></th>
                             <th><span data-i18n="remark">备注</span></th>
-                            <th><span data-i18n="feedback_by">反馈人</span></th>
                             <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
@@ -98,6 +98,13 @@
         const res = await fetch(`/api/admin/interview/${interviewId}/details?${params}`);
         const data = await res.json();
         document.getElementById('examTitle').innerText = data.interview?.exam_title || data.interview?.title || t('t_unknown_examination');
+
+        // ✅ 更新访谈级别的检查人员和反馈人
+        const reviewerSpan = document.getElementById('interviewReviewer');
+        const feedbackSpan = document.getElementById('interviewFeedback');
+        if (reviewerSpan) reviewerSpan.innerText = data.interview?.reviewer || '-';
+        if (feedbackSpan) feedbackSpan.innerText = data.interview?.feedback || '-';
+        
         renderTable(data.data);
         document.getElementById('totalCount').innerText = data.total;
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
@@ -109,22 +116,31 @@
             tbody.innerHTML = '<tr><td colspan="10" class="text-center">暂无数据</td></tr>';
             return;
         }
+
         tbody.innerHTML = rows.map(r => `
             <tr>
+                <td><input type="checkbox" class="interview-checkbox" data-user-id="${r.user_id}"></td>
                 <td>${escapeHtml(r.country || '-')}</td>
                 <td>${escapeHtml(r.name)}</td>
                 <td>${escapeHtml(r.wh_id || '-')}</td>
                 <td>${r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '-'}</td>
-                <td>${escapeHtml(r.reviewer || '-')}</td>
                 <td>${r.total_questions}</td>
                 <td>${r.correct_count}</td>
-                <td>${escapeHtml(r.feedback || '-')}</td>
                 <td>${escapeHtml(r.department || '-')}</td>
                 <td>
                     <button class="btn btn-sm btn-outline-info view-answers-btn" 
-                    data-user-id="${r.user_id}" 
-                    data-user-name="${escapeHtml(r.name)}">${t('t_answer_detail')}</button>
-                    ${r.has_submitted ? `<button class="btn btn-sm btn-outline-warning resample-btn" data-user-id="${r.user_id}">${t('t_re_interview')}</button>` : ''}
+                        data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.name)}">
+                        ${t('t_answer_detail')}
+                    </button>
+                    ${r.has_submitted ? `
+                        <button class="btn btn-sm btn-outline-warning resample-btn" data-user-id="${r.user_id}">
+                            ${t('t_re_interview')}
+                        </button>
+                    ` : ''}
+                    <button class="btn btn-sm btn-outline-danger delete-interview-btn" 
+                        data-user-id="${r.user_id}" data-user-name="${escapeHtml(r.name)}">
+                        <i class="bi bi-trash"></i> ${t('t_delete')}
+                    </button>
                 </td>
             </tr>
         `).join('');
@@ -134,12 +150,124 @@
             btn.addEventListener('click', async () => {
                 const userId = btn.dataset.userId;
                 if (confirm(t('t_regenerate_interview_question_tip'))) {
-                    await fetch(`/api/admin/interview/${interviewId}/resample/${userId}`, { method: 'POST' });
-                    alert(t('t_question_regenerated'));
-                    loadDetails();
+                    await resampleInterview(userId);
                 }
             });
         });
+
+        // 绑定删除事件
+        document.querySelectorAll('.delete-interview-btn').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const userId = btn.dataset.userId;
+                const userName = btn.dataset.userName;
+                if (confirm(t('t_confirm_delete_interview').replace('{name}', userName))) {
+                    await deleteSingleInterview(userId, userName);
+                }
+            });
+        });
+        bindSelectAll();
+    }
+
+    // 重新访谈函数
+    async function resampleInterview(userId) {
+        try {
+            const response = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/resample`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(data.message || '重新抽题成功');
+                loadDetails();
+            } else {
+                alert('操作失败: ' + (data.message || ''));
+            }
+        } catch (error) {
+            console.error('重新访谈失败:', error);
+            alert('操作失败');
+        }
+    }
+
+    // 批量删除访谈记录函数
+    async function batchDeleteInterviews() {
+        const selectedUserIds = Array.from(document.querySelectorAll('.interview-checkbox:checked'))
+            .map(cb => cb.dataset.userId);
+        
+        if (selectedUserIds.length === 0) {
+            alert(t('select_at_least_one'));
+            return;
+        }
+        
+        if (typeof window.showDeleteConfirm === 'function') {
+            window.showDeleteConfirm({
+                message: `确定要删除选中的 ${selectedUserIds.length} 条访谈记录吗？`,
+                ids: selectedUserIds,
+                type: 'soft',
+                onConfirm: async (deleteType, ids) => {
+                    const response = await fetch(`/api/admin/interview/${interviewId}/batch_delete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_ids: ids, delete_type: deleteType })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        alert(`删除成功: ${data.success_count} 条`);
+                        loadDetails(); // 刷新列表
+                    } else {
+                        alert('删除失败: ' + (data.message || ''));
+                    }
+                }
+            });
+        } else {
+            if (confirm(`确定要删除选中的 ${selectedUserIds.length} 条访谈记录吗？`)) {
+                const response = await fetch(`/api/admin/interview/${interviewId}/batch_delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_ids: selectedUserIds, delete_type: 'soft' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`删除成功: ${data.success_count} 条`);
+                    loadDetails();
+                }
+            }
+        }
+    }
+
+    // 单个删除访谈记录函数
+    async function deleteSingleInterview(userId, userName) {
+        if (typeof window.showDeleteConfirm === 'function') {
+            window.showDeleteConfirm({
+                message: `确定要删除 ${userName} 的访谈记录吗？`,
+                ids: [userId],
+                type: 'soft',
+                onConfirm: async (deleteType, ids) => {
+                    const response = await fetch(`/api/admin/interview/${interviewId}/batch_delete`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_ids: ids, delete_type: deleteType })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        alert('删除成功');
+                        loadDetails();
+                    } else {
+                        alert('删除失败');
+                    }
+                }
+            });
+        } else {
+            if (confirm(`确定要删除 ${userName} 的访谈记录吗？`)) {
+                const response = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/delete`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('删除成功');
+                    loadDetails();
+                }
+            }
+        }
     }
 
     // 委托事件：查看答题详情
@@ -226,17 +354,69 @@
         loadDetails();
     });
 
+    // 全选功能
+    function bindSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) {
+            selectAll.addEventListener('change', (e) => {
+                document.querySelectorAll('.interview-checkbox').forEach(cb => cb.checked = e.target.checked);
+            });
+        }
+    }
+
+    // 添加批量删除按钮到页面
+    function addBatchDeleteButton() {
+        const buttonContainer = document.querySelector('.col-md-5.d-flex.justify-content-end');
+        if (buttonContainer && !document.getElementById('batchDeleteInterviewBtn')) {
+            const batchDeleteBtn = document.createElement('button');
+            batchDeleteBtn.id = 'batchDeleteInterviewBtn';
+            batchDeleteBtn.className = 'btn btn-danger me-2';
+            batchDeleteBtn.innerHTML = '<i class="bi bi-trash"></i><span data-i18n="batch_delete">批量删除</span>';
+            batchDeleteBtn.onclick = batchDeleteInterviews;
+        
+            // ✅ 关键修复：手动触发翻译
+            if (typeof window.i18n !== 'undefined' && window.i18n.currentLang) {
+                const span = batchDeleteBtn.querySelector('[data-i18n="batch_delete"]');
+                if (span && typeof t === 'function') {
+                    span.textContent = t('batch_delete');
+                }
+            }
+            
+            buttonContainer.insertBefore(batchDeleteBtn, buttonContainer.firstChild);
+        }
+    }
+
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
         await waitForI18n(); // 等待国际化资源加载完成
         await populateCountryDatalist('countryDatalist');
         loadDetails();
+        addBatchDeleteButton();
     });
 
-    // 监听语言切换事件，重新加载数据以更新按钮文字
+    // 更新批量删除按钮文本（语言切换时调用）
+    function updateBatchDeleteButtonText() {
+        const batchDeleteBtn = document.getElementById('batchDeleteInterviewBtn');
+        if (batchDeleteBtn && typeof t === 'function') {
+            const span = batchDeleteBtn.querySelector('[data-i18n="batch_delete"]');
+            if (span) {
+                span.textContent = t('batch_delete');
+            }
+        }
+    }
+
+    // 监听语言切换事件
     window.addEventListener('app:languageChanged', () => {
-        currentPage = 1;   // 可选：重置到第一页
-        loadDetails();      // 重新加载数据，会重新调用 renderTable 和 t()
+        currentPage = 1;
+        loadDetails();
+        // ✅ 更新批量删除按钮的文本
+        updateBatchDeleteButtonText();
+        // 更新搜索按钮文本
+        const searchBtn = document.getElementById('searchBtn');
+        if (searchBtn && typeof t === 'function') {
+            const span = searchBtn.querySelector('[data-i18n="search"]');
+            if (span) span.textContent = t('search');
+        }
     });
 
     function escapeHtml(str) {

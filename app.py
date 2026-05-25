@@ -32,7 +32,7 @@ from utils.status import get_exam_status
 from utils.common import (
     match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display
 )
-from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
+from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time, _send_training_notifications
 from utils.permissions import (
     is_developer, get_developer_id, has_role, can_manage_role,
     can_view_user, get_admin_allowed_countries, set_admin_allowed_countries,
@@ -3107,1186 +3107,6 @@ def shutdown():
     func()
     return 'Server shutting down...'
 
-# ================= 培训签到核心 API =================
-def upload_signature(signature_base64, training_id, user_id):
-    """共用统一的签名上传函数"""
-    try:
-        header, encoded = signature_base64.split(',', 1)
-        img_data = base64.b64decode(encoded)
-        storage_path = f"signatures/{training_id}/{user_id}.png"
-        
-        # 使用 service_role key 创建客户端
-        storage_client = create_client(
-            Config.SUPABASE_URL,
-            os.environ.get('SUPABASE_SERVICE_KEY', Config.SUPABASE_KEY)
-        )
-        supabase_storage = storage_client.storage.from_("signatures")
-        
-        # 先删除旧文件（避免覆盖权限问题）
-        try:
-            supabase_storage.remove([storage_path])
-            logger.info(f"已删除旧签名: {storage_path}")
-        except Exception as e:
-            logger.debug(f"删除旧签名（可能不存在）: {e}")
-        
-        # 上传新文件
-        supabase_storage.upload(storage_path, img_data, {"content-type": "image/png"})
-        public_url = supabase_storage.get_public_url(storage_path)
-        logger.info(f"签名上传成功: {public_url}")
-        return public_url
-        
-    except Exception as e:
-        logger.error(f"上传签名失败: {e}")
-        raise e
-
-@app.route('/api/trainings/available')
-@login_required
-def api_available_trainings():
-    """获取当前用户可签到的培训列表（未过期的、未签到的或已签到的）"""
-    db = get_supabase()
-    user_id = session['user_id']
-    now = datetime.now(timezone.utc).isoformat()
-    
-    # 查询所有有效期内的培训
-    '''
-    trainings_res = db.table("trainings") \
-        .select("*") \
-        .eq("is_active", True) \
-        .lt("start_time", now) \
-        .gt("end_time", now) \
-        .execute()
-    '''
-    trainings_res = db.table("trainings") \
-        .select("*") \
-        .eq("is_active", True) \
-        .execute()
-
-    trainings = trainings_res.data or []
-    
-    # 查询用户已签到记录
-    att_res = db.table("training_attendances") \
-        .select("id, training_id, sign_time, signed_name, signature_url") \
-        .eq("user_id", user_id) \
-        .execute()
-    signed_dict = {a['training_id']: a for a in (att_res.data or [])}
-    
-    result = []
-    for t in trainings:
-        signed_info = signed_dict.get(t['id'])
-        signed = signed_info is not None
-        needs_resign = False
-        if signed:
-            # 如果已签到但签名URL为空，则需要重新签字
-            if not signed_info.get('signature_url'):
-                needs_resign = True
-
-        # 判断培训是否在有效期内（字符串可直接比较 ISO 格式）
-        start = t.get('start_time')
-        end = t.get('end_time')
-        in_period = False
-        if start and end:
-            in_period = start < now < end
-        
-        # 显示条件：①有效期内一律显示；②已签到且需要重新签字（即使已过期）
-        if in_period or (signed and needs_resign):
-            result.append({
-                "id": t['id'],
-                "name": t['name'],
-                "start_time": t['start_time'],
-                "end_time": t['end_time'],
-                "signed": signed_info is not None,
-                "sign_time": signed_info['sign_time'] if signed_info else None,
-                "signed_name": signed_info['signed_name'] if signed_info else None,
-                "needs_resign": needs_resign  # ✅ 新增字段
-            })
-    return jsonify(result)
-
-@app.route('/api/training/sign', methods=['POST'])
-@login_required
-def api_training_sign():
-    """提交手写签名和姓名"""
-    data = request.get_json()
-    training_id = data.get('training_id')
-    signature_base64 = data.get('signature')   # 格式: "data:image/png;base64,xxxx"
-    signed_name = data.get('name', '').strip()
-    
-    if not training_id or not signature_base64:
-        return jsonify({"success": False, "message": "缺少必要参数"}), 400
-    
-    db = get_supabase()
-    user_id = session['user_id']
-
-    # 检查用户是否已注册且激活
-    user_res = db.table("users").select("is_active, user_status").eq("id", user_id).maybe_single().execute()
-    if not user_res.data or not user_res.data.get('is_active') or user_res.data.get('user_status') != 'registered':
-        return jsonify({"success": False, "message": "用户未完成注册"}), 400
-
-    # 检查是否已签到
-    try:
-        exist_res = db.table("training_attendances") \
-            .select("id") \
-            .eq("training_id", training_id) \
-            .eq("user_id", user_id) \
-            .maybe_single() \
-            .execute()
-        # 防御性判断
-        if exist_res is not None and hasattr(exist_res, 'data') and exist_res.data:
-            return jsonify({"success": False, "message": "您已签到过本培训"}), 400
-    except Exception as e:
-        logger.error(f"查询签到记录失败: {e}")
-        return jsonify({"success": False, "message": "签到检查失败"}), 500
-        
-    # 检查培训是否在有效期内
-    now = datetime.now(timezone.utc).isoformat()
-    try:
-        training_res = db.table("trainings") \
-            .select("start_time, end_time") \
-            .eq("id", training_id) \
-            .maybe_single() \
-            .execute()
-        if training_res is None or not hasattr(training_res, 'data') or not training_res.data:
-            return jsonify({"success": False, "message": "培训不存在"}), 404
-        training = training_res.data
-        if now < training['start_time']:
-            return jsonify({"success": False, "message": "签到尚未开始"}), 400
-        if now > training['end_time']:
-            return jsonify({"success": False, "message": "签到已结束"}), 400
-    except Exception as e:
-        logger.error(f"查询培训信息失败: {e}")
-        return jsonify({"success": False, "message": "培训验证失败"}), 500
-    
-    # 保存签名图片到 Supabase Storage
-    try:
-        public_url = upload_signature(signature_base64, training_id, user_id)
-    except Exception as e:
-        return jsonify({"success": False, "message": "签名保存失败"}), 500
-    
-    # 插入签到记录
-    try:
-        db.table("training_attendances").insert({
-            "training_id": training_id,
-            "user_id": user_id,
-            "signature_url": public_url,
-            "signed_name": signed_name,
-            "sign_time": datetime.now(timezone.utc).isoformat()
-        }).execute()
-    except Exception as e:
-        logger.error(f"保存签到记录失败: {e}")
-        return jsonify({"success": False, "message": "数据保存失败"}), 500
-    
-    return jsonify({"success": True, "sign_time": datetime.now(timezone.utc).isoformat()})
-
-@app.route('/api/training/attendance/<int:training_id>')
-@login_required
-@admin_required
-def api_training_attendance(training_id):
-    db = get_supabase()
-    country = request.args.get('country', '')
-
-    # 获取培训基本信息
-    training_res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
-    if not training_res.data:
-        return jsonify({"error": "培训不存在"}), 404
-    training = training_res.data
-    
-    # 签到记录查询
-    att_res = db.table("training_attendances") \
-        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company)") \
-        .eq("training_id", training_id) \
-        .execute()
-
-    att_list = att_res.data or []
-    # 手动按国家过滤
-    if country:
-        att_list = [rec for rec in att_list if rec.get('users', {}).get('country') == country]
-
-    attendance_list = []
-    for rec in att_list or []:
-        user = rec.get('users', {})
-        # 防止 user 为 None
-        if user is None:
-            user = {}
-
-        attendance_list.append({
-            "id": rec['id'],  # ✅ 新增签到记录ID
-            "user_id": rec['user_id'],
-            "department": user.get('department', ''),
-            "name_cn": user.get('name_cn', ''),
-            "name_en": user.get('name_en', ''),
-            "employee_id": user.get('employee_id', ''),
-            "signed_name": rec.get('signed_name', ''),
-            "signature_url": rec.get('signature_url', ''),
-            "sign_time": rec.get('sign_time'),
-            "company": user.get('company', ''),
-            "country": user.get('country', '')
-        })
-
-    # 获取表头模板：优先取国家模板，否则取培训主模板
-    header_template = None
-    if country:
-        # 查询国家模板
-        ct_res = db.table("training_country_templates")\
-            .select("header_template")\
-            .eq("training_id", training_id)\
-            .eq("country", country)\
-            .execute()
-        if ct_res.data and len(ct_res.data) > 0:
-            header_template = ct_res.data[0].get('header_template')
-    if not header_template:
-        header_template = training.get('header_template', {})
-
-    return jsonify({
-        "training": training,
-        "attendances": attendance_list,
-        "header_template": header_template
-    })
-
-@app.route('/api/admin/training/attendance/<int:attendance_id>/reset-signature', methods=['POST'])
-@login_required
-@admin_required
-def admin_reset_signature(attendance_id):
-    """管理员清除指定签到记录的签名，推送重新签字到学员端"""
-    db = get_supabase()
-    # 获取原记录，保留签到时间
-    att_res = db.table("training_attendances").select("*").eq("id", attendance_id).maybe_single().execute()
-    if not att_res.data:
-        return jsonify({"success": False, "message": "签到记录不存在"}), 404
-    
-    # 清空签名相关字段，保留 sign_time
-    db.table("training_attendances").update({
-        "signature_url": None,
-        "signed_name": None
-    }).eq("id", attendance_id).execute()
-    
-    logger.info(f"管理员重置签到 {attendance_id} 的签名")
-    return jsonify({"success": True})
-
-@app.route('/api/training/resign', methods=['POST'])
-@login_required
-def api_resign_training():
-    """学员重新提交签名（管理员重置后）"""
-    data = request.get_json()
-    training_id = data.get('training_id')
-    signature_base64 = data.get('signature')
-    signed_name = data.get('name', '').strip()
-    
-    if not training_id or not signature_base64:
-        return jsonify({"success": False, "message": "缺少必要参数"}), 400
-    
-    db = get_supabase()
-    user_id = session['user_id']
-    
-    # 查找该培训的签到记录（必须存在）
-    exist_res = db.table("training_attendances") \
-        .select("id, signature_url") \
-        .eq("training_id", training_id) \
-        .eq("user_id", user_id) \
-        .maybe_single() \
-        .execute()
-    
-    if not exist_res.data:
-        return jsonify({"success": False, "message": "签到记录不存在"}), 404
-    
-    # 检查是否真的需要重新签字（签名已被清空）
-    if exist_res.data.get('signature_url'):
-        return jsonify({"success": False, "message": "签名已存在，无需重新签字"}), 400
-    
-    # 上传新签名（先删除旧文件，再上传，避免 Duplicate 或 update 不兼容）
-    try:
-        public_url = upload_signature(signature_base64, training_id, user_id)
-    except Exception as e:
-        return jsonify({"success": False, "message": "签名保存失败"}), 500
-    
-    # 更新签到记录
-    db.table("training_attendances").update({
-        "signature_url": public_url,
-        "signed_name": signed_name
-    }).eq("id", exist_res.data['id']).execute()
-    
-    return jsonify({"success": True})
-
-@app.route('/api/admin/training/<int:training_id>/country_templates_status')
-@login_required
-@admin_required
-def training_country_templates_status(training_id):
-    """供前端获取国家模板状态（用于一级菜单“表头录入”按钮的禁用状态判断）"""
-    status = get_training_country_templates_status(training_id)
-    return jsonify(status)
-
-@app.route('/api/admin/training/<int:training_id>/country_template', methods=['GET'])
-@login_required
-@admin_required
-def get_training_country_template(training_id):
-    """1. 获取国家模板接口"""
-    country = request.args.get('country')
-    if not country:
-        return jsonify({"error": "缺少 country 参数"}), 400
-    db = get_supabase()
-    # 使用 execute()，不用 maybe_single()
-    res = db.table("training_country_templates")\
-        .select("header_template")\
-        .eq("training_id", training_id)\
-        .eq("country", country)\
-        .execute()
-    if res.data and len(res.data) > 0:
-        template = res.data[0].get('header_template', {})
-    else:
-        template = {}
-    return jsonify({"template": template})
-
-@app.route('/api/admin/training/<int:training_id>/country_template', methods=['POST'])
-@login_required
-@admin_required
-def save_training_country_template(training_id):
-    """2. 保存国家模板接口 保存培训表头模板"""
-    data = request.json
-    country = data.get('country')
-    template = data.get('template')
-    
-    if not training_id:
-        return jsonify({"success": False, "message": "培训ID无效"}), 400
-    
-    if template is None:
-        return jsonify({"success": False, "message": "缺少 template 参数"}), 400
-    
-    db = get_supabase()
-    
-    try:
-        # 情况1：没有指定国家 → 保存到培训主表的 header_template
-        if not country or country == 'null' or country == 'undefined' or country == '':
-            db.table("trainings").update({
-                "header_template": template
-            }).eq("id", training_id).execute()
-            logger.info(f"保存培训主表头: training_id={training_id}")
-            return jsonify({"success": True})
-        
-        # 情况2：指定了国家 → 保存到国家模板表
-        check_res = db.table("training_country_templates")\
-            .select("id")\
-            .eq("training_id", training_id)\
-            .eq("country", country)\
-            .execute()
-        
-        if check_res.data and len(check_res.data) > 0:
-            # 更新现有记录
-            db.table("training_country_templates")\
-                .update({
-                    "header_template": template, 
-                    "updated_at": datetime.now(timezone.utc).isoformat()
-                })\
-                .eq("id", check_res.data[0]['id'])\
-                .execute()
-            logger.info(f"更新国家模板: training_id={training_id}, country={country}")
-        else:
-            # 插入新记录
-            db.table("training_country_templates")\
-                .insert({
-                    "training_id": training_id, 
-                    "country": country, 
-                    "header_template": template
-                })\
-                .execute()
-            logger.info(f"插入国家模板: training_id={training_id}, country={country}")
-        
-        return jsonify({"success": True})
-        
-    except Exception as e:
-        logger.error(f"保存表头失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-@app.route('/admin/training/<int:training_id>/attendance/print')
-@login_required
-@admin_required
-def training_attendance_print(training_id):
-    country = request.args.get('country', '')
-    # 复用签到详情模板，但添加一个打印标志
-    return render_template('admin/list_training_attendance.html', training_id=training_id, country=country, print_mode=True)
-
-def get_attendance_data(training_id, country=''):
-    """
-    获取培训签到数据，供 PDF 生成或其他内部调用使用
-    返回包含 training、attendances、header_template 的字典
-    """
-    db = get_supabase()
-
-    # 1. 获取培训基本信息
-    training_res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
-    if not training_res.data:
-        return None
-    training = training_res.data
-
-    # 2. 获取签到记录（含关联用户信息）
-    att_res = db.table("training_attendances") \
-        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company)") \
-        .eq("training_id", training_id) \
-        .execute()
-
-    att_list = att_res.data or []
-
-    # 按国家过滤（如果有）
-    if country:
-        att_list = [rec for rec in att_list if rec.get('users', {}).get('country') == country]
-
-    # 构建签到列表
-    attendance_list = []
-    for rec in att_list:
-        user = rec.get('users', {})
-        if user is None:
-            user = {}
-        attendance_list.append({
-            "id": rec['id'],
-            "user_id": rec['user_id'],
-            "department": user.get('department', ''),
-            "name_cn": user.get('name_cn', ''),
-            "name_en": user.get('name_en', ''),
-            "employee_id": user.get('employee_id', ''),
-            "signed_name": rec.get('signed_name', ''),
-            "signature_url": rec.get('signature_url', ''),
-            "sign_time": rec.get('sign_time'),
-            "company": user.get('company', ''),
-            "country": user.get('country', '')
-        })
-
-    # 3. 获取表头模板（优先国家模板，其次培训主模板）
-    header_template = None
-    if country:
-        ct_res = db.table("training_country_templates") \
-            .select("header_template") \
-            .eq("training_id", training_id) \
-            .eq("country", country) \
-            .execute()
-        if ct_res.data and len(ct_res.data) > 0:
-            header_template = ct_res.data[0].get('header_template')
-
-    if not header_template:
-        header_template = training.get('header_template', {})
-
-    return {
-        "training": training,
-        "attendances": attendance_list,
-        "header_template": header_template
-    }
-
-@app.route('/admin/training/<int:training_id>/attendance/pdf')
-@login_required
-@admin_required
-def download_training_attendance_pdf(training_id):
-    country = request.args.get('country', '')
-    data = get_attendance_data(training_id, country)
-    if not data:
-        flash("培训不存在", "danger")
-        return redirect(url_for('admin_dashboard'))
-
-    html_content = render_template('admin/attendance_pdf.html',
-                                    training=data['training'],        # ✅ 新增
-                                    header=data['header_template'],
-                                    attendances=data['attendances'])
-
-    # 配置 wkhtmltopdf 路径（根据实际安装位置修改）
-    wkhtmltopdf_path = find_wkhtmltopdf()   # 自动查找（支持环境变量 WKHTMLTOPDF_PATH）
-    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
-    pdf = pdfkit.from_string(html_content, False, configuration=config,
-                             options={
-                                'page-size': 'A4',
-                                'margin-top': '10mm',
-                                'margin-bottom': '10mm',
-                                'margin-left': '10mm',
-                                'margin-right': '10mm',
-                                'encoding': 'UTF-8',
-                                'enable-local-file-access': None,
-                                # 可选：避免因网络图片慢而超时
-                                'javascript-delay': '200',
-                                'no-stop-slow-scripts': None,
-                             })
-    response = make_response(pdf)
-    response.headers['Content-Type'] = 'application/pdf'
-    response.headers['Content-Disposition'] = f'inline; filename=attendance_{training_id}.pdf'
-    return response
-
-# ================= 访谈管理 API =================
-@app.route('/admin/interviews')
-@login_required
-@admin_required
-def admin_interviews_page():
-    """2. 访谈 CRUD 路由 访谈管理一级菜单页面"""
-    return render_template('admin/list_inspection.html')
-
-@app.route('/api/admin/interviews', methods=['GET', 'POST', 'PUT'])
-@login_required
-@admin_required
-def api_admin_interviews():
-    """访谈列表查询、创建、更新"""
-    db = get_supabase()
-    if request.method == 'GET':
-        name = request.args.get('name', '')
-        country = request.args.get('country', '')
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-
-        # 基础查询（分页）
-        query = db.table("interviews").select("*", count="exact").is_("deleted_at", "null")
-        if name:
-            query = query.ilike("title", f"%{name}%")
-        query = query.order("created_at", desc=True)
-        start = (page - 1) * per_page
-        end = start + per_page - 1
-        res = query.range(start, end).execute()
-        total = res.count if hasattr(res, 'count') else len(res.data or [])
-
-        interviews = res.data or []   # 当前页的访谈列表
-
-        # 获取管理员国家权限
-        allowed = get_allowed_countries()
-
-        # 收集当前页所有访谈涉及的用户ID，用于批量查询国家
-        all_user_ids = set()
-        for inv in interviews:
-            user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
-            all_user_ids.update(r['user_id'] for r in (user_res.data or []))
-
-        # 批量查询用户国家（仅当有国家权限限制时）
-        user_country_map = {}
-        if allowed is not None and all_user_ids:
-            users_res = db.table("users").select("id, country").in_("id", list(all_user_ids)).execute()
-            user_country_map = {u['id']: u.get('country') for u in (users_res.data or [])}
-
-        now = datetime.now(timezone.utc)
-        for inv in interviews:
-            # 动态计算状态
-            start_time = inv.get('start_time')
-            end_time = inv.get('end_time')
-            if not start_time or not end_time:
-                inv['status'] = 'draft'
-            else:
-                try:
-                    s = datetime.fromisoformat(start_time)
-                    e = datetime.fromisoformat(end_time)
-                    if now < s:
-                        inv['status'] = 'created'
-                    elif now > e:
-                        inv['status'] = 'closed'
-                    else:
-                        inv['status'] = 'active'
-                except:
-                    inv['status'] = 'draft'
-
-            # 统计去重人数（应用国家权限过滤）
-            user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
-            user_ids = [r['user_id'] for r in (user_res.data or [])]
-            if allowed is not None:
-                filtered_ids = [uid for uid in user_ids if user_country_map.get(uid) in allowed]
-                inv['interviewee_count'] = len(set(filtered_ids))
-            else:
-                inv['interviewee_count'] = len(set(user_ids))
-
-            # 附加考试信息
-            exam_info = {}
-            if inv.get('exam_id'):
-                exam_res = db.table("exams").select("title, country").eq("id", inv['exam_id']).maybe_single().execute()
-                if exam_res.data:
-                    exam_info = exam_res.data
-            inv['exam_title'] = exam_info.get('title', '')
-            inv['country'] = exam_info.get('country', '')
-
-        return jsonify({"data": interviews, "total": total, "page": page, "per_page": per_page})
-
-    elif request.method == 'POST':
-        data = request.json
-        exam_id = data.get('exam_id')
-        title = data.get('title', '')
-        if not title:
-            exam_title = ''
-            if exam_id:
-                exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
-                if exam_res.data:
-                    exam_title = exam_res.data['title']
-            title = f"访谈-{exam_title}" if exam_title else "未命名访谈"
-        question_count = data.get('question_count', 5)
-        reviewer = data.get('reviewer', '')
-        is_draft = data.get('is_draft', False)
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-
-        # ✅ 将本地时间转为 UTC 存储
-        start_time_utc = start_time if start_time else None
-        end_time_utc = end_time if end_time else None
-
-        status = 'draft' if is_draft else 'active'
-        if start_time and end_time:
-            status = 'active'  # 简单处理，后续根据时间自动判定
-
-        user_ids = data.get('user_ids', [])
-        if user_ids:
-            # 校验所有用户均为已注册
-            valid_users = db.table("users").select("id").in_("id", user_ids).eq("user_status", "registered").execute()
-            if len(valid_users.data or []) != len(user_ids):
-                return jsonify({"success": False, "message": "所选考生中包含未注册的用户"}), 400
-
-        interviewee_count = len(user_ids)
-        interview_insert = db.table("interviews").insert({
-            "title": title,
-            "exam_id": exam_id,
-            "created_by": session['user_id'],
-            "reviewer": reviewer,
-            "question_count": question_count,
-            "status": status,
-            "start_time": start_time_utc,       # 存储 UTC 时间
-            "end_time": end_time_utc,           # 存储 UTC 时间
-            "created_at": datetime.now(timezone.utc).isoformat(),
-            "interviewee_count": interviewee_count
-        }).execute()
-        if not interview_insert.data:
-            return jsonify({"success": False, "message": "创建失败"}), 500
-        new_id = interview_insert.data[0]['id']
-
-        # 为选中的学员抽取题目
-        user_ids = data.get('user_ids', [])
-        for uid in user_ids:
-            questions = random_pick_questions(exam_id, question_count)
-            for q in questions:
-                db.table("interview_results").insert({
-                    "interview_id": new_id,
-                    "user_id": uid,
-                    "question_id": q['id']
-                }).execute()
-        return jsonify({"success": True, "id": new_id})
-
-    elif request.method == 'PUT':
-        data = request.json
-        inv_id = data.get('id')
-        db = get_supabase()
-        # 获取原访谈
-        orig_res = db.table("interviews").select("*").eq("id", inv_id).maybe_single().execute()
-        if not orig_res.data:
-            return jsonify({"success": False, "message": "访谈不存在"}), 404
-        orig = orig_res.data
-
-        # 更新基本字段
-        update_data = {}
-        for field in ['start_time', 'end_time', 'reviewer', 'exam_id', 'question_count', 'title']:
-            if field in data:
-                val = data[field]
-                if field in ('start_time', 'end_time') and val:
-                    val = val     # ✅ 转为 UTC
-                update_data[field] = val
-        if update_data:
-            db.table("interviews").update(update_data).eq("id", inv_id).execute()
-            logger.info(f"访谈 {inv_id} 字段已更新: {list(update_data.keys())}")
-
-        # 重新抽题（无论状态，只要提供了 user_ids 就更新人员题目）
-        if 'user_ids' in data:
-            # 删除该访谈的所有现有题目
-            db.table("interview_results").delete().eq("interview_id", inv_id).execute()
-            logger.info(f"已清除访谈 {inv_id} 的旧题目")
-            # 使用最新的 exam_id 和 question_count
-            exam_id = data.get('exam_id', orig['exam_id'])
-            question_count = data.get('question_count', orig['question_count'])
-            for uid in data['user_ids']:
-                questions = random_pick_questions(exam_id, question_count)
-                for q in questions:
-                    db.table("interview_results").insert({
-                        "interview_id": inv_id,
-                        "user_id": uid,
-                        "question_id": q['id']
-                    }).execute()
-            logger.info(f"已为 {len(data['user_ids'])} 名学员重新抽题")
-        
-        return jsonify({"success": True})
-
-@app.route('/api/admin/interview/<int:interview_id>', methods=['GET'])
-@login_required
-@admin_required
-def api_get_interview(interview_id):
-    """获取某个访谈的详细信息"""
-    db = get_supabase()
-    inv = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
-    if not inv.data:
-        return jsonify({"error": "访谈不存在"}), 404
-    # 获取已分配的学员ID
-    user_ids_res = db.table("interview_results").select("user_id").eq("interview_id", interview_id).execute()
-    user_ids = list(set([r['user_id'] for r in (user_ids_res.data or [])]))
-    inv.data['user_ids'] = user_ids
-    return jsonify(inv.data)
-
-@app.route('/api/admin/interview/<int:interview_id>/user_ids')
-@login_required
-@admin_required
-def get_interview_user_ids(interview_id):
-    """获取某个访谈的所有用户ID"""
-    db = get_supabase()
-    res = db.table("interview_results").select("user_id").eq("interview_id", interview_id).execute()
-    ids = list(set(r['user_id'] for r in (res.data or [])))
-    return jsonify({"user_ids": ids})
-
-@app.route('/admin/interview/<int:interview_id>')
-@login_required
-@admin_required
-def admin_interview_detail_page(interview_id):
-    """3. 访谈二级菜单数据接口 访谈详情页面"""
-    return render_template('admin/list_inspection_details.html', interview_id=interview_id)
-
-@app.route('/api/admin/interview/<int:interview_id>/results')
-@login_required
-@admin_required
-def api_interview_results(interview_id):
-    """获取某个访谈的所有结果，支持筛选"""
-    db = get_supabase()
-    search = request.args.get('search', '')
-    country = request.args.get('country', '')
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-
-    # 基本信息
-    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
-    if not inv_res.data:
-        return jsonify({"error": "访谈不存在"}), 404
-    interview = inv_res.data
-
-    # 查询访谈结果并关联用户信息
-    query = db.table("interview_results").select("*, users(name_cn, name_en, country, wh_id)").eq("interview_id", interview_id)
-    if country:
-        query = query.eq("users.country", country)
-    if search:
-        query = query.or_(f"users.name_cn.ilike.%{search}%,users.name_en.ilike.%{search}%")
-    
-    # 分页
-    start = (page - 1) * per_page
-    end = start + per_page - 1
-    res = query.range(start, end).order("user_id").execute()
-    total = res.count if hasattr(res, 'count') else len(res.data or [])
-
-    # 组装数据：按用户聚合
-    user_results = {}
-    for row in (res.data or []):
-        uid = row['user_id']
-        if uid not in user_results:
-            user_info = row.get('users', {})
-            user_results[uid] = {
-                "user_id": uid,
-                "name": user_info.get('name_cn') or user_info.get('name_en', ''),
-                "country": user_info.get('country', ''),
-                "wh_id": user_info.get('wh_id', ''),
-                "results": [],
-                "submitted_at": None
-            }
-        user_results[uid]["results"].append({
-            "question_id": row['question_id'],
-            "answer": row['answer'],
-            "is_correct": row['is_correct'],
-            "feedback": row['feedback']
-        })
-        # 提交时间取该用户最近一条有答案的记录时间
-        if row.get('submitted_at') and (not user_results[uid]["submitted_at"] or row['submitted_at'] > user_results[uid]["submitted_at"]):
-            user_results[uid]["submitted_at"] = row['submitted_at']
-
-    # 转换为列表并计算答对数量
-    result_list = []
-    for uid, data in user_results.items():
-        correct_count = sum(1 for r in data['results'] if r['is_correct'])
-        total_questions = len(data['results'])
-        result_list.append({
-            "user_id": uid,
-            "name": data['name'],
-            "country": data['country'],
-            "wh_id": data['wh_id'],
-            "total_questions": total_questions,
-            "correct_count": correct_count,
-            "submitted_at": data['submitted_at'],
-            "feedback": "",  # 可后续合并
-            "results": data['results']
-        })
-
-    return jsonify({
-        "interview": interview,
-        "results": result_list,
-        "total": total,
-        "page": page,
-        "per_page": per_page
-    })
-
-@app.route('/api/admin/interview/<int:interview_id>/resample/<user_id>', methods=['POST'])
-@login_required
-@admin_required
-def resample_interview(interview_id, user_id):
-    """4. 重新访谈接口 重新为指定用户抽题，保留历史记录"""
-    db = get_supabase()
-    inv_res = db.table("interviews").select("exam_id, question_count").eq("id", interview_id).maybe_single().execute()
-    if not inv_res.data:
-        return jsonify({"success": False, "message": "访谈不存在"}), 404
-    exam_id = inv_res.data['exam_id']
-    count = inv_res.data['question_count']
-    
-    # 删除该用户在此访谈中的旧题目（仅删除未作答的？根据需求保留历史记录，这里简单起见先删除所有旧记录再插入新题）
-    db.table("interview_results").delete().eq("interview_id", interview_id).eq("user_id", user_id).execute()
-    
-    questions = random_pick_questions(exam_id, count)
-    for q in questions:
-        db.table("interview_results").insert({
-            "interview_id": interview_id,
-            "user_id": user_id,
-            "question_id": q['id']
-        }).execute()
-    return jsonify({"success": True})
-
-@app.route('/api/admin/interview/preview', methods=['POST'])
-@login_required
-@admin_required
-def interview_preview():
-    """5. 预览接口（用于模态框 → 预览页） 预览访谈：返回每个被选中学员的抽题情况"""
-    db = get_supabase()
-    data = request.json
-    exam_id = data.get('exam_id')
-    
-    # 检查题库是否存在
-    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
-    if not q_check.data:
-        return jsonify({"error": "该考试没有题目"}), 400
-
-    user_ids = data.get('user_ids', [])
-    question_count = data.get('question_count', 5)
-
-    if not exam_id:
-        return jsonify({"error": "exam_id 不能为空"}), 400
-
-    logger.info(f"预览访谈: exam_id={exam_id}, users={len(user_ids)}, count={question_count}")
-    
-    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
-    exam_title = exam_res.data['title'] if exam_res.data else ''
-    
-    preview = []
-    for uid in user_ids:
-        user_res = db.table("users").select("name_cn, name_en").eq("id", uid).maybe_single().execute()
-        user_name = ''
-        if user_res.data:
-            user_name = user_res.data.get('name_cn') or user_res.data.get('name_en', '')
-        # 随机抽取题目
-        questions = random_pick_questions(exam_id, question_count)
-        # 处理题目数据，确保 options 为字典，并筛选必要字段
-        questions_light = []
-        for q in questions:
-            # 解析 options（可能为字符串 JSON）
-            opts = q.get('options', {})
-            if isinstance(opts, str):
-                try:
-                    opts = json.loads(opts)
-                except:
-                    opts = {}
-            # 过滤空选项
-            if opts:
-                opts = {k: v for k, v in opts.items() if v and v.strip()}
-            questions_light.append({
-                'num': q.get('num'),
-                'content': q.get('content_cn') or q.get('content') or q.get('content_raw', '无题目内容'),
-                'type': q.get('type', 'single'),
-                'options': opts   # 前端可能需要展示选项
-            })
-        preview.append({
-            "user_id": uid,
-            "user_name": user_name,
-            "questions": questions_light
-        })
-    
-    return jsonify({"exam_title": exam_title, "preview": preview})
-
-@app.route('/api/my/interviews')
-@login_required
-def my_interviews():
-    """① 后端新增接口：获取学员的活跃访谈"""
-    user_id = session['user_id']
-    db = get_supabase()
-    res = db.table("interview_results").select("interview_id").eq("user_id", user_id).execute()
-    interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
-    if not interview_ids:
-        return jsonify([])
-    inv_res = db.table("interviews").select("*").in_("id", interview_ids).execute()
-    now = datetime.now(timezone.utc).isoformat()
-    active = []
-    for inv in (inv_res.data or []):
-        start = inv.get('start_time')
-        end = inv.get('end_time')
-        if not start or not end or not (start < now < end):
-            continue   # 不在有效期内的不显示
-        # 检查是否全部作答
-        answers = db.table("interview_results").select("answer").eq("interview_id", inv['id']).eq("user_id", user_id).execute()
-        all_answered = all(row.get('answer') for row in (answers.data or []))
-        inv['is_completed'] = all_answered
-        active.append(inv)
-    return jsonify(active)
-
-@app.route('/interview/take/<int:interview_id>')
-@login_required
-def take_interview(interview_id):
-    """① 后端新增接口：学员进入访谈，检查是否在名单中，获取访谈基本信息和题目"""
-    user_id = session['user_id']
-    db = get_supabase()
-    # 检查用户是否属于该访谈
-    result = db.table("interview_results").select("interview_id").eq("interview_id", interview_id).eq("user_id", user_id).limit(1).execute()
-    if not result.data:
-        flash("您不在本次访谈名单中", "danger")
-        return redirect(url_for('dashboard'))
-
-    inv = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
-    if not inv.data:
-        flash("访谈不存在", "danger")
-        return redirect(url_for('dashboard'))
-
-    questions_res = db.table("interview_results").select("*, questions(*)").eq("interview_id", interview_id).eq("user_id", user_id).execute()
-    questions = []
-    for row in (questions_res.data or []):
-        q = row.get('questions', {})
-        # 解析 options
-        opts = q.get('options', {})
-        if isinstance(opts, str):
-            try:
-                q['options'] = json.loads(opts)
-            except:
-                q['options'] = {}
-        # 判断题默认选项
-        if q.get('type') == 'judge' and (not q['options']):
-            q['options'] = {"A": "正确 True", "B": "错误 False"}
-
-        # 确保选项是字典
-        if not isinstance(q['options'], dict):
-            q['options'] = {}
-
-        q['interview_result_id'] = row['id']
-        # 确保答案不是 None，避免模板错误
-        q['user_answer'] = row.get('answer') or ''
-        questions.append(q)
-
-    # ✅ 按 num 排序
-    questions.sort(key=lambda x: x.get('num', 0))
-    for idx, q in enumerate(questions, 1):
-        q['num'] = idx
-        if q.get('options'):
-            q['options'] = {k: v for k, v in q['options'].items() if v.strip()}
-        else:
-            q['options'] = {}
-
-    return render_template('exam/take_interview.html', interview=inv.data, questions=questions)
-
-@app.route('/api/interview/<int:interview_id>/submit', methods=['POST'])
-@login_required
-def submit_interview(interview_id):
-    """② 后端新增接口：提交学员的答案"""
-    user_id = session['user_id']
-    answers = request.json.get('answers', {})  # {result_id: answer}
-    db = get_supabase()
-    for rid, ans in answers.items():
-        # 获取关联题目 ID
-        result = db.table("interview_results").select("question_id").eq("id", rid).eq("user_id", user_id).maybe_single().execute()
-        if not result.data:
-            continue
-        qid = result.data['question_id']
-        # 获取标准答案和题型
-        q = db.table("questions").select("answer, type").eq("id", qid).maybe_single().execute()
-        is_correct = False
-        if q.data:
-            correct_ans = q.data['answer'].upper()
-            q_type = q.data['type']
-            if q_type == 'multi':
-                u_set = set(ans.upper().replace(' ', ''))
-                c_set = set(correct_ans.replace(' ', ''))
-                is_correct = (u_set == c_set)
-            elif q_type == 'judge':
-                norm = ans.upper()
-                if norm in ('A', 'T', '√', '正确', '对'): norm = 'T'
-                elif norm in ('B', 'F', '×', '错误', '错'): norm = 'F'
-                correct_std = correct_ans.replace('√', 'T').replace('×', 'F')
-                is_correct = (norm == correct_std)
-            else:
-                is_correct = (ans.strip().upper() == correct_ans)
-        db.table("interview_results").update({
-            "answer": ans,
-            "is_correct": is_correct,
-            "submitted_at": datetime.now(timezone.utc).isoformat()
-        }).eq("id", rid).eq("user_id", user_id).execute()
-    return jsonify({"success": True, "message": "您的回答已提交"})
-
-@app.route('/api/interview/<int:interview_id>/submit', methods=['POST'])
-@login_required
-def submit_interview_answer(interview_id):
-    """② 后端新增接口：提交学员的答案"""
-    user_id = session['user_id']
-    answers = request.json.get('answers', {})  # {question_id: answer}
-    db = get_supabase()
-    for qid, ans in answers.items():
-        db.table("interview_results").update({"answer": ans, "submitted_at": datetime.now(timezone.utc).isoformat()}).eq("interview_id", interview_id).eq("user_id", user_id).eq("question_id", qid).execute()
-    return jsonify({"success": True})
-
-@app.route('/admin/interview/<int:interview_id>/details')
-@login_required
-@admin_required
-def admin_interview_details_page(interview_id):
-    """③ 后端新增接口：管理员查看访谈详情"""
-    return render_template('admin/list_inspection_details.html', interview_id=interview_id)
-
-@app.route('/api/admin/interview/<int:interview_id>/details')
-@login_required
-@admin_required
-def api_interview_details(interview_id):
-    """获取访谈详情数据（支持筛选和分页）"""
-    db = get_supabase()
-    search = request.args.get('search', '')
-    country = request.args.get('country', '')
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-
-    # 获取访谈信息
-    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
-    if not inv_res.data:
-        return jsonify({"error": "访谈不存在"}), 404
-    interview = inv_res.data
-
-    # 获取考试标题
-    exam_title = ''
-    if interview.get('exam_id'):
-        exam_res = db.table("exams").select("title").eq("id", interview['exam_id']).maybe_single().execute()
-        if exam_res.data:
-            exam_title = exam_res.data['title']
-
-    # 查询该访谈的所有答题记录（按用户聚合）
-    query = db.table("interview_results").select("*").eq("interview_id", interview_id)
-    # 先获取所有记录，然后在 Python 中处理筛选和聚合
-    all_res = query.execute()
-    all_data = all_res.data or []
-
-    # ===== 国家权限过滤 =====
-    allowed = get_allowed_countries()
-    if allowed is not None:
-        if not allowed:
-            # 没有允许的国家，直接返回空
-            return jsonify({
-                "interview": {"id": interview_id, "title": interview.get('title'), "exam_title": exam_title, "reviewer": interview.get('reviewer', '')},
-                "data": [],
-                "total": 0,
-                "page": page,
-                "per_page": per_page
-            })
-        # 收集所有 user_id
-        all_user_ids = list(set(r['user_id'] for r in all_data))
-        # 查询这些用户的国家
-        users_country_res = db.table("users").select("id, country").in_("id", all_user_ids).execute()
-        allowed_ids = {u['id'] for u in (users_country_res.data or []) if u.get('country') in allowed}
-        # 过滤数据
-        all_data = [r for r in all_data if r['user_id'] in allowed_ids]
-    # ======================
-    # 批量获取用户信息
-    user_ids = list(set(r['user_id'] for r in all_data))
-    users_map = {}
-    if user_ids:
-        users_res = db.table("users").select("id, name_cn, name_en, country, wh_id, department").in_("id", user_ids).execute()
-        for u in (users_res.data or []):
-            users_map[u['id']] = u
-
-    # 按用户聚合
-    user_results = {}
-    for row in all_data:
-        uid = row['user_id']
-        user_info = users_map.get(uid, {})
-        # 筛选：姓名搜索
-        if search:
-            name = user_info.get('name_cn') or user_info.get('name_en', '')
-            if search.lower() not in name.lower():
-                continue
-        # 筛选：国家
-        if country and user_info.get('country') != country:
-            continue
-
-        if uid not in user_results:
-            user_results[uid] = {
-                "user_id": uid,
-                "name": user_info.get('name_cn') or user_info.get('name_en', ''),
-                "country": user_info.get('country', ''),
-                "wh_id": user_info.get('wh_id', ''),
-                "department": user_info.get('department', ''),
-                "submitted_at": None,
-                "total_questions": 0,
-                "correct_count": 0,
-                "feedback": "",   # 可暂合并所有 feedback
-                "reviewer": interview.get('reviewer', ''),
-                "results": []
-            }
-        user_results[uid]["total_questions"] += 1
-        if row.get('is_correct'):
-            user_results[uid]["correct_count"] += 1
-        if row.get('submitted_at') and (not user_results[uid]["submitted_at"] or row['submitted_at'] > user_results[uid]["submitted_at"]):
-            user_results[uid]["submitted_at"] = row['submitted_at']
-
-    # 转换为列表
-    detail_list = []
-    for uid, data in user_results.items():
-        detail_list.append({
-            "user_id": data["user_id"],
-            "name": data["name"],
-            "country": data["country"],
-            "wh_id": data["wh_id"],
-            "department": data["department"],
-            "submitted_at": data["submitted_at"],
-            "reviewer": data["reviewer"],
-            "total_questions": data["total_questions"],
-            "correct_count": data["correct_count"],
-            "feedback": data["feedback"],
-            "has_submitted": bool(data["submitted_at"])
-        })
-
-    # 分页
-    total = len(detail_list)
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated = detail_list[start:end]
-
-    return jsonify({
-        "interview": {
-            "id": interview_id,
-            "title": interview.get('title'),
-            "exam_title": exam_title,
-            "reviewer": interview.get('reviewer', '')
-        },
-        "data": paginated,
-        "total": total,
-        "page": page,
-        "per_page": per_page
-    })
-
-@app.route('/api/admin/interview/<int:interview_id>/user/<user_id>/answers')
-@login_required
-@admin_required
-def get_interview_user_answers(interview_id, user_id):
-    """获取指定访谈中指定用户的答题详情"""
-    db = get_supabase()
-    # 获取访谈信息
-    inv_res = db.table("interviews").select("id, title").eq("id", interview_id).maybe_single().execute()
-    if not inv_res.data:
-        return jsonify({"error": "访谈不存在"}), 404
-    # 获取该用户的答题记录，关联题目
-    results = db.table("interview_results").select("*, questions(*)") \
-        .eq("interview_id", interview_id).eq("user_id", user_id).execute()
-    data = []
-    for row in (results.data or []):
-        q = row.get('questions', {})
-        # 解析 options
-        opts = q.get('options', {})
-        if isinstance(opts, str):
-            try:
-                q['options'] = json.loads(opts)
-            except:
-                q['options'] = {}
-        if q.get('type') == 'judge' and not q['options']:
-            q['options'] = {"A": "正确 True", "B": "错误 False"}
-        data.append({
-            "question_num": q.get('num'),
-            "question_content": q.get('content_cn') or q.get('content') or q.get('content_raw', ''),
-            "question_type": q.get('type'),
-            "options": q.get('options', {}),
-            "user_answer": row.get('answer') or '',
-            "is_correct": row.get('is_correct'),
-            "result_id": row['id']
-        })
-    # 按题目编号排序
-    data.sort(key=lambda x: x.get('question_num', 0))
-    return jsonify({"answers": data})
-
 #----------1. 用户管理 API---------
 # ================= 用户管理 API =================
 def can_modify_user(target_user, current_user, action='edit'):
@@ -5254,7 +4074,7 @@ def api_admin_exam_scores(exam_id):
     per_page = request.args.get('per_page', 20, type=int)
 
     # 1. 获取该考试的所有成绩记录
-    query = db.table("exam_results").select("*").eq("exam_id", exam_id)
+    query = db.table("exam_results").select("*").eq("exam_id", exam_id).is_("deleted_at", "null")
     if submit_method:
         query = query.eq("submit_method", submit_method)
     results_all = query.execute().data or []
@@ -5542,9 +4362,675 @@ def search_warehouses():
             seen.add(label)
             suggestions.append(label)
     return jsonify(suggestions[:10])
+
+# 添加到 app.py - 考试成绩删除
+@app.route('/api/admin/exam/result/<int:result_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_delete_exam_result(result_id):
+    """删除考试成绩记录（软删除，保留审计日志）"""
+    db = get_supabase()
+    user_id = session['user_id']
     
+    # 1. 先获取成绩记录
+    result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
+    if not result_res.data:
+        return jsonify({"success": False, "message": "成绩记录不存在"}), 404
+    
+    result = result_res.data[0]
+    exam_id = result.get('exam_id')
+    
+    # 2. 再获取考试信息（单独查询，不使用关联）
+    exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
+    exam_country = exam_res.data.get('country') if exam_res.data else None
+    
+    # 3. 权限检查
+    allowed = get_admin_allowed_countries()
+    if allowed is not None and exam_country not in allowed:
+        return jsonify({"success": False, "message": "无权删除此考试成绩"}), 403
+    
+    try:
+        # 4. 软删除
+        db.table("exam_results").update({
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": user_id
+        }).eq("id", result_id).execute()
+        
+        # 5. 同步更新 user_exam_status 表，允许重新考试
+        db.table("user_exam_status").update({
+            "is_submitted": False,
+            "reset_at": datetime.now(timezone.utc).isoformat(),
+            "submitted_at": None
+        }).eq("user_id", result['user_id']).eq("exam_id", exam_id).execute()
+        
+        logger.info(f"考试成绩已删除: result_id={result_id}, 操作人={user_id}")
+        return jsonify({"success": True, "message": "成绩记录已删除，考生可重新考试"})
+    except Exception as e:
+        logger.error(f"删除成绩记录失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/exam/result/batch_delete', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_delete_exam_results():
+    """批量删除考试成绩记录（支持软删除和永久删除）"""
+    data = request.json
+    result_ids = data.get('ids', [])
+    delete_type = data.get('delete_type', 'soft')  # 'soft' 或 'hard'
+    
+    if not result_ids:
+        return jsonify({"success": False, "message": "请选择要删除的成绩记录"}), 400
+    
+    db = get_supabase()
+    user_id = session['user_id']
+    success_count = 0
+    fail_count = 0
+    errors = []
+    
+    allowed = get_admin_allowed_countries()
+    
+    for result_id in result_ids:
+        try:
+            # 获取成绩记录
+            result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
+            if not result_res.data:
+                fail_count += 1
+                errors.append(f"记录 {result_id} 不存在")
+                continue
+            
+            result = result_res.data[0]
+            exam_id = result.get('exam_id')
+            
+            # 获取考试国家
+            exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
+            exam_country = exam_res.data.get('country') if exam_res.data else None
+            
+            # 权限检查
+            if allowed is not None and exam_country not in allowed:
+                fail_count += 1
+                errors.append(f"记录 {result_id}: 无权限删除")
+                continue
+            
+            if delete_type == 'hard':
+                # 永久删除
+                db.table("exam_results").delete().eq("id", result_id).execute()
+            else:
+                # 软删除
+                db.table("exam_results").update({
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": user_id
+                }).eq("id", result_id).execute()
+                
+                # 重置考试状态（仅软删除时）
+                db.table("user_exam_status").update({
+                    "is_submitted": False,
+                    "reset_at": datetime.now(timezone.utc).isoformat(),
+                    "submitted_at": None
+                }).eq("user_id", result['user_id']).eq("exam_id", exam_id).execute()
+            
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            errors.append(f"记录 {result_id}: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "errors": errors[:10]
+    })
+
 #----------3. 培训签到管理 API（类似考试清单，复用现有逻辑）---------
 # ================= 管理员培训管理路由 =================
+# ================= 培训签到核心 API =================
+def upload_signature(signature_base64, training_id, user_id):
+    """共用统一的签名上传函数"""
+    try:
+        header, encoded = signature_base64.split(',', 1)
+        img_data = base64.b64decode(encoded)
+        storage_path = f"signatures/{training_id}/{user_id}.png"
+        
+        # 使用 service_role key 创建客户端
+        storage_client = create_client(
+            Config.SUPABASE_URL,
+            os.environ.get('SUPABASE_SERVICE_KEY', Config.SUPABASE_KEY)
+        )
+        supabase_storage = storage_client.storage.from_("signatures")
+        
+        # 先删除旧文件（避免覆盖权限问题）
+        try:
+            supabase_storage.remove([storage_path])
+            logger.info(f"已删除旧签名: {storage_path}")
+        except Exception as e:
+            logger.debug(f"删除旧签名（可能不存在）: {e}")
+        
+        # 上传新文件
+        supabase_storage.upload(storage_path, img_data, {"content-type": "image/png"})
+        public_url = supabase_storage.get_public_url(storage_path)
+        logger.info(f"签名上传成功: {public_url}")
+        return public_url
+        
+    except Exception as e:
+        logger.error(f"上传签名失败: {e}")
+        raise e
+
+@app.route('/api/trainings/available')
+@login_required
+def api_available_trainings():
+    """获取当前用户可签到的培训列表（显示有效期内的所有培训，包括未开始的）"""
+    db = get_supabase()
+    user_id = session['user_id']
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # 查询所有激活的培训
+    trainings_res = db.table("trainings") \
+        .select("*") \
+        .eq("is_active", True) \
+        .execute()
+
+    trainings = trainings_res.data or []
+    
+    # 查询用户已签到记录
+    att_res = db.table("training_attendances") \
+        .select("id, training_id, sign_time, signed_name, signature_url") \
+        .eq("user_id", user_id) \
+        .execute()
+    signed_dict = {a['training_id']: a for a in (att_res.data or [])}
+    
+    result = []
+    for t in trainings:
+        start = t.get('start_time')
+        end = t.get('end_time')
+        
+        # 跳过没有有效期的培训
+        if not start or not end:
+            continue
+        
+        signed_info = signed_dict.get(t['id'])
+        signed = signed_info is not None
+        needs_resign = False
+        if signed:
+            # 如果已签到但签名URL为空，则需要重新签字
+            if not signed_info.get('signature_url'):
+                needs_resign = True
+        
+        # ✅ 判断培训状态
+        is_future = now < start      # 未开始（未来）
+        is_active = start <= now <= end  # 进行中
+        is_expired = now > end       # 已过期
+        
+        # ✅ 显示条件：进行中 或 未开始（未来）都显示，已过期的不显示
+        if is_expired:
+            continue
+        
+        # 确定状态文本和按钮状态
+        if is_future:
+            status_text = "未开始"
+            status_badge = "bg-secondary"
+            can_sign = False
+            button_html = f'<button class="btn btn-secondary" disabled><span data-i18n="not_started">未开始</span></button>'
+        elif is_active:
+            if signed and not needs_resign:
+                status_text = "已签到"
+                status_badge = "bg-success"
+                can_sign = False
+                button_html = f'<button class="btn btn-success" disabled><span data-i18n="signed">已签到</span></button>'
+            else:
+                status_text = "待签到" if not signed else "需重新签名"
+                status_badge = "bg-warning text-dark"
+                can_sign = True
+                button_class = "btn-warning resign-btn" if needs_resign else "btn-primary sign-btn"
+                button_text = "重新签名" if needs_resign else "立即签到"
+                button_html = f'<button class="btn {button_class}" data-id="{t["id"]}">{button_text}</button>'
+        else:
+            # 已过期（理论上不会到这里，因为上面已过滤）
+            continue
+        
+        result.append({
+            "id": t['id'],
+            "name": t['name'],
+            "start_time": t['start_time'],
+            "end_time": t['end_time'],
+            "signed": signed,
+            "sign_time": signed_info['sign_time'] if signed_info else None,
+            "signed_name": signed_info['signed_name'] if signed_info else None,
+            "needs_resign": needs_resign,
+            "status": status_text,           # ✅ 新增状态字段
+            "is_future": is_future,          # ✅ 是否未开始
+            "is_active": is_active,          # ✅ 是否进行中
+            "button_html": button_html       # ✅ 预生成的按钮HTML
+        })
+    
+    return jsonify(result)
+
+@app.route('/api/training/sign', methods=['POST'])
+@login_required
+def api_training_sign():
+    """提交手写签名和姓名"""
+    data = request.get_json()
+    training_id = data.get('training_id')
+    signature_base64 = data.get('signature')   # 格式: "data:image/png;base64,xxxx"
+    signed_name = data.get('name', '').strip()
+    
+    if not training_id or not signature_base64:
+        return jsonify({"success": False, "message": "缺少必要参数"}), 400
+    
+    db = get_supabase()
+    user_id = session['user_id']
+
+    # 检查用户是否已注册且激活
+    user_res = db.table("users").select("is_active, user_status").eq("id", user_id).maybe_single().execute()
+    if not user_res.data or not user_res.data.get('is_active') or user_res.data.get('user_status') != 'registered':
+        return jsonify({"success": False, "message": "用户未完成注册"}), 400
+
+    # 检查是否已签到
+    try:
+        exist_res = db.table("training_attendances") \
+            .select("id") \
+            .eq("training_id", training_id) \
+            .eq("user_id", user_id) \
+            .maybe_single() \
+            .execute()
+        # 防御性判断
+        if exist_res is not None and hasattr(exist_res, 'data') and exist_res.data:
+            return jsonify({"success": False, "message": "您已签到过本培训"}), 400
+    except Exception as e:
+        logger.error(f"查询签到记录失败: {e}")
+        return jsonify({"success": False, "message": "签到检查失败"}), 500
+        
+    # 检查培训是否在有效期内
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        training_res = db.table("trainings") \
+            .select("start_time, end_time") \
+            .eq("id", training_id) \
+            .maybe_single() \
+            .execute()
+        if training_res is None or not hasattr(training_res, 'data') or not training_res.data:
+            return jsonify({"success": False, "message": "培训不存在"}), 404
+        training = training_res.data
+        if now < training['start_time']:
+            return jsonify({"success": False, "message": "签到尚未开始"}), 400
+        if now > training['end_time']:
+            return jsonify({"success": False, "message": "签到已结束"}), 400
+    except Exception as e:
+        logger.error(f"查询培训信息失败: {e}")
+        return jsonify({"success": False, "message": "培训验证失败"}), 500
+    
+    # 保存签名图片到 Supabase Storage
+    try:
+        public_url = upload_signature(signature_base64, training_id, user_id)
+    except Exception as e:
+        return jsonify({"success": False, "message": "签名保存失败"}), 500
+    
+    # 插入签到记录
+    try:
+        db.table("training_attendances").insert({
+            "training_id": training_id,
+            "user_id": user_id,
+            "signature_url": public_url,
+            "signed_name": signed_name,
+            "sign_time": datetime.now(timezone.utc).isoformat()
+        }).execute()
+    except Exception as e:
+        logger.error(f"保存签到记录失败: {e}")
+        return jsonify({"success": False, "message": "数据保存失败"}), 500
+    
+    return jsonify({"success": True, "sign_time": datetime.now(timezone.utc).isoformat()})
+
+@app.route('/api/training/attendance/<int:training_id>')
+@login_required
+@admin_required
+def api_training_attendance(training_id):
+    db = get_supabase()
+    country = request.args.get('country', '')
+
+    # ✅ 获取当前管理员的权限范围
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取培训基本信息
+    training_res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
+    if not training_res.data:
+        return jsonify({"error": "培训不存在"}), 404
+    training = training_res.data
+    
+    # ✅ 权限检查：培训本身的国家必须在允许范围内
+    training_country = training.get('country')
+    if allowed_countries is not None:
+        if not allowed_countries:
+            return jsonify({"attendances": [], "training": training, "header_template": {}})
+        if training_country and training_country not in allowed_countries:
+            # 培训不在权限范围内，返回空数据
+            return jsonify({"attendances": [], "training": training, "header_template": {}})
+    
+    # 签到记录查询
+    att_res = db.table("training_attendances") \
+        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company)") \
+        .eq("training_id", training_id) \
+        .execute()
+
+    att_list = att_res.data or []
+ 
+    # ✅ 按国家权限过滤签到记录（基于用户的国家）
+    if allowed_countries is not None:
+        if not allowed_countries:
+            att_list = []
+        else:
+            filtered_list = []
+            for rec in att_list:
+                user = rec.get('users', {})
+                user_country = user.get('country')
+                if user_country in allowed_countries:
+                    filtered_list.append(rec)
+            att_list = filtered_list
+    
+    # 手动按国家过滤
+    if country:
+        att_list = [rec for rec in att_list if rec.get('users', {}).get('country') == country]
+
+    attendance_list = []
+    for rec in att_list or []:
+        user = rec.get('users', {})
+        # 防止 user 为 None
+        if user is None:
+            user = {}
+
+        attendance_list.append({
+            "id": rec['id'],  # ✅ 新增签到记录ID
+            "user_id": rec['user_id'],
+            "department": user.get('department', ''),
+            "name_cn": user.get('name_cn', ''),
+            "name_en": user.get('name_en', ''),
+            "employee_id": user.get('employee_id', ''),
+            "signed_name": rec.get('signed_name', ''),
+            "signature_url": rec.get('signature_url', ''),
+            "sign_time": rec.get('sign_time'),
+            "company": user.get('company', ''),
+            "country": user.get('country', '')
+        })
+
+    # 获取表头模板：优先取国家模板，否则取培训主模板
+    header_template = None
+    if country:
+        # 查询国家模板
+        ct_res = db.table("training_country_templates")\
+            .select("header_template")\
+            .eq("training_id", training_id)\
+            .eq("country", country)\
+            .execute()
+        if ct_res.data and len(ct_res.data) > 0:
+            header_template = ct_res.data[0].get('header_template')
+    if not header_template:
+        header_template = training.get('header_template', {})
+
+    return jsonify({
+        "training": training,
+        "attendances": attendance_list,
+        "header_template": header_template
+    })
+
+@app.route('/api/admin/training/attendance/<int:attendance_id>/reset-signature', methods=['POST'])
+@login_required
+@admin_required
+def admin_reset_signature(attendance_id):
+    """管理员清除指定签到记录的签名，推送重新签字到学员端"""
+    db = get_supabase()
+    # 获取原记录，保留签到时间
+    att_res = db.table("training_attendances").select("*").eq("id", attendance_id).maybe_single().execute()
+    if not att_res.data:
+        return jsonify({"success": False, "message": "签到记录不存在"}), 404
+    
+    # 清空签名相关字段，保留 sign_time
+    db.table("training_attendances").update({
+        "signature_url": None,
+        "signed_name": None
+    }).eq("id", attendance_id).execute()
+    
+    logger.info(f"管理员重置签到 {attendance_id} 的签名")
+    return jsonify({"success": True})
+
+@app.route('/api/training/resign', methods=['POST'])
+@login_required
+def api_resign_training():
+    """学员重新提交签名（管理员重置后）"""
+    data = request.get_json()
+    training_id = data.get('training_id')
+    signature_base64 = data.get('signature')
+    signed_name = data.get('name', '').strip()
+    
+    if not training_id or not signature_base64:
+        return jsonify({"success": False, "message": "缺少必要参数"}), 400
+    
+    db = get_supabase()
+    user_id = session['user_id']
+    
+    # 查找该培训的签到记录（必须存在）
+    exist_res = db.table("training_attendances") \
+        .select("id, signature_url") \
+        .eq("training_id", training_id) \
+        .eq("user_id", user_id) \
+        .maybe_single() \
+        .execute()
+    
+    if not exist_res.data:
+        return jsonify({"success": False, "message": "签到记录不存在"}), 404
+    
+    # 检查是否真的需要重新签字（签名已被清空）
+    if exist_res.data.get('signature_url'):
+        return jsonify({"success": False, "message": "签名已存在，无需重新签字"}), 400
+    
+    # 上传新签名（先删除旧文件，再上传，避免 Duplicate 或 update 不兼容）
+    try:
+        public_url = upload_signature(signature_base64, training_id, user_id)
+    except Exception as e:
+        return jsonify({"success": False, "message": "签名保存失败"}), 500
+    
+    # 更新签到记录
+    db.table("training_attendances").update({
+        "signature_url": public_url,
+        "signed_name": signed_name
+    }).eq("id", exist_res.data['id']).execute()
+    
+    return jsonify({"success": True})
+
+@app.route('/api/admin/training/<int:training_id>/country_templates_status')
+@login_required
+@admin_required
+def training_country_templates_status(training_id):
+    """供前端获取国家模板状态（用于一级菜单“表头录入”按钮的禁用状态判断）"""
+    status = get_training_country_templates_status(training_id)
+    return jsonify(status)
+
+@app.route('/api/admin/training/<int:training_id>/country_template', methods=['GET'])
+@login_required
+@admin_required
+def get_training_country_template(training_id):
+    """1. 获取国家模板接口"""
+    country = request.args.get('country')
+    if not country:
+        return jsonify({"error": "缺少 country 参数"}), 400
+    db = get_supabase()
+    # 使用 execute()，不用 maybe_single()
+    res = db.table("training_country_templates")\
+        .select("header_template")\
+        .eq("training_id", training_id)\
+        .eq("country", country)\
+        .execute()
+    if res.data and len(res.data) > 0:
+        template = res.data[0].get('header_template', {})
+    else:
+        template = {}
+    return jsonify({"template": template})
+
+@app.route('/api/admin/training/<int:training_id>/country_template', methods=['POST'])
+@login_required
+@admin_required
+def save_training_country_template(training_id):
+    """2. 保存国家模板接口 保存培训表头模板"""
+    data = request.json
+    country = data.get('country')
+    template = data.get('template')
+    
+    if not training_id:
+        return jsonify({"success": False, "message": "培训ID无效"}), 400
+    
+    if template is None:
+        return jsonify({"success": False, "message": "缺少 template 参数"}), 400
+    
+    db = get_supabase()
+    
+    try:
+        # 情况1：没有指定国家 → 保存到培训主表的 header_template
+        if not country or country == 'null' or country == 'undefined' or country == '':
+            db.table("trainings").update({
+                "header_template": template
+            }).eq("id", training_id).execute()
+            logger.info(f"保存培训主表头: training_id={training_id}")
+            return jsonify({"success": True})
+        
+        # 情况2：指定了国家 → 保存到国家模板表
+        check_res = db.table("training_country_templates")\
+            .select("id")\
+            .eq("training_id", training_id)\
+            .eq("country", country)\
+            .execute()
+        
+        if check_res.data and len(check_res.data) > 0:
+            # 更新现有记录
+            db.table("training_country_templates")\
+                .update({
+                    "header_template": template, 
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })\
+                .eq("id", check_res.data[0]['id'])\
+                .execute()
+            logger.info(f"更新国家模板: training_id={training_id}, country={country}")
+        else:
+            # 插入新记录
+            db.table("training_country_templates")\
+                .insert({
+                    "training_id": training_id, 
+                    "country": country, 
+                    "header_template": template
+                })\
+                .execute()
+            logger.info(f"插入国家模板: training_id={training_id}, country={country}")
+        
+        return jsonify({"success": True})
+        
+    except Exception as e:
+        logger.error(f"保存表头失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/admin/training/<int:training_id>/attendance/print')
+@login_required
+@admin_required
+def training_attendance_print(training_id):
+    country = request.args.get('country', '')
+    # 复用签到详情模板，但添加一个打印标志
+    return render_template('admin/list_training_attendance.html', training_id=training_id, country=country, print_mode=True)
+
+def get_attendance_data(training_id, country=''):
+    """
+    获取培训签到数据，供 PDF 生成或其他内部调用使用
+    返回包含 training、attendances、header_template 的字典
+    """
+    db = get_supabase()
+
+    # 1. 获取培训基本信息
+    training_res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
+    if not training_res.data:
+        return None
+    training = training_res.data
+
+    # 2. 获取签到记录（含关联用户信息）
+    att_res = db.table("training_attendances") \
+        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company)") \
+        .eq("training_id", training_id) \
+        .execute()
+
+    att_list = att_res.data or []
+
+    # 按国家过滤（如果有）
+    if country:
+        att_list = [rec for rec in att_list if rec.get('users', {}).get('country') == country]
+
+    # 构建签到列表
+    attendance_list = []
+    for rec in att_list:
+        user = rec.get('users', {})
+        if user is None:
+            user = {}
+        attendance_list.append({
+            "id": rec['id'],
+            "user_id": rec['user_id'],
+            "department": user.get('department', ''),
+            "name_cn": user.get('name_cn', ''),
+            "name_en": user.get('name_en', ''),
+            "employee_id": user.get('employee_id', ''),
+            "signed_name": rec.get('signed_name', ''),
+            "signature_url": rec.get('signature_url', ''),
+            "sign_time": rec.get('sign_time'),
+            "company": user.get('company', ''),
+            "country": user.get('country', '')
+        })
+
+    # 3. 获取表头模板（优先国家模板，其次培训主模板）
+    header_template = None
+    if country:
+        ct_res = db.table("training_country_templates") \
+            .select("header_template") \
+            .eq("training_id", training_id) \
+            .eq("country", country) \
+            .execute()
+        if ct_res.data and len(ct_res.data) > 0:
+            header_template = ct_res.data[0].get('header_template')
+
+    if not header_template:
+        header_template = training.get('header_template', {})
+
+    return {
+        "training": training,
+        "attendances": attendance_list,
+        "header_template": header_template
+    }
+
+@app.route('/admin/training/<int:training_id>/attendance/pdf')
+@login_required
+@admin_required
+def download_training_attendance_pdf(training_id):
+    country = request.args.get('country', '')
+    data = get_attendance_data(training_id, country)
+    if not data:
+        flash("培训不存在", "danger")
+        return redirect(url_for('admin_dashboard'))
+
+    html_content = render_template('admin/attendance_pdf.html',
+                                    training=data['training'],        # ✅ 新增
+                                    header=data['header_template'],
+                                    attendances=data['attendances'])
+
+    # 配置 wkhtmltopdf 路径（根据实际安装位置修改）
+    wkhtmltopdf_path = find_wkhtmltopdf()   # 自动查找（支持环境变量 WKHTMLTOPDF_PATH）
+    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
+    pdf = pdfkit.from_string(html_content, False, configuration=config,
+                             options={
+                                'page-size': 'A4',
+                                'margin-top': '10mm',
+                                'margin-bottom': '10mm',
+                                'margin-left': '10mm',
+                                'margin-right': '10mm',
+                                'encoding': 'UTF-8',
+                                'enable-local-file-access': None,
+                                # 可选：避免因网络图片慢而超时
+                                'javascript-delay': '200',
+                                'no-stop-slow-scripts': None,
+                             })
+    response = make_response(pdf)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename=attendance_{training_id}.pdf'
+    return response
+
 @app.route('/admin/trainings')
 @login_required
 @admin_required
@@ -5807,7 +5293,7 @@ def api_admin_trainings():
         
         start_time = data.get('start_time')
         end_time = data.get('end_time')
-        
+
         if not start_time:
             start_time = datetime.now(timezone.utc).isoformat()
         if not end_time:
@@ -5858,6 +5344,12 @@ def api_admin_trainings():
             else:
                 db.table("trainings").update({"header_template": header_template}).eq("id", tid).execute()
             return jsonify({"success": True})
+    
+        # ✅ 记录是否推送（用于发送邮件）
+        is_push = data.get('is_active', False)
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+        user_ids = data.get('user_ids')  # 选中的用户ID列表
         
         update_data = {}
         if 'name' in data:
@@ -5883,6 +5375,18 @@ def api_admin_trainings():
         if update_data:
             db.table("trainings").update(update_data).eq("id", tid).execute()
             logger.info(f"更新培训成功: id={tid}, 更新字段={list(update_data.keys())}")
+    
+        # ✅ 新增：发送培训推送邮件通知
+        if is_push and start_time and end_time:
+            # 异步发送邮件，避免阻塞请求
+            import threading
+            thread = threading.Thread(
+                target=_send_training_notifications,
+                args=(tid, start_time, end_time, user_ids, request.host_url)
+            )
+            thread.daemon = True
+            thread.start()
+            logger.info(f"培训 {tid} 邮件通知已加入发送队列")
         
         return jsonify({"success": True})
     
@@ -5954,11 +5458,1058 @@ def admin_training_attendance(training_id):
     """培训签到统计的二级菜单可导出签到记录"""
     return render_template('admin/list_training_attendance.html', training_id=training_id)
 
+# 添加到 app.py - 培训签到删除
+@app.route('/api/admin/training/attendance/<int:attendance_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_delete_training_attendance(attendance_id):
+    """删除培训签到记录"""
+    db = get_supabase()
+    user_id = session['user_id']
+    
+    # 1. 获取签到记录
+    att_res = db.table("training_attendances").select("*").eq("id", attendance_id).execute()
+    if not att_res.data:
+        return jsonify({"success": False, "message": "签到记录不存在"}), 404
+    
+    attendance = att_res.data[0]
+    training_id = attendance.get('training_id')
+    
+    # 2. 获取培训国家
+    training_res = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
+    training_country = training_res.data.get('country') if training_res.data else None
+    
+    # 3. 权限检查
+    allowed = get_admin_allowed_countries()
+    if allowed is not None and training_country not in allowed:
+        return jsonify({"success": False, "message": "无权删除此签到记录"}), 403
+    
+    try:
+        # 软删除
+        db.table("training_attendances").update({
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": user_id
+        }).eq("id", attendance_id).execute()
+        
+        logger.info(f"培训签到记录已删除: attendance_id={attendance_id}, 操作人={user_id}")
+        return jsonify({"success": True, "message": "签到记录已删除"})
+    except Exception as e:
+        logger.error(f"删除签到记录失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/training/attendance/batch_delete', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_delete_training_attendances():
+    """批量删除培训签到记录（支持软删除和永久删除）"""
+    data = request.json
+    attendance_ids = data.get('ids', [])
+    delete_type = data.get('delete_type', 'soft')
+    
+    if not attendance_ids:
+        return jsonify({"success": False, "message": "请选择要删除的签到记录"}), 400
+    
+    db = get_supabase()
+    user_id = session['user_id']
+    success_count = 0
+    fail_count = 0
+    errors = []
+    
+    allowed = get_admin_allowed_countries()
+    
+    for att_id in attendance_ids:
+        try:
+            att_res = db.table("training_attendances").select("*").eq("id", att_id).execute()
+            if not att_res.data:
+                fail_count += 1
+                errors.append(f"记录 {att_id} 不存在")
+                continue
+            
+            attendance = att_res.data[0]
+            training_id = attendance.get('training_id')
+            
+            training_res = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
+            training_country = training_res.data.get('country') if training_res.data else None
+            
+            if allowed is not None and training_country not in allowed:
+                fail_count += 1
+                errors.append(f"记录 {att_id}: 无权限删除")
+                continue
+            
+            if delete_type == 'hard':
+                db.table("training_attendances").delete().eq("id", att_id).execute()
+            else:
+                db.table("training_attendances").update({
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": user_id
+                }).eq("id", att_id).execute()
+            
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            errors.append(f"记录 {att_id}: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "errors": errors[:10]
+    })
+
 #----------4. 访谈结果统计 API---------
+# ================= 访谈管理 API =================
+@app.route('/admin/interviews')
+@login_required
+@admin_required
+def admin_interviews_page():
+    """2. 访谈 CRUD 路由 访谈管理一级菜单页面"""
+    return render_template('admin/list_inspection.html')
+
+@app.route('/api/admin/interviews', methods=['GET', 'POST', 'PUT'])
+@login_required
+@admin_required
+def api_admin_interviews():
+    """访谈列表查询、创建、更新"""
+    db = get_supabase()
+    if request.method == 'GET':
+        name = request.args.get('name', '')
+        country = request.args.get('country', '')
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+
+        # 基础查询（分页）
+        query = db.table("interviews").select("*", count="exact").is_("deleted_at", "null")
+        if name:
+            query = query.ilike("title", f"%{name}%")
+        query = query.order("created_at", desc=True)
+        start = (page - 1) * per_page
+        end = start + per_page - 1
+        res = query.range(start, end).execute()
+        total = res.count if hasattr(res, 'count') else len(res.data or [])
+
+        interviews = res.data or []   # 当前页的访谈列表
+
+        # 获取管理员国家权限
+        allowed = get_allowed_countries()
+
+        # 收集当前页所有访谈涉及的用户ID，用于批量查询国家
+        all_user_ids = set()
+        for inv in interviews:
+            user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
+            all_user_ids.update(r['user_id'] for r in (user_res.data or []))
+
+        # 批量查询用户国家（仅当有国家权限限制时）
+        user_country_map = {}
+        if allowed is not None and all_user_ids:
+            users_res = db.table("users").select("id, country").in_("id", list(all_user_ids)).execute()
+            user_country_map = {u['id']: u.get('country') for u in (users_res.data or [])}
+
+        now = datetime.now(timezone.utc)
+        for inv in interviews:
+            # 动态计算状态
+            start_time = inv.get('start_time')
+            end_time = inv.get('end_time')
+            if not start_time or not end_time:
+                inv['status'] = 'draft'
+            else:
+                try:
+                    s = datetime.fromisoformat(start_time)
+                    e = datetime.fromisoformat(end_time)
+                    if now < s:
+                        inv['status'] = 'created'
+                    elif now > e:
+                        inv['status'] = 'closed'
+                    else:
+                        inv['status'] = 'active'
+                except:
+                    inv['status'] = 'draft'
+
+            # 统计去重人数（应用国家权限过滤）
+            user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
+            user_ids = [r['user_id'] for r in (user_res.data or [])]
+            if allowed is not None:
+                filtered_ids = [uid for uid in user_ids if user_country_map.get(uid) in allowed]
+                inv['interviewee_count'] = len(set(filtered_ids))
+            else:
+                inv['interviewee_count'] = len(set(user_ids))
+
+            # 附加考试信息
+            exam_info = {}
+            if inv.get('exam_id'):
+                exam_res = db.table("exams").select("title, country").eq("id", inv['exam_id']).maybe_single().execute()
+                if exam_res.data:
+                    exam_info = exam_res.data
+            inv['exam_title'] = exam_info.get('title', '')
+            inv['country'] = exam_info.get('country', '')
+
+        return jsonify({"data": interviews, "total": total, "page": page, "per_page": per_page})
+
+    elif request.method == 'POST':
+        data = request.json
+        exam_id = data.get('exam_id')
+        title = data.get('title', '')
+        if not title:
+            exam_title = ''
+            if exam_id:
+                exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+                if exam_res.data:
+                    exam_title = exam_res.data['title']
+            title = f"Interview-{exam_title}" if exam_title else "未命名访谈"
+        question_count = data.get('question_count', 5)
+        reviewer = data.get('reviewer', '')
+        is_draft = data.get('is_draft', False)
+        feedback = data.get('feedback', '')           # ✅ 新增：反馈人
+        start_time = data.get('start_time')
+        end_time = data.get('end_time')
+
+        # ✅ 将本地时间转为 UTC 存储
+        start_time_utc = start_time if start_time else None
+        end_time_utc = end_time if end_time else None
+
+        status = 'draft' if is_draft else 'active'
+        if start_time and end_time:
+            status = 'active'  # 简单处理，后续根据时间自动判定
+
+        user_ids = data.get('user_ids', [])
+        if user_ids:
+            # 校验所有用户均为已注册
+            valid_users = db.table("users").select("id").in_("id", user_ids).eq("user_status", "registered").execute()
+            if len(valid_users.data or []) != len(user_ids):
+                return jsonify({"success": False, "message": "所选考生中包含未注册的用户"}), 400
+
+        interviewee_count = len(user_ids)
+        interview_insert = db.table("interviews").insert({
+            "title": title,
+            "exam_id": exam_id,
+            "created_by": session['user_id'],
+            "reviewer": reviewer,
+            "feedback": feedback,                      # ✅ 新增
+            "question_count": question_count,
+            "status": status,
+            "start_time": start_time_utc,       # 存储 UTC 时间
+            "end_time": end_time_utc,           # 存储 UTC 时间
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "interviewee_count": interviewee_count
+        }).execute()
+        if not interview_insert.data:
+            return jsonify({"success": False, "message": "创建失败"}), 500
+        new_id = interview_insert.data[0]['id']
+
+        # 为选中的学员抽取题目
+        user_ids = data.get('user_ids', [])
+        for uid in user_ids:
+            questions = random_pick_questions(exam_id, question_count)
+            for q in questions:
+                db.table("interview_results").insert({
+                    "interview_id": new_id,
+                    "user_id": uid,
+                    "question_id": q['id']
+                }).execute()
+        return jsonify({"success": True, "id": new_id})
+
+    elif request.method == 'PUT':
+        data = request.json
+        inv_id = data.get('id')
+        db = get_supabase()
+        # 获取原访谈
+        orig_res = db.table("interviews").select("*").eq("id", inv_id).maybe_single().execute()
+        if not orig_res.data:
+            return jsonify({"success": False, "message": "访谈不存在"}), 404
+        orig = orig_res.data
+
+        # 更新基本字段
+        update_data = {}
+        for field in ['start_time', 'end_time', 'reviewer', 'feedback', 'exam_id', 'question_count', 'title']:
+            if field in data:
+                val = data[field]
+                if field in ('start_time', 'end_time') and val:
+                    val = val     # ✅ 转为 UTC
+                update_data[field] = val
+        if update_data:
+            db.table("interviews").update(update_data).eq("id", inv_id).execute()
+            logger.info(f"访谈 {inv_id} 字段已更新: {list(update_data.keys())}")
+
+        # 重新抽题（无论状态，只要提供了 user_ids 就更新人员题目）
+        if 'user_ids' in data:
+            # 删除该访谈的所有现有题目
+            db.table("interview_results").delete().eq("interview_id", inv_id).execute()
+            logger.info(f"已清除访谈 {inv_id} 的旧题目")
+            # 使用最新的 exam_id 和 question_count
+            exam_id = data.get('exam_id', orig['exam_id'])
+            question_count = data.get('question_count', orig['question_count'])
+            for uid in data['user_ids']:
+                questions = random_pick_questions(exam_id, question_count)
+                for q in questions:
+                    db.table("interview_results").insert({
+                        "interview_id": inv_id,
+                        "user_id": uid,
+                        "question_id": q['id']
+                    }).execute()
+            logger.info(f"已为 {len(data['user_ids'])} 名学员重新抽题")
+        
+        return jsonify({"success": True})
+
+@app.route('/api/admin/interview/<int:interview_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_get_interview(interview_id):
+    """获取某个访谈的详细信息"""
+    db = get_supabase()
+    inv = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv.data:
+        return jsonify({"error": "访谈不存在"}), 404
+    # 获取已分配的学员ID
+    user_ids_res = db.table("interview_results").select("user_id").eq("interview_id", interview_id).execute()
+    user_ids = list(set([r['user_id'] for r in (user_ids_res.data or [])]))
+    inv.data['user_ids'] = user_ids
+    return jsonify(inv.data)
+
+@app.route('/api/admin/interview/<int:interview_id>/user_ids')
+@login_required
+@admin_required
+def get_interview_user_ids(interview_id):
+    """获取某个访谈的所有用户ID"""
+    db = get_supabase()
+    res = db.table("interview_results").select("user_id").eq("interview_id", interview_id).execute()
+    ids = list(set(r['user_id'] for r in (res.data or [])))
+    return jsonify({"user_ids": ids})
+
+@app.route('/admin/interview/<int:interview_id>')
+@login_required
+@admin_required
+def admin_interview_detail_page(interview_id):
+    """3. 访谈二级菜单数据接口 访谈详情页面"""
+    return render_template('admin/list_inspection_details.html', interview_id=interview_id)
+
+@app.route('/api/admin/interview/<int:interview_id>/results')
+@login_required
+@admin_required
+def api_interview_results(interview_id):
+    """获取某个访谈的所有结果，支持筛选"""
+    db = get_supabase()
+    search = request.args.get('search', '')
+    country = request.args.get('country', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    # 基本信息
+    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"error": "访谈不存在"}), 404
+    interview = inv_res.data
+
+    # 查询访谈结果并关联用户信息
+    query = db.table("interview_results").select("*, users(name_cn, name_en, country, wh_id)").eq("interview_id", interview_id)
+    if country:
+        query = query.eq("users.country", country)
+    if search:
+        query = query.or_(f"users.name_cn.ilike.%{search}%,users.name_en.ilike.%{search}%")
+    
+    # 分页
+    start = (page - 1) * per_page
+    end = start + per_page - 1
+    res = query.range(start, end).order("user_id").execute()
+    total = res.count if hasattr(res, 'count') else len(res.data or [])
+
+    # 组装数据：按用户聚合
+    user_results = {}
+    for row in (res.data or []):
+        uid = row['user_id']
+        if uid not in user_results:
+            user_info = row.get('users', {})
+            user_results[uid] = {
+                "user_id": uid,
+                "name": user_info.get('name_cn') or user_info.get('name_en', ''),
+                "country": user_info.get('country', ''),
+                "wh_id": user_info.get('wh_id', ''),
+                "results": [],
+                "submitted_at": None
+            }
+        user_results[uid]["results"].append({
+            "question_id": row['question_id'],
+            "answer": row['answer'],
+            "is_correct": row['is_correct'],
+            "feedback": row['feedback']
+        })
+        # 提交时间取该用户最近一条有答案的记录时间
+        if row.get('submitted_at') and (not user_results[uid]["submitted_at"] or row['submitted_at'] > user_results[uid]["submitted_at"]):
+            user_results[uid]["submitted_at"] = row['submitted_at']
+
+    # 转换为列表并计算答对数量
+    result_list = []
+    for uid, data in user_results.items():
+        correct_count = sum(1 for r in data['results'] if r['is_correct'])
+        total_questions = len(data['results'])
+        result_list.append({
+            "user_id": uid,
+            "name": data['name'],
+            "country": data['country'],
+            "wh_id": data['wh_id'],
+            "total_questions": total_questions,
+            "correct_count": correct_count,
+            "submitted_at": data['submitted_at'],
+            "feedback": "",  # 可后续合并
+            "results": data['results']
+        })
+
+    return jsonify({
+        "interview": interview,
+        "results": result_list,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
+
+@app.route('/api/admin/interview/<int:interview_id>/resample/<user_id>', methods=['POST'])
+@login_required
+@admin_required
+def resample_interview(interview_id, user_id):
+    """4. 重新访谈接口 重新为指定用户抽题，保留历史记录"""
+    db = get_supabase()
+    inv_res = db.table("interviews").select("exam_id, question_count").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    exam_id = inv_res.data['exam_id']
+    count = inv_res.data['question_count']
+    
+    # 删除该用户在此访谈中的旧题目（仅删除未作答的？根据需求保留历史记录，这里简单起见先删除所有旧记录再插入新题）
+    db.table("interview_results").delete().eq("interview_id", interview_id).eq("user_id", user_id).execute()
+    
+    questions = random_pick_questions(exam_id, count)
+    for q in questions:
+        db.table("interview_results").insert({
+            "interview_id": interview_id,
+            "user_id": user_id,
+            "question_id": q['id']
+        }).execute()
+    return jsonify({"success": True})
+
+@app.route('/api/admin/interview/preview', methods=['POST'])
+@login_required
+@admin_required
+def interview_preview():
+    """5. 预览接口（用于模态框 → 预览页） 预览访谈：返回每个被选中学员的抽题情况"""
+    db = get_supabase()
+    data = request.json
+    exam_id = data.get('exam_id')
+    
+    # 检查题库是否存在
+    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
+    if not q_check.data:
+        return jsonify({"error": "该考试没有题目"}), 400
+
+    user_ids = data.get('user_ids', [])
+    question_count = data.get('question_count', 5)
+
+    if not exam_id:
+        return jsonify({"error": "exam_id 不能为空"}), 400
+
+    logger.info(f"预览访谈: exam_id={exam_id}, users={len(user_ids)}, count={question_count}")
+    
+    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+    exam_title = exam_res.data['title'] if exam_res.data else ''
+    
+    preview = []
+    for uid in user_ids:
+        user_res = db.table("users").select("name_cn, name_en").eq("id", uid).maybe_single().execute()
+        user_name = ''
+        if user_res.data:
+            user_name = user_res.data.get('name_cn') or user_res.data.get('name_en', '')
+        # 随机抽取题目
+        questions = random_pick_questions(exam_id, question_count)
+        # 处理题目数据，确保 options 为字典，并筛选必要字段
+        questions_light = []
+        for q in questions:
+            # 解析 options（可能为字符串 JSON）
+            opts = q.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    opts = json.loads(opts)
+                except:
+                    opts = {}
+            # 过滤空选项
+            if opts:
+                opts = {k: v for k, v in opts.items() if v and v.strip()}
+            questions_light.append({
+                'num': q.get('num'),
+                'content': q.get('content_cn') or q.get('content') or q.get('content_raw', '无题目内容'),
+                'type': q.get('type', 'single'),
+                'options': opts   # 前端可能需要展示选项
+            })
+        preview.append({
+            "user_id": uid,
+            "user_name": user_name,
+            "questions": questions_light
+        })
+    
+    return jsonify({"exam_title": exam_title, "preview": preview})
+
+@app.route('/api/my/interviews')
+@login_required
+def my_interviews():
+    """① 后端新增接口：获取学员的活跃访谈"""
+    user_id = session['user_id']
+    db = get_supabase()
+    res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
+    interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
+    if not interview_ids:
+        return jsonify([])
+    inv_res = db.table("interviews").select("*").in_("id", interview_ids).execute()
+    now = datetime.now(timezone.utc).isoformat()
+    active = []
+    for inv in (inv_res.data or []):
+        start = inv.get('start_time')
+        end = inv.get('end_time')
+        if not start or not end or not (start < now < end):
+            continue   # 不在有效期内的不显示
+        # 检查是否全部作答
+        answers = db.table("interview_results").select("answer").eq("interview_id", inv['id']).eq("user_id", user_id).execute()
+        all_answered = all(row.get('answer') for row in (answers.data or []))
+        inv['is_completed'] = all_answered
+        active.append(inv)
+    return jsonify(active)
+
+@app.route('/interview/take/<int:interview_id>')
+@login_required
+def take_interview(interview_id):
+    """① 后端新增接口：学员进入访谈，检查是否在名单中，获取访谈基本信息和题目"""
+    user_id = session['user_id']
+    db = get_supabase()
+    # 检查用户是否属于该访谈
+    result = db.table("interview_results").select("interview_id").eq("interview_id", interview_id).eq("user_id", user_id).limit(1).execute()
+    if not result.data:
+        flash("您不在本次访谈名单中", "danger")
+        return redirect(url_for('dashboard'))
+
+    inv = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv.data:
+        flash("访谈不存在", "danger")
+        return redirect(url_for('dashboard'))
+
+    # ✅ 修复：明确指定使用哪个外键关系（以下注释测试目前可用，为更稳妥修复为分步查询）
+    # 使用 questions!interview_results_question_id_fkey(*) 或 questions!fk_interview_results_question_id(*)
+    '''
+    questions_res = db.table("interview_results").select("*, questions!interview_results_question_id_fkey(*)") \
+        .eq("interview_id", interview_id) \
+        .eq("user_id", user_id) \
+        .execute()
+    '''
+
+    # ✅ 分步查询，避免外键歧义
+    # 第一步：获取该用户的所有访谈结果
+    interview_results = db.table("interview_results") \
+        .select("id, question_id, answer") \
+        .eq("interview_id", interview_id) \
+        .eq("user_id", user_id) \
+        .execute()
+    
+    if not interview_results.data:
+        questions = []
+    else:
+        # 第二步：收集所有 question_id
+        question_ids = list(set([row['question_id'] for row in interview_results.data]))
+        
+        # 第三步：批量查询题目信息
+        questions_data = db.table("questions") \
+            .select("*") \
+            .in_("id", question_ids) \
+            .execute()
+        
+        # 第四步：构建映射
+        question_map = {q['id']: q for q in (questions_data.data or [])}
+        
+        # 第五步：组装数据
+        questions = []
+        for row in interview_results.data:
+            q = question_map.get(row['question_id'], {})
+            
+            # 复制题目数据，避免修改原数据
+            q_copy = q.copy() if q else {}
+            
+            # 解析 options
+            opts = q_copy.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    q_copy['options'] = json.loads(opts)
+                except:
+                    q_copy['options'] = {}
+            
+            # 判断题默认选项
+            if q_copy.get('type') == 'judge' and (not q_copy.get('options')):
+                q_copy['options'] = {"A": "正确 True", "B": "错误 False"}
+            
+            # 确保选项是字典
+            if not isinstance(q_copy.get('options'), dict):
+                q_copy['options'] = {}
+            
+            q_copy['interview_result_id'] = row['id']
+            q_copy['user_answer'] = row.get('answer') or ''
+            questions.append(q_copy)
+    
+    # ✅ 按 num 排序
+    questions.sort(key=lambda x: x.get('num', 0))
+    for idx, q in enumerate(questions, 1):
+        q['num'] = idx
+        if q.get('options'):
+            q['options'] = {k: v for k, v in q['options'].items() if v.strip()}
+        else:
+            q['options'] = {}
+
+    return render_template('exam/take_interview.html', interview=inv.data, questions=questions)
+
+@app.route('/api/interview/<int:interview_id>/submit', methods=['POST'])
+@login_required
+def submit_interview(interview_id):
+    """② 后端新增接口：提交学员的答案"""
+    user_id = session['user_id']
+    answers = request.json.get('answers', {})  # {result_id: answer}
+    db = get_supabase()
+    for rid, ans in answers.items():
+        # 获取关联题目 ID
+        result = db.table("interview_results").select("question_id").eq("id", rid).eq("user_id", user_id).maybe_single().execute()
+        if not result.data:
+            continue
+        qid = result.data['question_id']
+        # 获取标准答案和题型
+        q = db.table("questions").select("answer, type").eq("id", qid).maybe_single().execute()
+        is_correct = False
+        if q.data:
+            correct_ans = q.data['answer'].upper()
+            q_type = q.data['type']
+            if q_type == 'multi':
+                u_set = set(ans.upper().replace(' ', ''))
+                c_set = set(correct_ans.replace(' ', ''))
+                is_correct = (u_set == c_set)
+            elif q_type == 'judge':
+                norm = ans.upper()
+                if norm in ('A', 'T', '√', '正确', '对'): norm = 'T'
+                elif norm in ('B', 'F', '×', '错误', '错'): norm = 'F'
+                correct_std = correct_ans.replace('√', 'T').replace('×', 'F')
+                is_correct = (norm == correct_std)
+            else:
+                is_correct = (ans.strip().upper() == correct_ans)
+        db.table("interview_results").update({
+            "answer": ans,
+            "is_correct": is_correct,
+            "submitted_at": datetime.now(timezone.utc).isoformat()
+        }).eq("id", rid).eq("user_id", user_id).execute()
+    return jsonify({"success": True, "message": "您的回答已提交"})
+
+@app.route('/api/interview/<int:interview_id>/submit', methods=['POST'])
+@login_required
+def submit_interview_answer(interview_id):
+    """② 后端新增接口：提交学员的答案"""
+    user_id = session['user_id']
+    answers = request.json.get('answers', {})  # {question_id: answer}
+    db = get_supabase()
+    for qid, ans in answers.items():
+        db.table("interview_results").update({"answer": ans, "submitted_at": datetime.now(timezone.utc).isoformat()}).eq("interview_id", interview_id).eq("user_id", user_id).eq("question_id", qid).execute()
+    return jsonify({"success": True})
+
+@app.route('/admin/interview/<int:interview_id>/details')
+@login_required
+@admin_required
+def admin_interview_details_page(interview_id):
+    """③ 后端新增接口：管理员查看访谈详情"""
+    return render_template('admin/list_inspection_details.html', interview_id=interview_id)
+
+@app.route('/api/admin/interview/<int:interview_id>/details')
+@login_required
+@admin_required
+def api_interview_details(interview_id):
+    """获取访谈详情数据（支持筛选和分页）"""
+    db = get_supabase()
+    search = request.args.get('search', '')
+    country = request.args.get('country', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    # 获取访谈信息
+    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"error": "访谈不存在"}), 404
+    interview = inv_res.data
+
+    # 获取考试标题
+    exam_title = ''
+    if interview.get('exam_id'):
+        exam_res = db.table("exams").select("title").eq("id", interview['exam_id']).maybe_single().execute()
+        if exam_res.data:
+            exam_title = exam_res.data['title']
+
+    # ✅ 获取访谈级别的反馈人
+    interview_feedback = interview.get('feedback', '')
+
+    # 查询该访谈的所有答题记录（按用户聚合）
+    query = db.table("interview_results").select("*").eq("interview_id", interview_id)
+    # 先获取所有记录，然后在 Python 中处理筛选和聚合
+    all_res = query.execute()
+    all_data = all_res.data or []
+
+    # ===== 国家权限过滤 =====
+    allowed = get_allowed_countries()
+    if allowed is not None:
+        if not allowed:
+            # 没有允许的国家，直接返回空
+            return jsonify({
+                "interview": {
+                    "id": interview_id,
+                    "title": interview.get('title'),
+                    "exam_title": exam_title,
+                    "reviewer": interview.get('reviewer', ''),
+                    "feedback": interview_feedback  # ✅ 新增
+                },
+                "data": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page
+            })
+        # 收集所有 user_id
+        all_user_ids = list(set(r['user_id'] for r in all_data))
+        # 查询这些用户的国家
+        users_country_res = db.table("users").select("id, country").in_("id", all_user_ids).execute()
+        allowed_ids = {u['id'] for u in (users_country_res.data or []) if u.get('country') in allowed}
+        # 过滤数据
+        all_data = [r for r in all_data if r['user_id'] in allowed_ids]
+    # ======================
+    # 批量获取用户信息
+    user_ids = list(set(r['user_id'] for r in all_data))
+    users_map = {}
+    if user_ids:
+        users_res = db.table("users").select("id, name_cn, name_en, country, wh_id, department").in_("id", user_ids).execute()
+        for u in (users_res.data or []):
+            users_map[u['id']] = u
+
+    # 按用户聚合
+    user_results = {}
+    for row in all_data:
+        uid = row['user_id']
+        user_info = users_map.get(uid, {})
+        # 筛选：姓名搜索
+        if search:
+            name = user_info.get('name_cn') or user_info.get('name_en', '')
+            if search.lower() not in name.lower():
+                continue
+        # 筛选：国家
+        if country and user_info.get('country') != country:
+            continue
+
+        if uid not in user_results:
+            user_results[uid] = {
+                "user_id": uid,
+                "name": user_info.get('name_cn') or user_info.get('name_en', ''),
+                "country": user_info.get('country', ''),
+                "wh_id": user_info.get('wh_id', ''),
+                "department": user_info.get('department', ''),
+                "submitted_at": None,
+                "total_questions": 0,
+                "correct_count": 0,
+                "feedback": "",   # 可暂合并所有 feedback
+                "reviewer": interview.get('reviewer', ''),
+                "interview_feedback": interview_feedback,  # ✅ 新增：访谈级别的反馈人
+                "results": []
+            }
+        user_results[uid]["total_questions"] += 1
+        if row.get('is_correct'):
+            user_results[uid]["correct_count"] += 1
+        if row.get('submitted_at') and (not user_results[uid]["submitted_at"] or row['submitted_at'] > user_results[uid]["submitted_at"]):
+            user_results[uid]["submitted_at"] = row['submitted_at']
+
+    # 转换为列表
+    detail_list = []
+    for uid, data in user_results.items():
+        detail_list.append({
+            "user_id": data["user_id"],
+            "name": data["name"],
+            "country": data["country"],
+            "wh_id": data["wh_id"],
+            "department": data["department"],
+            "submitted_at": data["submitted_at"],
+            "reviewer": data["reviewer"],
+            "feedback": data["interview_feedback"],  # ✅ 使用访谈级别的反馈人
+            "total_questions": data["total_questions"],
+            "correct_count": data["correct_count"],
+            "feedback": data["feedback"],
+            "has_submitted": bool(data["submitted_at"])
+        })
+
+    # 分页
+    total = len(detail_list)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = detail_list[start:end]
+
+    return jsonify({
+        "interview": {
+            "id": interview_id,
+            "title": interview.get('title'),
+            "exam_title": exam_title,
+            "reviewer": interview.get('reviewer', ''),
+            "feedback": interview_feedback  # ✅ 新增
+        },
+        "data": paginated,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
+
+@app.route('/api/admin/interview/<int:interview_id>/user/<user_id>/answers')
+@login_required
+@admin_required
+def get_interview_user_answers(interview_id, user_id):
+    """获取指定访谈中指定用户的答题详情"""
+    db = get_supabase()
+    # 获取访谈信息
+    inv_res = db.table("interviews").select("id, title").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"error": "访谈不存在"}), 404
+
+    # 获取该用户的答题记录，关联题目
+    '''
+    results = db.table("interview_results").select("*, questions!interview_results_question_id_fkey(*)") \
+        .eq("interview_id", interview_id).eq("user_id", user_id).execute()
+    '''
+    # ✅ 分步查询
+    # 第一步：获取用户的所有访谈结果
+    interview_results = db.table("interview_results") \
+        .select("id, question_id, answer, is_correct") \
+        .eq("interview_id", interview_id) \
+        .eq("user_id", user_id) \
+        .execute()
+    
+    if not interview_results.data:
+        return jsonify({"answers": []})
+    
+    # 第二步：收集 question_id
+    question_ids = list(set([row['question_id'] for row in interview_results.data]))
+    
+    # 第三步：批量查询题目信息
+    questions_data = db.table("questions") \
+        .select("*") \
+        .in_("id", question_ids) \
+        .execute()
+    
+    # 第四步：构建映射
+    question_map = {q['id']: q for q in (questions_data.data or [])}
+    
+    # 第五步：组装返回数据
+    data = []
+    for row in interview_results.data:
+        q = question_map.get(row['question_id'], {})
+        
+        # 解析 options
+        opts = q.get('options', {})
+        if isinstance(opts, str):
+            try:
+                q['options'] = json.loads(opts)
+            except:
+                q['options'] = {}
+
+        if q.get('type') == 'judge' and not q['options']:
+            q['options'] = {"A": "正确 True", "B": "错误 False"}
+
+        data.append({
+            "question_num": q.get('num'),
+            "question_content": q.get('content_cn') or q.get('content') or q.get('content_raw', ''),
+            "question_type": q.get('type'),
+            "options": q.get('options', {}),
+            "user_answer": row.get('answer') or '',
+            "is_correct": row.get('is_correct'),
+            "result_id": row['id']
+        })
+    # 按题目编号排序
+    data.sort(key=lambda x: x.get('question_num', 0))
+    return jsonify({"answers": data})
+
 @app.route('/api/admin/interviewee/stats')
 @admin_required
 def admin_interviewee_stats():
     return render_template('admin/list_inspection.html')
+
+# 添加到 app.py - 访谈重新访谈和删除
+@app.route('/api/admin/interview/<int:interview_id>/user/<user_id>/delete', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_delete_interview_user_result(interview_id, user_id):
+    """删除指定用户在指定访谈中的所有答题记录"""
+    db = get_supabase()
+    operator_id = session['user_id']
+    
+    # 获取访谈信息
+    interview_res = db.table("interviews").select("*").eq("id", interview_id).execute()
+    if not interview_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    
+    interview = interview_res.data[0]
+    exam_id = interview.get('exam_id')
+    
+    # 获取考试国家（用于权限检查）
+    exam_country = None
+    if exam_id:
+        exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
+        exam_country = exam_res.data.get('country') if exam_res.data else None
+    
+    # 权限检查
+    allowed = get_admin_allowed_countries()
+    if allowed is not None and exam_country not in allowed:
+        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+    
+    try:
+        # 软删除该用户的所有访谈答题记录
+        db.table("interview_results").update({
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": operator_id
+        }).eq("interview_id", interview_id).eq("user_id", user_id).execute()
+        
+        logger.info(f"访谈记录已删除: interview_id={interview_id}, user_id={user_id}, 操作人={operator_id}")
+        return jsonify({"success": True, "message": "访谈记录已删除"})
+    except Exception as e:
+        logger.error(f"删除访谈记录失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/interview/<int:interview_id>/user/<user_id>/resample', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_resample_interview(interview_id, user_id):
+    """重新为指定用户抽题"""
+    db = get_supabase()
+    
+    # 获取访谈信息
+    interview_res = db.table("interviews").select("exam_id, question_count").eq("id", interview_id).execute()
+    if not interview_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    
+    interview = interview_res.data[0]
+    exam_id = interview['exam_id']
+    question_count = interview['question_count']
+    
+    # 检查题库
+    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
+    if not q_check.data:
+        return jsonify({"success": False, "message": "题库无题目，无法重新抽题"}), 400
+    
+    try:
+        # 方案1：软删除旧记录
+        db.table("interview_results").update({
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": session['user_id']
+        }).eq("interview_id", interview_id).eq("user_id", user_id).execute()
+        
+        # 重新抽题
+        questions = random_pick_questions(exam_id, question_count)
+        for q in questions:
+            db.table("interview_results").insert({
+                "interview_id": interview_id,
+                "user_id": user_id,
+                "question_id": q['id'],
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }).execute()
+        
+        logger.info(f"访谈重新抽题成功: interview_id={interview_id}, user_id={user_id}")
+        return jsonify({"success": True, "message": "重新抽题成功"})
+    except Exception as e:
+        logger.error(f"重新抽题失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/interview/<int:interview_id>/batch_delete', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_delete_interview_results(interview_id):
+    """批量删除访谈记录（支持软删除和永久删除）"""
+    data = request.json
+    user_ids = data.get('user_ids', [])
+    delete_type = data.get('delete_type', 'soft')
+    
+    if not user_ids:
+        return jsonify({"success": False, "message": "请选择要删除的访谈记录"}), 400
+    
+    db = get_supabase()
+    operator_id = session['user_id']
+    success_count = 0
+    fail_count = 0
+    errors = []
+    
+    # 获取访谈信息（权限检查）
+    interview_res = db.table("interviews").select("*").eq("id", interview_id).execute()
+    if not interview_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    
+    interview = interview_res.data[0]
+    exam_id = interview.get('exam_id')
+    
+    exam_country = None
+    if exam_id:
+        exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
+        exam_country = exam_res.data.get('country') if exam_res.data else None
+    
+    allowed = get_admin_allowed_countries()
+    if allowed is not None and exam_country not in allowed:
+        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+    
+    for user_id in user_ids:
+        try:
+            if delete_type == 'hard':
+                db.table("interview_results").delete().eq("interview_id", interview_id).eq("user_id", user_id).execute()
+            else:
+                db.table("interview_results").update({
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": operator_id
+                }).eq("interview_id", interview_id).eq("user_id", user_id).execute()
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            errors.append(f"用户 {user_id}: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "errors": errors[:10]
+    })
+
+@app.route('/api/admin/interviews/<int:interview_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_delete_interview_by_id(interview_id):
+    """删除访谈（软删除）- 供 list_inspection.html 调用"""
+    db = get_supabase()
+    operator_id = session['user_id']
+    
+    # 获取访谈信息（用于权限检查）
+    interview_res = db.table("interviews").select("*, exams(country)").eq("id", interview_id).execute()
+    if not interview_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    
+    interview = interview_res.data[0]
+    exam_data = interview.get('exams', {})
+    
+    # 权限检查
+    allowed = get_admin_allowed_countries()
+    if allowed is not None:
+        exam_country = exam_data.get('country') if isinstance(exam_data, dict) else None
+        if exam_country and exam_country not in allowed:
+            return jsonify({"success": False, "message": "无权删除此访谈"}), 403
+    
+    try:
+        now_utc = datetime.now(timezone.utc).isoformat()
+        
+        # 软删除访谈本身
+        db.table("interviews").update({
+            "deleted_at": now_utc,
+            "deleted_by": operator_id
+        }).eq("id", interview_id).execute()
+        
+        # 同时软删除该访谈下的所有答题记录
+        db.table("interview_results").update({
+            "deleted_at": now_utc,
+            "deleted_by": operator_id
+        }).eq("interview_id", interview_id).execute()
+        
+        logger.info(f"访谈已删除: interview_id={interview_id}, 操作人={operator_id}")
+        return jsonify({"success": True, "message": "访谈已删除"})
+    except Exception as e:
+        logger.error(f"删除访谈失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 #----------5. 题库统计 API---------
 @app.route('/api/admin/questions/stats')

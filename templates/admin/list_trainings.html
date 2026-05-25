@@ -1130,7 +1130,7 @@
         const startLocal = document.getElementById('start_time').value;
         const endLocal = document.getElementById('end_time').value;
         if (!startLocal || !endLocal) {
-            alert('请填写开始和结束时间');
+            alert(safeT('t_fill_start_end_time'));
             return;
         }
 
@@ -1156,10 +1156,10 @@
         if (res.ok) {
             bootstrap.Modal.getInstance(document.getElementById('pushModal')).hide();
             loadTrainings();
-            alert('推送成功，已发送通知邮件给选定用户' + (selectedUserIds.length ? '' : '（全部注册用户）'));
+            alert(safeT('t_notification_push_success') + (selectedUserIds.length ? '' : safeT('t_all_registered_users')));
         } else {
             const err = await res.json();
-            alert('推送失败: ' + (err.message || '网络错误'));
+            alert(safeT('t_push_failed') + (err.message || t('t_network_err')));
         }
     };
 

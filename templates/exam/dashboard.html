@@ -315,39 +315,33 @@
         const card = document.createElement('div');
         card.className = 'card h-100 shadow-sm';
         
-        // ✅ 根据状态生成徽章和按钮，放在一个变量中
+        // 根据后端返回的状态确定徽章样式
         let statusBadge = '';
         let actionHtml = '';
-        let signTimeHtml = t.signed ? `
-          <div class="small text-muted mt-2">
-            ${safeT('sign_in_period')}：${new Date(t.sign_time).toLocaleString()}
-          </div>` : '';
-        if (!t.signed) {
-            statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
-            actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${safeT('sign_now')}</button>`;
-        } else if (t.needs_resign) {
-            statusBadge = '<span class="badge bg-warning text-dark">' + safeT('need_re-sign') + '</span>';
-            actionHtml = `<button
-                            class="btn btn-warning resign-btn" data-id="${t.id}">
-                            <i class="bi bi-exclamation-triangle">
-                            </i> ${safeT('re-sign')}
-                          </button>`;
-        } else {
-            statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
+
+        if (t.is_future) {
+            // 未开始的培训
+            statusBadge = '<span class="badge bg-secondary">' + safeT('t_not_started') + '</span>';
+            actionHtml = `<button class="btn btn-secondary" disabled>${safeT('t_not_started')}</button>`;
+        } else if (t.is_active) {
+            if (!t.signed) {
+                statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
+                actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${safeT('sign_now')}</button>`;
+            } else if (t.needs_resign) {
+                statusBadge = '<span class="badge bg-warning text-dark">' + safeT('need_re-sign') + '</span>';
+                actionHtml = `<button class="btn btn-warning resign-btn" data-id="${t.id}"><i class="bi bi-exclamation-triangle"></i> ${safeT('re-sign')}</button>`;
+            } else {
+                statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
+                actionHtml = `<button class="btn btn-success" disabled>${safeT('signed')}</button>`;
+            }
         }
 
-        /**
-        card.innerHTML = `
-          <div class="card-body">
-            <h5 class="card-title">${escapeHtml(t.name)}</h5>
-            <p class="card-text small">
-              ${safeT('period')}：${new Date(t.start_time).toLocaleString()} - ${new Date(t.end_time).toLocaleString()}<br>
-              ${statusBadge} ${signTimeHtml}
-            </p>
-            ${actionHtml}
-          </div>
-        `; */
-        // 修改 card.innerHTML 部分------------------0514---------------------------
+        // 签到时间显示
+        let signTimeHtml = '';
+        if (t.signed && t.sign_time && !t.is_future) {
+            signTimeHtml = `<div class="small text-muted mt-2">${safeT('sign_in_period')}：${new Date(t.sign_time).toLocaleString()}</div>`;
+        }
+
         card.innerHTML = `
             <div class="card-dashboard training-card position-relative">
                 <div class="card-status-bar ${getStatusBarClass(t)}"></div>
@@ -362,29 +356,18 @@
                             <i class="bi bi-calendar-range"></i>
                             <span>${new Date(t.start_time).toLocaleString()} → ${new Date(t.end_time).toLocaleString()}</span>
                         </div>
-                        ${t.signed ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
+                        ${t.signed && !t.is_future ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
                     </div>
-                    ${!t.signed ? `<div class="mt-2">${actionHtml}</div>` : (t.needs_resign ? `<div class="mt-2">${actionHtml}</div>` : '')}
+                    ${signTimeHtml}
+                    <div class="mt-2">${actionHtml}</div>
                 </div>
             </div>
         `;
 
-        // 新增辅助函数获取左侧条颜色类和徽章类
-        function getStatusBarClass(t) {
-            if (!t.signed) return 'warning';
-            if (t.needs_resign) return 'danger';
-            return 'success';
-        }
-        function getStatusBadgeClass(t) {
-            if (!t.signed) return 'bg-warning text-dark';
-            if (t.needs_resign) return 'bg-danger text-white';
-            return 'bg-success text-white';
-        }
-        // -----------------------------0514---------------------------
-        
         col.appendChild(card);
         container.appendChild(col);
       });
+
       // 绑定签到按钮事件
       document.querySelectorAll('.sign-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -408,6 +391,21 @@
       });
     }
 
+    // 辅助函数
+    function getStatusBarClass(t) {
+        if (t.is_future) return 'secondary';
+        if (!t.signed) return 'warning';
+        if (t.needs_resign) return 'danger';
+        return 'success';
+    }
+
+    function getStatusBadgeClass(t) {
+        if (t.is_future) return 'bg-secondary text-white';
+        if (!t.signed) return 'bg-warning text-dark';
+        if (t.needs_resign) return 'bg-danger text-white';
+        return 'bg-success text-white';
+    }
+
     // 加载“我的访谈”
     async function loadMyInterviews() {
         try {
@@ -424,21 +422,6 @@
                 col.className = 'col-md-6 col-lg-4';
                 const card = document.createElement('div');
                 card.className = 'card h-100 shadow-sm';
-                /**
-                card.innerHTML = `
-                    <div class="card-body">
-                        <h5 class="card-title">${escapeHtml(inv.title)}</h5>
-                        <p class="card-text small">
-                            ${safeT('period')}：${new Date(inv.start_time).toLocaleString()} - ${new Date(inv.end_time).toLocaleString()}
-                        </p>
-                        <a 
-                          href="${inv.is_completed ? '#' : '/interview/take/' + inv.id}" 
-                          class="btn btn-sm ${inv.is_completed ? 'btn-secondary' : 'btn-primary'}"
-                          ${inv.is_completed ? 'disabled' : ''}>
-                          ${inv.is_completed ? safeT('js_completed') : safeT('js_start_interview')}
-                        </a>
-                    </div>
-                `; */
                 // 修改 card.innerHTML 部分
                 const isCompleted = inv.is_completed;
                 const statusClass = isCompleted ? 'success' : 'primary';

@@ -1,0 +1,194 @@
+<!-- templates/components/delete_modal.html -->
+<!-- 软硬删除选项模态框 -->
+
+<div class="modal fade" id="deleteTypeModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle-fill text-warning me-2"></i>
+                    <span data-i18n="delete_confirm_title">删除确认</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteModalMessage" class="mb-3">
+                    <span data-i18n="delete_confirm_message">确定要删除选中的记录吗？</span>
+                </p>
+                <div class="alert alert-info mb-2" id="deleteInfoArea">
+                    <small>
+                        <i class="bi bi-info-circle"></i>
+                        <span data-i18n="soft_delete_info">软删除：记录将隐藏但可恢复，保留数据审计痕迹</span><br>
+                        <i class="bi bi-exclamation-triangle text-warning"></i>
+                        <span data-i18n="hard_delete_warning">永久删除：记录将彻底删除，无法恢复，请谨慎操作！</span>
+                    </small>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> <span data-i18n="cancel">取消</span>
+                </button>
+                <button type="button" class="btn btn-warning" id="softDeleteBtn">
+                    <i class="bi bi-archive"></i> <span data-i18n="soft_delete">软删除</span>
+                </button>
+                <button type="button" class="btn btn-danger" id="hardDeleteBtn">
+                    <i class="bi bi-trash3"></i> <span data-i18n="hard_delete">永久删除</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 全局删除管理器 - 简化稳定版
+(function() {
+    let currentCallback = null;
+    let currentIds = [];
+    let deleteModal = null;
+    
+    // 安全获取元素，不报错
+    function safeGetElement(id) {
+        const el = document.getElementById(id);
+        if (!el) {
+            console.debug(`元素 ${id} 未找到，将跳过`);
+        }
+        return el;
+    }
+    
+    // 初始化模态框
+    function initModal() {
+        const modalEl = safeGetElement('deleteTypeModal');
+        if (!modalEl) {
+            console.error('deleteTypeModal 元素不存在，请确保 delete_modal.html 已正确引入');
+            return false;
+        }
+        
+        if (typeof bootstrap === 'undefined') {
+            console.error('Bootstrap JS 未加载，请检查 base.html 中的脚本顺序');
+            return false;
+        }
+        
+        try {
+            deleteModal = new bootstrap.Modal(modalEl);
+            return true;
+        } catch (e) {
+            console.error('创建 Bootstrap Modal 失败:', e);
+            return false;
+        }
+    }
+    
+    // 显示删除确认框
+    window.showDeleteConfirm = function(options) {
+        // 确保模态框已初始化
+        if (!deleteModal) {
+            const inited = initModal();
+            if (!inited) {
+                // 降级：使用原生 confirm
+                if (confirm(options.message || '确定删除？')) {
+                    if (options.onConfirm) {
+                        options.onConfirm(options.type || 'soft', options.ids || []);
+                    }
+                }
+                return;
+            }
+        }
+        
+        // 保存数据
+        currentIds = options.ids || [];
+        currentCallback = options.onConfirm;
+        
+        // 设置消息内容
+        const msgEl = safeGetElement('deleteModalMessage');
+        if (msgEl) {
+            let message = options.message;
+            if (!message) {
+                message = (typeof t === 'function') ? t('delete_confirm_message') : '确定要删除选中的记录吗？';
+            }
+            if (currentIds.length > 1) {
+                const countText = (typeof t === 'function') ? t('items') : '条记录';
+                message += ` (${currentIds.length} ${countText})`;
+            }
+            msgEl.innerHTML = message;
+        }
+        
+        // 设置提示区域（如果元素存在）
+        const infoArea = safeGetElement('deleteInfoArea');
+        if (infoArea) {
+            infoArea.style.display = (options.showInfo === false) ? 'none' : 'block';
+        }
+        
+        // 高亮默认按钮
+        const softBtn = safeGetElement('softDeleteBtn');
+        const hardBtn = safeGetElement('hardDeleteBtn');
+        if (softBtn && hardBtn) {
+            softBtn.classList.remove('btn-glow');
+            hardBtn.classList.remove('btn-glow');
+            if (options.type === 'hard') {
+                hardBtn.classList.add('btn-glow');
+            } else {
+                softBtn.classList.add('btn-glow');
+            }
+        }
+        
+        // 显示模态框
+        try {
+            deleteModal.show();
+        } catch (e) {
+            console.error('显示模态框失败:', e);
+            // 降级
+            if (confirm(options.message || '确定删除？')) {
+                if (options.onConfirm) {
+                    options.onConfirm(options.type || 'soft', currentIds);
+                }
+            }
+        }
+    };
+    
+    // 绑定按钮事件（在模态框显示时动态绑定，避免重复）
+    document.addEventListener('click', function(e) {
+        const softBtn = e.target.closest('#softDeleteBtn');
+        const hardBtn = e.target.closest('#hardDeleteBtn');
+        
+        if (softBtn && currentCallback) {
+            currentCallback('soft', currentIds);
+            if (deleteModal) deleteModal.hide();
+        }
+        
+        if (hardBtn && currentCallback) {
+            currentCallback('hard', currentIds);
+            if (deleteModal) deleteModal.hide();
+        }
+    });
+    
+    // 清理回调
+    const modalEl = safeGetElement('deleteTypeModal');
+    if (modalEl) {
+        modalEl.addEventListener('hidden.bs.modal', function() {
+            currentCallback = null;
+            currentIds = [];
+        });
+    }
+    
+    // 延迟初始化，确保 Bootstrap 已加载
+    setTimeout(initModal, 200);
+})();
+
+// 添加样式
+(function addStyles() {
+    if (document.getElementById('deleteModalCustomStyle')) return;
+    const style = document.createElement('style');
+    style.id = 'deleteModalCustomStyle';
+    style.textContent = `
+        .btn-glow {
+            animation: btnPulse 0.4s ease-in-out;
+            box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.5);
+        }
+        @keyframes btnPulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+    `;
+    document.head.appendChild(style);
+})();
+</script>
