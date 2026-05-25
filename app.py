@@ -6409,11 +6409,6 @@ def get_interview_user_answers(interview_id, user_id):
     if not inv_res.data:
         return jsonify({"error": "访谈不存在"}), 404
 
-    # 获取该用户的答题记录，关联题目
-    '''
-    results = db.table("interview_results").select("*, questions!interview_results_question_id_fkey(*)") \
-        .eq("interview_id", interview_id).eq("user_id", user_id).execute()
-    '''
     # ✅ 分步查询
     # 第一步：获取用户的所有访谈结果
     interview_results = db.table("interview_results") \
@@ -6516,7 +6511,7 @@ def api_admin_delete_interview_user_result(interview_id, user_id):
 @login_required
 @admin_required
 def api_admin_resample_interview(interview_id, user_id):
-    """重新为指定用户抽题"""
+    """重新为指定用户抽题（先删除旧记录，再插入新记录）"""
     db = get_supabase()
     
     # 获取访谈信息
@@ -6534,24 +6529,34 @@ def api_admin_resample_interview(interview_id, user_id):
         return jsonify({"success": False, "message": "题库无题目，无法重新抽题"}), 400
     
     try:
-        # 方案1：软删除旧记录
-        db.table("interview_results").update({
-            "deleted_at": datetime.now(timezone.utc).isoformat(),
-            "deleted_by": session['user_id']
-        }).eq("interview_id", interview_id).eq("user_id", user_id).execute()
+        # ✅ 1. 先删除该用户在该访谈下的所有旧记录（硬删除）
+        delete_result = db.table("interview_results").delete() \
+            .eq("interview_id", interview_id) \
+            .eq("user_id", user_id) \
+            .execute()
         
-        # 重新抽题
+        deleted_count = len(delete_result.data) if delete_result.data else 0
+        logger.info(f"已删除用户 {user_id} 的 {deleted_count} 条旧访谈记录")
+        
+        # 2. 重新抽题
         questions = random_pick_questions(exam_id, question_count)
+        inserted_count = 0
         for q in questions:
-            db.table("interview_results").insert({
+            result = db.table("interview_results").insert({
                 "interview_id": interview_id,
                 "user_id": user_id,
                 "question_id": q['id'],
-                "created_at": datetime.now(timezone.utc).isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "answer": None,
+                "is_correct": None,
+                "submitted_at": None
             }).execute()
+            if result.data:
+                inserted_count += 1
         
-        logger.info(f"访谈重新抽题成功: interview_id={interview_id}, user_id={user_id}")
-        return jsonify({"success": True, "message": "重新抽题成功"})
+        logger.info(f"已为用户 {user_id} 插入 {inserted_count} 条新访谈题目")
+        
+        return jsonify({"success": True, "message": f"重新抽题成功，已删除 {deleted_count} 条旧记录，新增 {inserted_count} 道题目"})
     except Exception as e:
         logger.error(f"重新抽题失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
