@@ -30,7 +30,9 @@ from services.auth import hash_password
 from config import Config
 from utils.status import get_exam_status
 from utils.common import (
-    match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display
+    match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display,
+    format_countries_display,  # ✅ 新增
+    format_single_country_display  # ✅ 新增（可选）
 )
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time, _send_training_notifications
 from utils.permissions import (
@@ -1534,21 +1536,90 @@ def admin_delete_exam(exam_id):
     permanent = request.args.get('permanent', 'false').lower() == 'true'
     db = get_supabase()
     
+    referer = request.referrer or url_for('admin_exams_page')
+    
+    logger.info("=" * 60)
+    logger.info(f"删除考试请求 - exam_id: {exam_id}")
+    logger.info(f"permanent: {permanent}")
+    
     try:
+        # 检查考试是否存在
+        exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
+        if not exam_res.data:
+            flash(f"考试 ID {exam_id} 不存在", "warning")
+            return redirect(referer)
+        
+        exam_title = exam_res.data.get('title', f'ID {exam_id}')
+        
         if permanent:
-            # 永久删除：删除考试及其关联题目
-            db.table("questions").delete().eq("exam_id", exam_id).execute()
-            db.table("exams").delete().eq("id", exam_id).execute()
-            flash(f"考试 ID {exam_id} 已永久删除", "success")
+            logger.info(f"开始永久删除考试 {exam_id}")
+            
+            # 按顺序删除关联数据
+            tables_to_delete = [
+                ("questions", "题目"),
+                ("exam_assignments", "考试分配"),
+                ("exam_results", "考试成绩"),
+                ("user_exam_status", "考试状态"),
+                ("user_exam_drafts", "考试草稿"),
+            ]
+            
+            for table_name, cn_name in tables_to_delete:
+                try:
+                    result = db.table(table_name).delete().eq("exam_id", exam_id).execute()
+                    # 检查删除结果
+                    deleted_count = 0
+                    if hasattr(result, 'count'):
+                        deleted_count = result.count
+                    elif result.data:
+                        deleted_count = len(result.data)
+                    logger.info(f"已删除 {cn_name} ({table_name}): {deleted_count} 条")
+                except Exception as e:
+                    logger.warning(f"删除 {cn_name} 时出错: {e}")
+            
+            # ✅ 关键：删除考试本身，并检查结果
+            delete_result = db.table("exams").delete().eq("id", exam_id).execute()
+            logger.info(f"删除考试原始结果: {delete_result}")
+            
+            # 检查是否真的删除了
+            deleted_success = False
+            if hasattr(delete_result, 'data') and delete_result.data:
+                deleted_success = len(delete_result.data) > 0
+            elif hasattr(delete_result, 'count'):
+                deleted_success = delete_result.count > 0
+            
+            if deleted_success:
+                flash(f"考试「{exam_title}」已永久删除", "success")
+                logger.info(f"✅ 考试 {exam_id} 永久删除成功")
+            else:
+                # 尝试使用 raw SQL 删除
+                logger.warning("Supabase API 删除失败，尝试使用 raw SQL")
+                try:
+                    from services.db import get_supabase_raw
+                    raw_result = get_supabase_raw().table("exams").delete().eq("id", exam_id).execute()
+                    logger.info(f"Raw SQL 删除结果: {raw_result}")
+                    flash(f"考试「{exam_title}」已永久删除", "success")
+                except Exception as raw_e:
+                    logger.error(f"Raw SQL 删除也失败: {raw_e}")
+                    flash(f"考试「{exam_title}」删除失败，请检查数据库权限", "danger")
         else:
-            # 软删除：标记 deleted_at
-            db.table("exams").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", exam_id).execute()
-            flash(f"考试 ID {exam_id} 已移至回收站（软删除）", "info")
-        return redirect(url_for('admin_dashboard'))
+            # 软删除
+            now_utc = datetime.now(timezone.utc).isoformat()
+            update_result = db.table("exams").update({
+                "deleted_at": now_utc
+            }).eq("id", exam_id).execute()
+            
+            if update_result.data:
+                flash(f"考试「{exam_title}」已软删除", "info")
+                logger.info(f"考试 {exam_id} 软删除成功")
+            else:
+                flash(f"考试「{exam_title}」软删除失败", "danger")
+        
+        return redirect(referer)
+        
     except Exception as e:
-        logger.error(f"删除考试失败: {e}")
-        flash("删除失败", "danger")
-        return redirect(url_for('admin_dashboard'))
+        logger.error(f"❌ 删除考试失败: {type(e).__name__}: {e}", exc_info=True)
+        flash(f"删除失败: {str(e)}", "danger")
+        return redirect(referer)
 
 @app.route('/admin/exam/restore/<int:exam_id>', methods=['POST'])
 @login_required
@@ -1872,18 +1943,22 @@ def admin_import_save():
     exam_title = request.args.get('title', '未命名考试')
     is_draft = request.args.get('draft', 'false').lower() == 'true'
     db = get_supabase()
-    country_code = request.json.get('country_code', '')  # 新增
-
     
-    # ✅ 新增：检查管理员是否有权限创建该国家的考试
+    # ✅ 修改：支持多国家，接收 countries 数组
+    countries = request.json.get('countries', [])  # 数组格式 ["NP", "LK", "BD"]
+    country_code = request.json.get('country_code', '')  # 兼容旧版单国家
+    
+    # 如果没有 countries 但有 country_code，转换为数组
+    if not countries and country_code:
+        countries = [country_code]
+    
+    # 权限检查
     current_user_id = session.get('user_id')
     current_role = session.get('role')
     
-    # 获取用户的权限范围
     user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
     user_data = user_res.data if user_res and user_res.data else {}
     
-    # 计算允许的国家列表
     allowed = None
     if current_role == 'super_admin':
         admin_countries = user_data.get('admin_countries')
@@ -1900,7 +1975,6 @@ def admin_import_save():
             except:
                 allowed = None
         
-        # 如果没有设置权限范围，使用用户所在国家
         if not allowed:
             user_country = user_data.get('country')
             if user_country:
@@ -1908,59 +1982,38 @@ def admin_import_save():
             else:
                 allowed = []
     
-    # ✅ 详细日志
-    logger.info("=" * 50)
-    logger.info("考试导入保存 POST 请求")
-    logger.info(f"用户ID: {current_user_id}, 角色: {current_role}")
-    logger.info(f"数据库 admin_countries: {user_data.get('admin_countries')}")
-    logger.info(f"数据库 user_country: {user_data.get('country')}")
-    logger.info(f"计算后 allowed: {allowed}")
-    logger.info(f"请求中的 country_code: {country_code}")
-    logger.info(f"考试标题: {exam_title}, is_draft: {is_draft}")
-    
-    # ✅ 权限检查
+    # 权限检查：管理员创建的所有国家必须在允许范围内
     if current_role == 'admin':
         if not allowed or len(allowed) == 0:
-            logger.warning(f"管理员 {current_user_id} 没有任何国家权限，禁止创建考试")
             return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
         
-        if not country_code:
-            logger.warning(f"未指定国家，但管理员权限范围={allowed}")
-            return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
+        if not countries:
+            return jsonify({"success": False, "message": "请至少选择一个国家"}), 400
         
-        if country_code not in allowed:
-            logger.warning(f"权限拒绝: country_code={country_code} 不在 {allowed} 中")
-            return jsonify({"success": False, "message": "jsonify_no_authority_creat_exam_this_county", "params": []}), 403
-        
-        logger.info(f"权限检查通过: {country_code} 在 {allowed} 中")
-    
-    elif current_role == 'super_admin':
-        if allowed and len(allowed) > 0:
-            if not country_code:
-                return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
-            if country_code not in allowed:
-                return jsonify({"success": False, "message": "jsonify_no_authority_creat_exam_this_county", "params": []}), 403
-
+        for c in countries:
+            if c not in allowed:
+                return jsonify({"success": False, "message": f"无权创建国家 {c} 的考试"}), 403
 
     try:
-        # ✅ 1. 创建新考试记录（不指定 ID，让数据库自增）
+        # 创建考试记录
         exam_insert = db.table("exams").insert({
             "title": exam_title,
-            "is_active": not is_draft,     # 草稿不激活，正常考试激活
-            "country": country_code,   # 存储国家代码
-            "status": "draft" if is_draft else "active"   # 草稿状态为 draft
+            "is_active": not is_draft,
+            "countries": json.dumps(countries),  # ✅ 存储为 JSON 字符串
+            "status": "draft" if is_draft else "active"
         }).execute()
+        
         if not exam_insert.data:
             raise Exception("创建考试失败")
-        new_exam_id = exam_insert.data[0]['id']   # 获取自增生成的 ID
+        new_exam_id = exam_insert.data[0]['id']
         
-        # ✅ 2. 插入题目，关联新考试 ID
+        # 插入题目
         for q in data:
             q['exam_id'] = new_exam_id
             q['options'] = json.dumps(q.get('options', {}))
 
         res = db.table("questions").insert(data).execute()
-        logger.info(f"✅ 成功创建考试「{exam_title}」ID={new_exam_id}，插入 {len(res.data)} 道题目")
+        logger.info(f"✅ 成功创建考试「{exam_title}」ID={new_exam_id}，插入 {len(res.data)} 道题目，国家: {countries}")
         return jsonify({"success": True, "exam_id": new_exam_id})
     except Exception as e:
         logger.error(f"❌ 导入保存失败: {e}")
@@ -1970,7 +2023,6 @@ def admin_import_save():
 @login_required
 @admin_required
 def copy_exam(exam_id):
-    """复制考试及其所有题目"""
     data = request.json
     new_title = data.get('new_title')
     if not new_title:
@@ -1978,22 +2030,27 @@ def copy_exam(exam_id):
 
     db = get_supabase()
 
-    # 1. 获取原考试信息
+    # 获取原考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
         return jsonify({"success": False, "message": "原考试不存在"}), 404
     exam = exam_res.data
     
-    # ✅ 新增：检查管理员是否有权限创建该国家的考试
+    # ✅ 获取原考试的国家列表
+    original_countries = exam.get('countries', [])
+    if isinstance(original_countries, str):
+        try:
+            original_countries = json.loads(original_countries)
+        except:
+            original_countries = [exam.get('country', '')] if exam.get('country') else []
+    
+    # 权限检查
     current_user_id = session.get('user_id')
     current_role = session.get('role')
-    original_country = exam.get('country', '')
     
-    # 获取用户的权限范围
     user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
     user_data = user_res.data if user_res and user_res.data else {}
     
-    # 计算允许的国家列表
     allowed = None
     if current_role == 'super_admin':
         admin_countries = user_data.get('admin_countries')
@@ -2017,16 +2074,16 @@ def copy_exam(exam_id):
             else:
                 allowed = []
     
-    # ✅ 权限检查
+    # 权限检查：拷贝的考试国家必须在允许范围内
     if current_role == 'admin':
         if not allowed or len(allowed) == 0:
             return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
         
-        if original_country and original_country not in allowed:
-            logger.warning(f"权限拒绝: 原考试国家={original_country} 不在 {allowed} 中")
-            return jsonify({"success": False, "message": "jsonify_no_authority_copy_exam", "params": []}), 403
+        for c in original_countries:
+            if c not in allowed:
+                return jsonify({"success": False, "message": f"无权拷贝国家 {c} 的考试"}), 403
 
-    # 2. 创建新考试（复制除自增ID和时间戳外的字段）
+    # 创建新考试
     new_exam_data = {
         "title": new_title,
         "duration": exam.get("duration", 60),
@@ -2035,19 +2092,17 @@ def copy_exam(exam_id):
         "start_time": exam.get("start_time"),
         "end_time": exam.get("end_time"),
         "quarter": exam.get("quarter"),
-        "created_by": session['user_id'],  # 当前管理员
+        "created_by": session['user_id'],
         "reviewer": exam.get("reviewer"),
-        "exam_country" : exam.get('country', ''), #0426
-        "country": exam.get("country", '')
+        "countries": json.dumps(original_countries)  # ✅ 复制多国家
     }
-    # 移除 None 值，避免数据库报错
     new_exam_data = {k: v for k, v in new_exam_data.items() if v is not None}
     insert_res = db.table("exams").insert(new_exam_data).execute()
     if not insert_res.data:
         return jsonify({"success": False, "message": "jsonify_exam_copy_failure", "params": []}), 500
     new_exam_id = insert_res.data[0]['id']
 
-    # 3. 复制原考试的所有题目
+    # 复制题目
     questions_res = db.table("questions").select("*").eq("exam_id", exam_id).execute()
     if questions_res.data:
         new_questions = []
@@ -2067,7 +2122,7 @@ def copy_exam(exam_id):
             new_questions.append(new_q)
         db.table("questions").insert(new_questions).execute()
 
-    logger.info(f"✅ 复制考试成功: 原考试ID={exam_id}, 新考试ID={new_exam_id}, 国家={exam.get('country')}")
+    logger.info(f"✅ 复制考试成功: 原考试ID={exam_id}, 新考试ID={new_exam_id}, 国家={original_countries}")
     return jsonify({"success": True, "new_id": new_exam_id})
 
 @app.route('/admin/exam/copy_preview/<int:exam_id>')
@@ -3682,7 +3737,23 @@ def api_admin_reset_user_password(user_id):
 @admin_required
 def admin_exams_page():
     """考试清单页面（一级菜单）"""
-    return render_template('admin/list_exams.html')
+    db = get_supabase()
+    exams = db.table("exams").select("*").execute().data or []
+    
+    # 格式化考试的国家显示
+    for exam in exams:
+        # 显示国家代码（如 "NP, LK"）
+        exam['countries_display'] = format_countries_display(
+            exam.get('countries', exam.get('country', ''))
+        )
+        # 或显示国家名称（如 "尼泊尔, 斯里兰卡"）
+        exam['countries_display_zh'] = format_countries_display(
+            exam.get('countries', exam.get('country', '')), 
+            use_name=True, 
+            lang='zh'
+        )
+    
+    return render_template('admin/list_exams.html', exams=exams)
 
 # 2.1 考试统计（用于卡片显示）
 @app.route('/api/admin/exams/stats')

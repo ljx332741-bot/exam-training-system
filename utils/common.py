@@ -188,3 +188,98 @@ def format_admin_countries_display(admin_countries_json):
         
     except (json.JSONDecodeError, TypeError, Exception):
         return '无限制'
+
+def format_countries_display(countries_data, use_name=False, lang='zh'):
+    """
+    格式化考试目标国家列表用于显示
+    
+    Args:
+        countries_data: 可以是以下格式:
+            - JSON 字符串: '["NP", "LK"]'
+            - Python 列表: ["NP", "LK"]
+            - 单个国家字符串: "NP"
+            - None 或 空值
+        use_name: 是否显示国家名称（而非代码），默认 False 显示代码
+        lang: 语言 'zh' 或 'en'（仅当 use_name=True 时生效）
+    
+    Returns:
+        str: 格式化后的显示字符串
+    """
+    if not countries_data:
+        return '-'
+    
+    # 解析为国家代码列表
+    country_codes = []
+    
+    if isinstance(countries_data, str):
+        try:
+            parsed = json.loads(countries_data)
+            if isinstance(parsed, list):
+                country_codes = parsed
+            else:
+                country_codes = [countries_data] if countries_data else []
+        except json.JSONDecodeError:
+            country_codes = [countries_data] if countries_data else []
+    elif isinstance(countries_data, list):
+        country_codes = countries_data
+    else:
+        return str(countries_data) if countries_data else '-'
+    
+    if not country_codes:
+        return '-'
+    
+    # 如果需要显示名称
+    if use_name:
+        try:
+            db = get_supabase()
+            res = db.table("countries").select("code, name_zh, name_en").execute()
+            country_map = {c['code']: c for c in (res.data or [])}
+            
+            names = []
+            for code in country_codes:
+                if code in country_map:
+                    name = country_map[code].get(f'name_{lang}') or country_map[code].get('name_zh') or code
+                    names.append(name)
+                else:
+                    names.append(code)
+            
+            if len(names) == 1:
+                return names[0]
+            return ', '.join(names)
+        except Exception as e:
+            logger.warning(f"获取国家名称失败: {e}")
+            return ', '.join(country_codes)
+    
+    # 显示代码
+    if len(country_codes) == 1:
+        return country_codes[0]
+    return ', '.join(country_codes)
+
+
+def format_single_country_display(country_code, lang='zh'):
+    """
+    格式化单个国家显示（兼容旧数据）
+    
+    Args:
+        country_code: 国家代码字符串
+        lang: 语言 'zh' 或 'en'
+    
+    Returns:
+        str: 格式化后的显示字符串
+    """
+    if not country_code:
+        return '-'
+    
+    # 如果是 JSON 数组格式，调用上面的函数处理
+    if country_code.startswith('['):
+        return format_countries_display(country_code, use_name=True, lang=lang)
+    
+    try:
+        db = get_supabase()
+        res = db.table("countries").select(f"name_{lang}, name_zh, name_en").eq("code", country_code).maybe_single().execute()
+        if res.data:
+            name = res.data.get(f'name_{lang}') or res.data.get('name_zh') or country_code
+            return name
+        return country_code
+    except Exception:
+        return country_code
