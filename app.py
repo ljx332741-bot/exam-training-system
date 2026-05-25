@@ -4043,6 +4043,8 @@ def api_admin_exams_list():
 
     # 5. 构建返回数据（动态状态、题目数、人数等，与原来相同）
     now = datetime.now(timezone.utc)
+
+    # 构建返回数据时，过滤国家列表
     exams_with_status = []
     for exam in all_exams:
         exam_id = exam['id']
@@ -4062,8 +4064,35 @@ def api_admin_exams_list():
         if exam.get('created_by'):
             creator_res = db.table("users").select("name_en").eq("id", exam['created_by']).maybe_single().execute()
             creator_name = creator_res.data.get('name_en', '') if creator_res.data else ''
+
+        # ✅ 获取考试的国家列表
+        exam_countries = []
+        countries_data = exam.get('countries') or exam.get('country', '')
+        
+        # 解析国家列表
+        if isinstance(countries_data, str):
+            try:
+                exam_countries = json.loads(countries_data)
+            except:
+                exam_countries = [countries_data] if countries_data else []
+        elif isinstance(countries_data, list):
+            exam_countries = countries_data
+        else:
+            exam_countries = []
+        
+        # ✅ 根据管理员权限过滤国家（只保留有权管理的国家）
+        if allowed is not None:
+            filtered_countries = [c for c in exam_countries if c in allowed]
+        else:
+            filtered_countries = exam_countries
+        
+        # ✅ 格式化显示
+        countries_display = ', '.join(filtered_countries) if filtered_countries else '-'
         exams_with_status.append({
-            "id": exam_id, "title": exam['title'], "status": dynamic_status,
+            "id": exam_id, "title": exam['title'], "status": dynamic_status, 
+            "countries_display": countries_display,  # 过滤后的显示
+            "countries": filtered_countries,          # 过滤后的国家列表
+            "country_count": len(filtered_countries), # 国家数量
             "start_time": exam.get('start_time'), "end_time": exam.get('end_time'),
             "duration": exam.get('duration', 60), "question_count": q_count,
             "assigned_count": assigned_count, "submitted_count": submitted_count,
@@ -4593,13 +4622,57 @@ def api_available_trainings():
     user_id = session['user_id']
     now = datetime.now(timezone.utc).isoformat()
     
-    # 查询所有激活的培训
+    # ✅ 1. 获取当前学员的国家
+    user_res = db.table("users").select("country").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify([])
+    
+    user_country = user_res.data.get('country')
+    if not user_country:
+        # 学员没有设置国家，返回空列表
+        return jsonify([])
+    
+    # ✅ 2. 查询激活的培训
     trainings_res = db.table("trainings") \
         .select("*") \
         .eq("is_active", True) \
         .execute()
 
     trainings = trainings_res.data or []
+
+    # ✅ 3. 根据学员国家过滤培训
+    filtered_trainings = []
+    for t in trainings:
+        training_country = t.get('country')
+        
+        # 跳过没有国家配置的培训
+        if not training_country:
+            continue
+        
+        # 解析国家（支持单个字符串或 JSON 数组）
+        country_list = []
+        if isinstance(training_country, str):
+            try:
+                # 尝试解析为 JSON 数组
+                parsed = json.loads(training_country)
+                if isinstance(parsed, list):
+                    country_list = parsed
+                else:
+                    country_list = [training_country]
+            except json.JSONDecodeError:
+                country_list = [training_country]
+        elif isinstance(training_country, list):
+            country_list = training_country
+        else:
+            country_list = [str(training_country)]
+        
+        # 检查学员国家是否在培训的目标国家中
+        if user_country in country_list:
+            filtered_trainings.append(t)
+    
+    # 如果没有符合条件的培训，直接返回空列表
+    if not filtered_trainings:
+        return jsonify([])
     
     # 查询用户已签到记录
     att_res = db.table("training_attendances") \
@@ -4609,7 +4682,8 @@ def api_available_trainings():
     signed_dict = {a['training_id']: a for a in (att_res.data or [])}
     
     result = []
-    for t in trainings:
+    # ✅ 关键修复：使用 filtered_trainings，而不是 trainings
+    for t in filtered_trainings:
         start = t.get('start_time')
         end = t.get('end_time')
         
@@ -4625,12 +4699,12 @@ def api_available_trainings():
             if not signed_info.get('signature_url'):
                 needs_resign = True
         
-        # ✅ 判断培训状态
+        # 判断培训状态
         is_future = now < start      # 未开始（未来）
         is_active = start <= now <= end  # 进行中
         is_expired = now > end       # 已过期
         
-        # ✅ 显示条件：进行中 或 未开始（未来）都显示，已过期的不显示
+        # 显示条件：进行中 或 未开始（未来）都显示，已过期的不显示
         if is_expired:
             continue
         
@@ -4654,7 +4728,6 @@ def api_available_trainings():
                 button_text = "重新签名" if needs_resign else "立即签到"
                 button_html = f'<button class="btn {button_class}" data-id="{t["id"]}">{button_text}</button>'
         else:
-            # 已过期（理论上不会到这里，因为上面已过滤）
             continue
         
         result.append({
@@ -4666,10 +4739,11 @@ def api_available_trainings():
             "sign_time": signed_info['sign_time'] if signed_info else None,
             "signed_name": signed_info['signed_name'] if signed_info else None,
             "needs_resign": needs_resign,
-            "status": status_text,           # ✅ 新增状态字段
-            "is_future": is_future,          # ✅ 是否未开始
-            "is_active": is_active,          # ✅ 是否进行中
-            "button_html": button_html       # ✅ 预生成的按钮HTML
+            "status": status_text,
+            "is_future": is_future,
+            "is_active": is_active,
+            "can_sign": can_sign,
+            "button_html": button_html
         })
     
     return jsonify(result)
