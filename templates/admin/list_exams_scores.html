@@ -32,6 +32,7 @@
                 </div>
                 <div class="col-md-5 d-flex justify-content-end">
                     <button id="batchExportBtn" class="btn btn-success me-2"><i class="bi bi-file-earmark-pdf"></i> <span data-i18n="batch_export">批量导出选中PDF</span></button>
+                    <button id="batchDeleteBtn" class="btn btn-danger me-2"><i class="bi bi-trash"></i> <span data-i18n="batch_delete">批量删除</span></button>
                     <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
@@ -94,6 +95,70 @@
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
 
+    // 批量删除
+    async function batchDeleteSelected() {
+        const selectedResultIds = Array.from(document.querySelectorAll('.user-checkbox:checked'))
+            .map(cb => cb.dataset.resultId);
+        
+        if (selectedResultIds.length === 0) {
+            alert(t('select_at_least_one') || "请至少选择一个成绩记录");
+            return;
+        }
+    
+        // 使用全局删除模态框
+        window.showDeleteConfirm({
+            title: t('delete_exam_results'),
+            message: t('confirm_delete_exam_results'),
+            ids: selectedResultIds,
+            type: 'soft',  // 默认选中软删除
+            onConfirm: async (deleteType, ids) => {
+                const response = await fetch('/api/admin/exam/result/batch_delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                        ids: ids, 
+                        delete_type: deleteType 
+                    })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert(`${t('delete_success')}: ${data.success_count} 条`);
+                    loadScores(); // 刷新列表
+                } else {
+                    alert(t('delete_failed') + ': ' + (data.message || ''));
+                }
+            }
+        });
+    }
+
+    // 单个删除
+    async function deleteSingleResult(resultId, userName) {
+        window.showDeleteConfirm({
+            title: t('delete_exam_result'),
+            message: t('confirm_delete_single_result').replace('{name}', userName),
+            ids: [resultId],
+            type: 'soft',
+            onConfirm: async (deleteType, ids) => {
+                const response = await fetch('/api/admin/exam/result/batch_delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: ids, delete_type: deleteType })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(t('delete_success'));
+                    loadScores();
+                } else {
+                    alert(t('delete_failed'));
+                }
+            }
+        });
+    }
+
+    // 绑定事件
+    document.getElementById('batchDeleteBtn')?.addEventListener('click', batchDeleteSelected);
+
     function renderScoresTable(scores) {
         const tbody = document.getElementById('scoresTbody');
         if (!scores.length) {
@@ -117,9 +182,22 @@
                 <td>
                     <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info" target="_blank">${t('t_details')}</a>
                     <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
+                    <button class="btn btn-sm btn-outline-danger delete-result-btn" data-result-id="${s.result_id}" data-user-name="${escapeHtml(s.name)}">
+                        <i class="bi bi-trash"></i> ${t('t_delete')}
+                    </button>
                 </td>
             </tr>
         `).join('');
+
+        // 绑定删除按钮事件
+        document.querySelectorAll('.delete-result-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const resultId = btn.dataset.resultId;
+                const userName = btn.dataset.userName;
+                deleteSingleResult(resultId, userName);
+            });
+        });
 
         // 全选逻辑
         const selectAll = document.getElementById('selectAll');

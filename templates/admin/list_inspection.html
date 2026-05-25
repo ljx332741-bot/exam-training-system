@@ -49,6 +49,8 @@
                             <th><span data-i18n="interviewee_period">访谈有效期</span></th>
                             <th><span data-i18n="interviewee_number">访谈人数</span></th>
                             <th><span data-i18n="quenstion_number">题目数量</span></th>
+                            <th><span data-i18n="inspector">检查人员</span></th>
+                            <th><span data-i18n="feedback_person">反馈人</span></th>  <!-- ✅ 新增 -->
                             <th><span data-i18n="status">状态</span></th>
                             <th><span data-i18n="actions">操作</span></th>
                         </tr>
@@ -98,6 +100,11 @@
                     <div class="col-md-6">
                         <label class="form-label" for="reviewerInput"><span data-i18n="inspector">检查人员（监督员）</span></label>
                         <input type="text" id="reviewerInput" class="form-control" 
+                        data-i18n-placeholder="placeholder_optional" placeholder="选填">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label" for="feedbackInput"><span data-i18n="feedback_person">反馈人</span></label>
+                        <input type="text" id="feedbackInput" class="form-control" 
                         data-i18n-placeholder="placeholder_optional" placeholder="选填">
                     </div>
                 </div>
@@ -321,11 +328,13 @@
                 <td>${formatLocalDateTime(inv.start_time)} - ${formatLocalDateTime(inv.end_time)}</td>
                 <td>${inv.interviewee_count} ${t('t_people')}</td>
                 <td>${inv.question_count} ${t('t_question_per_people')}</td>
+                <td>${escapeHtml(inv.reviewer || '-')}</td>
+                <td>${escapeHtml(inv.feedback || '-')}</td>  <!-- ✅ 新增反馈人列 -->
                 <td>${getStatusBadge(status)}</td>
                 <td>${actionButtons}</td>
             </tr>
         `;
-    }).join('');
+        }).join('');
 
         // 绑定事件
         document.querySelectorAll('.detail-btn').forEach(btn => {
@@ -549,6 +558,7 @@
         const examId = document.getElementById('selectedExamId').value;
         const questionCount = parseInt(document.getElementById('questionCount').value) || 5;
         const reviewer = document.getElementById('reviewerInput').value;
+        const feedback = document.getElementById('feedbackInput').value;  // ✅ 新增
         const startTime = localDateTimeToUTC(document.getElementById('startTime').value);
         const endTime = localDateTimeToUTC(document.getElementById('endTime').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
@@ -559,6 +569,7 @@
             exam_id: examId,
             question_count: questionCount,
             reviewer: reviewer,
+            feedback: feedback,  // ✅ 新增
             is_draft: isDraft,
             start_time: startTime || null,
             end_time: endTime || null,
@@ -599,6 +610,7 @@
         document.getElementById('selectedExamId').value = '';
         document.getElementById('questionCount').value = 5;
         document.getElementById('reviewerInput').value = '';
+        document.getElementById('feedbackInput').value = '';  // ✅ 新增
         document.getElementById('startTime').value = '';
         document.getElementById('endTime').value = '';
         document.getElementById('userSearch').value = '';
@@ -670,8 +682,9 @@
         // 填充基本信息
         document.getElementById('examSearch').value = interview.exam_title || '';
         document.getElementById('selectedExamId').value = interview.exam_id || '';
-        document.getElementById('questionCount').value = interview.question_count || 5;
+        document.getElementById('questionCount').value = interview.question_count || 8;
         document.getElementById('reviewerInput').value = interview.reviewer || '';
+        document.getElementById('feedbackInput').value = interview.feedback || '';  // ✅ 新增
         document.getElementById('startTime').value = toLocalDatetimeLocal(interview.start_time);
         document.getElementById('endTime').value = toLocalDatetimeLocal(interview.end_time);
 

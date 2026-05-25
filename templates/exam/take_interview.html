@@ -8,13 +8,13 @@
             <h4 class="mb-0"><i class="bi bi-chat-dots"></i> {{ interview.title }}</h4>
         </div>
         <div class="card-body">
-            <p><strong>检查人员：</strong>{{ interview.reviewer or '未指定' }}</p>
+            <p><strong><span data-i18n="inspector">检查人员</span>：</strong>{{ interview.reviewer or t('t_unspecified') }}</p>
             <form id="interviewForm">
                 {% for q in questions %}
                 <div class="mb-4 p-3 border rounded">
                     <strong>{{ q.num }}. {{ q.content_cn or q.content }}</strong>
                     {% if q.type == 'single' %}
-                        <span class="badge bg-primary ms-2">单选题</span>
+                        <span class="badge bg-primary ms-2" data-i18n="single">单选</span>
                         {% for key, opt in q.options.items() %}
                         <div class="form-check">
                             <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" value="{{ key }}" {% if q.user_answer == key %}checked{% endif %}>
@@ -22,7 +22,7 @@
                         </div>
                         {% endfor %}
                     {% elif q.type == 'multi' %}
-                        <span class="badge bg-warning ms-2">多选题</span>
+                        <span class="badge bg-warning ms-2" data-i18n="multi">多选</span>
                         {% for key, opt in q.options.items() %}
                         <div class="form-check">
                             <input class="form-check-input" type="checkbox" name="q_{{ q.interview_result_id }}" value="{{ key }}" {% if key in q.user_answer %}checked{% endif %}>
@@ -30,7 +30,7 @@
                         </div>
                         {% endfor %}
                     {% elif q.type == 'judge' %}
-                        <span class="badge bg-info ms-2">判断题</span>
+                        <span class="badge bg-info ms-2" data-i18n="judge">判断</span>
                         <div class="form-check form-check-inline">
                             <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" value="T" {% if q.user_answer == 'T' %}checked{% endif %}> True
                         </div>
@@ -40,7 +40,7 @@
                     {% endif %}
                 </div>
                 {% endfor %}
-                <button type="button" id="submitInterviewBtn" class="btn btn-success">提交访谈</button>
+                <button type="button" id="submitInterviewBtn" class="btn btn-success"><span data-i18n="submit">提交</span></button>
             </form>
         </div>
     </div>
@@ -48,6 +48,23 @@
 {% endblock %}
 {% block extra_js %}
 <script>
+    // ✅ 监听语言切换事件，刷新 data-i18n 翻译
+    function refreshTranslations() {
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+    }
+    
+    // 监听语言切换事件
+    window.addEventListener('app:languageChanged', function() {
+        refreshTranslations();
+    });
+    
+    // 页面加载时确保翻译正确
+    document.addEventListener('DOMContentLoaded', function() {
+        refreshTranslations();
+    });
+
     document.getElementById('submitInterviewBtn').addEventListener('click', async () => {
         const answers = {};
         const interviewId = {{ interview.id }};
@@ -63,7 +80,7 @@
             body: JSON.stringify({ answers })
         });
         const data = await res.json();
-        alert(data.message || '提交成功');
+        alert(data.message || t('t_submit_successfully'));
         if (data.success) window.location.href = '/dashboard';
     });
 </script>

@@ -4,6 +4,28 @@
 
 {% block content %}
 <div class="container-fluid">
+    <!-- 在卡片 body 中添加筛选行（如果还没有） -->
+    <div class="card mb-3 no-print">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <input type="text" id="countryFilter" class="form-control" list="countryDatalist" 
+                        placeholder="选择国家筛选">
+                    <datalist id="countryDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <button id="filterCountryBtn" class="btn btn-primary w-100">
+                        <i class="bi bi-filter"></i> <span data-i18n="filter">筛选</span>
+                    </button>
+                </div>
+                <div class="col-md-2">
+                    <button id="clearFilterBtn" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-eraser"></i> <span data-i18n="clear">清除</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     <div class="mb-4">
         <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_record">培训签到表</span></h2>
         <div class="d-flex justify-content-end gap-2 no-print">
@@ -24,6 +46,7 @@
                 <table class="table table-bordered align-middle">
                     <thead class="table-light">
                         <tr>
+                            <th class="no-print"><input type="checkbox" id="selectAll"></th>
                             <th>序号No</th>
                             <th>部门/合作伙伴（双语）Department/Partner</th>
                             <th>姓名+工号Name + Employee ID </th>
@@ -136,13 +159,104 @@
 <script>
     const trainingId = {{ request.view_args.get('training_id') }};
 
+    // 获取当前管理员允许的国家列表（用于筛选下拉框）
+    async function loadAllowedCountries() {
+        try {
+            // 调用现有接口获取管理员信息
+            const res = await fetch('/api/admin/refresh_permissions');
+            if (res.ok) {
+                const data = await res.json();
+                if (data.admin_countries) {
+                    let countries = data.admin_countries;
+                    if (typeof countries === 'string') {
+                        countries = JSON.parse(countries);
+                    }
+                    return countries;
+                }
+            }
+            return null;
+        } catch (e) {
+            console.error('获取权限失败:', e);
+            return null;
+        }
+    }
+
+    // 修改国家筛选下拉框，仅显示有权限的国家
+    async function populateCountryFilter() {
+        const allowedCountries = await loadAllowedCountries();
+        const countryInput = document.getElementById('countryFilter');
+        if (!countryInput) return;
+        
+        // 如果有权限限制，设置 datalist 只显示允许的国家
+        if (allowedCountries && allowedCountries.length > 0) {
+            const countries = await loadCountryList();
+            const allowedCountryNames = countries
+                .filter(c => allowedCountries.includes(c.code))
+                .map(c => ({ code: c.code, name: c.name_zh, name_en: c.name_en }));
+            
+            // 重新创建 datalist
+            const datalist = document.getElementById('countryDatalist');
+            if (datalist) {
+                datalist.innerHTML = '';
+                allowedCountryNames.forEach(c => {
+                    const optZh = document.createElement('option');
+                    optZh.value = c.name;
+                    datalist.appendChild(optZh);
+                    const optEn = document.createElement('option');
+                    optEn.value = c.name_en;
+                    datalist.appendChild(optEn);
+                    const optCode = document.createElement('option');
+                    optCode.value = c.code;
+                    datalist.appendChild(optCode);
+                });
+            }
+        }
+    }
+
+    // 筛选按钮事件
+    document.getElementById('filterCountryBtn')?.addEventListener('click', () => {
+        const country = document.getElementById('countryFilter').value;
+        const url = new URL(window.location.href);
+        if (country) {
+            url.searchParams.set('country', country);
+        } else {
+            url.searchParams.delete('country');
+        }
+        window.location.href = url.toString();
+    });
+
+    // 清除筛选按钮
+    document.getElementById('clearFilterBtn')?.addEventListener('click', () => {
+        window.location.href = window.location.pathname;
+    });
+
+    // 签到签字详情
     async function loadDetail() {
+        // ✅ 添加权限预检查
+        const allowedCountries = await loadAllowedCountries();
+        if (allowedCountries !== null && allowedCountries.length === 0) {
+            // 无权限，显示提示
+            document.getElementById('attendanceTbody').innerHTML = 
+                `<tr><td colspan="7" class="text-center text-danger">您没有查看任何国家签到记录的权限</td></tr>`;
+            return;
+        }
+        
         const urlParams = new URLSearchParams(window.location.search);
         let country = urlParams.get('country');
         // 过滤无效值（null、'null'、'undefined' 等均视为没有筛选）
         if (!country || country === 'null' || country === 'undefined') {
             country = '';
         }
+    
+        // ✅ 验证选择的 country 是否在权限范围内
+        if (country && allowedCountries !== null && !allowedCountries.includes(country)) {
+            alert('您没有权限查看该国家的签到记录');
+            // 清空 URL 参数
+            const newUrl = window.location.pathname;
+            window.history.replaceState({}, '', newUrl);
+            country = '';
+        }
+        
         let apiUrl = `/api/training/attendance/${trainingId}`;
         if (country) {
             apiUrl += `?country=${encodeURIComponent(country)}`;
@@ -186,7 +300,7 @@
         const tbody = document.getElementById('attendanceTbody');
         const records = data.attendances || [];
         if (records.length === 0) {
-            tbody.innerHTML = `<td><td colspan="5">${t('t_no_sign_in_record_available')}</td></tr>`;
+            tbody.innerHTML = `<td><td colspan="7">${t('t_no_sign_in_record_available')}</td></tr>`;
             return;
         }
         tbody.innerHTML = '';
@@ -200,20 +314,36 @@
 
             const row = tbody.insertRow();
             row.innerHTML = `
+                <td class="no-print"><input type="checkbox" class="attendance-checkbox" data-att-id="${r.id}"></td>
                 <td>${idx+1}</td>
                 <td>${escapeHtml(r.company || '')}</td>
                 <td>${escapeHtml(nameDisplay)}${empId}</td>
-                <td><img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'"></td>
+                <td>${signatureCell}</td>
                 <td class="print-hide">${new Date(r.sign_time).toLocaleString()}</td>
                 <td class="print-hide">
                     <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
                         <i class="bi bi-pencil-square"></i> ${t('t_re_signature')}
                     </button>
+                    <button class="btn btn-sm btn-outline-danger delete-attendance-btn" data-id="${r.id}" data-name="${escapeHtml(nameDisplay)}">
+                        <i class="bi bi-trash"></i> ${t('t_delete')}
+                    </button>
                 </td>
             `;
         });
-
-        // 绑定事件
+    
+        // 绑定删除按钮事件
+        document.querySelectorAll('.delete-attendance-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const attId = btn.dataset.id;
+                const name = btn.dataset.name;
+                if (confirm(t('t_confirm_delete_attendance').replace('{name}', name))) {
+                    await deleteSingleAttendance(attId);
+                }
+            });
+        });
+        
+        // 绑定重置签名按钮事件
         document.querySelectorAll('.reset-sign-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 const attId = e.currentTarget.dataset.id;
@@ -236,8 +366,164 @@
             const countryParam = country ? `?country=${encodeURIComponent(country)}` : '';
             pdfBtn.href = `/admin/training/${trainingId}/attendance/pdf${countryParam}`;
         }
-
+        // 添加批量删除按钮
+        addBatchDeleteButton();
+        // 绑定全选按钮
+        bindSelectAll();
     }
+
+    // 全选功能
+    function bindSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) {
+            selectAll.addEventListener('change', (e) => {
+                document.querySelectorAll('.attendance-checkbox').forEach(cb => cb.checked = e.target.checked);
+            });
+        }
+    }
+
+    // 批量删除签到记录
+    async function batchDeleteAttendances() {
+        const selectedIds = Array.from(document.querySelectorAll('.attendance-checkbox:checked'))
+            .map(cb => cb.dataset.attId);
+        
+        if (selectedIds.length === 0) {
+            alert(t('t_at_least_one_select'));
+            return;
+        }
+        
+        if (typeof window.showDeleteConfirm === 'function') {
+            window.showDeleteConfirm({
+                message: `确定要删除选中的 ${selectedIds.length} 条签到记录吗？`,
+                ids: selectedIds,
+                type: 'soft',
+                onConfirm: async (deleteType, ids) => {
+                    const response = await fetch('/api/admin/training/attendance/batch_delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: ids, delete_type: deleteType })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        alert(`删除成功: ${data.success_count} 条`);
+                        loadDetail(); // 刷新列表
+                    } else {
+                        alert('删除失败: ' + (data.message || ''));
+                    }
+                }
+            });
+        } else {
+            if (confirm(`确定要删除选中的 ${selectedIds.length} 条签到记录吗？`)) {
+                const response = await fetch('/api/admin/training/attendance/batch_delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: selectedIds, delete_type: 'soft' })
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert(`删除成功: ${data.success_count} 条`);
+                    loadDetail();
+                }
+            }
+        }
+    }
+
+    // 单个删除签到记录
+    async function deleteSingleAttendance(attendanceId, userName) {
+        if (typeof window.showDeleteConfirm === 'function') {
+            window.showDeleteConfirm({
+                message: `确定要删除 ${userName} 的签到记录吗？`,
+                ids: [attendanceId],
+                type: 'soft',
+                onConfirm: async (deleteType, ids) => {
+                    const response = await fetch('/api/admin/training/attendance/batch_delete', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: ids, delete_type: deleteType })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        alert('删除成功');
+                        loadDetail();
+                    } else {
+                        alert('删除失败');
+                    }
+                }
+            });
+        } else {
+            if (confirm(`确定要删除 ${userName} 的签到记录吗？`)) {
+                const response = await fetch(`/api/admin/training/attendance/${attendanceId}`, {
+                    method: 'DELETE'
+                });
+                const data = await response.json();
+                if (data.success) {
+                    alert('删除成功');
+                    loadDetail();
+                }
+            }
+        }
+    }
+
+    // 添加批量删除按钮
+    function addBatchDeleteButton() {
+        const headerDiv = document.querySelector('.d-flex.justify-content-end.gap-2');
+        if (headerDiv && !document.getElementById('batchDeleteBtn')) {
+            const batchDeleteBtn = document.createElement('button');
+            batchDeleteBtn.id = 'batchDeleteBtn';
+            batchDeleteBtn.className = 'btn btn-danger no-print';
+            batchDeleteBtn.innerHTML = '<i class="bi bi-trash"></i> <span data-i18n="batch_delete">批量删除</span>';
+            batchDeleteBtn.onclick = batchDeleteAttendances;
+
+            // ✅ 关键修复：手动触发翻译
+            if (typeof window.i18n !== 'undefined' && window.i18n.currentLang) {
+                const span = batchDeleteBtn.querySelector('[data-i18n="batch_delete"]');
+                if (span && typeof t === 'function') {
+                    span.textContent = t('batch_delete');
+                }
+            }
+            // 插入到打印按钮后面
+            const printBtn = headerDiv.querySelector('.btn-success');
+            if (printBtn) {
+                printBtn.after(batchDeleteBtn);
+            } else {
+                headerDiv.appendChild(batchDeleteBtn);
+            }
+        }
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+        await waitForI18n(); // 等待国际化资源加载完成
+        await populateCountryFilter();  // ✅ 限制国家筛选选项
+        loadDetail();
+        addBatchDeleteButton();
+    });
+
+    // 更新批量删除按钮文本（语言切换时调用）
+    function updateBatchDeleteButtonText() {
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        if (batchDeleteBtn && typeof t === 'function') {
+            const span = batchDeleteBtn.querySelector('[data-i18n="batch_delete"]');
+            if (span) {
+                span.textContent = t('batch_delete');
+            }
+        }
+    }
+
+    // 监听语言切换事件，重新加载数据以更新按钮文字
+    // 监听语言切换事件
+    window.addEventListener('app:languageChanged', () => {
+        currentPage = 1;
+        loadDetail();
+        // ✅ 更新批量删除按钮的文本
+        updateBatchDeleteButtonText();
+        // 更新 PDF 导出按钮文本（如果有需要）
+        const pdfExportBtn = document.getElementById('pdfExportBtn');
+        if (pdfExportBtn && typeof t === 'function') {
+            const span = pdfExportBtn.querySelector('[data-i18n="expert_pdf"]');
+            if (span) span.textContent = t('expert_pdf');
+        }
+    });
 
     function escapeHtml(str) {
         if(!str) return '';

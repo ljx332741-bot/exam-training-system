@@ -3,6 +3,8 @@ from enum import Enum
 from typing import Dict, Any, Optional
 from string import Template
 from datetime import datetime
+from services import auth, exam, export
+from services.db import get_supabase
 import pytz, os
 import logging
 
@@ -311,3 +313,71 @@ def send_bilingual_notification(
     except Exception as e:
         logger.warning(f"邮件发送失败 [{scenario.value}] to {email}: {e}")
         return False
+
+
+def _send_training_notifications(training_id, start_time, end_time, user_ids, host_url):
+    """
+    发送培训推送邮件通知（后台线程执行）
+    """
+    db = get_supabase()
+    
+    # 1. 获取培训名称
+    training_res = db.table("trainings").select("name").eq("id", training_id).maybe_single().execute()
+    if not training_res.data:
+        logger.warning(f"培训 {training_id} 不存在，无法发送通知")
+        return
+    
+    training_name = training_res.data.get('name', '培训')
+    
+    # 2. 获取收件人列表
+    if user_ids and len(user_ids) > 0:
+        # 使用指定的用户列表
+        users_res = db.table("users").select("id, email, name_en").in_("id", user_ids).execute()
+        recipients = users_res.data or []
+    else:
+        # 获取所有已注册且有邮箱的用户
+        users_res = db.table("users").select("id, email, name_en")\
+            .eq("user_status", "registered")\
+            .not_.is_("email", "null")\
+            .execute()
+        recipients = users_res.data or []
+    
+    if not recipients:
+        logger.warning(f"培训 {training_id} 没有可发送邮件的收件人")
+        return
+    
+    # 3. 格式化时间
+    start_display = _format_time(start_time)
+    end_display = _format_time(end_time)
+    
+    # 4. 批量发送邮件
+    success_count = 0
+    fail_count = 0
+    
+    for user in recipients:
+        email = user.get('email')
+        name = user.get('name_en') or '用户'
+        
+        if not email:
+            continue
+        
+        try:
+            send_bilingual_notification(
+                email=email,
+                scenario=EmailScenario.TRAINING_ASSIGNMENT,
+                params={
+                    "name": name,
+                    "training_name": training_name,
+                    "start_display": start_display,
+                    "end_display": end_display,
+                    "host_url": host_url
+                },
+                host_url=host_url,
+                auth_module=auth
+            )
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            logger.warning(f"培训邮件发送失败 {email}: {e}")
+    
+    logger.info(f"培训 {training_id} 邮件发送完成: 成功={success_count}, 失败={fail_count}")
