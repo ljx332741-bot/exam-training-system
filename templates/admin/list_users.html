@@ -5,6 +5,9 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
+        <button class="btn btn-outline-secondary" id="showDeletedUsersBtn">
+            <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
+        </button>
     </div>
 
     <!-- 搜索筛选 -->
@@ -206,6 +209,82 @@
             <div class="modal-footer">
                 <button type="button" class="btn btn-primary" id="saveUserBtn"><span data-i18n="save">保存</span></button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 已删除人员模态框 -->
+<div class="modal fade" id="deletedUsersModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-trash-fill text-danger"></i> 
+                    <span data-i18n="deleted_users_list">已删除人员列表</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 筛选栏 -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-5">
+                        <input type="text" id="deletedSearchInput" class="form-control" 
+                               placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" id="deletedCountryFilter" class="form-control" 
+                               list="deletedCountryDatalist" data-i18n-placeholder="placeholder_select_or_input" placeholder="国家">
+                        <datalist id="deletedCountryDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="deletedSearchBtn" class="btn btn-primary w-100">
+                            <i class="bi bi-search"></i> <span data-i18n="search">搜索</span>
+                        </button>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="deletedResetBtn" class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- 操作按钮 -->
+                <div class="mb-3 d-flex justify-content-end gap-2">
+                    <button id="batchRestoreBtn" class="btn btn-success">
+                        <i class="bi bi-arrow-counterclockwise"></i> <span data-i18n="batch_restore">批量恢复</span>
+                    </button>
+                    <button id="batchPermanentDeleteBtn" class="btn btn-danger">
+                        <i class="bi bi-trash3"></i> <span data-i18n="batch_permanent_delete">批量永久删除</span>
+                    </button>
+                </div>
+                
+                <!-- 表格 -->
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th><input type="checkbox" id="selectAllDeleted"></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="name_en">姓名</span></th>
+                                <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="deleted_at">删除时间</span></th>
+                                <th><span data-i18n="deleted_by">删除人</span></th>
+                                <th><span data-i18n="actions">操作</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="deletedUsersTbody">
+                            <tr><td colspan="7" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <div><span data-i18n="total">共</span> <span id="deletedTotalCount">0</span> <span data-i18n="record">条记录</span></div>
+                    <nav><ul class="pagination mb-0" id="deletedPagination"></ul></nav>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
             </div>
         </div>
     </div>
@@ -1073,6 +1152,321 @@
         currentPage = 1;
         loadUsers();
     });
+
+    // ==================== 已删除人员管理（前端内存过滤版） ====================
+    let deletedAllUsers = [];      // 存储所有用户数据
+    let deletedCurrentPage = 1;
+    let deletedSearch = '';
+    let deletedCountry = '';
+    let deletedFilteredUsers = [];  // 过滤后的用户
+    const deletedPerPage = 20;
+
+    // 加载已删除用户（从后端获取全部数据）
+    async function loadDeletedUsers() {
+        const params = new URLSearchParams({
+            page: 1,
+            per_page: 10000,  // 获取所有数据
+            search: deletedSearch,
+            country: deletedCountry,
+            include_deleted: 'true'
+        });
+        
+        const response = await fetch(`/api/admin/users/deleted?${params}`);
+        const data = await response.json();
+        
+        // 存储所有用户
+        deletedAllUsers = data.data || [];
+        
+        // 应用前端搜索过滤
+        applyDeletedFilters();
+    }
+
+    // 前端搜索过滤（姓名/邮箱模糊匹配）
+    function applyDeletedFilters() {
+        let filtered = [...deletedAllUsers];
+        
+        // 按姓名/邮箱搜索
+        if (deletedSearch) {
+            const searchLower = deletedSearch.toLowerCase();
+            filtered = filtered.filter(user => {
+                // 优先按姓名匹配
+                const name = (user.name_en || user.name_cn || '').toLowerCase();
+                if (name.includes(searchLower)) return true;
+                // 无结果时再按邮箱匹配
+                const email = (user.email || '').toLowerCase();
+                return email.includes(searchLower);
+            });
+        }
+        
+        // 按国家过滤
+        if (deletedCountry) {
+            filtered = filtered.filter(user => user.country === deletedCountry);
+        }
+        
+        deletedFilteredUsers = filtered;
+        
+        // 重置到第一页
+        deletedCurrentPage = 1;
+        
+        // 渲染表格和分页
+        renderDeletedUsersTable();
+        renderDeletedPagination();
+    }
+
+    // 渲染已删除用户表格（前端分页）
+    function renderDeletedUsersTable() {
+        const tbody = document.getElementById('deletedUsersTbody');
+        const totalCount = deletedFilteredUsers.length;
+        document.getElementById('deletedTotalCount').innerText = totalCount;
+        
+        if (totalCount === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center">${t('t_no_data')}</td></tr>`;
+            return;
+        }
+        
+        // 前端分页
+        const start = (deletedCurrentPage - 1) * deletedPerPage;
+        const end = start + deletedPerPage;
+        const pageUsers = deletedFilteredUsers.slice(start, end);
+        
+        tbody.innerHTML = pageUsers.map(user => `
+            <tr>
+                <td><input type="checkbox" class="deleted-user-checkbox" data-user-id="${user.id}"></td>
+                <td>${escapeHtml(user.country || '-')}</td>
+                <td>${escapeHtml(user.name_en || user.name_cn || '-')}</td>
+                <td>${escapeHtml(user.email || '-')}</td>
+                <td>${utcToLocalString(user.deleted_at)}</td>
+                <td>${escapeHtml(user.deleted_by_name || user.deleted_by || '-')}</td>
+                <td>
+                    <button class="btn btn-sm btn-success restore-user-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name_en)}">
+                        <i class="bi bi-arrow-counterclockwise"></i> ${t('t_recover')}
+                    </button>
+                    <button class="btn btn-sm btn-danger permanent-delete-user-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name_en)}">
+                        <i class="bi bi-trash3"></i> ${t('permanently_delete')}
+                    </button>
+                </td>
+            </tr>
+        `).join('');
+        
+        // 绑定事件
+        document.querySelectorAll('.restore-user-btn').forEach(btn => {
+            btn.addEventListener('click', () => restoreUser(btn.dataset.userId, btn.dataset.userName));
+        });
+        document.querySelectorAll('.permanent-delete-user-btn').forEach(btn => {
+            btn.addEventListener('click', () => permanentDeleteUser(btn.dataset.userId, btn.dataset.userName));
+        });
+    }
+
+    // 渲染分页
+    function renderDeletedPagination() {
+        const totalCount = deletedFilteredUsers.length;
+        const totalPages = Math.ceil(totalCount / deletedPerPage);
+        const pagination = document.getElementById('deletedPagination');
+        
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+        
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === deletedCurrentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>`;
+        }
+        pagination.innerHTML = html;
+        
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                deletedCurrentPage = parseInt(link.dataset.page);
+                renderDeletedUsersTable();
+                renderDeletedPagination();
+            });
+        });
+    }
+
+    // 搜索输入实时响应（类似管理员仪表盘的效果）
+    function bindDeletedSearchEvents() {
+        const searchInput = document.getElementById('deletedSearchInput');
+        const countryFilter = document.getElementById('deletedCountryFilter');
+        const searchBtn = document.getElementById('deletedSearchBtn');
+        const resetBtn = document.getElementById('deletedResetBtn');
+        
+        // 实时搜索（输入即搜索）
+        if (searchInput) {
+            searchInput.addEventListener('input', (e) => {
+                deletedSearch = e.target.value;
+                applyDeletedFilters();
+            });
+        }
+        
+        // 国家筛选实时响应
+        if (countryFilter) {
+            countryFilter.addEventListener('change', () => {
+                deletedCountry = countryFilter.value;
+                applyDeletedFilters();
+            });
+        }
+        
+        // 搜索按钮（也可以保留，用于重置或手动触发）
+        if (searchBtn) {
+            searchBtn.addEventListener('click', () => {
+                deletedSearch = searchInput?.value || '';
+                deletedCountry = countryFilter?.value || '';
+                applyDeletedFilters();
+            });
+        }
+        
+        // 重置按钮
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                if (countryFilter) countryFilter.value = '';
+                deletedSearch = '';
+                deletedCountry = '';
+                applyDeletedFilters();
+            });
+        }
+    }
+
+    // 打开已删除人员模态框
+    document.getElementById('showDeletedUsersBtn')?.addEventListener('click', async () => {
+        // 初始化国家筛选
+        await populateCountryDatalist('deletedCountryDatalist');
+        // 重置筛选条件
+        deletedSearch = '';
+        deletedCountry = '';
+        deletedCurrentPage = 1;
+        if (document.getElementById('deletedSearchInput')) {
+            document.getElementById('deletedSearchInput').value = '';
+        }
+        if (document.getElementById('deletedCountryFilter')) {
+            document.getElementById('deletedCountryFilter').value = '';
+        }
+        
+        // 显示加载中
+        document.getElementById('deletedUsersTbody').innerHTML = '<tr><td colspan="7" class="text-center">加载中...</td></tr>';
+        
+        await loadDeletedUsers();
+        
+        new bootstrap.Modal(document.getElementById('deletedUsersModal')).show();
+        bindDeletedSelectAll();
+        bindDeletedSearchEvents();
+    });
+
+    // 全选
+    function bindDeletedSelectAll() {
+        const selectAll = document.getElementById('selectAllDeleted');
+        if (selectAll) {
+            selectAll.onchange = (e) => {
+                document.querySelectorAll('.deleted-user-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
+        }
+    }
+
+    // 恢复用户
+    async function restoreUser(userId, userName) {
+        if (confirm(t('confirm_restore', { name: userName }))) {
+            const response = await fetch(`/api/admin/users/${userId}/restore`, { method: 'POST' });
+            const data = await response.json();
+            if (data.success) {
+                alert(t('restore_success'));
+                loadDeletedUsers();
+                loadUsers(); // 刷新主列表
+            } else {
+                alert(t('restore_failed', { msg: data.message || '' }));
+            }
+        }
+    }
+
+    // 永久删除用户
+    async function permanentDeleteUser(userId, userName) {
+        if (confirm(t('confirm_permanent_delete', { name: userName }))) {
+            const response = await fetch(`/api/admin/users/${userId}/permanent`, { method: 'DELETE' });
+            const data = await response.json();
+            if (data.success) {
+                alert(t('js_delete_success'));
+                loadDeletedUsers();
+            } else {
+                alert(t('js_delete_failed', { msg: data.message || '' }));
+            }
+        }
+    }
+
+    // 批量永久删除
+    async function batchPermanentDeleteUsers() {
+        const selectedIds = Array.from(document.querySelectorAll('.deleted-user-checkbox:checked'))
+            .map(cb => cb.dataset.userId);
+        
+        if (selectedIds.length === 0) {
+            alert(t('select_at_least_one'));  // 🔹 翻译
+            return;
+        }
+        
+        if (confirm(t('confirm_batch_permanent_delete', { count: selectedIds.length }))) {  // 🔹 翻译 + 参数
+            const response = await fetch('/api/admin/users/batch_permanent', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: selectedIds })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(t('batch_delete_success', { count: data.success_count }));  // 🔹 翻译 + 参数
+                loadDeletedUsers();
+                loadUsers();
+            } else {
+                alert(t('delete_failed', { msg: data.message || '' }));  // 🔹 复用已有 key
+            }
+        }
+    }
+
+    // 批量恢复
+    async function batchRestoreUsers() {
+        const selectedIds = Array.from(document.querySelectorAll('.deleted-user-checkbox:checked'))
+            .map(cb => cb.dataset.userId);
+        
+        if (selectedIds.length === 0) {
+            alert(t('select_at_least_one'));  // 🔹 翻译
+            return;
+        }
+        
+        if (confirm(t('confirm_batch_restore', { count: selectedIds.length }))) {  // 🔹 翻译 + 参数
+            const response = await fetch('/api/admin/users/batch_restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: selectedIds })
+            });
+            const data = await response.json();
+            if (data.success) {
+                alert(t('batch_restore_success', { count: data.success_count }));  // 🔹 翻译 + 参数
+                loadDeletedUsers();
+                loadUsers();
+            } else {
+                alert(t('restore_failed', { msg: data.message || '' }));  // 🔹 复用已有 key
+            }
+        }
+    }
+
+    // 筛选事件
+    document.getElementById('deletedSearchBtn')?.addEventListener('click', () => {
+        deletedSearch = document.getElementById('deletedSearchInput').value;
+        deletedCountry = document.getElementById('deletedCountryFilter').value;
+        deletedCurrentPage = 1;
+        loadDeletedUsers();
+    });
+
+    document.getElementById('deletedResetBtn')?.addEventListener('click', () => {
+        deletedSearch = '';
+        deletedCountry = '';
+        deletedCurrentPage = 1;
+        document.getElementById('deletedSearchInput').value = '';
+        document.getElementById('deletedCountryFilter').value = '';
+        loadDeletedUsers();
+    });
+
+    document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
+    document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
 
     // 页面初始化流程
     (async function() {

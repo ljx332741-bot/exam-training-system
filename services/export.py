@@ -370,7 +370,7 @@ def generate_bilingual_excel(training_id: int, exam_id: int, country: str = None
         )
     
     # 查询培训签到数据
-    signs_query = db.table("training_signs").select("""
+    signs_query = db.table("training_attendances").select("""
         id,
         user_id,
         training_id,
@@ -612,9 +612,6 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     db = get_supabase()
     wb = openpyxl.Workbook()
     clean_title = lambda s: re.sub(r'[\\/*?:\[\]]', ' ', s).strip()
-
-    # 预处理：获取所有可能用到的用户信息（如果 user_ids 不为空，可以加速查询，但此处不优化）
-
     # ========== 工作表1：培训信息汇总 ==========
     ws1 = wb.active
     ws1.title = clean_title("培训信息汇总 Training Summary")
@@ -635,7 +632,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         ("第三方服务商数量\nNumber of Providers", "Number of Providers"),
         ("参培人数\nNumber of Trainees", "Number of Trainees"),
         ("备注\nRemark", "Remark"),
-    ]
+    ]    
     for col, (cn_header, en_header) in enumerate(headers1, 1):
         cell = ws1.cell(row=1, column=col, value=cn_header)
         cell.font = Font(bold=True, color="FFFFFF")
@@ -654,48 +651,56 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     row_idx = 2
 
     for training in trainings:
-        tid = training['id']
-        # 查询该培训下的签到记录（已用 user_ids 过滤）
-        query = db.table("training_attendances").select("*, users(*)").eq("training_id", tid)
+        tid = training['id']        
+        # ✅ 修复1：使用 training_attendances 表，而不是 training_signs
+        # ✅ 修复2：排除已软删除的签到记录
+        query = db.table("training_attendances").select("*, users(*)").eq("training_id", tid).is_("deleted_at", "null")
+        
         if user_ids is not None:
-            query = query.in_("user_id", user_ids)
-        signs = query.execute().data or []
+            query = query.in_("user_id", user_ids)        
+        signs = query.execute().data or []        
         if not signs:
             continue
 
         meta = training_metas.get(tid, {})
 
-        # 分组：若指定了库房，按培训自身分组；否则按国家分组
         if wh_id:
-            # 固定库房，所有签到合并为一个组（该培训在该库房下）
-            groups = {'default': {'trainees': set(), 'partner_companies': set(), 'sign_dates': []}}
+            # 固定库房，所有签到合并为一个组
+            groups = {'default': {'trainees': set(), 'partner_companies': set(), 'sign_dates': [], 'wh_info': {}}}
             for sign in signs:
                 user = sign.get('users', {})
                 groups['default']['trainees'].add(sign['user_id'])
-                groups['default']['sign_dates'].append(sign['sign_time'])
+                # ✅ 修复3：使用 sign_time 字段
+                groups['default']['sign_dates'].append(sign.get('sign_time') or sign.get('signed_at'))
                 if user.get('is_partner'):
                     company = user.get('company', '').strip()
                     if company:
                         groups['default']['partner_companies'].add(company)
-            # 获取库房信息（从第一个用户中提取，实际上同一个库房）
-            first_user = (signs[0] if signs else {}).get('users', {})
-            wh_type_val = first_user.get('wh_type', '')
-            wh_id_val = wh_id
-            wh_name_val = first_user.get('wh_name_en', '')
+                if not groups['default']['wh_info']:
+                    groups['default']['wh_info'] = {
+                        'wh_type': user.get('wh_type', ''),
+                        'wh_id': user.get('wh_id', ''),
+                        'wh_name_en': user.get('wh_name_en', '')
+                    }            
             for g_key, g in groups.items():
                 partner_str = '/'.join(sorted(g['partner_companies'])) if g['partner_companies'] else '内部员工'
-                partner_count = len(g['partner_companies'])
+                partner_count = len(g['partner_companies'])                
+                # 获取培训日期（取第一个签到日期）
+                training_date = ""
+                if g['sign_dates']:
+                    first_date = min(g['sign_dates'])
+                    training_date = first_date[:10] if first_date else ""                
                 row_data = [
                     row_idx - 1,
-                    wh_type_val,
-                    wh_id_val,
-                    wh_name_val,
-                    wh_name_val,
+                    g['wh_info'].get('wh_type', ''),
+                    g['wh_info'].get('wh_id', ''),
+                    g['wh_info'].get('wh_name_en', ''),
+                    g['wh_info'].get('wh_name_en', ''),
                     meta.get("project_no", ""),
-                    training_names[tid],
+                    training_names.get(tid, ''),
                     meta.get("language", ""),
                     meta.get("lecturer", ""),
-                    min(g['sign_dates'])[:10] if g['sign_dates'] else "",
+                    training_date,
                     meta.get("duration", ""),
                     partner_str,
                     partner_count,
@@ -709,28 +714,31 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                                          top=Side(style="thin"), bottom=Side(style="thin"))
                 row_idx += 1
         else:
-            # 按国家分组（每个国家＋培训一行）
+            # 按国家分组
             country_groups = defaultdict(lambda: {'trainees': set(), 'partner_companies': set(), 'sign_dates': [], 'wh_info': {}})
             for sign in signs:
                 user = sign.get('users', {})
                 cty = user.get('country', 'Unknown')
                 grp = country_groups[cty]
                 grp['trainees'].add(sign['user_id'])
-                grp['sign_dates'].append(sign['sign_time'])
+                grp['sign_dates'].append(sign.get('sign_time') or sign.get('signed_at'))
                 if user.get('is_partner'):
                     company = user.get('company', '').strip()
                     if company:
                         grp['partner_companies'].add(company)
-                # 保存该国家的库房信息（取第一个出现的用户数据）
                 if not grp['wh_info']:
                     grp['wh_info'] = {
                         'wh_type': user.get('wh_type', ''),
                         'wh_id': user.get('wh_id', ''),
                         'wh_name_en': user.get('wh_name_en', '')
-                    }
+                    }            
             for cty, grp in country_groups.items():
                 partner_str = '/'.join(sorted(grp['partner_companies'])) if grp['partner_companies'] else '内部员工'
-                partner_count = len(grp['partner_companies'])
+                partner_count = len(grp['partner_companies'])                
+                training_date = ""
+                if grp['sign_dates']:
+                    first_date = min(grp['sign_dates'])
+                    training_date = first_date[:10] if first_date else ""                
                 row_data = [
                     row_idx - 1,
                     grp['wh_info'].get('wh_type', ''),
@@ -738,17 +746,16 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                     grp['wh_info'].get('wh_name_en', ''),
                     grp['wh_info'].get('wh_name_en', ''),
                     meta.get("project_no", ""),
-                    training_names[tid],
+                    training_names.get(tid, ''),
                     meta.get("language", ""),
                     meta.get("lecturer", ""),
-                    min(grp['sign_dates'])[:10] if grp['sign_dates'] else "",
+                    training_date,
                     meta.get("duration", ""),
                     partner_str,
                     partner_count,
                     len(grp['trainees']),
                     ""
                 ]
-                # 增加国家标识（国家列未在表头中？实际表头没有国家列，但需求提到按国家分组，我们可以将国家信息附加在培训名称后，或忽略。原需求并未要求显示国家列，但要求每个国家一行，此处库房信息可体现不同。若需直观，可在备注列前加国家列，但表头已固定。此处暂不显示国家，行区分已足够。）
                 for col_idx, value in enumerate(row_data, 1):
                     cell = ws1.cell(row=row_idx, column=col_idx, value=value)
                     cell.alignment = Alignment(horizontal="center", vertical="center")
