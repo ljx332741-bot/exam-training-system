@@ -1,5 +1,35 @@
+# utils/training_helpers.py
 from services.db import get_supabase
 from utils.common import match_country_code  # 假设存在
+
+def _save_country_template(db, training_id, country_code, header_template):
+    """内部辅助函数：保存培训的国家表头模板"""
+    
+    # 检查是否已存在该国家的模板记录
+    check_res = db.table("training_country_templates")\
+        .select("id")\
+        .eq("training_id", training_id)\
+        .eq("country", country_code)\
+        .execute()
+    
+    if check_res.data and len(check_res.data) > 0:
+        # 更新现有记录
+        db.table("training_country_templates")\
+            .update({
+                "header_template": header_template, 
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })\
+            .eq("id", check_res.data[0]['id'])\
+            .execute()
+    else:
+        # 插入新记录
+        db.table("training_country_templates")\
+            .insert({
+                "training_id": training_id, 
+                "country": country_code, 
+                "header_template": header_template
+            })\
+            .execute()
 
 def get_training_country_template(training_id, country_code):
     """获取特定培训+国家的表头模板，若不存在则返回 None"""

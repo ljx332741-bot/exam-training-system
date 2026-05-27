@@ -1,6 +1,7 @@
 # utils/permissions.py
 import json
 import logging
+import os
 from functools import wraps
 from flask import session, jsonify
 from services.db import get_supabase
@@ -10,7 +11,6 @@ logger = logging.getLogger(__name__)
 # ==================== 开发者账号配置 ====================
 def is_developer(user_id=None):
     """判断是否为开发者账号"""
-    import os
     dev_id = os.environ.get('DEVELOPER_USER_ID', '')
     if not dev_id:
         return False
@@ -20,19 +20,151 @@ def is_developer(user_id=None):
 
 def get_developer_id():
     """获取开发者账号ID"""
-    import os
     return os.environ.get('DEVELOPER_USER_ID', '')
 
 
-# ==================== 角色判断 ====================
-def has_role(required_roles):
-    """检查当前用户是否拥有指定角色"""
+# ==================== 权限范围获取 ====================
+def get_allowed_countries():
+    """
+    获取当前管理员的允许国家列表
+    返回:
+        - None: 无限制（超管/开发者）
+        - []: 无权限（普通用户）
+        - list: 允许的国家代码列表（管理员）
+    """
+    role = session.get('role', 'user')
+    
+    # 开发者：无限制
     if is_developer():
+        logger.debug("get_allowed_countries: 开发者，返回 None")
+        return None
+    
+    # 超管：如果有权限范围则限制，否则无限制
+    if role == 'super_admin':
+        admin_countries = session.get('admin_countries')
+        if admin_countries:
+            try:
+                countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                if countries:
+                    logger.debug(f"get_allowed_countries: 超管限制在 {countries}")
+                    return countries
+            except Exception as e:
+                logger.error(f"解析超管权限范围失败: {e}")
+        logger.debug("get_allowed_countries: 超管无限制")
+        return None
+    
+    # 管理员
+    if role == 'admin':
+        admin_countries = session.get('admin_countries')
+        
+        # 优先使用权限范围
+        if admin_countries:
+            try:
+                countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                if countries:
+                    logger.debug(f"get_allowed_countries: 管理员权限范围 {countries}")
+                    return countries
+            except Exception as e:
+                logger.error(f"解析管理员权限范围失败: {e}")
+        
+        # 没有权限范围，使用自己所在国家
+        user_country = session.get('user_country')
+        if user_country:
+            logger.debug(f"get_allowed_countries: 管理员使用默认国家 {user_country}")
+            return [user_country]
+        
+        logger.warning("get_allowed_countries: 管理员没有国家信息，返回空列表")
+        return []
+    
+    # 普通用户
+    logger.debug("get_allowed_countries: 普通用户，返回空列表")
+    return []
+
+
+def get_admin_allowed_countries():
+    """获取当前管理员的权限范围（别名）"""
+    return get_allowed_countries()
+
+
+def get_current_user_country():
+    """获取当前登录用户的国家代码"""
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    
+    # 先从 session 获取
+    if 'user_country' in session:
+        return session.get('user_country')
+    
+    # 从数据库获取并缓存到 session
+    db = get_supabase()
+    res = db.table("users").select("country").eq("id", user_id).maybe_single().execute()
+    if res.data:
+        country = res.data.get('country')
+        session['user_country'] = country
+        return country
+    
+    return None
+
+
+def set_admin_allowed_countries(user_id, countries):
+    """设置管理员/超管的允许国家列表"""
+    db = get_supabase()
+    countries_json = json.dumps(countries) if countries else None
+    db.table("users").update({"admin_countries": countries_json}).eq("id", user_id).execute()
+    
+    if user_id == session.get('user_id'):
+        session['admin_countries'] = countries_json
+
+
+# ==================== 用户权限检查 ====================
+def can_view_user(target_user):
+    """检查当前用户是否可以查看目标用户"""
+    current_role = session.get('role')
+    current_user_id = session.get('user_id')
+    dev_id = os.environ.get('DEVELOPER_USER_ID')
+    
+    # 开发者可以查看所有用户
+    if dev_id and current_user_id == dev_id:
         return True
-    user_role = session.get('role', 'user')
-    if isinstance(required_roles, str):
-        required_roles = [required_roles]
-    return user_role in required_roles
+    
+    # 不能查看受保护账号（除非是本人）
+    if target_user.get('is_protected') and target_user.get('id') != current_user_id:
+        return False
+    
+    # 非超管不能查看超管和开发者
+    if current_role != 'super_admin':
+        if target_user.get('role') in ('super_admin', 'developer'):
+            return False
+    
+    # 如果是自己，总是可以查看
+    if target_user.get('id') == current_user_id:
+        return True
+    
+    # 管理员权限范围检查
+    if current_role == 'admin':
+        allowed_countries = get_allowed_countries()
+        if allowed_countries:
+            user_country = target_user.get('country')
+            if user_country:
+                if user_country not in allowed_countries:
+                    return False
+            else:
+                # 无国家用户：只有创建者可以查看
+                if target_user.get('created_by') != current_user_id:
+                    return False
+    
+    return True
+
+
+def can_modify_user(target_user, current_user, action='edit'):
+    """检查当前用户是否有权限修改目标用户"""
+    dev_id = os.environ.get('DEVELOPER_USER_ID')
+    if dev_id and current_user['id'] == dev_id:
+        return True
+    if target_user.get('is_protected'):
+        return False
+    return True
 
 
 def can_manage_role(target_role):
@@ -49,129 +181,71 @@ def can_manage_role(target_role):
     return False
 
 
-def can_view_user(target_user):
-    """检查当前用户是否可以查看目标用户"""
-    current_role = session.get('role', 'user')
-    current_user_id = session.get('user_id')
-    
-    if is_developer():
-        return True
-    
-    if current_role == 'user':
-        return target_user.get('id') == current_user_id
-    
-    if current_role == 'super_admin':
-        return not target_user.get('is_protected', False)
-    
-    if current_role == 'admin':
-        allowed_countries = get_admin_allowed_countries()
-        if allowed_countries is None:
-            return True
-        user_country = target_user.get('country', '')
-        return user_country in allowed_countries
-    
-    return False
-
-
-# ==================== 权限范围管理 ====================
-def get_admin_allowed_countries():
+# ==================== 用户列表过滤（带创建人姓名）====================
+def filter_users_by_permission(users, allowed_countries=None, current_user_id=None):
     """
-    获取当前管理员的允许国家列表
-    返回:
-        - None: 无限制
-        - []: 无权限
-        - list: 允许的国家代码列表
+    根据权限过滤用户列表，并自动添加创建人姓名
+    
+    Args:
+        users: 用户列表
+        allowed_countries: 管理员允许的国家列表，None表示无限制
+        current_user_id: 当前用户ID，用于判断自己创建的无国家用户
+    
+    Returns:
+        过滤后的用户列表（已添加 created_by_name 字段）
     """
-    from flask import session
-    import json
+    if current_user_id is None:
+        current_user_id = session.get('user_id')
     
-    # 开发者：无限制
-    if is_developer():
-        logger.info("get_admin_allowed_countries: 开发者，返回 None")
-        return None
+    if allowed_countries is None:
+        allowed_countries = get_allowed_countries()
     
-    role = session.get('role', 'user')
-    logger.info(f"get_admin_allowed_countries: role={role}, session keys={list(session.keys())}")
+    # 收集所有创建人ID
+    creator_ids = list(set([u.get('created_by') for u in users if u.get('created_by')]))
     
-    # 超管：如果有权限范围则限制，否则无限制
-    if role == 'super_admin':
-        admin_countries = session.get('admin_countries')
-        logger.info(f"get_admin_allowed_countries: super_admin, admin_countries={admin_countries}")
-        if admin_countries:
-            try:
-                countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
-                if countries:
-                    logger.info(f"get_admin_allowed_countries: 超管限制在 {countries}")
-                    return countries
-            except Exception as e:
-                logger.error(f"解析超管权限范围失败: {e}")
-        logger.info("get_admin_allowed_countries: 超管无限制")
-        return None
+    # 批量查询创建人姓名
+    creator_name_map = {}
+    if creator_ids:
+        try:
+            db = get_supabase()
+            creators_res = db.table("users").select("id, name_en, name_cn").in_("id", creator_ids).execute()
+            for creator in (creators_res.data or []):
+                creator_name_map[creator['id']] = creator.get('name_en') or creator.get('name_cn', '')
+        except Exception as e:
+            logger.error(f"查询创建人姓名失败: {e}")
     
-    # 管理员
-    if role == 'admin':
-        admin_countries = session.get('admin_countries')
-        logger.info(f"get_admin_allowed_countries: admin, admin_countries={admin_countries}")
+    # 过滤用户并添加创建人姓名
+    filtered_users = []
+    for user in users:
+        if not can_view_user(user):
+            continue
         
-        # 优先使用权限范围
-        if admin_countries:
-            try:
-                countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
-                if countries:
-                    logger.info(f"get_admin_allowed_countries: 管理员权限范围 {countries}")
-                    return countries
-            except Exception as e:
-                logger.error(f"解析管理员权限范围失败: {e}")
-        
-        # 没有权限范围，使用自己所在国家
-        user_country = session.get('user_country')
-        logger.info(f"get_admin_allowed_countries: 使用默认国家 user_country={user_country}")
-        if user_country:
-            return [user_country]
-        
-        logger.warning("get_admin_allowed_countries: 管理员没有国家信息，返回空列表")
-        return []
+        # 添加创建人姓名
+        user['created_by_name'] = creator_name_map.get(user.get('created_by'), '')
+        filtered_users.append(user)
     
-    # 普通用户
-    logger.info("get_admin_allowed_countries: 普通用户，返回空列表")
-    return []
+    return filtered_users
 
 
-def get_current_user_country():
-    """获取当前登录用户的国家代码"""
-    from flask import session
-    from services.db import get_supabase
+# ==================== 国家过滤（Supabase 查询）====================
+def apply_country_filter(query, table_alias='country'):
+    """
+    应用国家权限过滤（Supabase 查询层）
+    注意：此函数由于 SDK 限制，复杂条件建议使用 filter_users_by_permission
+    """
+    allowed = get_allowed_countries()
     
-    user_id = session.get('user_id')
-    if not user_id:
-        return None
+    if allowed is None:
+        return query
     
-    # 先从 session 获取
-    if 'user_country' in session:
-        return session.get('user_country')
+    if not allowed:
+        return query.filter("id", "eq", "no-permission")
     
-    # 从数据库获取并缓存到 session
-    db = get_supabase()
-    res = db.table("users").select("country").eq("id", user_id).maybe_single().execute()
-    if res.data:
-        country = res.data.get('country')
-        session['user_country'] = country
-        logger.info(f"从数据库获取用户国家: user_id={user_id}, country={country}")
-        return country
-    
-    return None
+    # 简单场景：只做 IN 过滤
+    return query.in_(table_alias, allowed)
 
 
-def set_admin_allowed_countries(user_id, countries):
-    """设置管理员/超管的允许国家列表"""
-    db = get_supabase()
-    countries_json = json.dumps(countries) if countries else None
-    db.table("users").update({"admin_countries": countries_json}).eq("id", user_id).execute()
-    
-    if user_id == session.get('user_id'):
-        session['admin_countries'] = countries_json
-
-
+# ==================== 输入解析 ====================
 def parse_countries_input(country_str):
     """
     解析权限范围输入
@@ -181,7 +255,6 @@ def parse_countries_input(country_str):
         return []
     
     import re
-    from services.db import get_supabase
     
     # 按常见分隔符分割
     delimiters = r'[,;:：\s]+'
@@ -216,6 +289,17 @@ def parse_countries_input(country_str):
     return list(set(codes))
 
 
+# ==================== 角色判断 ====================
+def has_role(required_roles):
+    """检查当前用户是否拥有指定角色"""
+    if is_developer():
+        return True
+    user_role = session.get('role', 'user')
+    if isinstance(required_roles, str):
+        required_roles = [required_roles]
+    return user_role in required_roles
+
+
 # ==================== 权限装饰器 ====================
 def developer_required(f):
     """开发者权限装饰器"""
@@ -237,68 +321,3 @@ def super_admin_required(f):
             return jsonify({"success": False, "message": "super_admin_only"}), 403
         return f(*args, **kwargs)
     return decorated
-
-
-# ==================== 国家过滤函数 ====================
-def apply_country_filter(query, table_alias='country'):
-    """
-    应用国家过滤到数据库查询
-    返回过滤后的 query
-    """
-    from flask import session
-    import json
-    
-    role = session.get('role', 'user')
-    is_dev = is_developer()
-    
-    logger.info(f"apply_country_filter: role={role}, is_dev={is_dev}, table_alias={table_alias}")
-    
-    # 开发者：无限制
-    if is_dev:
-        logger.info("apply_country_filter: 开发者，无限制")
-        return query
-    
-    # 超管：如果有权限范围则限制，否则无限制
-    if role == 'super_admin':
-        admin_countries = session.get('admin_countries')
-        logger.info(f"apply_country_filter: super_admin, admin_countries={admin_countries}")
-        if admin_countries:
-            try:
-                countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
-                if countries:
-                    logger.info(f"apply_country_filter: 超管限制在 {countries}")
-                    return query.in_(table_alias, countries)
-            except Exception as e:
-                logger.error(f"解析失败: {e}")
-        logger.info("apply_country_filter: 超管无限制")
-        return query
-    
-    # 管理员：限制在权限范围或自己所在国家
-    if role == 'admin':
-        admin_countries = session.get('admin_countries')
-        logger.info(f"apply_country_filter: admin, admin_countries={admin_countries}")
-        
-        # 优先使用权限范围
-        if admin_countries:
-            try:
-                countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
-                if countries:
-                    logger.info(f"apply_country_filter: 管理员权限范围 {countries}")
-                    return query.in_(table_alias, countries)
-            except Exception as e:
-                logger.error(f"解析失败: {e}")
-        
-        # 没有权限范围，使用自己所在国家
-        user_country = session.get('user_country')
-        logger.info(f"apply_country_filter: 使用默认国家 user_country={user_country}")
-        if user_country:
-            return query.eq(table_alias, user_country)
-        
-        # 连国家都没有，返回空
-        logger.warning("apply_country_filter: 管理员没有国家信息，返回空")
-        return query.eq(table_alias, '__NONEXISTENT__')
-    
-    # 普通用户：只能看自己
-    user_id = session.get('user_id')
-    logger.info(f"apply_country_filter: 普通用户只能看自己 {user_id}")
-    return query.eq('id', user_id)

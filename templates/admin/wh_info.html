@@ -1,0 +1,903 @@
+<!-- templates/admin/wh_info.html -->
+{% extends "base.html" %}
+{% block title %}库房信息管理{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-building"></i> 库房信息管理</h2>
+        <div>
+            <button class="btn btn-outline-secondary me-2" id="showDeletedWhBtn">
+                <i class="bi bi-trash"></i> 已删除库房
+            </button>
+            <button class="btn btn-outline-secondary" id="closePageBtn">✖ 关闭</button>
+        </div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <input type="text" id="searchInput" class="form-control" 
+                           placeholder="库房ID/库房名称" autocomplete="off">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                           placeholder="国家" autocomplete="off">
+                    <datalist id="countryDatalist"></datalist>
+                    <input type="hidden" id="filterCountryCode">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterWhType" class="form-control" list="whTypeDatalist" 
+                           placeholder="库房类型" autocomplete="off">
+                    <datalist id="whTypeDatalist">
+                        <option value="系统库">
+                        <option value="备件库">
+                        <option value="第三方库">
+                        <option value="其他">
+                    </datalist>
+                </div>
+                <div class="col-md-2">
+                    <button id="clearFiltersBtn" class="btn btn-outline-secondary w-100">清空筛选</button>
+                </div>
+                <div class="col-md-3 d-flex justify-content-end gap-2">
+                    <div class="dropdown">
+                        <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-file-earmark-excel"></i> 批量导入
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" id="downloadWhTemplateBtn">
+                                <i class="bi bi-download"></i> 下载导入模板
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" id="importWhBtn">
+                                <i class="bi bi-upload"></i> 上传文件导入
+                            </a></li>
+                        </ul>
+                    </div>
+                    <input type="file" id="importWhFileInput" accept=".xlsx,.xls" style="display:none">
+                    <button class="btn btn-outline-danger" id="batchDeleteWhBtn">
+                        <i class="bi bi-trash"></i> 批量删除
+                    </button>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addWhModal">
+                        <i class="bi bi-plus-circle"></i> 添加库房
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 库房列表表格 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th><input type="checkbox" id="selectAll"></th>
+                            <th>序号</th>
+                            <th>国家</th>
+                            <th>库房类型</th>
+                            <th>库房ID</th>
+                            <th>库房名称(中文)</th>
+                            <th>库房名称(英文)</th>
+                            <th>备注</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="whTableBody">
+                        <tr><td colspan="10" class="text-center">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div>共 <span id="totalCount">0</span> 条记录</div>
+            <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<!-- 添加/编辑库房模态框 -->
+<div class="modal fade" id="addWhModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><span id="modalTitle">添加库房</span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="whForm">
+                    <input type="hidden" id="editWhId">
+                    <div class="mb-3">
+                        <label class="form-label">库房ID <span class="text-danger">*</span></label>
+                        <input type="text" id="whId" class="form-control" placeholder="例如: NP001" required>
+                        <small class="text-muted">国家代码会自动从库房ID前两位提取</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">库房类型</label>
+                        <input type="text" id="whType" class="form-control" list="whTypeDatalist2" placeholder="系统库/备件库/第三方库">
+                        <datalist id="whTypeDatalist2">
+                            <option value="系统库">
+                            <option value="备件库">
+                            <option value="第三方库">
+                            <option value="其他">
+                        </datalist>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">库房名称(中文)</label>
+                        <input type="text" id="whNameCn" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">库房名称(英文)</label>
+                        <input type="text" id="whNameEn" class="form-control">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">国家代码</label>
+                        <input type="text" id="countryCode" class="form-control" placeholder="自动提取或手动填写">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">备注</label>
+                        <textarea id="remark" class="form-control" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" id="isActive" class="form-check-input" checked>
+                        <label class="form-check-label">启用</label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="saveWhBtn">保存</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 已删除库房模态框 -->
+<div class="modal fade" id="deletedWhModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-trash-fill"></i> 已删除库房列表</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 筛选栏 -->
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <input type="text" id="deletedSearchInput" class="form-control" placeholder="库房ID/名称">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="deletedCountryFilter" class="form-control" list="deletedCountryDatalist" placeholder="国家">
+                        <datalist id="deletedCountryDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="deletedWhTypeFilter" class="form-control" list="deletedWhTypeDatalist" placeholder="库房类型">
+                        <datalist id="deletedWhTypeDatalist">
+                            <option value="系统库">
+                            <option value="备件库">
+                            <option value="第三方库">
+                        </datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="deletedClearFiltersBtn" class="btn btn-outline-secondary w-100">清空筛选</button>
+                    </div>
+                    <div class="col-md-3 d-flex justify-content-end gap-2">
+                        <button id="batchRestoreWhBtn" class="btn btn-success">批量恢复</button>
+                        <button id="batchPermanentDeleteWhBtn" class="btn btn-danger">批量永久删除</button>
+                    </div>
+                </div>
+                
+                <!-- 表格 -->
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th><input type="checkbox" id="selectAllDeleted"></th>
+                                <th>序号</th>
+                                <th>国家</th>
+                                <th>库房类型</th>
+                                <th>库房ID</th>
+                                <th>库房名称</th>
+                                <th>删除时间</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="deletedWhTableBody">
+                            <tr><td colspan="8" class="text-center">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <div>共 <span id="deletedTotalCount">0</span> 条记录</div>
+                    <nav><ul class="pagination mb-0" id="deletedPagination"></ul></nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">确认删除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmMsg">确定要删除吗？</p>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-danger flex-fill" id="confirmPermanentDelete">永久删除</button>
+                    <button class="btn btn-warning flex-fill" id="confirmSoftDelete">软删除</button>
+                    <button class="btn btn-secondary flex-fill" data-bs-dismiss="modal">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentPage = 1;
+    let currentDeleteId = null;
+    let currentDeleteIds = [];
+    let filters = { search: '', country: '', wh_type: '' };
+    let deletedFilters = { search: '', country: '', wh_type: '' };
+    let deletedCurrentPage = 1;
+    let allWhData = [];
+    let deletedAllData = [];
+
+    // ========== 加载库房列表 ==========
+    async function loadWhList() {
+        const params = new URLSearchParams({
+            page: currentPage,
+            per_page: 20,
+            search: filters.search,
+            country: filters.country,
+            wh_type: filters.wh_type,
+            include_deleted: 'false'
+        });
+        
+        try {
+            const res = await fetch(`/api/admin/wh/list?${params}`);
+            const data = await res.json();
+            renderWhTable(data.data);
+            document.getElementById('totalCount').innerText = data.total;
+            renderPagination(data.page, Math.ceil(data.total / data.per_page));
+        } catch (err) {
+            console.error('加载库房列表失败:', err);
+        }
+    }
+
+    function renderWhTable(rows) {
+        const tbody = document.getElementById('whTableBody');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="10" class="text-center">暂无数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map((row, idx) => `
+            <tr>
+                <td><input type="checkbox" class="wh-checkbox" data-id="${row.id}"></td>
+                <td>${(currentPage-1)*20 + idx + 1}</td>
+                <td>${escapeHtml(row.country_code || '-')}</td>
+                <td>${escapeHtml(row.wh_type || '-')}</td>
+                <td><strong>${escapeHtml(row.wh_id)}</strong></td>
+                <td>${escapeHtml(row.wh_name_cn || '-')}</td>
+                <td>${escapeHtml(row.wh_name_en || '-')}</td>
+                <td>${escapeHtml(row.remark || '-')}</td>
+                <td>${row.is_active ? '<span class="badge bg-success">启用</span>' : '<span class="badge bg-secondary">禁用</span>'}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-primary edit-wh-btn" data-id="${row.id}">编辑</button>
+                    <button class="btn btn-sm btn-outline-danger delete-wh-btn" data-id="${row.id}" data-name="${escapeHtml(row.wh_id)}">删除</button>
+                </td>
+            </tr>
+        `).join('');
+
+        document.querySelectorAll('.edit-wh-btn').forEach(btn => {
+            btn.addEventListener('click', () => openEditWhModal(btn.dataset.id));
+        });
+        document.querySelectorAll('.delete-wh-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentDeleteId = btn.dataset.id;
+                document.getElementById('deleteConfirmMsg').innerText = `确定要删除库房 ${btn.dataset.name} 吗？`;
+                new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
+            });
+        });
+        bindSelectAll();
+    }
+
+    // ========== 加载已删除库房列表 ==========
+    async function loadDeletedWhList() {
+        const params = new URLSearchParams({
+            page: 1,
+            per_page: 1000,
+            include_deleted: 'true'
+        });
+        
+        try {
+            const res = await fetch(`/api/admin/wh/list?${params}`);
+            const data = await res.json();
+            let allData = data.data || [];
+            
+            if (deletedFilters.search) {
+                const searchLower = deletedFilters.search.toLowerCase();
+                allData = allData.filter(wh => 
+                    (wh.wh_id && wh.wh_id.toLowerCase().includes(searchLower)) ||
+                    (wh.wh_name_cn && wh.wh_name_cn.toLowerCase().includes(searchLower)) ||
+                    (wh.wh_name_en && wh.wh_name_en.toLowerCase().includes(searchLower))
+                );
+            }
+            if (deletedFilters.country) {
+                allData = allData.filter(wh => wh.country_code === deletedFilters.country);
+            }
+            if (deletedFilters.wh_type) {
+                allData = allData.filter(wh => wh.wh_type === deletedFilters.wh_type);
+            }
+            
+            deletedAllData = allData;
+            renderDeletedWhTable();
+            document.getElementById('deletedTotalCount').innerText = allData.length;
+            renderDeletedPagination(1, Math.ceil(allData.length / 20));
+        } catch (err) {
+            console.error('加载已删除库房失败:', err);
+        }
+    }
+
+    function renderDeletedWhTable() {
+        const tbody = document.getElementById('deletedWhTableBody');
+        if (!deletedAllData.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据</td></tr>';
+            return;
+        }
+
+        const start = (deletedCurrentPage - 1) * 20;
+        const end = start + 20;
+        const pageData = deletedAllData.slice(start, end);
+
+        tbody.innerHTML = pageData.map((row, idx) => `
+            <tr>
+                <td><input type="checkbox" class="deleted-wh-checkbox" data-id="${row.id}"></td>
+                <td>${start + idx + 1}</td>
+                <td>${escapeHtml(row.country_code || '-')}</td>
+                <td>${escapeHtml(row.wh_type || '-')}</td>
+                <td><strong>${escapeHtml(row.wh_id)}</strong></td>
+                <td>${escapeHtml(row.wh_name_cn || row.wh_name_en || '-')}</td>
+                <td>${formatDateTime(row.deleted_at)}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-success restore-wh-btn" data-id="${row.id}" data-name="${escapeHtml(row.wh_id)}">恢复</button>
+                    <button class="btn btn-sm btn-outline-danger permanent-delete-wh-btn" data-id="${row.id}" data-name="${escapeHtml(row.wh_id)}">永久删除</button>
+                </td>
+            </tr>
+        `).join('');
+
+        document.querySelectorAll('.restore-wh-btn').forEach(btn => {
+            btn.addEventListener('click', () => restoreWh(btn.dataset.id));
+        });
+        document.querySelectorAll('.permanent-delete-wh-btn').forEach(btn => {
+            btn.addEventListener('click', () => permanentDeleteWh(btn.dataset.id, btn.dataset.name));
+        });
+        bindSelectAllDeleted();
+    }
+
+    async function saveWh() {
+        const whId = document.getElementById('whId').value.trim().toUpperCase();
+        if (!whId) {
+            alert('库房ID不能为空');
+            return;
+        }
+
+        const editId = document.getElementById('editWhId').value;
+        const url = editId ? `/api/admin/wh/${editId}` : '/api/admin/wh';
+        const method = editId ? 'PUT' : 'POST';
+        
+        const data = {
+            wh_id: whId,
+            wh_type: document.getElementById('whType').value,
+            wh_name_cn: document.getElementById('whNameCn').value,
+            wh_name_en: document.getElementById('whNameEn').value,
+            country_code: document.getElementById('countryCode').value,
+            remark: document.getElementById('remark').value,
+            is_active: document.getElementById('isActive').checked
+        };
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(editId ? '更新成功' : '添加成功');
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addWhModal'));
+                if (modal) modal.hide();
+                resetWhForm();
+                await loadWhList();
+            } else {
+                alert('操作失败: ' + (result.message || ''));
+            }
+        } catch (err) {
+            console.error('保存失败:', err);
+            alert('操作失败: ' + err.message);
+        }
+    }
+
+    async function deleteWh(whId, permanent) {
+        try {
+            const res = await fetch(`/api/admin/wh/${whId}?permanent=${permanent}`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                alert(permanent ? '永久删除成功' : '软删除成功');
+                loadWhList();
+            } else {
+                alert('删除失败: ' + (result.message || ''));
+            }
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+
+    async function restoreWh(whId) {
+        if (!confirm('确定要恢复该库房吗？')) return;
+        try {
+            const res = await fetch(`/api/admin/wh/${whId}/restore`, { method: 'POST' });
+            const result = await res.json();
+            if (result.success) {
+                alert('恢复成功');
+                loadDeletedWhList();
+                loadWhList();
+            } else {
+                alert('恢复失败');
+            }
+        } catch (err) {
+            alert('恢复失败: ' + err.message);
+        }
+    }
+
+    async function permanentDeleteWh(whId, name) {
+        if (!confirm(`确定要永久删除库房 ${name} 吗？此操作不可恢复！`)) return;
+        try {
+            const res = await fetch(`/api/admin/wh/${whId}?permanent=true`, { method: 'DELETE' });
+            const result = await res.json();
+            if (result.success) {
+                alert('永久删除成功');
+                loadDeletedWhList();
+                loadWhList();
+            } else {
+                alert('删除失败: ' + (result.message || ''));
+            }
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+
+    async function batchDelete(deleteType) {
+        const selectedIds = Array.from(document.querySelectorAll('.wh-checkbox:checked')).map(cb => cb.dataset.id);
+        if (selectedIds.length === 0) {
+            alert('请至少选择一个库房');
+            return;
+        }
+        
+        const confirmMsg = deleteType === 'hard' ? `确定要永久删除选中的 ${selectedIds.length} 个库房吗？` : `确定要软删除选中的 ${selectedIds.length} 个库房吗？`;
+        if (!confirm(confirmMsg)) return;
+        
+        try {
+            const res = await fetch('/api/admin/wh/batch_delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds, delete_type: deleteType === 'hard' ? 'hard' : 'soft' })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(`删除成功: ${result.success_count} 条`);
+                loadWhList();
+            } else {
+                alert('删除失败');
+            }
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+
+    async function batchRestore() {
+        const selectedIds = Array.from(document.querySelectorAll('.deleted-wh-checkbox:checked')).map(cb => cb.dataset.id);
+        if (selectedIds.length === 0) {
+            alert('请至少选择一个库房');
+            return;
+        }
+        if (!confirm(`确定要恢复选中的 ${selectedIds.length} 个库房吗？`)) return;
+        
+        try {
+            const res = await fetch('/api/admin/wh/batch_restore', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(`恢复成功: ${result.success_count} 条`);
+                loadDeletedWhList();
+                loadWhList();
+            } else {
+                alert('恢复失败');
+            }
+        } catch (err) {
+            alert('恢复失败: ' + err.message);
+        }
+    }
+
+    async function batchPermanentDeleteDeleted() {
+        const selectedIds = Array.from(document.querySelectorAll('.deleted-wh-checkbox:checked')).map(cb => cb.dataset.id);
+        if (selectedIds.length === 0) {
+            alert('请至少选择一个库房');
+            return;
+        }
+        if (!confirm(`确定要永久删除选中的 ${selectedIds.length} 个库房吗？此操作不可恢复！`)) return;
+        
+        try {
+            const res = await fetch('/api/admin/wh/batch_delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds, delete_type: 'hard' })
+            });
+            const result = await res.json();
+            if (result.success) {
+                alert(`删除成功: ${result.success_count} 条`);
+                loadDeletedWhList();
+                loadWhList();
+            } else {
+                alert('删除失败');
+            }
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+
+    // ========== 导入导出 ==========
+    document.getElementById('importWhBtn').addEventListener('click', (e) => {
+        e.preventDefault();
+        document.getElementById('importWhFileInput').click();
+    });
+
+    document.getElementById('downloadWhTemplateBtn').addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+            const response = await fetch('/api/admin/wh/import/template');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `库房导入模板_${new Date().toISOString().slice(0,19)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('下载模板失败: ' + err.message);
+        }
+    });
+
+    document.getElementById('importWhFileInput').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        if (!confirm(`确定要导入 ${file.name} 吗？`)) {
+            e.target.value = '';
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        const importBtn = document.getElementById('importWhBtn');
+        importBtn.disabled = true;
+        importBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 导入中...';
+        
+        try {
+            const res = await fetch('/api/admin/wh/import', { method: 'POST', body: formData });
+            const result = await res.json();
+            
+            if (result.success) {
+                if (result.error_count > 0) {
+                    // ✅ 显示详细错误信息
+                    let errorMsg = `导入完成: 成功 ${result.success_count} 条，失败 ${result.error_count} 条。`;
+                    if (result.errors && result.errors.length > 0) {
+                        errorMsg += '\n\n失败详情:\n' + result.errors.slice(0, 10).join('\n');
+                        if (result.errors.length > 10) {
+                            errorMsg += `\n... 共 ${result.errors.length} 条错误`;
+                        }
+                    }
+                    alert(errorMsg);
+                } else {
+                    alert(`导入成功: ${result.success_count} 条`);
+                }
+                loadWhList();
+            } else {
+                // ✅ 显示解析错误
+                let errorMsg = '导入失败: ' + (result.message || '');
+                if (result.errors && result.errors.length > 0) {
+                    errorMsg += '\n\n错误详情:\n' + result.errors.join('\n');
+                }
+                alert(errorMsg);
+            }
+        } catch (err) {
+            alert('导入失败: ' + err.message);
+        } finally {
+            importBtn.disabled = false;
+            importBtn.innerHTML = '<i class="bi bi-file-earmark-excel"></i> 批量导入';
+            e.target.value = '';
+        }
+    });
+
+    // ========== 编辑库房 ==========
+    async function openEditWhModal(whId) {
+        try {
+            const res = await fetch(`/api/admin/wh/list?page=1&per_page=100`);
+            const data = await res.json();
+            const wh = data.data.find(w => w.id == whId);
+            if (wh) {
+                document.getElementById('editWhId').value = wh.id;
+                document.getElementById('whId').value = wh.wh_id;
+                document.getElementById('whType').value = wh.wh_type || '';
+                document.getElementById('whNameCn').value = wh.wh_name_cn || '';
+                document.getElementById('whNameEn').value = wh.wh_name_en || '';
+                document.getElementById('countryCode').value = wh.country_code || '';
+                document.getElementById('remark').value = wh.remark || '';
+                document.getElementById('isActive').checked = wh.is_active;
+                document.getElementById('modalTitle').innerText = '编辑库房';
+                document.getElementById('whId').disabled = true;
+                new bootstrap.Modal(document.getElementById('addWhModal')).show();
+            }
+        } catch (err) {
+            alert('加载库房信息失败');
+        }
+    }
+
+    function resetWhForm() {
+        document.getElementById('editWhId').value = '';
+        document.getElementById('whId').value = '';
+        document.getElementById('whType').value = '';
+        document.getElementById('whNameCn').value = '';
+        document.getElementById('whNameEn').value = '';
+        document.getElementById('countryCode').value = '';
+        document.getElementById('remark').value = '';
+        document.getElementById('isActive').checked = true;
+        document.getElementById('whId').disabled = false;
+        document.getElementById('modalTitle').innerText = '添加库房';
+    }
+
+    // ========== 辅助函数 ==========
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]);
+    }
+
+    function formatDateTime(iso) {
+        if (!iso) return '-';
+        return new Date(iso).toLocaleString();
+    }
+
+    function renderPagination(current, totalPages) {
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                loadWhList();
+            });
+        });
+    }
+
+    function renderDeletedPagination(current, totalPages) {
+        const pagination = document.getElementById('deletedPagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                deletedCurrentPage = parseInt(link.dataset.page);
+                renderDeletedWhTable();
+                renderDeletedPagination(deletedCurrentPage, Math.ceil(deletedAllData.length / 20));
+            });
+        });
+    }
+
+    function bindSelectAll() {
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) {
+            selectAll.onchange = (e) => {
+                document.querySelectorAll('.wh-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
+        }
+    }
+
+    function bindSelectAllDeleted() {
+        const selectAll = document.getElementById('selectAllDeleted');
+        if (selectAll) {
+            selectAll.onchange = (e) => {
+                document.querySelectorAll('.deleted-wh-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
+        }
+    }
+
+    // ========== 筛选事件 ==========
+    let searchTimeout;
+    function bindFilterEvents() {
+        const searchInput = document.getElementById('searchInput');
+        const countryInput = document.getElementById('filterCountry');
+        const whTypeInput = document.getElementById('filterWhType');
+        const clearBtn = document.getElementById('clearFiltersBtn');
+        
+        const updateFilters = () => {
+            filters.search = searchInput?.value || '';
+            filters.country = document.getElementById('filterCountryCode')?.value || '';
+            filters.wh_type = whTypeInput?.value || '';
+            currentPage = 1;
+            loadWhList();
+        };
+        
+        searchInput?.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(updateFilters, 300);
+        });
+        countryInput?.addEventListener('change', updateFilters);
+        whTypeInput?.addEventListener('change', updateFilters);
+        
+        clearBtn?.addEventListener('click', () => {
+            if (searchInput) searchInput.value = '';
+            if (countryInput) countryInput.value = '';
+            if (whTypeInput) whTypeInput.value = '';
+            document.getElementById('filterCountryCode').value = '';
+            filters = { search: '', country: '', wh_type: '' };
+            currentPage = 1;
+            loadWhList();
+        });
+    }
+
+    function bindDeletedFilterEvents() {
+        const searchInput = document.getElementById('deletedSearchInput');
+        const countryInput = document.getElementById('deletedCountryFilter');
+        const whTypeInput = document.getElementById('deletedWhTypeFilter');
+        const clearBtn = document.getElementById('deletedClearFiltersBtn');
+        
+        const updateFilters = () => {
+            deletedFilters.search = searchInput?.value || '';
+            deletedFilters.country = countryInput?.value || '';
+            deletedFilters.wh_type = whTypeInput?.value || '';
+            deletedCurrentPage = 1;
+            loadDeletedWhList();
+        };
+        
+        searchInput?.addEventListener('input', () => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(updateFilters, 300);
+        });
+        countryInput?.addEventListener('change', updateFilters);
+        whTypeInput?.addEventListener('change', updateFilters);
+        
+        clearBtn?.addEventListener('click', () => {
+            if (searchInput) searchInput.value = '';
+            if (countryInput) countryInput.value = '';
+            if (whTypeInput) whTypeInput.value = '';
+            deletedFilters = { search: '', country: '', wh_type: '' };
+            deletedCurrentPage = 1;
+            loadDeletedWhList();
+        });
+    }
+
+    // ========== 按钮事件绑定 ==========
+    // ✅ 安全绑定：只绑定肯定存在的元素
+    const saveWhBtn = document.getElementById('saveWhBtn');
+    if (saveWhBtn) saveWhBtn.addEventListener('click', saveWh);
+    
+    const batchDeleteWhBtn = document.getElementById('batchDeleteWhBtn');
+    if (batchDeleteWhBtn) batchDeleteWhBtn.addEventListener('click', () => batchDelete('soft'));
+    
+    const confirmPermanentDelete = document.getElementById('confirmPermanentDelete');
+    if (confirmPermanentDelete) {
+        confirmPermanentDelete.addEventListener('click', () => {
+            if (currentDeleteId) {
+                deleteWh(currentDeleteId, true);
+                bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
+                currentDeleteId = null;
+            } else if (currentDeleteIds.length) {
+                batchDelete('hard');
+                bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
+                currentDeleteIds = [];
+            }
+        });
+    }
+    
+    const confirmSoftDelete = document.getElementById('confirmSoftDelete');
+    if (confirmSoftDelete) {
+        confirmSoftDelete.addEventListener('click', () => {
+            if (currentDeleteId) {
+                deleteWh(currentDeleteId, false);
+                bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
+                currentDeleteId = null;
+            } else if (currentDeleteIds.length) {
+                batchDelete('soft');
+                bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal')).hide();
+                currentDeleteIds = [];
+            }
+        });
+    }
+
+    const addWhModal = document.getElementById('addWhModal');
+    if (addWhModal) {
+        addWhModal.addEventListener('hidden.bs.modal', resetWhForm);
+    }
+
+    const closePageBtn = document.getElementById('closePageBtn');
+    if (closePageBtn) {
+        closePageBtn.addEventListener('click', () => {
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.close();
+            }
+        });
+    }
+
+    // ✅ 使用事件委托绑定已删除模态框中的按钮（推荐方式）
+    document.addEventListener('click', function(e) {
+        const restoreBtn = e.target.closest('#batchRestoreWhBtn');
+        if (restoreBtn) {
+            e.preventDefault();
+            batchRestore();
+            return;
+        }
+        
+        const permanentDeleteBtn = e.target.closest('#batchPermanentDeleteWhBtn');
+        if (permanentDeleteBtn) {
+            e.preventDefault();
+            batchPermanentDeleteDeleted();
+            return;
+        }
+    });
+
+    // 打开已删除模态框
+    const showDeletedWhBtn = document.getElementById('showDeletedWhBtn');
+    if (showDeletedWhBtn) {
+        showDeletedWhBtn.addEventListener('click', async () => {
+            await populateCountryDatalist('deletedCountryDatalist');
+            deletedFilters = { search: '', country: '', wh_type: '' };
+            deletedCurrentPage = 1;
+            const searchInput = document.getElementById('deletedSearchInput');
+            const countryFilter = document.getElementById('deletedCountryFilter');
+            const whTypeFilter = document.getElementById('deletedWhTypeFilter');
+            if (searchInput) searchInput.value = '';
+            if (countryFilter) countryFilter.value = '';
+            if (whTypeFilter) whTypeFilter.value = '';
+            
+            await loadDeletedWhList();
+            new bootstrap.Modal(document.getElementById('deletedWhModal')).show();
+        });
+    }
+
+    // ========== 初始化 ==========
+    document.addEventListener('DOMContentLoaded', async () => {
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
+        await setupCountryAutocomplete('deletedCountryFilter', 'deletedCountryDatalist');
+        bindFilterEvents();
+        bindDeletedFilterEvents();
+        loadWhList();
+    });
+</script>
+{% endblock %}

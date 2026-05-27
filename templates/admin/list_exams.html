@@ -316,6 +316,11 @@
         }        
         tbody.innerHTML = exams.map((ex, idx) => {
             const isDeleted = ex.deleted_at !== null && ex.deleted_at !== undefined;
+
+            // ✅ 直接使用后端已经过滤好的 countries_display
+            // 后端已经根据当前管理员的权限过滤了国家列表
+            let countryDisplay = ex.countries_display || '-';
+            
             // 根据状态决定是否显示详情，推送，导出按钮
             const showDetail = ['active', 'closed'].includes(ex.status);
             const showPush = ['draft', 'created', 'active'].includes(ex.status) || 
@@ -331,8 +336,8 @@
                     ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${t('t_details')}</button>` : ''}
                     ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
                     <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
-                    ${showDetail ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
-                    ${showEdit ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
+                    ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
+                    ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
                     ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
                 `;
             }
@@ -340,7 +345,7 @@
             <tr>
                 <td>${actionButtons}</td>
                 <td>${(currentPage-1)*20 + idx + 1}</td>
-                <td>${ex.country || '-'}</td>
+                <td>${escapeHtml(countryDisplay)}</td>  <!-- ✅ 使用格式化后的国家显示 -->
                 <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
                 <td>${getStatusText(ex.status)}</td>
                 <td>${formatDate(ex.start_time)} - ${formatDate(ex.end_time)}</td>
