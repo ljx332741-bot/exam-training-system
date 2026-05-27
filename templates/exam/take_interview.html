@@ -17,25 +17,27 @@
                         <span class="badge bg-primary ms-2" data-i18n="single">单选</span>
                         {% for key, opt in q.options.items() %}
                         <div class="form-check">
-                            <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" value="{{ key }}" {% if q.user_answer == key %}checked{% endif %}>
-                            <label class="form-check-label">{{ key }}. {{ opt }}</label>
+                            <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" id="q_{{ q.interview_result_id }}_{{ key }}" value="{{ key }}" {% if q.user_answer == key %}checked{% endif %}>
+                            <label class="form-check-label" for="q_{{ q.interview_result_id }}_{{ key }}">{{ key }}. {{ opt }}</label>
                         </div>
                         {% endfor %}
                     {% elif q.type == 'multi' %}
                         <span class="badge bg-warning ms-2" data-i18n="multi">多选</span>
                         {% for key, opt in q.options.items() %}
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" name="q_{{ q.interview_result_id }}" value="{{ key }}" {% if key in q.user_answer %}checked{% endif %}>
-                            <label class="form-check-label">{{ key }}. {{ opt }}</label>
+                            <input class="form-check-input" type="checkbox" name="q_{{ q.interview_result_id }}" id="q_{{ q.interview_result_id }}_{{ key }}" value="{{ key }}" {% if key in q.user_answer %}checked{% endif %}>
+                            <label class="form-check-label" for="q_{{ q.interview_result_id }}_{{ key }}">{{ key }}. {{ opt }}</label>
                         </div>
                         {% endfor %}
                     {% elif q.type == 'judge' %}
                         <span class="badge bg-info ms-2" data-i18n="judge">判断</span>
                         <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" value="T" {% if q.user_answer == 'T' %}checked{% endif %}> True
+                            <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" id="q_{{ q.interview_result_id }}_T" value="T" {% if q.user_answer == 'T' %}checked{% endif %}>
+                            <label class="form-check-label" for="q_{{ q.interview_result_id }}_T">True</label>
                         </div>
                         <div class="form-check form-check-inline">
-                            <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" value="F" {% if q.user_answer == 'F' %}checked{% endif %}> False
+                            <input class="form-check-input" type="radio" name="q_{{ q.interview_result_id }}" id="q_{{ q.interview_result_id }}_F" value="F" value="F" {% if q.user_answer == 'F' %}checked{% endif %}>
+                            <label class="form-check-label" for="q_{{ q.interview_result_id }}_F">False</label>
                         </div>
                     {% endif %}
                 </div>

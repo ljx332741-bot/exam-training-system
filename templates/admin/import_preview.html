@@ -78,6 +78,51 @@
     margin-top: 2px;
     font-size: 0.7rem;
   }
+  .country-multi-select-wrapper {
+      position: relative;
+  }
+  .country-suggestions-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      max-height: 200px;
+      overflow-y: auto;
+      background: white;
+      border: 1px solid #ddd;
+      border-top: none;
+      z-index: 1000;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+  }
+  .country-suggestions-dropdown .suggestion-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-bottom: 1px solid #eee;
+  }
+  .country-suggestions-dropdown .suggestion-item:hover {
+      background-color: #f0f0f0;
+  }
+  .country-suggestions-dropdown .suggestion-item.selected {
+      background-color: #e7f3ff;
+  }
+  .selected-country-tag {
+      display: inline-flex;
+      align-items: center;
+      background-color: #0d6efd;
+      color: white;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      margin: 2px;
+  }
+  .selected-country-tag .remove-tag {
+      margin-left: 6px;
+      cursor: pointer;
+      font-weight: bold;
+  }
+  .selected-country-tag .remove-tag:hover {
+      color: #ffcccc;
+  }
 </style>
 {% endblock %}
 {% block content %}
@@ -140,17 +185,20 @@
           </label>
           <div class="row">
               <div class="col-md-8">
-                  <select id="countrySelect" class="form-select" multiple size="5">
-                      <!-- 选项从 /api/countries 动态加载 -->
-                  </select>
-                  <small class="text-muted"><span data-i18n="ctrl_multi_select_tip">按住 Ctrl 键可多选</span></small>
+                  <div class="country-multi-select-wrapper">
+                      <input type="text" id="countrySearchInput" class="form-control" 
+                            placeholder="搜索国家..." autocomplete="off">
+                      <div id="countrySuggestions" class="country-suggestions-dropdown" style="display: none;"></div>
+                  </div>
+                  <small class="text-muted">输入国家名称或代码进行搜索选择</small>
               </div>
               <div class="col-md-4">
                   <div class="mb-2">
                       <strong><span data-i18n="selected_countries">已选择:</span></strong>
+                      <button type="button" id="clearAllCountries" class="btn btn-sm btn-outline-danger float-end">清空</button>
                   </div>
-                  <div id="selectedCountriesTags" class="d-flex flex-wrap gap-1">
-                      <!-- 已选国家标签将显示在这里 -->
+                  <div id="selectedCountriesTags" class="d-flex flex-wrap gap-1" style="min-height: 120px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; border-radius: 4px;">
+                      <!-- 已选国家标签 -->
                   </div>
               </div>
           </div>
@@ -201,7 +249,7 @@
     {% endif %}
     
     <!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
-    {% if edit_mode and exam_status in ['draft', 'created'] %}
+    {% if not edit_mode or exam_status|default('') in ['draft', 'created'] %}
     <div class="row mt-2">
       <div class="col-md-6">
         <label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
@@ -661,6 +709,119 @@
     }
   }
 
+  // 国家多选功能（带搜索）
+  let allCountriesList = [];
+  let selectedCountryCodes = [];
+
+  async function loadCountryListForMultiSelect() {
+      const response = await fetch('/api/countries');
+      allCountriesList = await response.json();
+  }
+
+  function renderCountrySuggestions(searchText) {
+      const suggestionsDiv = document.getElementById('countrySuggestions');
+      if (!searchText.trim()) {
+          suggestionsDiv.style.display = 'none';
+          return;
+      }
+      
+      const lowerSearch = searchText.toLowerCase();
+      const filtered = allCountriesList.filter(c => 
+          c.name_zh.toLowerCase().includes(lowerSearch) ||
+          c.name_en.toLowerCase().includes(lowerSearch) ||
+          c.code.toLowerCase().includes(lowerSearch)
+      ).slice(0, 15);
+      
+      if (filtered.length === 0) {
+          suggestionsDiv.style.display = 'none';
+          return;
+      }
+      
+      suggestionsDiv.innerHTML = filtered.map(c => `
+          <div class="suggestion-item" data-code="${c.code}" data-name-zh="${c.name_zh}" data-name-en="${c.name_en}">
+              ${c.name_zh} (${c.code}) - ${c.name_en}
+          </div>
+      `).join('');
+      
+      suggestionsDiv.style.display = 'block';
+      
+      // 绑定点击事件
+      suggestionsDiv.querySelectorAll('.suggestion-item').forEach(item => {
+          item.addEventListener('click', () => {
+              const code = item.dataset.code;
+              if (!selectedCountryCodes.includes(code)) {
+                  selectedCountryCodes.push(code);
+                  updateSelectedTags();
+              }
+              document.getElementById('countrySearchInput').value = '';
+              suggestionsDiv.style.display = 'none';
+          });
+      });
+  }
+
+  function updateSelectedTags() {
+      const container = document.getElementById('selectedCountriesTags');
+      const hiddenInput = document.getElementById('selectedCountries');
+      
+      hiddenInput.value = JSON.stringify(selectedCountryCodes);
+      
+      container.innerHTML = '';
+      selectedCountryCodes.forEach(code => {
+          const country = allCountriesList.find(c => c.code === code);
+          const name = country ? country.name_zh : code;
+          
+          const tag = document.createElement('span');
+          tag.className = 'selected-country-tag';
+          tag.innerHTML = `${name} (${code}) <span class="remove-tag" data-code="${code}">&times;</span>`;
+          container.appendChild(tag);
+      });
+      
+      // 绑定移除事件
+      document.querySelectorAll('.remove-tag').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+              const code = btn.dataset.code;
+              selectedCountryCodes = selectedCountryCodes.filter(c => c !== code);
+              updateSelectedTags();
+          });
+      });
+  }
+
+  // 清空所有国家
+  document.getElementById('clearAllCountries')?.addEventListener('click', () => {
+      selectedCountryCodes = [];
+      updateSelectedTags();
+  });
+
+  // 搜索输入事件
+  document.getElementById('countrySearchInput')?.addEventListener('input', (e) => {
+      renderCountrySuggestions(e.target.value);
+  });
+
+  // 点击其他地方关闭下拉
+  document.addEventListener('click', (e) => {
+      const wrapper = document.querySelector('.country-multi-select-wrapper');
+      if (wrapper && !wrapper.contains(e.target)) {
+          document.getElementById('countrySuggestions').style.display = 'none';
+      }
+  });
+
+  // 初始化
+  loadCountryListForMultiSelect();
+
+  // 编辑模式时预选已保存的国家
+  function initSelectedCountries(savedCountries) {
+      if (savedCountries && typeof savedCountries === 'string') {
+          try {
+              selectedCountryCodes = JSON.parse(savedCountries);
+          } catch(e) {
+              selectedCountryCodes = [];
+          }
+      } else if (Array.isArray(savedCountries)) {
+          selectedCountryCodes = savedCountries;
+      }
+      updateSelectedTags();
+  }
+
   // ==================== 页面初始化 ====================
   document.addEventListener('DOMContentLoaded', async () => {
     // 加载国家列表到多选组件
@@ -704,6 +865,11 @@
         input.style.backgroundColor = '#e9ecef';
         input.style.cursor = 'not-allowed';
       });
+    }
+
+    const savedCountries = document.getElementById('selectedCountries').value;
+    if (savedCountries) {
+        initSelectedCountries(savedCountries);
     }
   });
 </script>

@@ -886,7 +886,6 @@ def dashboard():
             user_signed_in=False
         )
 
-
 @app.route('/exam/take/<int:exam_id>')
 @login_required
 def take_exam(exam_id):
@@ -1707,230 +1706,6 @@ def admin_import():
     logger.info("📄 渲染 import.html")
     return render_template('admin/import.html')
 
-@app.route('/api/admin/users/import', methods=['POST'])
-@login_required
-@admin_required
-def api_admin_import_users():
-    """批量导入用户（带角色权限校验）"""
-    if 'file' not in request.files:
-        return jsonify({"success": False, "message": "jsonify_no_file_selected", "params": []}), 400
-    
-    file = request.files['file']
-    if not file.filename.endswith(('.xlsx', '.xls')):
-        return jsonify({"success": False, "message": "jsonify_only_supports_files", "params": []}), 400
-    
-    db = get_supabase()
-    current_role = session.get('role')
-    is_dev = is_developer()
-    
-    try:
-        wb = openpyxl.load_workbook(file, read_only=True)
-        ws = wb.active
-    except Exception as e:
-        return jsonify({"success": False, "message": "file_parse_error", "params": [str(e)]}), 400
-    
-    # 字段映射
-    column_map = {
-        'country': 'country',
-        'email': 'email',
-        'name_en': 'name_en',
-        'role': 'role',
-        'is_partner': 'is_partner',
-        'company': 'company',
-        'department': 'department',
-        'wh_type': 'wh_type',
-        'wh_id': 'wh_id',
-        'wh_name_en': 'wh_name_en',
-        'employee_id': 'employee_id',
-        'phone': 'phone',
-        'birthday': 'birthday',
-        'admin_countries': 'admin_countries'
-    }
-    
-    # 读取表头
-    headers = []
-    for col in range(1, ws.max_column + 1):
-        cell_value = ws.cell(row=1, column=col).value
-        headers.append(str(cell_value).strip().lower() if cell_value else '')
-    
-    # 必须列
-    if 'name_en' not in headers:
-        return jsonify({"success": False, "message": "Excel missing required column: name_en"}), 400
-    
-    success_count = 0
-    error_rows = []
-    
-    for row_idx in range(2, ws.max_row + 1):
-        row_data = {}
-        for col_idx, header in enumerate(headers, 1):
-            if not header:
-                continue
-            cell_value = ws.cell(row=row_idx, column=col_idx).value
-            if cell_value is None:
-                row_data[header] = ''
-            else:
-                row_data[header] = str(cell_value).strip()
-        
-        # 字段映射
-        user_data = {}
-        for excel_field, db_field in column_map.items():
-            if excel_field in row_data:
-                user_data[db_field] = row_data[excel_field]
-
-        # ========== 处理空字符串字段，转为 None ==========
-        if 'birthday' in user_data:
-            birthday_val = user_data['birthday']
-            if birthday_val == '' or birthday_val is None:
-                user_data['birthday'] = None
-        
-        if 'employee_id' in user_data:
-            if user_data['employee_id'] == '':
-                user_data['employee_id'] = None
-        
-        if 'email' in user_data:
-            email_val = user_data['email'].strip().lower() if user_data['email'] else ''
-            user_data['email'] = email_val if email_val else None
-        
-        if 'phone' in user_data:
-            if user_data['phone'] == '':
-                user_data['phone'] = None
-        
-        if 'company' in user_data:
-            if user_data['company'] == '':
-                user_data['company'] = None
-        
-        if 'department' in user_data:
-            if user_data['department'] == '':
-                user_data['department'] = None
-        
-        if 'wh_type' in user_data:
-            if user_data['wh_type'] == '':
-                user_data['wh_type'] = None
-        
-        if 'wh_id' in user_data:
-            if user_data['wh_id'] == '':
-                user_data['wh_id'] = None
-        
-        if 'wh_name_en' in user_data:
-            if user_data['wh_name_en'] == '':
-                user_data['wh_name_en'] = None
-        
-        if 'country' in user_data:
-            if user_data['country'] == '':
-                user_data['country'] = None
-        
-        # 姓名必填
-        name_en = user_data.get('name_en', '')
-        if not name_en:
-            error_rows.append(f"第{row_idx}行: 姓名不能为空")
-            continue
-        
-        # ========== 角色权限校验 ==========
-        role_raw = user_data.get('role', '')
-        role = role_raw.lower() if role_raw else 'user'
-        user_data['role'] = role
-        
-        if not is_dev and role == 'developer':
-            error_rows.append(f"第{row_idx}行: 只有开发者可以创建开发者账号")
-            continue
-        
-        if current_role == 'super_admin' and not is_dev:
-            if role not in ['super_admin', 'admin', 'user']:
-                error_rows.append(f"第{row_idx}行: 无效角色 '{role}'")
-                continue
-        elif current_role == 'admin' and not is_dev:
-            if role != 'user':
-                error_rows.append(f"第{row_idx}行: 管理员只能导入普通用户角色")
-                continue
-        
-        # ========== 超管/管理员权限范围校验 ==========
-        if role in ['super_admin', 'admin']:
-            admin_countries_raw = user_data.get('admin_countries', '')
-            if not admin_countries_raw:
-                error_rows.append(f"第{row_idx}行: {role}角色的权限范围不能为空")
-                continue
-            
-            countries_list = parse_countries_input(admin_countries_raw)
-            if not countries_list:
-                error_rows.append(f"第{row_idx}行: 权限范围解析失败，请填写有效的国家代码或名称")
-                continue
-            
-            user_data['admin_countries'] = json.dumps(countries_list)
-        else:
-            user_data['admin_countries'] = None
-        
-        # ========== 重复检查 ==========
-        birthday = user_data.get('birthday')
-        employee_id = user_data.get('employee_id')
-        
-        existing_by_name = db.table("users").select("id, birthday, employee_id").eq("name_en", name_en).execute()
-        existing_users = existing_by_name.data or []
-        
-        is_duplicate = False
-        for existing in existing_users:
-            existing_birthday = existing.get('birthday')
-            existing_employee_id = existing.get('employee_id')
-            
-            if birthday and existing_birthday == birthday:
-                is_duplicate = True
-                break
-            if employee_id and existing_employee_id == employee_id:
-                is_duplicate = True
-                break
-            if not birthday and not employee_id:
-                is_duplicate = True
-                break
-        
-        if is_duplicate:
-            error_rows.append(f"第{row_idx}行: 用户已存在（姓名重复或生日/工号重复）")
-            continue
-        
-        # ========== 处理 is_partner ==========
-        if 'is_partner' in user_data:
-            val = str(user_data['is_partner']).upper()
-            user_data['is_partner'] = val in ('Y', 'YES', 'TRUE', '1')
-        else:
-            user_data['is_partner'] = False
-        
-        # ========== ✅ 关键修复：设置默认密码哈希 ==========
-        # 为 imported 用户设置一个默认的密码哈希（不可登录）
-        # 使用一个固定的占位符哈希，表示该用户尚未注册
-        DEFAULT_PLACEHOLDER_HASH = hash_password('__IMPORTED_USER_PLACEHOLDER__')
-        
-        user_data['password_hash'] = DEFAULT_PLACEHOLDER_HASH
-        
-        # ========== 设置默认值 ==========
-        user_data['id'] = str(uuid.uuid4())
-        user_data['user_status'] = 'imported'
-        user_data['is_active'] = False
-        user_data['created_by'] = session['user_id']
-        user_data['is_protected'] = (role == 'developer')
-        
-        # 确保 created_at 有值
-        user_data['created_at'] = datetime.now(timezone.utc).isoformat()
-        
-        # ========== 移除值为空字符串的字段 ==========
-        user_data = {k: v for k, v in user_data.items() if v != ''}
-        
-        try:
-            db.table("users").insert(user_data).execute()
-            success_count += 1
-        except Exception as e:
-            error_rows.append(f"第{row_idx}行: 插入失败 - {str(e)}")
-            logger.error(f"导入用户失败第{row_idx}行: {e}")
-    
-    result = {
-        "success": True,
-        "total": ws.max_row - 1,
-        "success_count": success_count,
-        "error_count": len(error_rows),
-        "errors": error_rows[:20]
-    }
-    
-    response = jsonify(result)
-    response.headers['Content-Type'] = 'application/json; charset=utf-8'
-    return response
-
 @app.route('/admin/import/save', methods=['POST'])
 @login_required
 @admin_required
@@ -2609,6 +2384,17 @@ def export_filtered_excel():
     wh_id = wh_raw.split('(')[0].strip() if wh_raw else None
 
     db = get_supabase()
+    
+    # ✅ 新增：获取当前管理员的权限范围
+    allowed_countries = get_admin_allowed_countries()
+    
+    # ✅ 新增：如果管理员有权限限制，且没有指定国家，则使用权限范围
+    if allowed_countries is not None and not country:
+        # 如果管理员权限范围不为空，用于过滤用户
+        final_user_ids = None
+        # 后续查询时需要按权限范围过滤
+    else:
+        final_user_ids = None
 
     # 构建统一的候选用户ID列表
     user_ids_for_country = None
@@ -2650,54 +2436,96 @@ def export_filtered_excel():
         final_user_ids = user_ids_for_wh
     else:
         final_user_ids = None
+    
+    # ✅ 新增：如果管理员有权限范围，进一步过滤用户
+    if allowed_countries is not None and final_user_ids is not None:
+        # 获取这些用户中在权限范围内的
+        users_in_allowed = db.table("users").select("id").in_("id", final_user_ids).in_("country", allowed_countries).execute()
+        final_user_ids = [u['id'] for u in (users_in_allowed.data or [])]
+    elif allowed_countries is not None:
+        # 没有指定其他筛选条件，使用权限范围内的所有用户
+        users_in_allowed = db.table("users").select("id").in_("country", allowed_countries).execute()
+        final_user_ids = [u['id'] for u in (users_in_allowed.data or [])]
 
-    # 4. 查询培训（带保险回退）
-    if country:
-        training_query = db.table("trainings").select("*").eq("country", country)
-        if training_name:
-            training_query = training_query.ilike("name", f"%{training_name}%")
-        if start_date:
-            training_query = training_query.gte("start_time", start_date)
-        if end_date:
-            training_query = training_query.lte("end_time", end_date)
-        trainings = training_query.execute().data or []
-        if not trainings:
-            logger.info(f"按培训国家过滤后无结果，回退为不过滤培训国家")
-            training_query = db.table("trainings").select("*")
-            if training_name:
-                training_query = training_query.ilike("name", f"%{training_name}%")
-            if start_date:
-                training_query = training_query.gte("start_time", start_date)
-            if end_date:
-                training_query = training_query.lte("end_time", end_date)
-            trainings = training_query.execute().data or []
+    # 4. 查询培训（需要根据权限范围过滤）
+    # ✅ 新增：培训查询也需要根据管理员权限过滤
+    if allowed_countries is not None:
+        # 查询权限范围内的培训（培训的 countries 字段包含允许的国家）
+        # 由于 countries 是 JSON 数组，需要使用特定查询语法
+        training_query = db.table("trainings").select("*")
+        # 简化处理：查询所有培训，后续在 Python 中过滤
     else:
         training_query = db.table("trainings").select("*")
-        if training_name:
-            training_query = training_query.ilike("name", f"%{training_name}%")
-        if start_date:
-            training_query = training_query.gte("start_time", start_date)
-        if end_date:
-            training_query = training_query.lte("end_time", end_date)
-        trainings = training_query.execute().data or []
-
-    # 5. 查询考试（带保险回退）
+    
     if country:
-        exam_query = db.table("exams").select("*").eq("country", country)
-        if exam_name:
-            exam_query = exam_query.ilike("title", f"%{exam_name}%")
-        exams = exam_query.execute().data or []
-        if not exams:
-            logger.info(f"按考试国家过滤后无结果，回退为不过滤考试国家")
-            exam_query = db.table("exams").select("*")
-            if exam_name:
-                exam_query = exam_query.ilike("title", f"%{exam_name}%")
-            exams = exam_query.execute().data or []
+        training_query = training_query.eq("country", country)
+    if training_name:
+        training_query = training_query.ilike("name", f"%{training_name}%")
+    if start_date:
+        training_query = training_query.gte("start_time", start_date)
+    if end_date:
+        training_query = training_query.lte("end_time", end_date)
+    
+    trainings = training_query.execute().data or []
+    
+    # ✅ 新增：根据管理员权限过滤培训
+    if allowed_countries is not None:
+        filtered_trainings = []
+        for t in trainings:
+            training_country = t.get('country') or t.get('countries')
+            if training_country:
+                # 解析国家列表
+                country_list = []
+                if isinstance(training_country, str):
+                    try:
+                        parsed = json.loads(training_country)
+                        country_list = parsed if isinstance(parsed, list) else [training_country]
+                    except:
+                        country_list = [training_country]
+                elif isinstance(training_country, list):
+                    country_list = training_country
+                else:
+                    country_list = [str(training_country)]
+                
+                # 检查是否有交集
+                if any(c in allowed_countries for c in country_list):
+                    filtered_trainings.append(t)
+        trainings = filtered_trainings
+
+    # 5. 查询考试（类似逻辑）
+    if allowed_countries is not None:
+        exam_query = db.table("exams").select("*")
     else:
         exam_query = db.table("exams").select("*")
-        if exam_name:
-            exam_query = exam_query.ilike("title", f"%{exam_name}%")
-        exams = exam_query.execute().data or []
+    
+    if country:
+        exam_query = exam_query.eq("country", country)
+    if exam_name:
+        exam_query = exam_query.ilike("title", f"%{exam_name}%")
+    
+    exams = exam_query.execute().data or []
+    
+    # 根据管理员权限过滤考试
+    if allowed_countries is not None:
+        filtered_exams = []
+        for e in exams:
+            exam_country = e.get('country') or e.get('countries')
+            if exam_country:
+                country_list = []
+                if isinstance(exam_country, str):
+                    try:
+                        parsed = json.loads(exam_country)
+                        country_list = parsed if isinstance(parsed, list) else [exam_country]
+                    except:
+                        country_list = [exam_country]
+                elif isinstance(exam_country, list):
+                    country_list = exam_country
+                else:
+                    country_list = [str(exam_country)]
+                
+                if any(c in allowed_countries for c in country_list):
+                    filtered_exams.append(e)
+        exams = filtered_exams
 
     # 6. 调用生成函数
     try:
@@ -3515,6 +3343,230 @@ def api_admin_add_user():
         logger.error(f"添加用户失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
+@app.route('/api/admin/users/import', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_import_users():
+    """批量导入用户（带角色权限校验）"""
+    if 'file' not in request.files:
+        return jsonify({"success": False, "message": "jsonify_no_file_selected", "params": []}), 400
+    
+    file = request.files['file']
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        return jsonify({"success": False, "message": "jsonify_only_supports_files", "params": []}), 400
+    
+    db = get_supabase()
+    current_role = session.get('role')
+    is_dev = is_developer()
+    
+    try:
+        wb = openpyxl.load_workbook(file, read_only=True)
+        ws = wb.active
+    except Exception as e:
+        return jsonify({"success": False, "message": "file_parse_error", "params": [str(e)]}), 400
+    
+    # 字段映射
+    column_map = {
+        'country': 'country',
+        'email': 'email',
+        'name_en': 'name_en',
+        'role': 'role',
+        'is_partner': 'is_partner',
+        'company': 'company',
+        'department': 'department',
+        'wh_type': 'wh_type',
+        'wh_id': 'wh_id',
+        'wh_name_en': 'wh_name_en',
+        'employee_id': 'employee_id',
+        'phone': 'phone',
+        'birthday': 'birthday',
+        'admin_countries': 'admin_countries'
+    }
+    
+    # 读取表头
+    headers = []
+    for col in range(1, ws.max_column + 1):
+        cell_value = ws.cell(row=1, column=col).value
+        headers.append(str(cell_value).strip().lower() if cell_value else '')
+    
+    # 必须列
+    if 'name_en' not in headers:
+        return jsonify({"success": False, "message": "Excel missing required column: name_en"}), 400
+    
+    success_count = 0
+    error_rows = []
+    
+    for row_idx in range(2, ws.max_row + 1):
+        row_data = {}
+        for col_idx, header in enumerate(headers, 1):
+            if not header:
+                continue
+            cell_value = ws.cell(row=row_idx, column=col_idx).value
+            if cell_value is None:
+                row_data[header] = ''
+            else:
+                row_data[header] = str(cell_value).strip()
+        
+        # 字段映射
+        user_data = {}
+        for excel_field, db_field in column_map.items():
+            if excel_field in row_data:
+                user_data[db_field] = row_data[excel_field]
+
+        # ========== 处理空字符串字段，转为 None ==========
+        if 'birthday' in user_data:
+            birthday_val = user_data['birthday']
+            if birthday_val == '' or birthday_val is None:
+                user_data['birthday'] = None
+        
+        if 'employee_id' in user_data:
+            if user_data['employee_id'] == '':
+                user_data['employee_id'] = None
+        
+        if 'email' in user_data:
+            email_val = user_data['email'].strip().lower() if user_data['email'] else ''
+            user_data['email'] = email_val if email_val else None
+        
+        if 'phone' in user_data:
+            if user_data['phone'] == '':
+                user_data['phone'] = None
+        
+        if 'company' in user_data:
+            if user_data['company'] == '':
+                user_data['company'] = None
+        
+        if 'department' in user_data:
+            if user_data['department'] == '':
+                user_data['department'] = None
+        
+        if 'wh_type' in user_data:
+            if user_data['wh_type'] == '':
+                user_data['wh_type'] = None
+        
+        if 'wh_id' in user_data:
+            if user_data['wh_id'] == '':
+                user_data['wh_id'] = None
+        
+        if 'wh_name_en' in user_data:
+            if user_data['wh_name_en'] == '':
+                user_data['wh_name_en'] = None
+        
+        if 'country' in user_data:
+            if user_data['country'] == '':
+                user_data['country'] = None
+        
+        # 姓名必填
+        name_en = user_data.get('name_en', '')
+        if not name_en:
+            error_rows.append(f"第{row_idx}行: 姓名不能为空")
+            continue
+        
+        # ========== 角色权限校验 ==========
+        role_raw = user_data.get('role', '')
+        role = role_raw.lower() if role_raw else 'user'
+        user_data['role'] = role
+        
+        if not is_dev and role == 'developer':
+            error_rows.append(f"第{row_idx}行: 只有开发者可以创建开发者账号")
+            continue
+        
+        if current_role == 'super_admin' and not is_dev:
+            if role not in ['super_admin', 'admin', 'user']:
+                error_rows.append(f"第{row_idx}行: 无效角色 '{role}'")
+                continue
+        elif current_role == 'admin' and not is_dev:
+            if role != 'user':
+                error_rows.append(f"第{row_idx}行: 管理员只能导入普通用户角色")
+                continue
+        
+        # ========== 超管/管理员权限范围校验 ==========
+        if role in ['super_admin', 'admin']:
+            admin_countries_raw = user_data.get('admin_countries', '')
+            if not admin_countries_raw:
+                error_rows.append(f"第{row_idx}行: {role}角色的权限范围不能为空")
+                continue
+            
+            countries_list = parse_countries_input(admin_countries_raw)
+            if not countries_list:
+                error_rows.append(f"第{row_idx}行: 权限范围解析失败，请填写有效的国家代码或名称")
+                continue
+            
+            user_data['admin_countries'] = json.dumps(countries_list)
+        else:
+            user_data['admin_countries'] = None
+        
+        # ========== 重复检查 ==========
+        birthday = user_data.get('birthday')
+        employee_id = user_data.get('employee_id')
+        
+        existing_by_name = db.table("users").select("id, birthday, employee_id").eq("name_en", name_en).execute()
+        existing_users = existing_by_name.data or []
+        
+        is_duplicate = False
+        for existing in existing_users:
+            existing_birthday = existing.get('birthday')
+            existing_employee_id = existing.get('employee_id')
+            
+            if birthday and existing_birthday == birthday:
+                is_duplicate = True
+                break
+            if employee_id and existing_employee_id == employee_id:
+                is_duplicate = True
+                break
+            if not birthday and not employee_id:
+                is_duplicate = True
+                break
+        
+        if is_duplicate:
+            error_rows.append(f"第{row_idx}行: 用户已存在（姓名重复或生日/工号重复）")
+            continue
+        
+        # ========== 处理 is_partner ==========
+        if 'is_partner' in user_data:
+            val = str(user_data['is_partner']).upper()
+            user_data['is_partner'] = val in ('Y', 'YES', 'TRUE', '1')
+        else:
+            user_data['is_partner'] = False
+        
+        # ========== ✅ 关键修复：设置默认密码哈希 ==========
+        # 为 imported 用户设置一个默认的密码哈希（不可登录）
+        # 使用一个固定的占位符哈希，表示该用户尚未注册
+        DEFAULT_PLACEHOLDER_HASH = hash_password('__IMPORTED_USER_PLACEHOLDER__')
+        
+        user_data['password_hash'] = DEFAULT_PLACEHOLDER_HASH
+        
+        # ========== 设置默认值 ==========
+        user_data['id'] = str(uuid.uuid4())
+        user_data['user_status'] = 'imported'
+        user_data['is_active'] = False
+        user_data['created_by'] = session['user_id']
+        user_data['is_protected'] = (role == 'developer')
+        
+        # 确保 created_at 有值
+        user_data['created_at'] = datetime.now(timezone.utc).isoformat()
+        
+        # ========== 移除值为空字符串的字段 ==========
+        user_data = {k: v for k, v in user_data.items() if v != ''}
+        
+        try:
+            db.table("users").insert(user_data).execute()
+            success_count += 1
+        except Exception as e:
+            error_rows.append(f"第{row_idx}行: 插入失败 - {str(e)}")
+            logger.error(f"导入用户失败第{row_idx}行: {e}")
+    
+    result = {
+        "success": True,
+        "total": ws.max_row - 1,
+        "success_count": success_count,
+        "error_count": len(error_rows),
+        "errors": error_rows[:20]
+    }
+    
+    response = jsonify(result)
+    response.headers['Content-Type'] = 'application/json; charset=utf-8'
+    return response
+
 @app.route('/api/admin/users/<user_id>', methods=['PUT'])
 @login_required
 @admin_required
@@ -3686,6 +3738,147 @@ def api_admin_delete_user(user_id):
     except Exception as e:
         logger.error(f"软删除失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/users/deleted')
+@login_required
+@admin_required
+def api_admin_deleted_users():
+    """获取已删除用户列表（返回所有数据，由前端进行搜索和分页）"""
+    db = get_supabase()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '').strip()
+    country = request.args.get('country', '')
+    
+    # 查询所有已删除用户（不分页，返回全部数据）
+    query = db.table("users").select("*").not_.is_("deleted_at", "null")
+    
+    # 只应用国家过滤（因为国家过滤比较简单）
+    if country:
+        query = query.eq("country", country)
+    
+    # 权限过滤
+    allowed = get_admin_allowed_countries()
+    if allowed is not None:
+        if not allowed:
+            return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
+        query = query.in_("country", allowed)
+    
+    # 按删除时间倒序
+    res = query.order("deleted_at", desc=True).execute()
+    all_users = res.data or []
+    
+    # 获取删除人姓名
+    deleted_by_ids = [u.get('deleted_by') for u in all_users if u.get('deleted_by')]
+    if deleted_by_ids:
+        users_res = db.table("users").select("id, name_en").in_("id", deleted_by_ids).execute()
+        name_map = {u['id']: u.get('name_en', '') for u in (users_res.data or [])}
+        for u in all_users:
+            u['deleted_by_name'] = name_map.get(u.get('deleted_by'), u.get('deleted_by', ''))
+    
+    # ✅ 前端内存过滤：返回所有数据，让前端进行搜索和分页
+    return jsonify({
+        "data": all_users, 
+        "total": len(all_users), 
+        "page": 1, 
+        "per_page": len(all_users)
+    })
+
+@app.route('/api/admin/users/<user_id>/restore', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_restore_user(user_id):
+    """恢复已删除用户"""
+    db = get_supabase()
+    
+    # 检查用户是否存在且已删除
+    user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+    
+    if user_res.data.get('deleted_at') is None:
+        return jsonify({"success": False, "message": "用户未被删除"}), 400
+    
+    try:
+        db.table("users").update({
+            "deleted_at": None,
+            "deleted_by": None
+        }).eq("id", user_id).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/users/batch_restore', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_restore_users():
+    """批量恢复已删除用户"""
+    data = request.json
+    user_ids = data.get('user_ids', [])
+    
+    if not user_ids:
+        return jsonify({"success": False, "message": "请选择要恢复的用户"}), 400
+    
+    db = get_supabase()
+    success_count = 0
+    fail_count = 0
+    
+    for user_id in user_ids:
+        try:
+            db.table("users").update({
+                "deleted_at": None,
+                "deleted_by": None
+            }).eq("id", user_id).execute()
+            success_count += 1
+        except Exception:
+            fail_count += 1
+    
+    return jsonify({"success": True, "success_count": success_count, "fail_count": fail_count})
+
+@app.route('/api/admin/users/<user_id>/permanent', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_permanent_delete_user(user_id):
+    """永久删除用户（硬删除）"""
+    db = get_supabase()
+    
+    try:
+        # 先删除关联数据
+        db.table("exam_assignments").delete().eq("user_id", user_id).execute()
+        db.table("interview_results").delete().eq("user_id", user_id).execute()
+        db.table("training_attendances").delete().eq("user_id", user_id).execute()
+        # 最后删除用户
+        db.table("users").delete().eq("id", user_id).execute()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@app.route('/api/admin/users/batch_permanent', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_permanent_delete_users():
+    """批量永久删除用户"""
+    data = request.json
+    user_ids = data.get('user_ids', [])
+    
+    if not user_ids:
+        return jsonify({"success": False, "message": "请选择要删除的用户"}), 400
+    
+    db = get_supabase()
+    success_count = 0
+    fail_count = 0
+    
+    for user_id in user_ids:
+        try:
+            db.table("exam_assignments").delete().eq("user_id", user_id).execute()
+            db.table("interview_results").delete().eq("user_id", user_id).execute()
+            db.table("training_attendances").delete().eq("user_id", user_id).execute()
+            db.table("users").delete().eq("id", user_id).execute()
+            success_count += 1
+        except Exception:
+            fail_count += 1
+    
+    return jsonify({"success": True, "success_count": success_count, "fail_count": fail_count})
 
 @app.route('/api/admin/users/<user_id>/reset_password', methods=['POST'])
 @login_required
@@ -6238,7 +6431,7 @@ def submit_interview(interview_id):
             "is_correct": is_correct,
             "submitted_at": datetime.now(timezone.utc).isoformat()
         }).eq("id", rid).eq("user_id", user_id).execute()
-    return jsonify({"success": True, "message": "您的回答已提交"})
+    return jsonify({"success": True, "message": "jsonify_interview_has_been_submitted", "params": []})
 
 @app.route('/api/interview/<int:interview_id>/submit', methods=['POST'])
 @login_required
