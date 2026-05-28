@@ -4,28 +4,6 @@
 
 {% block content %}
 <div class="container-fluid">
-    <!-- 在卡片 body 中添加筛选行（如果还没有） -->
-    <div class="card mb-3 no-print">
-        <div class="card-body">
-            <div class="row g-3 align-items-end">
-                <div class="col-md-4">
-                    <input type="text" id="countryFilter" class="form-control" list="countryDatalist" 
-                        placeholder="选择国家筛选">
-                    <datalist id="countryDatalist"></datalist>
-                </div>
-                <div class="col-md-2">
-                    <button id="filterCountryBtn" class="btn btn-primary w-100">
-                        <i class="bi bi-filter"></i> <span data-i18n="filter">筛选</span>
-                    </button>
-                </div>
-                <div class="col-md-2">
-                    <button id="clearFilterBtn" class="btn btn-outline-secondary w-100">
-                        <i class="bi bi-eraser"></i> <span data-i18n="clear">清除</span>
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
     <div class="mb-4">
         <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_record">培训签到表</span></h2>
         <div class="d-flex justify-content-end gap-2 no-print">
@@ -52,6 +30,7 @@
                             <th>姓名+工号Name + Employee ID </th>
                             <th>签名Signature</th>
                             <th class="print-hide"><span data-i18n="sign_in_period">签到时间</span></th>
+                            <th><span data-i18n="country">国家</span></th>
                             <th class="print-hide"><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
@@ -159,88 +138,8 @@
 <script>
     const trainingId = {{ request.view_args.get('training_id') }};
 
-    // 获取当前管理员允许的国家列表（用于筛选下拉框）
-    async function loadAllowedCountries() {
-        try {
-            // 调用现有接口获取管理员信息
-            const res = await fetch('/api/admin/refresh_permissions');
-            if (res.ok) {
-                const data = await res.json();
-                if (data.admin_countries) {
-                    let countries = data.admin_countries;
-                    if (typeof countries === 'string') {
-                        countries = JSON.parse(countries);
-                    }
-                    return countries;
-                }
-            }
-            return null;
-        } catch (e) {
-            console.error('获取权限失败:', e);
-            return null;
-        }
-    }
-
-    // 修改国家筛选下拉框，仅显示有权限的国家
-    async function populateCountryFilter() {
-        const allowedCountries = await loadAllowedCountries();
-        const countryInput = document.getElementById('countryFilter');
-        if (!countryInput) return;
-        
-        // 如果有权限限制，设置 datalist 只显示允许的国家
-        if (allowedCountries && allowedCountries.length > 0) {
-            const countries = await loadCountryList();
-            const allowedCountryNames = countries
-                .filter(c => allowedCountries.includes(c.code))
-                .map(c => ({ code: c.code, name: c.name_zh, name_en: c.name_en }));
-            
-            // 重新创建 datalist
-            const datalist = document.getElementById('countryDatalist');
-            if (datalist) {
-                datalist.innerHTML = '';
-                allowedCountryNames.forEach(c => {
-                    const optZh = document.createElement('option');
-                    optZh.value = c.name;
-                    datalist.appendChild(optZh);
-                    const optEn = document.createElement('option');
-                    optEn.value = c.name_en;
-                    datalist.appendChild(optEn);
-                    const optCode = document.createElement('option');
-                    optCode.value = c.code;
-                    datalist.appendChild(optCode);
-                });
-            }
-        }
-    }
-
-    // 筛选按钮事件
-    document.getElementById('filterCountryBtn')?.addEventListener('click', () => {
-        const country = document.getElementById('countryFilter').value;
-        const url = new URL(window.location.href);
-        if (country) {
-            url.searchParams.set('country', country);
-        } else {
-            url.searchParams.delete('country');
-        }
-        window.location.href = url.toString();
-    });
-
-    // 清除筛选按钮
-    document.getElementById('clearFilterBtn')?.addEventListener('click', () => {
-        window.location.href = window.location.pathname;
-    });
-
     // 签到签字详情
     async function loadDetail() {
-        // ✅ 添加权限预检查
-        const allowedCountries = await loadAllowedCountries();
-        if (allowedCountries !== null && allowedCountries.length === 0) {
-            // 无权限，显示提示
-            document.getElementById('attendanceTbody').innerHTML = 
-                `<tr><td colspan="7" class="text-center text-danger">您没有查看任何国家签到记录的权限</td></tr>`;
-            return;
-        }
-        
         const urlParams = new URLSearchParams(window.location.search);
         let country = urlParams.get('country');
         // 过滤无效值（null、'null'、'undefined' 等均视为没有筛选）
@@ -320,6 +219,7 @@
                 <td>${escapeHtml(nameDisplay)}${empId}</td>
                 <td>${signatureCell}</td>
                 <td class="print-hide">${new Date(r.sign_time).toLocaleString()}</td>
+                <td class="country-cell no-print" title="${escapeHtml(r.country )}">${escapeHtml(r.country )}</td>
                 <td class="print-hide">
                     <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
                         <i class="bi bi-pencil-square"></i> ${t('t_re_signature')}

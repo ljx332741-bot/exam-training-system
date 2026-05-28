@@ -2,7 +2,26 @@
 {% extends "base.html" %}
 {% block title %}管理员控制台{% endblock %}
 {% block content %}
-<h3 class="fw-bold mb-4"><i class="bi bi-speedometer2 me-2"></i><span data-i18n="mc">管理控制台</span></h3>
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h3 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2"></i><span data-i18n="mc">管理控制台</span></h3>
+    
+    <!-- 更多信息下拉菜单 -->
+    <div class="dropdown">
+        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+            <i class="bi bi-three-dots-vertical"></i> <span data-i18n="more_info">更多信息</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-end">
+            <li>
+                <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;">
+                    <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
+                </a>
+            </li>
+            <!-- 后续可扩展其他功能 -->
+            <!-- <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#">其他功能</a></li> -->
+        </ul>
+    </div>
+</div>
 
 <!-- 创建管理员仪表盘里统计卡片 -->
 <div class="row g-3 mb-4">
@@ -164,15 +183,16 @@
               {% for ex in exams_table | default([]) %}
               <tr>
                 <td class="fw-medium" style="display: flex; flex-direction: column;">
-                  {{ ex.title }}  <!-- 考试管理考试列表 -->
-                  <small class="text-muted" style="margin-top: 4px;">
-                    [{{ ex.country or '' }}]
-                    <span class="local-time" data-utc="{{ ex.start_time or '' }}"></span>
-                     - <span class="local-time" data-utc="{{ ex.end_time or '' }}"></span>
-                    | {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
-                    | <span data-i18n="att_reg">应考|实考</span>: 
-                    {{ ex.submitted_count }}/{{ ex.assigned_count }}
-                  </small>
+                    {{ ex.title }}
+                    <small class="text-muted" style="margin-top: 4px;">
+                        <!-- ✅ 显示多个国家标签 -->
+                        <span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
+                        <span class="local-time" data-utc="{{ ex.start_time or '' }}"></span>
+                        - <span class="local-time" data-utc="{{ ex.end_time or '' }}"></span>
+                        | {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
+                        | <span data-i18n="att_reg">应考|实考</span>: 
+                        {{ ex.submitted_count }}/{{ ex.assigned_count }}
+                    </small>
                 </td>
                 <td>
                   {% if ex.status == 'draft' %}
@@ -423,7 +443,7 @@
 {% endblock %}
 
 {% block extra_js %}
-  <script>
+<script>
 
   // 绑定PDF批量导出按钮事件
   document.querySelectorAll('.batch-export').forEach(btn => {
@@ -1080,6 +1100,11 @@
       } else {
           alert(t('t_batch_export_pdf_failed'));
       }
+  }
+
+  // 打开库房信息页面（新标签页）
+  function openWhInfoModal() {
+      window.location.href = '/admin/wh';
   }
 
   // 监听语言变化事件，重新加载动态数据

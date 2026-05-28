@@ -5,13 +5,13 @@
 <div class="container py-4">
     <h3 class="mb-4">
         <i class="bi bi-file-text me-2"></i><span data-i18n="grade_detail">成绩详情</span>
-        <button class="btn btn-sm btn-outline-secondary float-end" onclick="window.close();">✖ <span data-i18n="close">关闭</span></button>
+        <button class="btn btn-sm btn-outline-secondary float-end" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
     </h3>
     
     <div class="card mb-4">
         <div class="card-body">
             <h5>{{ result.exams.title }}</h5>
-            <p class="mb-1"><strong><span data-i18n="examinee">考生:</span></strong>{{ result.users.name_cn or result.users.email }} ({{ result.users.email }})</p>
+            <p class="mb-1"><strong><span data-i18n="examinee">考生:</span></strong>{{ result.users.name_en or result.users.email }} ({{ result.users.email }})</p>
             <p class="mb-1"><strong><span data-i18n="total_score">总分:</span></strong><span class="badge bg-primary fs-6">{{ result.total_score }}</span></p>
             <p class="mb-0"><strong><span data-i18n="submitted_at">提交时间</span>：</strong>{{ result.created_at }}</p>
         </div>

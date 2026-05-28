@@ -412,10 +412,21 @@
                     statusText = safeT('t_unknown');
                     statusClass = 'bg-light text-dark';
             }
+
+            // ✅ 修改培训名称列：根据是否有国家决定跳转方式
+            let nameHtml = '';
+            if (t.country) {
+                // 有国家：跳转到签到详情页
+                nameHtml = `<a href="/admin/training/${t.id}/attendance" class="text-decoration-none fw-bold" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
+            } else {
+                // 无国家：弹出国家分组模态框
+                nameHtml = `<a href="#" class="text-decoration-none fw-bold group-detail-link" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
+            }
+
             row.innerHTML = `
                 <td class="seq-column">${rowNumber}</td>  <!-- 使用连续序号 -->
                 <td class="country-cell" title="${escapeHtml(t.country || safeT('t_general'))}">${escapeHtml(t.country || safeT('t_general'))}</td>
-                <td class="name-cell" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</td>
+                <td class="name-cell">${nameHtml}</td>
                 <td>${quarter}</td>
                 <td>${t.signed_count || 0}</td>
                 <td title="${new Date(t.created_at).toLocaleString()}">${new Date(t.created_at).toLocaleString()}</td>
@@ -447,7 +458,15 @@
                   </td>
             `;
         });
-        attachRowEvents();
+        attachRowEvents();    
+        // 绑定国家分组链接的点击事件
+        document.querySelectorAll('.group-detail-link').forEach(link => {
+            link.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const trainingId = link.dataset.id;
+                await showCountryGroupModal(trainingId);
+            });
+        });
     }
 
     function formatDate(iso) {

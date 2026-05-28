@@ -180,7 +180,7 @@
                 <td>${s.score}</td>
                 <td>${s.reviewer || '-'}</td>
                 <td>
-                    <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info" target="_blank">${t('t_details')}</a>
+                    <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info">${t('t_details')}</a>
                     <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
                     <button class="btn btn-sm btn-outline-danger delete-result-btn" data-result-id="${s.result_id}" data-user-name="${escapeHtml(s.name)}">
                         <i class="bi bi-trash"></i> ${t('t_delete')}

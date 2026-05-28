@@ -1,96 +1,150 @@
 <!-- templates/admin/list_users.html -->
 {% extends "base.html" %}
 {% block title %}{{ _('user_management') }}{% endblock %}
+{% block extra_head %}
+/* 在 extra_head 中添加 */
+<style>
+    #userTable th {
+        position: relative;
+        background-clip: padding-box;
+    }
+    .col-resize-handle {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        width: 8px;
+        cursor: col-resize;
+        background: rgba(0,0,0,0.05);
+        z-index: 10;
+        transition: background 0.2s;
+    }
+    .col-resize-handle:hover {
+        background: rgba(0,0,0,0.2);
+    }
+    .col-resize-handle:active {
+        background: rgba(0,0,0,0.3);
+    }
+    /* 调整时禁用文本选择 */
+    body.resizing {
+        user-select: none;
+        cursor: col-resize;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
-        <button class="btn btn-outline-secondary" id="showDeletedUsersBtn">
-            <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
-        </button>
+        <div>
+            <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
+                <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
+            </button>
+            <button class="btn btn-outline-secondary" id="showDeletedUsersBtn">
+                <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
+            </button>
+        </div>
     </div>
 
     <!-- 搜索筛选 -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="row g-3 align-items-end">
-                <div class="col-md-5">
-                    <div class="row g-3">
-                        <div class="col-md-6">
+            <div class="row g-2 align-items-center">
+                <!-- 左侧筛选条件 -->
+                <div class="col-12 col-md-8">
+                    <div class="row g-2">
+                        <div class="col-12 col-sm-6 col-lg-3">
                             <input type="text" id="searchInput" class="form-control" 
-                            data-i18n-placeholder="placeholder_mail_name" placeholder="搜索邮箱/姓名">
+                                data-i18n-placeholder="placeholder_mail_name" 
+                                placeholder="搜索邮箱/姓名/工号/库房ID" autocomplete="off">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-12 col-sm-6 col-lg-3">
                             <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                            data-i18n-placeholder="placeholder_select_or_input" placeholder="输入选择国家" autocomplete="off"
-                            data-code-input="filterCountryCode">
+                                data-i18n-placeholder="placeholder_select_or_input" 
+                                placeholder="输入选择国家" autocomplete="off" data-code-input="filterCountryCode">
                             <datalist id="countryDatalist"></datalist>
                             <input type="hidden" id="filterCountryCode" value="">
                         </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <input type="text" id="filterWhId" class="form-control" 
+                                data-i18n-placeholder="wh_id_name"    
+                                placeholder="库房编码/名称" autocomplete="off">
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <button id="resetFiltersBtn" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
-                </div>
-                <div class="col-md-5 d-flex justify-content-end">
-                    <button class="btn btn-primary me-2" data-bs-toggle="modal" data-bs-target="#addUserModal">
-                        <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
-                    </button>
-                    <button class="btn btn-outline-success me-2" id="importBtn">
-                        <i class="bi bi-file-earmark-excel"></i><span data-i18n="batch_import">批量导入</span>
-                    </button>
-                    <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
-                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+                
+                <!-- 右侧操作按钮 -->
+                <div class="col-12 col-md-4">
+                    <div class="d-flex gap-2 justify-content-md-end">
+                        <div class="dropdown">
+                            <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-file-earmark-excel"></i> <span data-i18n="batch_import">批量导入</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" id="downloadUserTemplateBtn">
+                                    <i class="bi bi-download"></i> <span data-i18n="download_template">下载导入模板</span>
+                                </a></li>
+                                <li><a class="dropdown-item" href="#" id="importUserBtn">
+                                    <i class="bi bi-upload"></i> <span data-i18n="upload_import">上传文件导入</span>
+                                </a></li>
+                            </ul>
+                        </div>
+                        
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                            <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
+                        </button>
+                        
+                        <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
+                        
+                        <button class="btn btn-outline-secondary" onclick="history.back();">
+                            ✖ <span data-i18n="close">关闭</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- 添加字段选择器 -->
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="btn-group">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-table"></i> <span data-i18n="display_field">显示字段</span>
+            </button>
+            <ul class="dropdown-menu p-2" id="fieldSelector" style="max-height: 300px; overflow-y: auto;">
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="country" id="fieldCountry" checked><label class="form-check-label" for="fieldCountry"><span data-i18n="country">国家</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="name_en" id="fieldName" checked><label class="form-check-label" for="fieldName"><span data-i18n="name_en">姓名</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="email" id="fieldEmail" checked><label class="form-check-label" for="fieldEmail"><span data-i18n="email">邮箱</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_id" id="fieldWhId" checked><label class="form-check-label" for="fieldWhId"><span data-i18n="wh_id">库房编码</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_name_en" id="fieldWhName" checked><label class="form-check-label" for="fieldWhName"><span data-i18n="wh_name_en">库房名称(EN)</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="user_status" id="fieldStatus" checked><label class="form-check-label" for="fieldStatus"><span data-i18n="user_status">用户状态</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="role" id="fieldRole" checked><label class="form-check-label" for="fieldRole"><span data-i18n="role">角色</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="is_partner" id="fieldPartner" checked><label class="form-check-label" for="fieldPartner"><span data-i18n="is_partner">合作方?</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="employee_id" id="fieldEmpId"><label class="form-check-label" for="fieldEmpId"><span data-i18n="employee_id">工号</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="company" id="fieldCompany"><label class="form-check-label" for="fieldCompany"><span data-i18n="company">公司</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="department" id="fieldDept"><label class="form-check-label" for="fieldDept"><span data-i18n="department">部门</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_type" id="fieldWhType"><label class="form-check-label" for="fieldWhType"><span data-i18n="wh_type">库房类型</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="birthday" id="fieldBirthday"><label class="form-check-label" for="fieldBirthday"><span data-i18n="birthday">生日</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="created_by" id="fieldCreatedBy"><label class="form-check-label" for="fieldCreatedBy"><span data-i18n="created_by">创建人</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="id" id="fieldId"><label class="form-check-label" for="fieldId">ID</label></div></li>
+            </ul>
+        </div>
+        <button class="btn btn-sm btn-outline-secondary" id="resetFieldsBtn"><span data-i18n="reset_fields">重置字段</span></button>
     </div>
 
     <!-- 用户列表表格 -->
     <div class="card shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0" style="min-width: 1000px;" >
-                    <style>
-                        .table-responsive {
-                            overflow-x: auto;
-                            white-space: nowrap;
-                        }
-                        .table td, .table th {
-                            vertical-align: middle;
-                        }
-                        /* 允许部分列在内容过长时换行（可选），但保持表格整体不换行 */
-                        .time-range {
-                            min-width: 280px;
-                        }
-                        .btn-group-sm .btn {
-                            white-space: nowrap;
-                        }
-                    </style>
-                    <thead class="table-light">
-                        <tr>
-                            <th><span data-i18n="actions">操作</span></th>
-                            {% if session.get('role') == 'super_admin' %}
-                            <th class="super-only"><span data-i18n="power_scope">权限范围</span></th>
-                            {% endif %}
-                            <th><span data-i18n="role">角色</span></th>
-                            <th><span data-i18n="country">国家</span></th>
-                            <th><span data-i18n="name_en">姓名</span></th>
-                            <th><span data-i18n="email">邮箱</span></th>
-                            <th><span data-i18n="company">公司</span></th>
-                            <th><span data-i18n="department">部门/合作伙伴</span></th>
-                            <th><span data-i18n="wh_type">库房类型</span></th>
-                            <th><span data-i18n="wh_id">库房编码</span></th>
-                            <th><span data-i18n="wh_name_en">库房名称(EN)</span></th>
-                            <th><span data-i18n="user_status">用户状态</span></th>
-                            <th><span data-i18n="is_partner">合作方?</span></th>
-                            <th><span data-i18n="employee_id">工号</span></th>
-                            <th><span data-i18n="birthday">生日</span></th>
-                            <th>ID</th>
-                        </tr>
-                    </thead>
+                <table class="table table-hover align-middle mb-0" style="min-width: 1800px; white-space: nowrap;" id="userTable">
                     <tbody id="userTableBody">
-                        <tr><td colspan="13" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="18" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -141,11 +195,13 @@
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="wh_id"><span data-i18n="wh_id">库房编码</span></label>
-                            <input type="text" class="form-control" id="wh_id">
+                            <input type="text" id="wh_id" class="form-control" list="whDatalist" 
+                                placeholder="请输入或选择库房" autocomplete="off">
+                            <datalist id="whDatalist"></datalist>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="wh_name_en"><span data-i18n="wh_name_en">库房名称(EN)</span></label>
-                            <input type="text" class="form-control" id="wh_name_en">
+                            <input type="text" id="wh_name_en" class="form-control" readonly style="background-color:#e9ecef;">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="user_status"><span data-i18n="user_status">用户状态</span></label>
@@ -162,7 +218,7 @@
                             </select>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="department"><span data-i18n="department">部门/合作伙伴</span></label>
+                            <label class="form-label" for="department"><span data-i18n="department">部门</span></label>
                             <input type="text" class="form-control" id="department">
                         </div>
                         <div class="col-md-6">
@@ -170,7 +226,7 @@
                             <input type="text" class="form-control" id="employee_id">
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="birthday"><span data-i18n="birthday">出生日期</span></label>
+                            <label class="form-label" for="birthday" data-i18n="birthday">出生日期</label>
                             <input type="date" name="birthday" id="birthday" class="form-control">
                         </div>
                         <div class="col-md-6">
@@ -178,7 +234,8 @@
                             <select class="form-select" id="role">
                                 <option value="user" data-i18n="ordinary_user">普通用户</option>
                                 <option value="admin" data-i18n="administrator">管理员</option>
-                                <option value="super_admin">超级管理员</option>
+                                <option value="super_admin" data-i18n="t_super_admin">超级管理员</option>
+                                <option value="t_developer" data-i18n="developer">开发者</option>
                             </select>
                         </div>
                         <div class="col-md-6" id="adminCountriesGroup" style="display:none;">
@@ -214,33 +271,36 @@
     </div>
 </div>
 
-<!-- 已删除人员模态框 -->
+<!-- 已删除人员模态框 - 增强筛选 -->
 <div class="modal fade" id="deletedUsersModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
+            <div class="modal-header bg-danger text-white">
                 <h5 class="modal-title">
-                    <i class="bi bi-trash-fill text-danger"></i> 
+                    <i class="bi bi-trash-fill"></i> 
                     <span data-i18n="deleted_users_list">已删除人员列表</span>
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <!-- 筛选栏 -->
+                <!-- 筛选栏 - 无搜索按钮 -->
                 <div class="row g-3 mb-3">
-                    <div class="col-md-5">
+                    <div class="col-md-4">
                         <input type="text" id="deletedSearchInput" class="form-control" 
-                               placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
+                            data-i18n-placeholder="placeholder_mail_name"
+                            placeholder="姓名/邮箱/工号" autocomplete="off">
                     </div>
                     <div class="col-md-3">
                         <input type="text" id="deletedCountryFilter" class="form-control" 
-                               list="deletedCountryDatalist" data-i18n-placeholder="placeholder_select_or_input" placeholder="国家">
+                            list="deletedCountryDatalist" 
+                            data-i18n-placeholder="placeholder_country"
+                            placeholder="国家" autocomplete="off">
                         <datalist id="deletedCountryDatalist"></datalist>
                     </div>
-                    <div class="col-md-2">
-                        <button id="deletedSearchBtn" class="btn btn-primary w-100">
-                            <i class="bi bi-search"></i> <span data-i18n="search">搜索</span>
-                        </button>
+                    <div class="col-md-3">
+                        <input type="text" id="deletedWhFilter" class="form-control" 
+                        data-i18n-placeholder="placeholder_wh_id"    
+                        placeholder="库房编码/名称" autocomplete="off">
                     </div>
                     <div class="col-md-2">
                         <button id="deletedResetBtn" class="btn btn-outline-secondary w-100">
@@ -268,13 +328,14 @@
                                 <th><span data-i18n="country">国家</span></th>
                                 <th><span data-i18n="name_en">姓名</span></th>
                                 <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="wh_id">库房编码</span></th>
                                 <th><span data-i18n="deleted_at">删除时间</span></th>
                                 <th><span data-i18n="deleted_by">删除人</span></th>
                                 <th><span data-i18n="actions">操作</span></th>
                             </tr>
                         </thead>
                         <tbody id="deletedUsersTbody">
-                            <tr><td colspan="7" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                            <tr><td colspan="8" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -312,11 +373,164 @@
 
 {% block extra_js %}
 <script>
-    // 全局变量
-    // 获取当前登录用户的角色
+    // ==================== 高级模糊搜索工具函数 ====================    
+    /**
+     * 创建高级模糊搜索输入框
+     * @param {string} inputId - 输入框ID
+     * @param {Function} fetchDataFn - 获取数据的函数，返回 Promise<Array>
+     * @param {Object} options - 配置选项
+     * @param {number} options.delay - 防抖延迟（毫秒），默认300
+     * @param {Function} options.onSelect - 选择回调
+     * @param {Function} options.renderItem - 渲染选项函数
+     * @param {Function} options.onClear - 清空回调
+     */
+    function initAdvancedSearch(inputId, fetchDataFn, options = {}) {
+        const input = document.getElementById(inputId);
+        if (!input) return;
+        
+        const delay = options.delay || 300;
+        let debounceTimer;
+        let currentValue = '';
+        
+        // 创建下拉容器
+        let dropdownId = `${inputId}_dropdown`;
+        let dropdown = document.getElementById(dropdownId);
+        if (!dropdown) {
+            dropdown = document.createElement('div');
+            dropdown.id = dropdownId;
+            dropdown.className = 'advanced-search-dropdown';
+            dropdown.style.cssText = `
+                position: absolute;
+                display: none;
+                max-height: 300px;
+                overflow-y: auto;
+                background: white;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                z-index: 1000;
+                min-width: 200px;
+            `;
+            input.parentNode.style.position = 'relative';
+            input.parentNode.appendChild(dropdown);
+        }
+        
+        // 输入事件
+        input.addEventListener('input', async (e) => {
+            const value = e.target.value.trim();
+            currentValue = value;
+            
+            clearTimeout(debounceTimer);
+            
+            if (!value) {
+                dropdown.style.display = 'none';
+                if (options.onClear) options.onClear();
+                return;
+            }
+            
+            debounceTimer = setTimeout(async () => {
+                try {
+                    const results = await fetchDataFn(value);
+                    if (currentValue !== value) return;
+                    
+                    if (!results || results.length === 0) {
+                        dropdown.style.display = 'none';
+                        return;
+                    }
+                    
+                    // 定位下拉框
+                    const rect = input.getBoundingClientRect();
+                    dropdown.style.top = `${rect.bottom + window.scrollY}px`;
+                    dropdown.style.left = `${rect.left + window.scrollX}px`;
+                    dropdown.style.width = `${rect.width}px`;
+                    
+                    // 渲染选项
+                    if (options.renderItem) {
+                        dropdown.innerHTML = results.map(item => options.renderItem(item)).join('');
+                    } else {
+                        dropdown.innerHTML = results.map(item => `
+                            <div class="dropdown-item" data-value="${escapeHtml(item.value || item)}" 
+                                 style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
+                                ${escapeHtml(item.label || item)}
+                            </div>
+                        `).join('');
+                    }
+                    
+                    // 绑定点击事件
+                    dropdown.querySelectorAll('.dropdown-item').forEach(el => {
+                        el.addEventListener('click', () => {
+                            const value = el.dataset.value || el.textContent;
+                            input.value = value;
+                            dropdown.style.display = 'none';
+                            if (options.onSelect) options.onSelect(value);
+                            
+                            // 触发 change 事件
+                            const changeEvent = new Event('change', { bubbles: true });
+                            input.dispatchEvent(changeEvent);
+                        });
+                    });
+                    
+                    dropdown.style.display = 'block';
+                } catch (err) {
+                    console.error(t('t_search_failed'), err);
+                }
+            }, delay);
+        });
+        
+        // 点击其他地方关闭
+        document.addEventListener('click', (e) => {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+        
+        // 失焦关闭
+        input.addEventListener('blur', () => {
+            setTimeout(() => {
+                dropdown.style.display = 'none';
+            }, 200);
+        });
+        
+        return dropdown;
+    }
+    
+    // ==================== 高级搜索数据获取函数 ====================
+    
+    // 搜索用户（用于主列表）
+    async function searchUsersForAdvanced(keyword) {
+        const response = await fetch(`/api/admin/users?search=${encodeURIComponent(keyword)}&per_page=20`);
+        const data = await response.json();
+        return (data.data || []).map(user => ({
+            value: user.name_en || user.email,
+            label: `${user.name_en || ''} (${user.email || ''}) - ${user.wh_id || ''}`,
+            user: user
+        }));
+    }
+    
+    // 搜索库房
+    async function searchWarehouses(keyword) {
+        const response = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(keyword)}`);
+        const data = await response.json();
+        return (data.data || []).map(wh => ({
+            value: wh.wh_id,
+            label: `${wh.wh_id} - ${wh.wh_name_en || wh.wh_name_cn || ''}`,
+            wh: wh
+        }));
+    }
+    
+    // ==================== 全局变量 ====================
     const IS_DEVELOPER = {{ is_developer | tojson }};
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     const CURRENT_USER_ID = "{{ session.get('user_id') }}";
+    
+    let currentPage = 1;
+    let filters = { search: '', country: '', wh_id: '' };
+    let currentUsersData = [];
+    let selectedUserIds = new Set();
+
+    let currentSearch = '';
+    let currentCountry = '';
+    let currentEditUserId = null;
 
     // 角色层级定义
     const ROLE_HIERARCHY = {
@@ -569,34 +783,67 @@
         });
     }
 
-    let currentPage = 1;
-    let currentSearch = '';
-    let currentCountry = '';
-    let currentEditUserId = null;
-
-    function loadUsers() {
+    // ==================== 主列表功能 ====================    
+    async function loadUsers() {
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
-            search: currentSearch,
-            country: currentCountry
+            search: filters.search,
+            country: filters.country,
+            wh_id: filters.wh_id
         });
-        fetch(`/api/admin/users?${params}`)
-            .then(res => res.json())
-            .then(data => {
-                renderUserTable(data.data);
-                document.getElementById('totalCount').textContent = data.total;
-                renderPagination(data.page, Math.ceil(data.total / data.per_page));
-            })
-            .catch(err => console.error(err));
+        
+        try {
+            const res = await fetch(`/api/admin/users?${params}`);
+            const data = await res.json();
+            currentUsersData = data.data || [];
+            renderUserTable(currentUsersData);
+            document.getElementById('totalCount').innerText = data.total;
+            renderPagination(data.page, Math.ceil(data.total / data.per_page));
+            updateBatchDeleteButton();
+            // ✅ 渲染完成后恢复列宽
+            setTimeout(() => {
+                restoreColumnWidths();
+            }, 50);
+
+        } catch (err) {
+            console.error('加载用户列表失败:', err);
+        }
+        // 重新绑定全选事件
+        setTimeout(() => {
+            const selectAllCheckbox = document.getElementById('selectAllActive');
+            if (selectAllCheckbox && !selectAllCheckbox._hasListener) {
+                selectAllCheckbox.onchange = (e) => {
+                    const isChecked = e.target.checked;
+                    document.querySelectorAll('.user-checkbox').forEach(cb => {
+                        cb.checked = isChecked;
+                        if (isChecked) {
+                            selectedUserIds.add(cb.dataset.id);
+                        } else {
+                            selectedUserIds.delete(cb.dataset.id);
+                        }
+                    });
+                    updateBatchDeleteButton();
+                };
+                selectAllCheckbox._hasListener = true;
+            }
+        }, 100);
+        // ✅ 刷新后，重新同步 selectedUserIds（只保留仍然存在的用户）
+        const existingIds = new Set(currentUsersData.map(u => u.id));
+        for (const id of selectedUserIds) {
+            if (!existingIds.has(id)) {
+                selectedUserIds.delete(id);
+            }
+        }
+        updateBatchDeleteButton();
     }
 
-    // 定义辅助函数用于超级用户管理
+    // ==================== 权限判断函数 ====================
     function canEditUser(user) {
         if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
         if (CURRENT_USER_ROLE === 'super_admin') return true;
         if (user.role === 'admin' || user.role === 'super_admin') return false;
-        return true; // 普通用户可编辑
+        return true;
     }
     function canDeleteUser(user) {
         if (user.is_protected) return false;
@@ -606,63 +853,325 @@
     }
     function canResetPwd(user) {
         if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
-        // 普通管理员不能重置管理员密码
         if (CURRENT_USER_ROLE === 'super_admin') return true;
         return user.role === 'user';
     }
 
+    // 字段可见性配置
+    let visibleFields = {
+        country: true, name_en: true, email: true, wh_id: true, wh_name_en: true,
+        role: true, is_partner: true, user_status: true, employee_id: false,
+        company: false, department: false, wh_type: false, birthday: false,
+        created_by: false, id: false, power_scope: true  // 权限范围列
+    };
+
+    // 保存字段配置到 localStorage
+    function saveFieldConfig() {
+        localStorage.setItem('userTableVisibleFields', JSON.stringify(visibleFields));
+    }
+
+    // 加载字段配置
+    function loadFieldConfig() {
+        const saved = localStorage.getItem('userTableVisibleFields');
+        if (saved) {
+            try {
+                const parsed = JSON.parse(saved);
+                Object.assign(visibleFields, parsed);
+            } catch(e) {}
+        }
+        // 同步复选框状态
+        document.querySelectorAll('.toggle-field').forEach(cb => {
+            const field = cb.value;
+            if (visibleFields.hasOwnProperty(field)) {
+                cb.checked = visibleFields[field];
+            }
+        });
+    }
+
+    // 绑定字段切换事件
+    function bindFieldToggleEvents() {
+        document.querySelectorAll('.toggle-field').forEach(cb => {
+            cb.addEventListener('change', (e) => {
+                const field = e.target.value;
+                visibleFields[field] = e.target.checked;
+                saveFieldConfig();
+                loadUsers(); // 重新加载表格
+            });
+        });
+        
+        document.getElementById('resetFieldsBtn')?.addEventListener('click', () => {
+            // 重置为默认值
+            visibleFields = {
+                country: true, name_en: true, email: true, wh_id: true, wh_name_en: true,
+                role: true, is_partner: true, user_status: true, employee_id: false,
+                company: false, department: false, wh_type: false, birthday: false,
+                created_by: false, id: false, power_scope: true
+            };
+            saveFieldConfig();
+            // 同步复选框
+            document.querySelectorAll('.toggle-field').forEach(cb => {
+                const field = cb.value;
+                if (visibleFields.hasOwnProperty(field)) {
+                    cb.checked = visibleFields[field];
+                }
+            });
+            loadUsers();
+        });
+    }
+
     function renderUserTable(users) {
-        const tbody = document.getElementById('userTableBody');
+        const table = document.getElementById('userTable');
+        if (!table) return;
+        
         // 过滤超级管理员行（非超管看不到）
         let displayUsers = users;
         if (CURRENT_USER_ROLE !== 'super_admin') {
             displayUsers = users.filter(u => u.role !== 'super_admin');
         }
+        
         if (!displayUsers.length) {
-            tbody.innerHTML = `<tr><td colspan="13" class="text-center">${t('no_data')}</td></tr>`;
+            document.getElementById('userTableBody').innerHTML = `<tr><td colspan="18" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
-        tbody.innerHTML = displayUsers.map(u => `
-            <tr>
-                <td>
-                    ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
-                    ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
-                    ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
-                </td>
-                ${CURRENT_USER_ROLE === 'super_admin' ? `
-                <td>${(u.admin_countries ? (() => { 
-                    try { const codes = JSON.parse(u.admin_countries); return codes.length ? codes.join(', ') : t('t_general'); } 
-                    catch(e) { return u.admin_countries; } })() : t('t_general'))}
-                </td>` : ''}
-                <td>
-                    ${u.role === 'super_admin' ? t('t_super_admin') : (u.role === 'admin' ? t('t_admin') : t('t_ordinary_user'))}
-                </td>
-                <td>${escapeHtml(u.country || '-')}</td>
-                <td>${escapeHtml(u.name_en || '-')}</td>
-                <td>${u.email && u.email.startsWith('noemail-') ? '' : escapeHtml(u.email)}</td>
-                <td>${escapeHtml(u.company || '-')}</td>
-                <td>${escapeHtml(u.department || '-')}</td>
-                <td>${escapeHtml(u.wh_type || '-')}</td>
-                <td>${escapeHtml(u.wh_id || '-')}</td>
-                <td>${escapeHtml(u.wh_name_en || '-')}</td>
-                <td>${u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'))}</td>
-                <td>${u.is_partner ? t('t_yes') : t('t_no')}</td>
-                <td>${escapeHtml(u.employee_id || '-')}</td>
-                <td>${escapeHtml(u.birthday || '-')}</td>
-                <td>${u.id.slice(0,8)}...</td>
-            </tr>
-        `).join('');
+
+        // ==================== 动态构建表头 ====================
+        const fieldOrder = ['country', 'name_en', 'email', 'wh_id', 'wh_name_en', 'role', 'is_partner', 'user_status', 
+                            'employee_id', 'company', 'department', 'wh_type', 'birthday', 'created_by', 'id'];
+        const labels = {
+            country: t('country'), name_en: t('name_en'), email: t('mail'), wh_id: t('wh_id'),
+            wh_name_en: t('wh_name_en'), role: t('role'), is_partner: t('t_is_partner'), user_status: t('user_status'),
+            employee_id: t('employee_id'), company: t('company'), department: t('department'), wh_type: t('wh_type'),
+            birthday: t('birthday'), created_by: t('created_by'), id: 'ID'
+        };
         
-        // 绑定事件
+        // 构建表头HTML
+        let headerHtml = '<thead class="table-light"><tr>';
+        headerHtml += '<th style="width: 40px;"><input type="checkbox" id="selectAllActive"></th>';
+        
+        for (const field of fieldOrder) {
+            if (visibleFields && visibleFields[field]) {
+                headerHtml += `<th>${labels[field]}</th>`;
+            }
+        }
+        // 权限范围列（仅超管显示）
+        if (CURRENT_USER_ROLE === 'super_admin' && visibleFields && visibleFields.power_scope !== false) {
+            headerHtml += `<th><span data-i18n="power_scope">${t('power_scope')}</span></th>`;
+        }
+        headerHtml += `<th>${t('actions')}</th></tr></thead>`;
+        
+        // ==================== 构建数据行 ====================
+        let bodyHtml = '<tbody>';
+        for (const u of displayUsers) {
+            bodyHtml += `<tr>
+                <td><input type="checkbox" class="user-checkbox" data-id="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''}>${'</td>'}`;
+            
+            for (const field of fieldOrder) {
+                if (visibleFields && visibleFields[field]) {
+                    let cellValue = '';
+                    switch (field) {
+                        case 'country':
+                            cellValue = escapeHtml(u.country || '-');
+                            break;
+                        case 'name_en':
+                            cellValue = escapeHtml(u.name_en || '-');
+                            break;
+                        case 'email':
+                            cellValue = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
+                            break;
+                        case 'wh_id':
+                            cellValue = escapeHtml(u.wh_id || '-');
+                            break;
+                        case 'wh_name_en':
+                            cellValue = escapeHtml(u.wh_name_en || '-');
+                            break;
+                        case 'user_status':
+                            cellValue = u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'));
+                            break;
+                        case 'role':
+                            cellValue = u.role === 'super_admin' ? t('t_super_admin') : (u.role === 'admin' ? t('t_admin') : t('t_ordinary_user'));
+                            break;
+                        case 'is_partner':
+                            cellValue = u.is_partner ? t('t_yes') : t('t_no');
+                            break;
+                        case 'employee_id':
+                            cellValue = escapeHtml(u.employee_id || '-');
+                            break;
+                        case 'company':
+                            cellValue = escapeHtml(u.company || '-');
+                            break;
+                        case 'department':
+                            cellValue = escapeHtml(u.department || '-');
+                            break;
+                        case 'wh_type':
+                            cellValue = escapeHtml(u.wh_type || '-');
+                            break;
+                        case 'birthday':
+                            cellValue = escapeHtml(u.birthday || '-');
+                            break;
+                        case 'created_by':
+                            cellValue = escapeHtml(u.created_by_name || u.created_by?.slice(0,8) || '-');
+                            break;
+                        case 'id':
+                            const userIdFull = u.id;
+                            const userIdDisplay = u.id.slice(0, 8) + '...';
+                            cellValue = `<span title="${escapeHtml(userIdFull)}" style="cursor: help;">${escapeHtml(userIdDisplay)}</span>`;
+                            break;
+                    }
+                    bodyHtml += `<td>${cellValue}</td>`;
+                }
+            }
+            
+            // 权限范围列（仅超管显示）
+            if (CURRENT_USER_ROLE === 'super_admin' && visibleFields && visibleFields.power_scope !== false) {
+                let scopeDisplay = '';
+                if (u.admin_countries) {
+                    try {
+                        const codes = JSON.parse(u.admin_countries);
+                        scopeDisplay = codes.length ? codes.join(', ') : t('t_unrestricted');
+                    } catch(e) {
+                        scopeDisplay = u.admin_countries;
+                    }
+                } else {
+                    scopeDisplay = t('t_unrestricted');
+                }
+                bodyHtml += `<td>${escapeHtml(scopeDisplay)}</td>`;
+            }
+            
+            // 操作列
+            bodyHtml += `<td>
+                ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
+                ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
+                ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
+            </td></tr>`;
+        }
+        bodyHtml += '</tbody>';
+        
+        // 合并表头和数据行
+        const newTableHtml = headerHtml + bodyHtml;
+        const tableElement = document.getElementById('userTable');
+        if (tableElement) {
+            tableElement.innerHTML = newTableHtml;
+        }
+
+        // 添加调整手柄
+        addResizeHandles();
+
+        // ==================== 绑定事件 ====================
+        // 编辑按钮
         document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+            btn.removeEventListener('click', handleEditClick);
+            btn.addEventListener('click', handleEditClick);
         });
+        // 重置密码按钮
         document.querySelectorAll('.reset-pwd-btn').forEach(btn => {
-            btn.addEventListener('click', () => openResetPwd(btn.dataset.id));
+            btn.removeEventListener('click', handleResetPwdClick);
+            btn.addEventListener('click', handleResetPwdClick);
         });
+        // 删除按钮
         document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', () => deleteUser(btn.dataset.id));
+            btn.removeEventListener('click', handleDeleteClick);
+            btn.addEventListener('click', handleDeleteClick);
         });
+        // 复选框
+        document.querySelectorAll('.user-checkbox').forEach(cb => {
+            cb.removeEventListener('change', handleCheckboxChange);
+            cb.addEventListener('change', handleCheckboxChange);
+        });
+        
+        // 全选功能
+        const selectAllCheckbox = document.getElementById('selectAllActive');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.removeEventListener('change', handleSelectAll);
+            selectAllCheckbox.addEventListener('change', handleSelectAll);
+        }
+    }
+
+    function addResizeHandles() {
+        const table = document.getElementById('userTable');
+        if (!table) return;
+        
+        const ths = table.querySelectorAll('thead th');
+        ths.forEach(th => {
+            // 避免重复添加
+            if (th.querySelector('.col-resize-handle')) return;
+            
+            // 设置相对定位
+            th.style.position = 'relative';
+            
+            // 添加手柄元素
+            const handle = document.createElement('div');
+            handle.className = 'col-resize-handle';
+            handle.style.cssText = `
+                position: absolute;
+                right: 0;
+                top: 0;
+                bottom: 0;
+                width: 8px;
+                cursor: col-resize;
+                background: rgba(0,0,0,0.05);
+                z-index: 10;
+            `;
+            handle.title = t('t_drag_to_adjust_column');
+            th.appendChild(handle);
+        });
+    }
+
+    // 事件处理函数
+    function handleEditClick(e) {
+        openEditModal(e.currentTarget.dataset.id);
+    }
+
+    function handleResetPwdClick(e) {
+        openResetPwd(e.currentTarget.dataset.id);
+    }
+
+    function handleDeleteClick(e) {
+        deleteUser(e.currentTarget.dataset.id);
+    }
+
+    function handleCheckboxChange(e) {
+        console.log('复选框变化, 选中数量:', selectedUserIds.size);
+        const cb = e.target;
+        const id = cb.dataset.id;
+        console.log('复选框变化, id:', id, 'checked:', cb.checked);  // ✅ 调试
+        if (cb.checked) {
+            selectedUserIds.add(id);
+        } else {
+            selectedUserIds.delete(id);
+        }
+        console.log('当前选中数量:', selectedUserIds.size);  // ✅ 调试
+        updateBatchDeleteButton();
+    }
+
+    function handleSelectAll(e) {
+        console.log('全选变化, isChecked:', e.target.checked);
+        const isChecked = e.target.checked;
+        document.querySelectorAll('.user-checkbox').forEach(cb => {
+            cb.checked = isChecked;
+            if (isChecked) {
+                selectedUserIds.add(cb.dataset.id);
+            } else {
+                selectedUserIds.delete(cb.dataset.id);
+            }
+        });
+        updateBatchDeleteButton();
+    }
+    
+    function updateBatchDeleteButton() {
+        const btn = document.getElementById('batchDeleteActiveBtn');
+        if (!btn) return;
+
+        const count = selectedUserIds.size;
+        
+        // ✅ 修复：使用 t() 函数翻译按钮文本，支持参数
+        let buttonText = t('batch_delete');
+        if (count > 0) {
+            buttonText = `${buttonText} (${count})`;
+        }
+        btn.innerHTML = `<i class="bi bi-trash3"></i> ${buttonText}`;
+        
+        // 2. 交互优化：未选中时禁用按钮，选中后恢复可用
+        btn.disabled = (count === 0);
     }
 
     // 辅助函数：防XSS
@@ -694,6 +1203,46 @@
                 loadUsers();
             });
         });
+    }
+
+    async function batchDeleteSelected() {
+        if (selectedUserIds.size === 0) {
+            alert(t('select_at_least_one'));
+            return;
+        }
+        
+        const confirmMsg = t('confirm_batch_delete_users').replace('{count}', selectedUserIds.size);
+        if (!confirm(confirmMsg)) return;
+        
+        // ✅ 保存要删除的 ID 列表
+        const idsToDelete = Array.from(selectedUserIds);
+        
+        try {
+            // 创建所有删除请求的 Promise
+            const deletePromises = idsToDelete.map(id => 
+                fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
+                    .then(res => res.json())
+                    .catch(err => ({ success: false, message: err.message }))
+            );
+            
+            const results = await Promise.all(deletePromises);
+            const successCount = results.filter(r => r && r.success === true).length;
+            const failedCount = results.length - successCount;
+            
+            // ✅ 清空选中集合（无论成功还是失败，都清空，因为列表会刷新）
+            selectedUserIds.clear();
+            updateBatchDeleteButton();
+            
+            alert(t('batch_deleted_user_hint')
+                .replace('{successCount}', successCount)
+                .replace('{failedCount}', failedCount));
+            
+            loadUsers();  // 刷新列表
+            
+        } catch (err) {
+            console.error('批量删除失败:', err);
+            alert(t('delete_failed') + err.message);
+        }
     }
 
     // 专用接口获取用户详情，并正确加载国家下拉框
@@ -735,6 +1284,13 @@
 
     async function deleteUser(userId) {
         if (!(await showConfirm(window.i18n.t('delete_user_tip')))) return;
+
+        // ✅ 先从选中集合中移除
+        if (selectedUserIds.has(userId)) {
+            selectedUserIds.delete(userId);
+            updateBatchDeleteButton();
+        }
+
         fetch(`/api/admin/users/${userId}`, { method: 'DELETE' })
             .then(res => res.json())
             .then(data => {
@@ -841,9 +1397,8 @@
         }
     });
 
-    // 模态框显示逻辑
+    // 修改模态框显示事件监听
     document.getElementById('addUserModal').addEventListener('show.bs.modal', async () => {
-        // ✅ 通过 editUserId 隐藏字段判断是新建还是编辑
         const editUserIdHidden = document.getElementById('editUserId');
         const isNewMode = !editUserIdHidden || !editUserIdHidden.value;
         
@@ -864,7 +1419,7 @@
         const requiredMark = adminCountriesGroup?.querySelector('.text-danger');
         
         // 3. 定义角色变化处理函数
-        const handleRoleChange = () => {
+        const handleRoleChange = async () => {
             const selectedRole = roleSelect.value;
             const needsScope = roleNeedsCountryScope(selectedRole);
             
@@ -872,50 +1427,33 @@
                 adminCountriesGroup.style.display = '';
                 if (requiredMark) requiredMark.style.display = 'inline';
                 
+                // ✅ 关键修复：每次都重新初始化国家选择器
                 if (isNewMode) {
-                    initAdminCountryTags('[]');
+                    await initAdminCountryTags('[]');
+                } else if (window._editingUserData) {
+                    const existingCountries = window._editingUserData.admin_countries || '[]';
+                    await initAdminCountryTags(existingCountries);
+                } else {
+                    await initAdminCountryTags('[]');
                 }
             } else {
                 adminCountriesGroup.style.display = 'none';
                 if (requiredMark) requiredMark.style.display = 'none';
                 if (isNewMode) {
                     selectedAdminCountryCodes = [];
+                    renderSelectedTags();
                 }
             }
         };
         
-        // 4. 根据模式初始化
+        // 移除旧事件，避免重复绑定
+        roleSelect.removeEventListener('change', handleRoleChange);
+        roleSelect.addEventListener('change', handleRoleChange);
+        
+        // 根据模式初始化
         if (isNewMode) {
-            // ========== 新建模式：彻底清空所有字段 ==========
-            
-            // 清空所有文本输入框
-            const textInputs = ['email', 'phone', 'name_en', 'company', 'department', 
-                                'employee_id', 'wh_type', 'wh_id', 'wh_name_en', 'birthday'];
-            textInputs.forEach(id => {
-                const input = document.getElementById(id);
-                if (input) input.value = '';
-            });
-            
-            // 清空国家选择器
-            const countryInput = document.getElementById('userCountrySelect');
-            if (countryInput) countryInput.value = '';
-            const countryCodeHidden = document.getElementById('countryCode');
-            if (countryCodeHidden) countryCodeHidden.value = '';
-            
-            // 重置下拉选择器
-            const userStatusInput = document.getElementById('user_status');
-            if (userStatusInput) userStatusInput.value = 'imported';
-            
-            const isPartnerSelect = document.getElementById('isPartnerSelect');
-            if (isPartnerSelect) isPartnerSelect.value = 'N';
-            
-            // 清空隐藏字段
-            document.getElementById('editUserId').value = '';
-            document.getElementById('existingAdminCountries').value = '[]';
-            
-            // 清空权限范围标签
-            selectedAdminCountryCodes = [];
-            renderSelectedTags();
+            // ========== 新建模式 ==========
+            clearAddUserForm(); // 使用独立的清空函数
             
             // 根据当前用户权限渲染可选角色
             renderRoleSelect('user');
@@ -925,10 +1463,12 @@
             if (requiredMark) requiredMark.style.display = 'none';
             roleSelect.disabled = false;
             
+            // ✅ 重要：预先初始化国家选择器（虽然隐藏，但准备就绪）
+            selectedAdminCountryCodes = [];
+            await initAdminCountryTags('[]');
+            
         } else {
-            // ========== 编辑模式：不执行清空操作 ==========
-            // 只设置角色选择器状态
-            const targetUserRole = roleSelect.value;
+            // ========== 编辑模式 ==========
             if (!IS_DEVELOPER && CURRENT_USER_ROLE !== 'super_admin') {
                 roleSelect.disabled = true;
             } else {
@@ -936,12 +1476,71 @@
             }
         }
         
-        // 绑定角色变化事件
-        roleSelect.removeEventListener('change', handleRoleChange);
-        roleSelect.addEventListener('change', handleRoleChange);
-        
         // 执行一次初始状态
-        handleRoleChange();
+        await handleRoleChange();
+    });
+
+    // 添加独立的清空表单函数
+    function clearAddUserForm() {
+        // 清空所有文本输入框
+        const textInputs = ['email', 'phone', 'name_en', 'company', 'department', 
+                            'employee_id', 'wh_type', 'wh_id', 'wh_name_en', 'birthday'];
+        textInputs.forEach(id => {
+            const input = document.getElementById(id);
+            if (input) input.value = '';
+        });
+        
+        // 清空国家选择器
+        const countryInput = document.getElementById('userCountrySelect');
+        if (countryInput) countryInput.value = '';
+        const countryCodeHidden = document.getElementById('countryCode');
+        if (countryCodeHidden) countryCodeHidden.value = '';
+        
+        // 重置下拉选择器
+        const userStatusInput = document.getElementById('user_status');
+        if (userStatusInput) userStatusInput.value = 'imported';
+        
+        const isPartnerSelect = document.getElementById('isPartnerSelect');
+        if (isPartnerSelect) isPartnerSelect.value = 'N';
+        
+        // 清空隐藏字段
+        document.getElementById('editUserId').value = '';
+        document.getElementById('existingAdminCountries').value = '[]';
+        
+        // 清空权限范围标签
+        selectedAdminCountryCodes = [];
+        renderSelectedTags();
+        
+        // 清空权限范围输入框
+        const adminInput = document.getElementById('adminCountriesInput');
+        if (adminInput) adminInput.value = '';
+    }
+
+    // 修改模态框关闭事件
+    document.getElementById('addUserModal').addEventListener('hidden.bs.modal', function() {
+        currentEditUserId = null;
+        document.getElementById('editUserId').value = '';
+        document.getElementById('existingAdminCountries').value = '[]';
+        delete window._editingUserData;
+        
+        // ✅ 清空权限范围状态
+        selectedAdminCountryCodes = [];
+        renderSelectedTags();
+        
+        // 清空权限范围输入框
+        const adminInput = document.getElementById('adminCountriesInput');
+        if (adminInput) adminInput.value = '';
+        
+        // 清空表单
+        clearAddUserForm();
+        
+        // 隐藏权限范围组件
+        const adminCountriesGroup = document.getElementById('adminCountriesGroup');
+        if (adminCountriesGroup) adminCountriesGroup.style.display = 'none';
+        
+        // 重置角色选择器
+        renderRoleSelect('user');
+        updateEmailRequired();
     });
 
     document.getElementById('addUserModal').addEventListener('shown.bs.modal', async () => {
@@ -1068,53 +1667,104 @@
         if (adminCountriesGroup) adminCountriesGroup.style.display = 'none';
     });
 
-    // 导入按钮点击 → 触发1文件选择
-    document.getElementById('importBtn').addEventListener('click', () => {
-        document.getElementById('importFileInput').click();
+    // 1下载用户导入模板
+    document.getElementById('downloadUserTemplateBtn').addEventListener('click', async (e) => {
+        e.preventDefault();
+        try {
+            const response = await fetch('/api/admin/users/import/template');
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${t('t_UserImportTemp')}_${new Date().toISOString().slice(0,19)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            alert(t('t_download_template_failed') + err.message);
+        }
     });
 
-    // 1文件选择后自动上传
-    document.getElementById('importFileInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
+    // 2文件选择后自动上传
+    function formatImportError(error) {
+        console.log('调试 error:', error);
+        console.log('error 类型:', typeof error);
+        console.log('error.code:', error?.code);
+        console.log('error.row:', error?.row);
+        console.log('error.params:', error?.params);
         
-        if (!confirm(`${t('t_confirm_import_file')} ${file.name} `)) {
-            e.target.value = '';
-            return;
+        // 如果是字符串，直接返回
+        if (typeof error === 'string') {
+            return error;
         }
         
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const importBtn = document.getElementById('importBtn');
-        importBtn.disabled = true;
-        importBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${t('t_importing')}`;
-        
-        try {
-            const res = await fetch('/api/admin/users/import', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await res.json();
-            
-            if (result.success) {
-                alert(`${t('t_import_done')} ${result.success_count} ，${t('t_failed')} ${result.error_count} 。`);
-                if (result.errors.length > 0) {
-                    console.warn(t('t_failed_details'), result.errors);
-                    alert('部分失败（详情见控制台）:\n' + result.errors.join('\n'));
+        // 如果是对象
+        if (typeof error === 'object' && error !== null) {
+            // 如果有 code，进行翻译
+            if (error.code) {
+                // 尝试从 i18n 获取翻译
+                let template = t(error.code);
+                
+                // 如果翻译不存在，使用默认模板
+                if (template === error.code) {
+                    const defaults = {
+                        'user_already_exists': '第{row}行: 用户 {name} 已存在',
+                        'insert_failed': '第{row}行: 插入失败 - {error}',
+                        'name_required': '第{row}行: 姓名不能为空',
+                        'country_wh_mismatch': '第{row}行: 国家({country})与库房ID({wh_id})提取的国家不一致',
+                        'country_not_allowed': '第{row}行: 国家 {country} 不在您的权限范围内',
+                        'admin_countries_required': '第{row}行: {role}角色必须填写权限范围',
+                        'admin_countries_invalid': '第{row}行: 权限范围包含无权管理的国家: {countries}'
+                    };
+                    template = defaults[error.code] || error.code;
                 }
-                loadUsers();  // 刷新列表
-            } else {
-                alert('导入失败: ' + (result.message || t('t_unknown_error')));
+                
+                // 获取参数（兼容多种结构）
+                let params = {};
+                if (error.params) {
+                    params = error.params;
+                }
+                // 确保 row 参数存在
+                if (error.row !== undefined && params.row === undefined) {
+                    params.row = error.row;
+                }
+                // 如果 params 中都没有 row，使用 error.row
+                if (params.row === undefined && error.row !== undefined) {
+                    params.row = error.row;
+                }
+                
+                // 替换所有参数
+                let result = template;
+                for (const [key, value] of Object.entries(params)) {
+                    if (value !== undefined && value !== null) {
+                        result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+                    }
+                }
+                
+                // 最后检查是否还有 {row} 未替换
+                if (result.includes('{row}')) {
+                    result = result.replace(/\{row\}/g, params.row || error.row || '?');
+                }
+                
+                return result;
             }
-        } catch (err) {
-            alert('网络错误: ' + err.message);
-        } finally {
-            importBtn.disabled = false;
-            importBtn.innerHTML = `<i class="bi bi-file-earmark-excel"></i> ${t('t_batch_import')}`;
-            e.target.value = '';  // 清空文件选择
+            
+            // 如果有 message 字段
+            if (error.message) {
+                return error.message;
+            }
+            
+            // 降级：返回 JSON 字符串
+            try {
+                return JSON.stringify(error);
+            } catch(e) {
+                return String(error);
+            }
         }
-    });
+        
+        return String(error);
+    }
 
     // 重置密码按钮
     document.getElementById('confirmResetBtn').addEventListener('click', () => {
@@ -1131,56 +1781,59 @@
             });
     });
 
-    // 在搜索按钮事件中
-    document.getElementById('searchBtn').addEventListener('click', () => {
-        currentSearch = document.getElementById('searchInput').value;
-        // 优先使用标准化后的代码，若用户未选择则直接使用输入框原始值（但最好通过校验）
-        let countryCode = document.getElementById('filterCountryCode').value;
-        if (!countryCode) {
-            // 如果隐藏字段为空，尝试实时转换（避免用户直接回车）
-            const rawText = document.getElementById('filterCountry').value.trim();
-            if (rawText) {
-                countryCode = resolveCountryParam(rawText);
-                if (countryCode && countryCode !== '___NONE___') {
-                    document.getElementById('filterCountryCode').value = countryCode;
-                } else {
-                    countryCode = ''; // 无效输入，清空筛选
-                }
-            }
-        }
-        currentCountry = countryCode;
-        currentPage = 1;
-        loadUsers();
-    });
-
     // ==================== 已删除人员管理（前端内存过滤版） ====================
     let deletedAllUsers = [];      // 存储所有用户数据
     let deletedCurrentPage = 1;
     let deletedSearch = '';
     let deletedCountry = '';
-    let deletedFilteredUsers = [];  // 过滤后的用户
+    let deletedFilteredUsers = [];  // 过滤后的用户    
+    let deletedFilters = { search: '', country: '', wh_id: '' };
     const deletedPerPage = 20;
-
     // 加载已删除用户（从后端获取全部数据）
+    
     async function loadDeletedUsers() {
         const params = new URLSearchParams({
             page: 1,
-            per_page: 10000,  // 获取所有数据
-            search: deletedSearch,
-            country: deletedCountry,
-            include_deleted: 'true'
+            per_page: 10000,
+            search: deletedFilters.search,
+            country: deletedFilters.country
         });
         
-        const response = await fetch(`/api/admin/users/deleted?${params}`);
-        const data = await response.json();
-        
-        // 存储所有用户
-        deletedAllUsers = data.data || [];
-        
-        // 应用前端搜索过滤
-        applyDeletedFilters();
+        try {
+            const response = await fetch(`/api/admin/users/deleted?${params}`);
+            const data = await response.json();
+            let allData = data.data || [];
+            
+            // 前端过滤
+            if (deletedFilters.search) {
+                const searchLower = deletedFilters.search.toLowerCase();
+                allData = allData.filter(user => 
+                    (user.name_en && user.name_en.toLowerCase().includes(searchLower)) ||
+                    (user.email && user.email.toLowerCase().includes(searchLower)) ||
+                    (user.employee_id && user.employee_id.toLowerCase().includes(searchLower))
+                );
+            }
+            if (deletedFilters.country) {
+                allData = allData.filter(user => user.country === deletedFilters.country);
+            }
+            if (deletedFilters.wh_id) {
+                const whLower = deletedFilters.wh_id.toLowerCase();
+                allData = allData.filter(user => 
+                    (user.wh_id && user.wh_id.toLowerCase().includes(whLower)) ||
+                    (user.wh_name_en && user.wh_name_en.toLowerCase().includes(whLower))
+                );
+            }
+            
+            deletedAllUsers = allData;
+            deletedFilteredUsers = allData;
+            renderDeletedUsersTable();
+            document.getElementById('deletedTotalCount').innerText = allData.length;
+            renderDeletedPagination(1, Math.ceil(allData.length / deletedPerPage));
+        } catch (err) {
+            console.error('加载已删除用户失败:', err);
+        }
     }
-
+    
     // 前端搜索过滤（姓名/邮箱模糊匹配）
     function applyDeletedFilters() {
         let filtered = [...deletedAllUsers];
@@ -1214,17 +1867,14 @@
     }
 
     // 渲染已删除用户表格（前端分页）
+
     function renderDeletedUsersTable() {
         const tbody = document.getElementById('deletedUsersTbody');
-        const totalCount = deletedFilteredUsers.length;
-        document.getElementById('deletedTotalCount').innerText = totalCount;
-        
-        if (totalCount === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center">${t('t_no_data')}</td></tr>`;
+        if (!deletedFilteredUsers.length) {
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center">${t('t_no_data')}</td></tr>`;
             return;
         }
         
-        // 前端分页
         const start = (deletedCurrentPage - 1) * deletedPerPage;
         const end = start + deletedPerPage;
         const pageUsers = deletedFilteredUsers.slice(start, end);
@@ -1235,124 +1885,157 @@
                 <td>${escapeHtml(user.country || '-')}</td>
                 <td>${escapeHtml(user.name_en || user.name_cn || '-')}</td>
                 <td>${escapeHtml(user.email || '-')}</td>
+                <td>${escapeHtml(user.wh_id || '-')}</td>
                 <td>${utcToLocalString(user.deleted_at)}</td>
                 <td>${escapeHtml(user.deleted_by_name || user.deleted_by || '-')}</td>
                 <td>
-                    <button class="btn btn-sm btn-success restore-user-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name_en)}">
-                        <i class="bi bi-arrow-counterclockwise"></i> ${t('t_recover')}
-                    </button>
-                    <button class="btn btn-sm btn-danger permanent-delete-user-btn" data-user-id="${user.id}" data-user-name="${escapeHtml(user.name_en)}">
-                        <i class="bi bi-trash3"></i> ${t('permanently_delete')}
-                    </button>
+                    <button class="btn btn-sm btn-success restore-user-btn" data-user-id="${user.id}">${t('t_recover')}</button>
+                    <button class="btn btn-sm btn-danger permanent-delete-user-btn" data-user-id="${user.id}">${t('permanently_delete')}</button>
                 </td>
             </tr>
         `).join('');
         
-        // 绑定事件
         document.querySelectorAll('.restore-user-btn').forEach(btn => {
-            btn.addEventListener('click', () => restoreUser(btn.dataset.userId, btn.dataset.userName));
+            btn.addEventListener('click', () => restoreUser(btn.dataset.userId));
         });
         document.querySelectorAll('.permanent-delete-user-btn').forEach(btn => {
-            btn.addEventListener('click', () => permanentDeleteUser(btn.dataset.userId, btn.dataset.userName));
+            btn.addEventListener('click', () => permanentDeleteUser(btn.dataset.userId));
         });
+        bindDeletedSelectAll();
     }
-
+    
     // 渲染分页
-    function renderDeletedPagination() {
-        const totalCount = deletedFilteredUsers.length;
-        const totalPages = Math.ceil(totalCount / deletedPerPage);
+    function renderDeletedPagination(current, totalPages) {
         const pagination = document.getElementById('deletedPagination');
-        
-        if (totalPages <= 1) {
-            pagination.innerHTML = '';
-            return;
-        }
-        
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
         let html = '';
         for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === deletedCurrentPage ? 'active' : ''}">
-                        <a class="page-link" href="#" data-page="${i}">${i}</a>
-                    </li>`;
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
         }
         pagination.innerHTML = html;
-        
         pagination.querySelectorAll('.page-link').forEach(link => {
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 deletedCurrentPage = parseInt(link.dataset.page);
                 renderDeletedUsersTable();
-                renderDeletedPagination();
             });
         });
     }
 
     // 搜索输入实时响应（类似管理员仪表盘的效果）
-    function bindDeletedSearchEvents() {
-        const searchInput = document.getElementById('deletedSearchInput');
-        const countryFilter = document.getElementById('deletedCountryFilter');
-        const searchBtn = document.getElementById('deletedSearchBtn');
-        const resetBtn = document.getElementById('deletedResetBtn');
-        
-        // 实时搜索（输入即搜索）
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => {
-                deletedSearch = e.target.value;
-                applyDeletedFilters();
-            });
+    
+    function bindDeletedSelectAll() {
+        const selectAll = document.getElementById('selectAllDeleted');
+        if (selectAll) {
+            selectAll.onchange = (e) => {
+                document.querySelectorAll('.deleted-user-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
         }
+    }
+    
+    // 筛选事件 - 输入即搜索
+    function bindFilterEvents() {
+        const searchInput = document.getElementById('searchInput');
+        const countryInput = document.getElementById('filterCountry');
+        const whInput = document.getElementById('filterWhId');
+        const resetBtn = document.getElementById('resetFiltersBtn');
         
-        // 国家筛选实时响应
-        if (countryFilter) {
-            countryFilter.addEventListener('change', () => {
-                deletedCountry = countryFilter.value;
-                applyDeletedFilters();
-            });
-        }
+        const debounce = (fn, delay) => {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
         
-        // 搜索按钮（也可以保留，用于重置或手动触发）
-        if (searchBtn) {
-            searchBtn.addEventListener('click', () => {
-                deletedSearch = searchInput?.value || '';
-                deletedCountry = countryFilter?.value || '';
-                applyDeletedFilters();
-            });
-        }
+        const updateFilters = () => {
+            filters.search = searchInput?.value || '';
+            // ✅ 国家筛选：直接使用输入框的值，进行模糊匹配
+            filters.country = countryInput?.value || '';
+            // ✅ 库房筛选：直接使用输入框的值，进行模糊匹配
+            filters.wh_id = whInput?.value || '';
+            currentPage = 1;
+            loadUsers();
+        };
         
-        // 重置按钮
+        const debouncedUpdate = debounce(updateFilters, 300);
+        
+        if (searchInput) searchInput.addEventListener('input', debouncedUpdate);
+        if (countryInput) countryInput.addEventListener('input', debouncedUpdate);
+        if (whInput) whInput.addEventListener('input', debouncedUpdate);
+        
         if (resetBtn) {
             resetBtn.addEventListener('click', () => {
                 if (searchInput) searchInput.value = '';
-                if (countryFilter) countryFilter.value = '';
-                deletedSearch = '';
-                deletedCountry = '';
-                applyDeletedFilters();
+                if (countryInput) countryInput.value = '';
+                if (whInput) whInput.value = '';
+                filters = { search: '', country: '', wh_id: '' };
+                currentPage = 1;
+                loadUsers();
+            });
+        }
+    }
+        
+    function bindDeletedFilterEvents() {
+        const searchInput = document.getElementById('deletedSearchInput');
+        const countryInput = document.getElementById('deletedCountryFilter');
+        const whInput = document.getElementById('deletedWhFilter');
+        const resetBtn = document.getElementById('deletedResetBtn');
+        
+        const debounce = (fn, delay) => {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
+        
+        const updateFilters = () => {
+            deletedFilters.search = searchInput?.value || '';
+            deletedFilters.country = countryInput?.value || '';
+            deletedFilters.wh_id = whInput?.value || '';
+            deletedCurrentPage = 1;
+            loadDeletedUsers();
+        };
+        
+        const debouncedUpdate = debounce(updateFilters, 300);
+        
+        if (searchInput) searchInput.addEventListener('input', debouncedUpdate);
+        if (countryInput) countryInput.addEventListener('input', debouncedUpdate);
+        if (whInput) whInput.addEventListener('input', debouncedUpdate);
+        
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                if (countryInput) countryInput.value = '';
+                if (whInput) whInput.value = '';
+                deletedFilters = { search: '', country: '', wh_id: '' };
+                deletedCurrentPage = 1;
+                loadDeletedUsers();
             });
         }
     }
 
-    // 打开已删除人员模态框
+    // 修改打开已删除模态框的代码
     document.getElementById('showDeletedUsersBtn')?.addEventListener('click', async () => {
-        // 初始化国家筛选
         await populateCountryDatalist('deletedCountryDatalist');
-        // 重置筛选条件
-        deletedSearch = '';
-        deletedCountry = '';
-        deletedCurrentPage = 1;
-        if (document.getElementById('deletedSearchInput')) {
-            document.getElementById('deletedSearchInput').value = '';
-        }
-        if (document.getElementById('deletedCountryFilter')) {
-            document.getElementById('deletedCountryFilter').value = '';
-        }
-        
-        // 显示加载中
-        document.getElementById('deletedUsersTbody').innerHTML = '<tr><td colspan="7" class="text-center">加载中...</td></tr>';
-        
         await loadDeletedUsers();
         
-        new bootstrap.Modal(document.getElementById('deletedUsersModal')).show();
-        bindDeletedSelectAll();
-        bindDeletedSearchEvents();
+        const modal = new bootstrap.Modal(document.getElementById('deletedUsersModal'), {
+            backdrop: true,
+            keyboard: true
+        });
+        modal.show();
+        
+        // ✅ 监听模态框完全关闭事件，确保遮罩层被移除
+        document.getElementById('deletedUsersModal').addEventListener('hidden.bs.modal', function() {
+            // 强制移除可能残留的遮罩层
+            const backdrops = document.querySelectorAll('.modal-backdrop');
+            backdrops.forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.overflow = '';
+            document.body.style.paddingRight = '';
+        }, { once: true });
     });
 
     // 全选
@@ -1367,7 +2050,8 @@
 
     // 恢复用户
     async function restoreUser(userId, userName) {
-        if (confirm(t('confirm_restore', { name: userName }))) {
+        const message = t('confirm_restore').replace('{name}', userName);
+        if (confirm(message)) {
             const response = await fetch(`/api/admin/users/${userId}/restore`, { method: 'POST' });
             const data = await response.json();
             if (data.success) {
@@ -1382,14 +2066,16 @@
 
     // 永久删除用户
     async function permanentDeleteUser(userId, userName) {
-        if (confirm(t('confirm_permanent_delete', { name: userName }))) {
+        const message = t('confirm_permanent_delete').replace('{name}', userName);
+        if (confirm(message)) {
             const response = await fetch(`/api/admin/users/${userId}/permanent`, { method: 'DELETE' });
             const data = await response.json();
             if (data.success) {
                 alert(t('js_delete_success'));
                 loadDeletedUsers();
             } else {
-                alert(t('js_delete_failed', { msg: data.message || '' }));
+                const errorMsg = t('js_delete_failed').replace('{msg}', data.message || '');
+                alert(errorMsg);
             }
         }
     }
@@ -1404,7 +2090,8 @@
             return;
         }
         
-        if (confirm(t('confirm_batch_permanent_delete', { count: selectedIds.length }))) {  // 🔹 翻译 + 参数
+        const message = t('confirm_batch_permanent_delete').replace('{count}', selectedIds.length);
+        if (confirm(message)) {  // 🔹 翻译 + 参数
             const response = await fetch('/api/admin/users/batch_permanent', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1431,7 +2118,8 @@
             return;
         }
         
-        if (confirm(t('confirm_batch_restore', { count: selectedIds.length }))) {  // 🔹 翻译 + 参数
+        const message = t('confirm_batch_restore').replace('{count}', selectedIds.length);
+        if (confirm(message)) {  // 🔹 翻译 + 参数
             const response = await fetch('/api/admin/users/batch_restore', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -1439,7 +2127,8 @@
             });
             const data = await response.json();
             if (data.success) {
-                alert(t('batch_restore_success', { count: data.success_count }));  // 🔹 翻译 + 参数
+                const message = t('batch_restore_success').replace('{count}', data.success_count);
+                alert(message);  // 🔹 翻译 + 参数
                 loadDeletedUsers();
                 loadUsers();
             } else {
@@ -1447,14 +2136,6 @@
             }
         }
     }
-
-    // 筛选事件
-    document.getElementById('deletedSearchBtn')?.addEventListener('click', () => {
-        deletedSearch = document.getElementById('deletedSearchInput').value;
-        deletedCountry = document.getElementById('deletedCountryFilter').value;
-        deletedCurrentPage = 1;
-        loadDeletedUsers();
-    });
 
     document.getElementById('deletedResetBtn')?.addEventListener('click', () => {
         deletedSearch = '';
@@ -1467,7 +2148,56 @@
 
     document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
     document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
-
+    
+    // 初始化库房搜索
+    async function initWarehouseSearch() {
+        const whInput = document.getElementById('wh_id');
+        const whDatalist = document.getElementById('whDatalist');
+        
+        if (!whInput) return;
+        
+        // 输入时搜索
+        whInput.addEventListener('input', debounce(async function() {
+            const q = this.value.trim();
+            if (!q) {
+                whDatalist.innerHTML = '';
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(q)}`);
+                const data = await res.json();
+                if (data.data) {
+                    whDatalist.innerHTML = data.data.map(wh => 
+                        `<option value="${escapeHtml(wh.wh_id)}">${escapeHtml(wh.wh_id)} - ${escapeHtml(wh.wh_name_en || wh.wh_name_cn || '')}</option>`
+                    ).join('');
+                }
+            } catch(e) {
+                console.error('搜索库房失败', e);
+            }
+        }, 300));
+        
+        // 选择时自动填充
+        whInput.addEventListener('change', async function() {
+            const whId = this.value.trim().toUpperCase();
+            if (!whId) return;
+            
+            try {
+                const res = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(whId)}`);
+                const data = await res.json();
+                if (data.data && data.data.length > 0) {
+                    const wh = data.data[0];
+                    document.getElementById('wh_name_en').value = wh.wh_name_en || '';
+                    document.getElementById('wh_type').value = wh.wh_type || '';
+                    // 自动转大写
+                    document.getElementById('wh_id').value = wh.wh_id.toUpperCase();
+                }
+            } catch(e) {
+                console.error('获取库房信息失败', e);
+            }
+        });
+    }
+    
     // 页面初始化流程
     (async function() {
         await waitForI18n();
@@ -1476,14 +2206,263 @@
         // 语言切换时，重新加载列表以刷新动态文本
         window.i18n.subscribe(() => {
             loadUsers();
+            updateBatchDeleteButton();
         });
     })();
 
+    // 全局标志，防止重复初始化
+    let colResizeInitialized = false;
+
+    function initColumnResizableNative() {
+        const table = document.getElementById('userTable');
+        if (!table) return;
+        
+        // 使用事件委托，只需初始化一次
+        if (colResizeInitialized) return;
+        colResizeInitialized = true;
+        
+        let startX, startWidth, currentTh;
+        
+        // 使用事件监听（不直接修改 DOM）
+        table.addEventListener('mousedown', (e) => {
+            // 查找是否点击了调整手柄
+            const handle = e.target.closest('.col-resize-handle');
+            if (!handle) return;
+            
+            e.preventDefault();
+            currentTh = handle.parentElement;
+            startX = e.clientX;
+            startWidth = currentTh.offsetWidth;
+            
+            document.addEventListener('mousemove', onMouseMove);
+            document.addEventListener('mouseup', onMouseUp);
+        });
+        
+        function onMouseMove(e) {
+            if (!currentTh) return;
+            const newWidth = startWidth + (e.clientX - startX);
+            if (newWidth > 50) {
+                currentTh.style.width = newWidth + 'px';
+            }
+        }
+        
+        function onMouseUp() {
+            currentTh = null;
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+            saveColumnWidths();
+        }
+        
+        // 恢复保存的列宽
+        restoreColumnWidths();
+    }
+
+    // 保存列宽
+    function saveColumnWidths() {
+        const table = document.getElementById('userTable');
+        if (!table) return;
+        
+        const widths = [];
+        table.querySelectorAll('thead th').forEach(th => {
+            widths.push(th.offsetWidth);
+        });
+        localStorage.setItem('userTableColumnWidths', JSON.stringify(widths));
+    }
+
+    // 恢复列宽
+    function restoreColumnWidths() {
+        const saved = localStorage.getItem('userTableColumnWidths');
+        if (!saved) return;
+        
+        try {
+            const widths = JSON.parse(saved);
+            const ths = document.querySelectorAll('#userTable thead th');
+            for (let i = 0; i < widths.length && i < ths.length; i++) {
+                ths[i].style.width = widths[i] + 'px';
+            }
+        } catch(e) {}
+    }
+
+    // 前端需要对应的翻译映射
+    const errorMessages = {
+        'user_already_exists': {
+            zh: '第{row}行: 用户 {name} 已存在',
+            en: 'Row {row}: User {name} already exists'
+        },
+        'insert_failed': {
+            zh: '第{row}行: 插入失败 - {error}',
+            en: 'Row {row}: Insert failed - {error}'
+        }
+    };
+
+    function formatBackendError(error) {
+        if (typeof error === 'object' && error.code) {
+            const lang = window.i18n?.currentLang || 'zh';
+            let template = errorMessages[error.code]?.[lang] || error.code;
+            // 替换参数
+            if (error.params) {
+                Object.keys(error.params).forEach(key => {
+                    template = template.replace(`{${key}}`, error.params[key]);
+                });
+            }
+            return template;
+        }
+        return error;
+    }
+
+    // ==================== 批量导入功能（使用全局模态框） ====================
+    // ==================== 批量导入功能（使用全局模态框） ====================
+    const importUserBtn = document.getElementById('importUserBtn');
+    let importFileInput = document.getElementById('importFileInput');
+
+    // ✅ 1. 检查全局函数是否存在，提供降级方案
+    if (typeof showImportModal === 'undefined') {
+        window.showImportModal = function(title, message, showProgress) {
+            console.log('导入模态框:', title, message);
+            alert(`${title}\n${message}`);
+        };
+        window.updateImportProgress = function(percent) {
+            console.log('导入进度:', percent + '%');
+        };
+        window.closeImportModal = function(success, message) {
+            console.log('导入完成:', success, message);
+            alert(message);
+        };
+    }
+
+    // ✅ 2. 移除旧事件，避免重复绑定
+    if (importFileInput) {
+        const newInput = importFileInput.cloneNode(true);
+        importFileInput.parentNode.replaceChild(newInput, importFileInput);
+        importFileInput = newInput;
+    }
+
+    if (importUserBtn) {
+        // 移除旧事件
+        const newBtn = importUserBtn.cloneNode(true);
+        importUserBtn.parentNode.replaceChild(newBtn, importUserBtn);
+        
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            importFileInput.click();
+        });
+    }
+
+    if (importFileInput) {
+        importFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!confirm(`${t('t_confirm_import_file')} ${file.name}`)) {
+                e.target.value = '';
+                return;
+            }
+            
+            // ✅ 4. 显示导入模态框（使用安全的值）
+            // const importingTitle = (typeof t === 'function' ? t('importing_title') : '正在导入数据...') || '正在导入数据...';
+            // const importingFile = (typeof t === 'function' ? t('importing_file') : '正在导入文件') || '正在导入文件';
+
+            showImportModal(
+                t('importing_title'),
+                `${t('importing_file')}: ${file.name}`,
+                true
+            );
+            
+            updateImportProgress(30);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                updateImportProgress(60);
+                
+                const res = await fetch('/api/admin/users/import', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                updateImportProgress(90);
+                
+                const result = await res.json();
+                
+                updateImportProgress(100);
+                
+                if (result.success) {
+                    // 确定标题
+                    let titleKey = '';
+                    if (result.success_count === 0 && result.error_count > 0) {
+                        titleKey = 'import_failed';
+                    } else if (result.success_count > 0 && result.error_count === 0) {
+                        titleKey = 'import_success';
+                    } else {
+                        titleKey = 'import_partial';
+                    }
+                    let title = t(titleKey);
+                    
+                    // 构建消息
+                    let message = `${title}<br>`;
+                    let summary = t('import_result_summary')
+                        .replace('{success}', result.success_count)
+                        .replace('{failed}', result.error_count);
+                    message += `${summary}<br><br>`;
+                    
+                    if (result.errors && result.errors.length > 0) {
+                        message += `${t('import_error_details')}:<br>`;
+                        // ✅ 关键修复：使用 formatImportError 函数
+                        const errorMessages = result.errors.map(err => formatImportError(err));
+                        
+                        errorMessages.slice(0, 10).forEach((err, idx) => {
+                            message += `${idx + 1}. ${err}<br>`;
+                        });
+                        if (errorMessages.length > 10) {
+                            let moreText = t('import_more_errors')
+                                .replace('{count}', errorMessages.length)
+                                .replace('{limit}', '10');
+                            message += moreText;
+                        }
+                    }
+                    
+                    closeImportModal(true, message);
+                    if (result.success_count > 0) {
+                        loadUsers();
+                    }
+                }
+            } catch (err) {
+                console.error('导入失败:', err);
+                const errorMsg = err.message || '网络错误';
+                closeImportModal(false, errorMsg);
+            } finally {
+                e.target.value = '';
+            }
+        });
+    }
+
     // 初始化国家列表
     document.addEventListener('DOMContentLoaded', async () => {
-        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');   // 筛选栏
-        // 同时初始化编辑模态框的国家
-        await setupCountryAutocomplete('userCountrySelect', 'countryDatalist', 'countryCode');
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
+        await setupCountryAutocomplete('deletedCountryFilter', 'deletedCountryDatalist');
+        
+        // ✅ 只需要这两个筛选绑定
+        bindFilterEvents();
+        bindDeletedFilterEvents();
+        
+        loadUsers();
+        loadFieldConfig();
+        bindFieldToggleEvents();
+        initColumnResizableNative();
+        
+        // 批量删除按钮
+        document.getElementById('batchDeleteActiveBtn')?.addEventListener('click', batchDeleteSelected);
+        
+        // 打开已删除模态框
+        document.getElementById('showDeletedUsersBtn')?.addEventListener('click', async () => {
+            await loadDeletedUsers();
+            new bootstrap.Modal(document.getElementById('deletedUsersModal')).show();
+        });
+        // 批量恢复和批量永久删除
+        document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
+        document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
     });
 </script>
 {% endblock %}

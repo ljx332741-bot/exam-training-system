@@ -123,6 +123,72 @@
   .selected-country-tag .remove-tag:hover {
       color: #ffcccc;
   }
+  
+  /* ==================== 国家多选组件样式 ==================== */
+  .country-multiselect-wrapper { position: relative; }
+  
+  .search-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    z-index: 1000;
+  }
+  
+  .suggestion-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #eee;
+    transition: background-color 0.2s;
+  }
+  
+  .suggestion-item:hover { background-color: #f0f0f0; }
+  
+  .suggestion-item .country-code {
+    color: #6c757d;
+    font-size: 0.85em;
+    margin-left: 8px;
+  }
+  
+  .selected-countries-container {
+    min-height: 60px;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    padding: 8px;
+    background-color: #fafafa;
+  }
+  
+  .country-tag {
+    display: inline-flex;
+    align-items: center;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 4px 12px;
+    margin: 4px;
+    border-radius: 20px;
+    font-size: 13px;
+    gap: 8px;
+    animation: fadeIn 0.2s ease;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+  }
+  
+  .country-tag .remove-tag {
+    cursor: pointer;
+    font-weight: bold;
+    margin-left: 4px;
+    padding: 0 4px;
+    border-radius: 50%;
+    transition: background 0.2s;
 </style>
 {% endblock %}
 {% block content %}
@@ -179,33 +245,48 @@
         <input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
       </div>
       
+      <!-- 简洁版国家多选组件 - 完整代码 -->
       <div class="mb-3">
+        <div class="d-flex justify-content-between align-items-center">
           <label class="form-label fw-bold">
-              <span data-i18n="target_countries">目标国家</span> <span class="text-danger">*</span>
+              🌍 <span data-i18n="target_countries">目标国家</span> 
+              <span class="text-danger">*</span>
           </label>
-          <div class="row">
-              <div class="col-md-8">
-                  <div class="country-multi-select-wrapper">
-                      <input type="text" id="countrySearchInput" class="form-control" 
-                            placeholder="搜索国家..." autocomplete="off">
-                      <div id="countrySuggestions" class="country-suggestions-dropdown" style="display: none;"></div>
-                  </div>
-                  <small class="text-muted">输入国家名称或代码进行搜索选择</small>
+          <button type="button" id="clearAllCountries" class="btn btn-sm btn-outline-danger">
+              <i class="bi bi-trash"></i> 清空全部
+          </button>
+        </div>
+          <div id="selectedCountriesContainer" class="selected-countries-container mt-2">
+              <div class="empty-tip">⚡ 点击搜索框选择目标国家支持</div>
+          </div>
+          <div class="country-multiselect-wrapper">
+              <div class="country-search-container">
+                  <input type="text" 
+                      id="countrySearchInput" 
+                      class="form-control" 
+                      placeholder="🔍 输入国家名称或代码搜索..." 
+                      autocomplete="off">
               </div>
-              <div class="col-md-4">
-                  <div class="mb-2">
-                      <strong><span data-i18n="selected_countries">已选择:</span></strong>
-                      <button type="button" id="clearAllCountries" class="btn btn-sm btn-outline-danger float-end">清空</button>
-                  </div>
-                  <div id="selectedCountriesTags" class="d-flex flex-wrap gap-1" style="min-height: 120px; max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; border-radius: 4px;">
-                      <!-- 已选国家标签 -->
-                  </div>
-              </div>
+              <div id="countrySearchSuggestions" class="search-suggestions" style="display: none;"></div>             
           </div>
           <input type="hidden" id="selectedCountries" value="">
       </div>
     </div>
-    
+
+    <!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
+    {% if not edit_mode or exam_status|default('') in ['draft', 'created'] %}
+    <div class="row mt-2">
+      <div class="col-md-6">
+        <label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
+        <input type="datetime-local" id="startTimeInput" class="form-control form-control-sm" value="{{ exam_start_time|default('') }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-bold small" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>  
+        <input type="datetime-local" id="endTimeInput" class="form-control form-control-sm" value="{{ exam_end_time|default('') }}">
+      </div>
+    </div>
+    {% endif %}
+
     <!-- ✅ 紧凑型状态提示 - 整行显示，不占用太多空间 -->
     {% if edit_mode %}
       {% if exam_status == 'active' %}
@@ -248,19 +329,6 @@
       </div>
     {% endif %}
     
-    <!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
-    {% if not edit_mode or exam_status|default('') in ['draft', 'created'] %}
-    <div class="row mt-2">
-      <div class="col-md-6">
-        <label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
-        <input type="datetime-local" id="startTimeInput" class="form-control form-control-sm" value="{{ exam_start_time|default('') }}">
-      </div>
-      <div class="col-md-6">
-        <label class="form-label fw-bold small" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>  
-        <input type="datetime-local" id="endTimeInput" class="form-control form-control-sm" value="{{ exam_end_time|default('') }}">
-      </div>
-    </div>
-    {% endif %}
   </div>
 
   <!-- 题目表格（根据权限显示） -->
@@ -355,101 +423,234 @@
     });
   }
 
-  // ==================== 国家多选功能 ====================
-  let allCountries = [];
+  // ==================== 简洁的国家多选组件 ====================
+  let allCountryList = [];
+  let selectedCountryList = [];
 
-  async function loadCountriesForSelect() {
+  // 加载国家列表
+  async function loadCountryListForMultiSelect() {
       try {
           const response = await fetch('/api/countries');
-          allCountries = await response.json();
+          let allCountries = await response.json();
           
-          const select = document.getElementById('countrySelect');
-          if (!select) return;
+
+          // ✅ 获取当前管理员的权限范围
+          let allowedCountries = null;
+          try {
+              const permRes = await fetch('/api/admin/refresh_permissions');
+              if (permRes.ok) {
+                  const permData = await permRes.json();
+                  allowedCountries = permData.admin_countries;
+              }
+          } catch(e) {
+              console.warn('获取权限范围失败', e);
+          }
           
-          select.innerHTML = '';
+          // ✅ 根据权限过滤国家
+          if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
+              allCountryList = allCountries.filter(c => allowedCountries.includes(c.code));
+              
+              // ✅ 编辑时：过滤掉没有权限的国家
+              if (selectedCountryList.length > 0) {
+                  selectedCountryList = selectedCountryList.filter(code => allowedCountries.includes(code));
+                  renderSelectedCountries();
+              }
+          } else if (CURRENT_USER_ROLE === 'super_admin') {
+              // 超管可以看到所有国家
+              allCountryList = allCountries;
+          } else {
+              // 普通管理员但没有权限范围，显示空
+              allCountryList = [];
+          }
           
-          allCountries.forEach(c => {
-              const option = document.createElement('option');
-              option.value = c.code;
-              option.textContent = `${c.name_zh} (${c.code})`;
-              select.appendChild(option);
-          });
-          
-          // 如果是编辑模式，预选已保存的国家
-          const savedCountriesInput = document.getElementById('selectedCountries');
-          if (savedCountriesInput && savedCountriesInput.value) {
-              try {
-                  const countryCodes = JSON.parse(savedCountriesInput.value);
-                  Array.from(select.options).forEach(opt => {
-                      if (countryCodes.includes(opt.value)) {
-                          opt.selected = true;
-                      }
-                  });
-                  updateSelectedTags();
-              } catch(e) {
-                  console.error('解析保存的国家失败:', e);
+          // 如果过滤后没有国家，显示提示
+          if (allCountryList.length === 0) {
+              console.warn('当前账号没有可管理的国家权限');
+              const container = document.getElementById('selectedCountriesContainer');
+              if (container) {
+                  container.innerHTML = '<div class="empty-tip text-danger">⚠️ 当前账号没有可管理的国家权限，请联系超管分配</div>';
               }
           }
       } catch (error) {
           console.error('加载国家列表失败:', error);
+          allCountryList = [];
       }
   }
 
-  function updateSelectedTags() {
-      const select = document.getElementById('countrySelect');
-      if (!select) return;
+  // 渲染搜索建议
+  function renderSearchSuggestions(searchText) {
+    const suggestionsDiv = document.getElementById('countrySearchSuggestions');
+    if (!searchText || !searchText.trim()) {
+      suggestionsDiv.style.display = 'none';
+      return;
+    }
+    
+    const lowerSearch = searchText.toLowerCase().trim();
+    const filtered = allCountryList.filter(c => 
+      (c.name_zh && c.name_zh.toLowerCase().includes(lowerSearch)) ||
+      (c.name_en && c.name_en.toLowerCase().includes(lowerSearch)) ||
+      (c.code && c.code.toLowerCase().includes(lowerSearch))
+    ).filter(c => !selectedCountryList.includes(c.code)).slice(0, 15);
+    
+    if (filtered.length === 0) {
+      suggestionsDiv.style.display = 'none';
+      return;
+    }
+    
+    suggestionsDiv.innerHTML = filtered.map(c => `
+      <div class="suggestion-item" data-code="${c.code}">
+        <strong>${escapeHtml(c.name_zh)}</strong> / ${escapeHtml(c.name_en)}
+        <span class="country-code">(${c.code})</span>
+      </div>
+    `).join('');
+    
+    suggestionsDiv.style.display = 'block';
+    
+    // 绑定点击事件
+    suggestionsDiv.querySelectorAll('.suggestion-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const code = item.dataset.code;
+        if (!selectedCountryList.includes(code)) {
+          selectedCountryList.push(code);
+          renderSelectedCountries();
+          // 清空搜索输入框和关闭建议
+          const searchInput = document.getElementById('countrySearchInput');
+          if (searchInput) searchInput.value = '';
+          suggestionsDiv.style.display = 'none';
+        }
+      });
+    });
+  }
+
+  // 渲染已选国家标签
+  function renderSelectedCountries() {
+    const container = document.getElementById('selectedCountriesContainer');
+    const hiddenInput = document.getElementById('selectedCountries');
+    
+    if (!container) return;
+    
+    hiddenInput.value = JSON.stringify(selectedCountryList);
+    
+    if (selectedCountryList.length === 0) {
+      container.innerHTML = `
+        <div class="empty-tip">⚡ 点击搜索框选择目标国家<br>
+          <small class="text-muted">
+              <i class="bi bi-info-circle"></i> 支持模糊搜索，点击选择，可添加多个国家
+          </small>
+        </div>`;
+      return;
+    }
+    
+    container.innerHTML = '';
+    selectedCountryList.forEach(code => {
+      const country = allCountryList.find(c => c.code === code);
+      const displayName = country ? `${country.name_zh} (${code})` : code;
       
-      const selectedCodes = Array.from(select.selectedOptions).map(opt => opt.value);
-      const container = document.getElementById('selectedCountriesTags');
+      const tag = document.createElement('span');
+      tag.className = 'country-tag';
+      tag.innerHTML = `
+        ${escapeHtml(displayName)}
+        <span class="remove-tag" data-code="${code}">✕</span>
+      `;
+      container.appendChild(tag);
+    });
+    
+    // 绑定删除事件
+    document.querySelectorAll('.remove-tag').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const code = btn.dataset.code;
+        selectedCountryList = selectedCountryList.filter(c => c !== code);
+        renderSelectedCountries();
+      });
+    });
+  }
+
+  // 初始化已选国家
+  function initSelectedCountries(savedCountries) {
+    if (savedCountries) {
+      try {
+        selectedCountryList = typeof savedCountries === 'string' 
+          ? JSON.parse(savedCountries) 
+          : savedCountries;
+      } catch(e) {
+        selectedCountryList = [];
+      }
+    } else {
+      selectedCountryList = [];
+    }
+    renderSelectedCountries();
+  }
+
+  // 清空所有国家
+  function clearAllCountries() {
+    selectedCountryList = [];
+    renderSelectedCountries();
+    const searchInput = document.getElementById('countrySearchInput');
+    if (searchInput) searchInput.value = '';
+    const suggestionsDiv = document.getElementById('countrySearchSuggestions');
+    if (suggestionsDiv) suggestionsDiv.style.display = 'none';
+  }
+
+  // 绑定国家选择器事件
+  function bindCountrySelectorEvents() {
+    const searchInput = document.getElementById('countrySearchInput');
+    if (!searchInput) return;
+    
+    // 输入事件
+    searchInput.addEventListener('input', (e) => {
+      renderSearchSuggestions(e.target.value);
+    });
+    
+    // 聚焦事件
+    searchInput.addEventListener('focus', () => {
+      if (searchInput.value && searchInput.value.trim()) {
+        renderSearchSuggestions(searchInput.value);
+      }
+    });
+    
+    // 点击其他地方关闭建议
+    document.addEventListener('click', (e) => {
+      const wrapper = document.querySelector('.country-multiselect-wrapper');
+      if (wrapper && !wrapper.contains(e.target)) {
+        const suggestionsDiv = document.getElementById('countrySearchSuggestions');
+        if (suggestionsDiv) suggestionsDiv.style.display = 'none';
+      }
+    });
+    
+    // 清空按钮
+    const clearBtn = document.getElementById('clearAllCountries');
+    if (clearBtn) {
+      clearBtn.addEventListener('click', clearAllCountries);
+    }
+  }
+
+  // 初始化国家多选组件
+  async function initCountryMultiSelect(savedCountries = null) {
+    await loadCountryListForMultiSelect();
+    bindCountrySelectorEvents();
+    
+    if (savedCountries) {
+      initSelectedCountries(savedCountries);
+    } else {
       const hiddenInput = document.getElementById('selectedCountries');
-      
-      if (hiddenInput) {
-          hiddenInput.value = JSON.stringify(selectedCodes);
+      if (hiddenInput && hiddenInput.value) {
+        initSelectedCountries(hiddenInput.value);
+      } else {
+        initSelectedCountries([]);
       }
-      
-      if (!container) return;
-      
-      container.innerHTML = '';
-      selectedCodes.forEach(code => {
-          const country = allCountries.find(c => c.code === code);
-          const name = country ? (country.name_zh || country.name_en || code) : code;
-          
-          const tag = document.createElement('span');
-          tag.className = 'badge bg-primary me-1 mb-1 p-2';
-          tag.style.cursor = 'default';
-          tag.innerHTML = `${name} (${code}) <span class="remove-tag" data-code="${code}" style="cursor:pointer; margin-left:6px;">&times;</span>`;
-          container.appendChild(tag);
-      });
-      
-      // 绑定移除事件
-      document.querySelectorAll('.remove-tag').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-              e.stopPropagation();
-              const code = btn.dataset.code;
-              const selectEl = document.getElementById('countrySelect');
-              if (selectEl) {
-                  const option = Array.from(selectEl.options).find(opt => opt.value === code);
-                  if (option) option.selected = false;
-              }
-              updateSelectedTags();
-          });
-      });
+    }
   }
 
-  // 监听选择变化
-  const countrySelect = document.getElementById('countrySelect');
-  if (countrySelect) {
-      countrySelect.addEventListener('change', updateSelectedTags);
-  }
-
-  // ---- 创建空白行 HTML（用于插入） ----
+  // ==================== 题目表格操作 ====================
+  // 创建空白行 HTML
   function createEmptyRow() {
     return `
       <td class="row-actions">
         <button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
         <button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
         <button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
-       </td>
+      </td>
       <td class="q-num"></td>
       <td>
         <select class="form-select form-select-sm q-type">
@@ -472,8 +673,8 @@
       <td><input type="number" class="form-control form-control-sm q-score" value="5" min="1"></td>
     `;
   }
-  
-  // ==================== 插入新行 ====================
+
+  // 插入新行
   function insertRow(targetRow, position) {
     if (!canEditQuestions || examStatus === 'closed') {
       alert(t('t_cannot_edit_questions') || '当前状态下无法编辑题目');
@@ -490,8 +691,8 @@
     renumberRows();
     attachRowEvents(newRow);
   }
-  
-  // ==================== 删除行 ====================
+
+  // 删除行
   function deleteRow(row) {
     if (!canEditQuestions || examStatus === 'closed') {
       alert(t('t_cannot_edit_questions') || '当前状态下无法编辑题目');
@@ -505,8 +706,8 @@
     row.remove();
     renumberRows();
   }
-  
-  // ==================== 绑定行内按钮事件 ====================
+
+  // 绑定行内按钮事件
   function attachRowEvents(row) {
     if (!canEditQuestions || examStatus === 'closed') return;
     
@@ -535,13 +736,13 @@
       });
     }
   }
-  
-  // ==================== 为所有现有行绑定事件 ====================
+
+  // 为所有现有行绑定事件
   function bindAllRowEvents() {
     document.querySelectorAll('#qTableBody tr').forEach(row => attachRowEvents(row));
   }
 
-  // ==================== 收集题目数据 ====================
+  // 收集题目数据
   function collectQuestionsData() {
     if (!canEditQuestions || examStatus === 'closed') {
       return [];
@@ -572,27 +773,18 @@
     return data;
   }
 
-  // ==================== 获取选中的国家列表 ====================
+  // 获取选中的国家列表
   function getSelectedCountries() {
-    const hiddenInput = document.getElementById('selectedCountries');
-    if (hiddenInput && hiddenInput.value) {
-      try {
-        return JSON.parse(hiddenInput.value);
-      } catch(e) {
-        return [];
-      }
-    }
-    return [];
+    return selectedCountryList;
   }
 
-  // ==================== 通用校验 ====================
+  // 通用校验
   function validate(examTitle) {
     if (!examTitle) {
       alert('请填写考试名称');
       return false;
     }
     
-    // 校验国家是否已选择
     const selectedCountries = getSelectedCountries();
     if (selectedCountries.length === 0) {
       alert('请至少选择一个目标国家');
@@ -610,10 +802,18 @@
     return true;
   }
 
-  // ==================== 保存为草稿（导入模式）====================
+  // 保存为草稿（导入模式）
   async function saveAsDraft(isDraft = true) {
     const examTitle = document.getElementById('examTitleInput').value.trim();
     if (!validate(examTitle)) return;
+    
+    // ✅ 确保 selectedCountryList 是最新的
+    const hiddenInput = document.getElementById('selectedCountries');
+    if (hiddenInput && hiddenInput.value) {
+        try {
+            selectedCountryList = JSON.parse(hiddenInput.value);
+        } catch(e) {}
+    }
     
     const selectedCountries = getSelectedCountries();
     let questions = [];
@@ -638,7 +838,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         questions: questions, 
-        countries: selectedCountries  // ✅ 提交国家数组
+        countries: selectedCountries
       })
     });
     
@@ -651,7 +851,7 @@
     }
   }
 
-  // ==================== 编辑模式：保存修改 ====================
+  // 编辑模式：保存修改
   async function updateExam() {
     if (examStatus === 'closed') {
       alert('考试已结束，无法修改');
@@ -661,6 +861,15 @@
     const examTitle = document.getElementById('examTitleInput').value.trim();
     const duration = parseInt(document.getElementById('durationInput')?.value || 60);
     const reviewer = document.getElementById('reviewerInput')?.value || '';
+
+    // ✅ 确保 selectedCountryList 是最新的
+    const hiddenInput = document.getElementById('selectedCountries');
+    if (hiddenInput && hiddenInput.value) {
+        try {
+            selectedCountryList = JSON.parse(hiddenInput.value);
+        } catch(e) {}
+    }
+
     const selectedCountries = getSelectedCountries();
     
     if (!validate(examTitle)) return;
@@ -669,17 +878,17 @@
       title: examTitle,
       duration: duration,
       reviewer: reviewer,
-      countries: selectedCountries  // ✅ 提交国家数组
+      countries: selectedCountries
     };
     
     if (examStatus === 'draft' || examStatus === 'created') {
       const startTimeInput = document.getElementById('startTimeInput');
       const endTimeInput = document.getElementById('endTimeInput');
       if (startTimeInput && startTimeInput.value) {
-        updateData.start_time = localDateTimeToUTC(startTimeInput.value);
+        updateData.start_time = startTimeInput.value;
       }
       if (endTimeInput && endTimeInput.value) {
-        updateData.end_time = localDateTimeToUTC(endTimeInput.value);
+        updateData.end_time = endTimeInput.value;
       }
     }
     
@@ -709,125 +918,103 @@
     }
   }
 
-  // 国家多选功能（带搜索）
-  let allCountriesList = [];
-  let selectedCountryCodes = [];
-
-  async function loadCountryListForMultiSelect() {
-      const response = await fetch('/api/countries');
-      allCountriesList = await response.json();
-  }
-
-  function renderCountrySuggestions(searchText) {
-      const suggestionsDiv = document.getElementById('countrySuggestions');
-      if (!searchText.trim()) {
-          suggestionsDiv.style.display = 'none';
-          return;
-      }
-      
-      const lowerSearch = searchText.toLowerCase();
-      const filtered = allCountriesList.filter(c => 
-          c.name_zh.toLowerCase().includes(lowerSearch) ||
-          c.name_en.toLowerCase().includes(lowerSearch) ||
-          c.code.toLowerCase().includes(lowerSearch)
-      ).slice(0, 15);
-      
-      if (filtered.length === 0) {
-          suggestionsDiv.style.display = 'none';
-          return;
-      }
-      
-      suggestionsDiv.innerHTML = filtered.map(c => `
-          <div class="suggestion-item" data-code="${c.code}" data-name-zh="${c.name_zh}" data-name-en="${c.name_en}">
-              ${c.name_zh} (${c.code}) - ${c.name_en}
-          </div>
-      `).join('');
-      
-      suggestionsDiv.style.display = 'block';
-      
-      // 绑定点击事件
-      suggestionsDiv.querySelectorAll('.suggestion-item').forEach(item => {
-          item.addEventListener('click', () => {
-              const code = item.dataset.code;
-              if (!selectedCountryCodes.includes(code)) {
-                  selectedCountryCodes.push(code);
-                  updateSelectedTags();
-              }
-              document.getElementById('countrySearchInput').value = '';
-              suggestionsDiv.style.display = 'none';
-          });
-      });
-  }
-
-  function updateSelectedTags() {
-      const container = document.getElementById('selectedCountriesTags');
-      const hiddenInput = document.getElementById('selectedCountries');
-      
-      hiddenInput.value = JSON.stringify(selectedCountryCodes);
-      
-      container.innerHTML = '';
-      selectedCountryCodes.forEach(code => {
-          const country = allCountriesList.find(c => c.code === code);
-          const name = country ? country.name_zh : code;
-          
-          const tag = document.createElement('span');
-          tag.className = 'selected-country-tag';
-          tag.innerHTML = `${name} (${code}) <span class="remove-tag" data-code="${code}">&times;</span>`;
-          container.appendChild(tag);
-      });
-      
-      // 绑定移除事件
-      document.querySelectorAll('.remove-tag').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-              const code = btn.dataset.code;
-              selectedCountryCodes = selectedCountryCodes.filter(c => c !== code);
-              updateSelectedTags();
-          });
-      });
-  }
-
-  // 清空所有国家
-  document.getElementById('clearAllCountries')?.addEventListener('click', () => {
-      selectedCountryCodes = [];
-      updateSelectedTags();
-  });
-
-  // 搜索输入事件
-  document.getElementById('countrySearchInput')?.addEventListener('input', (e) => {
-      renderCountrySuggestions(e.target.value);
-  });
-
-  // 点击其他地方关闭下拉
-  document.addEventListener('click', (e) => {
-      const wrapper = document.querySelector('.country-multi-select-wrapper');
-      if (wrapper && !wrapper.contains(e.target)) {
-          document.getElementById('countrySuggestions').style.display = 'none';
-      }
-  });
-
-  // 初始化
-  loadCountryListForMultiSelect();
-
-  // 编辑模式时预选已保存的国家
-  function initSelectedCountries(savedCountries) {
-      if (savedCountries && typeof savedCountries === 'string') {
-          try {
-              selectedCountryCodes = JSON.parse(savedCountries);
-          } catch(e) {
-              selectedCountryCodes = [];
-          }
-      } else if (Array.isArray(savedCountries)) {
-          selectedCountryCodes = savedCountries;
-      }
-      updateSelectedTags();
+  // 防XSS辅助函数
+  function escapeHtml(str) {
+    if (!str) return '';
+    return str.replace(/[&<>]/g, function(m) {
+      if (m === '&') return '&amp;';
+      if (m === '<') return '&lt;';
+      if (m === '>') return '&gt;';
+      return m;
+    });
   }
 
   // ==================== 页面初始化 ====================
   document.addEventListener('DOMContentLoaded', async () => {
-    // 加载国家列表到多选组件
-    await loadCountriesForSelect();
+    // 如果是编辑模式，先获取考试详情
+    if (isEditMode && examId) {
+        try {
+            const res = await fetch(`/api/admin/exam/${examId}`);
+            if (res.ok) {
+                const examData = await res.json();
+
+                // 设置国家选择
+                let savedCountries = [];
+                if (examData.countries) {
+                    try {
+                        savedCountries = typeof examData.countries === 'string' 
+                            ? JSON.parse(examData.countries) 
+                            : examData.countries;
+                    } catch(e) {
+                        savedCountries = examData.country ? [examData.country] : [];
+                    }
+                } else if (examData.country) {
+                    savedCountries = [examData.country];
+                }
+                
+                // ✅ 获取当前用户权限，过滤掉没有权限的国家
+                try {
+                    const permRes = await fetch('/api/admin/refresh_permissions');
+                    if (permRes.ok) {
+                        const permData = await permRes.json();
+                        const allowedCountries = permData.admin_countries;
+                        if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
+                            // 只保留有权限的国家
+                            savedCountries = savedCountries.filter(c => allowedCountries.includes(c));
+                        }
+                    }
+                } catch(e) {
+                    console.warn('获取权限范围失败', e);
+                }
+                
+                // 设置标题、时长、阅卷人等
+                const titleInput = document.getElementById('examTitleInput');
+                if (titleInput && examData.title) titleInput.value = examData.title;
+                
+                const durationInput = document.getElementById('durationInput');
+                if (durationInput && examData.duration) durationInput.value = examData.duration;
+                
+                const reviewerInput = document.getElementById('reviewerInput');
+                if (reviewerInput && examData.reviewer) reviewerInput.value = examData.reviewer;
+                
+                // ✅ 先加载国家列表（会应用权限过滤），再初始化已选国家
+                await loadCountryListForMultiSelect();
+                bindCountrySelectorEvents();
+                initSelectedCountries(savedCountries);
+            }
+        } catch(e) {
+            console.error('获取考试详情失败:', e);
+        }
+    }
     
-    // ✅ 只有可编辑题目且考试未结束时才绑定行操作和添加按钮
+    // 初始化国家多选组件（新建模式）
+    if (!isEditMode) {
+      const savedCountriesHidden = document.getElementById('selectedCountries');
+      if (savedCountriesHidden && savedCountriesHidden.value) {
+          await initCountryMultiSelect(savedCountriesHidden.value);
+      } else {
+          await initCountryMultiSelect(null);
+      }
+    }
+    
+    // 初始化国家多选组件（新建模式）
+    if (!isEditMode) {
+        const savedCountriesHidden = document.getElementById('selectedCountries');
+        if (savedCountriesHidden && savedCountriesHidden.value) {
+            await initCountryMultiSelect(savedCountriesHidden.value);
+        } else {
+            await initCountryMultiSelect(null);
+        }
+    }
+    // 初始化国家多选组件
+    const savedCountriesHidden = document.getElementById('selectedCountries');
+    if (savedCountriesHidden && savedCountriesHidden.value) {
+      await initCountryMultiSelect(savedCountriesHidden.value);
+    } else {
+      await initCountryMultiSelect(null);
+    }
+    
+    // 只有可编辑题目且考试未结束时才绑定行操作和添加按钮
     if (canEditQuestions && examStatus !== 'closed') {
       bindAllRowEvents();
       
@@ -857,7 +1044,7 @@
       if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => saveAsDraft(true));
     }
     
-    // ✅ 如果不可编辑题目或考试已结束，禁用所有输入框
+    // 如果不可编辑题目或考试已结束，禁用所有输入框
     if (!canEditQuestions || examStatus === 'closed') {
       const questionInputs = document.querySelectorAll('#qTableBody input, #qTableBody select, #qTableBody textarea');
       questionInputs.forEach(input => {
@@ -865,11 +1052,6 @@
         input.style.backgroundColor = '#e9ecef';
         input.style.cursor = 'not-allowed';
       });
-    }
-
-    const savedCountries = document.getElementById('selectedCountries').value;
-    if (savedCountries) {
-        initSelectedCountries(savedCountries);
     }
   });
 </script>
