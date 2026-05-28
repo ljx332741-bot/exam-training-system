@@ -178,6 +178,27 @@
         </div>
     </main>
 
+    <!-- 全局导入进度模态框 -->
+    <div class="modal fade" id="globalImportModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body text-center py-4">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 id="importModalTitle">正在导入数据...</h5>
+                    <p id="importModalMessage" class="text-muted mb-0">请勿关闭页面，导入完成后会自动提示。</p>
+                    <div class="progress mt-3" style="height: 8px; display: none;">
+                        <div class="progress-bar" role="progressbar" style="width: 0%;" id="importProgress"></div>
+                    </div>
+                </div>
+                <div class="modal-footer border-0 pt-0 justify-content-center" style="display: none;">
+                    <button type="button" class="btn btn-primary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 🦶 底部页脚 -->
     <footer class="bg-dark text-white py-4 mt-auto">
         <div class="container text-center">
@@ -660,6 +681,82 @@
             // 4. 无匹配 → 返回空结果
             return '___NONE___';
         }
+
+        // ==================== 全局导入模态框管理 ====================
+        (function() {
+            let importModalInstance = null;
+            
+            window.showImportModal = function(title, message, showProgress) {
+                const modalEl = document.getElementById('globalImportModal');
+                if (!modalEl) {
+                    console.warn('导入模态框元素不存在');
+                    return;
+                }
+                
+                const titleEl = document.getElementById('importModalTitle');
+                const msgEl = document.getElementById('importModalMessage');
+                const progressContainer = document.querySelector('#globalImportModal .progress');
+                const progressBar = document.getElementById('importProgress');
+                const footer = document.querySelector('#globalImportModal .modal-footer');
+                const spinner = modalEl.querySelector('.spinner-border');
+                
+                if (titleEl) titleEl.textContent = title || '正在导入数据...';
+                if (msgEl) msgEl.textContent = message || '请勿关闭页面，导入完成后会自动提示。';
+                if (progressContainer) progressContainer.style.display = showProgress ? 'block' : 'none';
+                if (footer) footer.style.display = 'none';
+                if (spinner) spinner.style.display = 'inline-block';
+                if (progressBar) progressBar.style.width = '0%';
+                
+                if (!importModalInstance) {
+                    importModalInstance = new bootstrap.Modal(modalEl, {
+                        backdrop: 'static',
+                        keyboard: false
+                    });
+                }
+                importModalInstance.show();
+            };
+            
+            window.updateImportProgress = function(percent) {
+                const progressContainer = document.querySelector('#globalImportModal .progress');
+                const progressBar = document.getElementById('importProgress');
+                if (progressContainer) progressContainer.style.display = 'block';
+                if (progressBar) progressBar.style.width = percent + '%';
+            };
+            
+            window.closeImportModal = function(success, message) {
+                const modalEl = document.getElementById('globalImportModal');
+                if (!modalEl) return;
+                
+                const titleEl = document.getElementById('importModalTitle');
+                const msgEl = document.getElementById('importModalMessage');
+                const footer = document.querySelector('#globalImportModal .modal-footer');
+                const spinner = modalEl.querySelector('.spinner-border');
+                const progressContainer = document.querySelector('#globalImportModal .progress');
+                
+                if (spinner) spinner.style.display = 'none';
+                if (progressContainer) progressContainer.style.display = 'none';
+                
+                if (success) {
+                    if (titleEl) titleEl.innerHTML = `<i class="bi bi-check-circle-fill text-success me-2"></i> ${t('t_import_successful')}`;
+                    if (msgEl) msgEl.innerHTML = message;
+                } else {
+                    if (titleEl) titleEl.innerHTML = `<i class="bi bi-x-circle-fill text-danger me-2"></i> ${t('import_failed')}`;
+                    if (msgEl) msgEl.innerHTML = message;
+                }
+                
+                if (footer) footer.style.display = 'flex';
+                
+                setTimeout(() => {
+                    if (importModalInstance) {
+                        importModalInstance.hide();
+                        if (spinner) spinner.style.display = 'inline-block';
+                        if (titleEl && !success) titleEl.innerHTML = t('t_importing');
+                        if (progressContainer) progressContainer.style.display = 'none';
+                        if (footer) footer.style.display = 'none';
+                    }
+                }, 10000);
+            };
+        })();
 
     </script>
 

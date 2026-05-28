@@ -187,14 +187,11 @@ def parse_excel_rows(file, header_map, required_fields):
     
     Args:
         file: 上传的文件对象
-        header_map: 表头映射字典 {中文表头: 字段名}
-        required_fields: 必填字段列表
+        header_map: 表头映射字典 {表头文本: 字段名}
+        required_fields: 必填字段列表（字段名）
     
     Returns:
         (valid_rows, errors, headers)
-        valid_rows: [(row_idx, row_data), ...]
-        errors: [error_message, ...]
-        headers: {col_idx: field_name}
     """
     try:
         wb = openpyxl.load_workbook(file, read_only=True)
@@ -202,19 +199,35 @@ def parse_excel_rows(file, header_map, required_fields):
     except Exception as e:
         return [], [f"文件解析失败: {str(e)}"], {}
     
-    # 读取表头映射
-    headers = {}
+    # 读取表头行（第一行）
+    headers = {}  # {列索引: 字段名}
+    header_row_values = []
+    
     for col in range(1, ws.max_column + 1):
         cell_value = ws.cell(row=1, column=col).value
         if cell_value:
             header_str = str(cell_value).strip()
-            if header_str in header_map:
-                headers[col] = header_map[header_str]
+            header_row_values.append(header_str)
+            # ✅ 直接匹配（不区分大小写）
+            matched = False
+            for key, field in header_map.items():
+                if header_str.lower() == key.lower():
+                    headers[col] = field
+                    matched = True
+                    break
+            # 如果没有精确匹配，尝试去除空格后匹配
+            if not matched:
+                clean_header = header_str.replace(' ', '').lower()
+                for key, field in header_map.items():
+                    if clean_header == key.replace(' ', '').lower():
+                        headers[col] = field
+                        break
     
     # 检查必填列
-    missing_fields = [f for f in required_fields if f not in headers.values()]
+    found_fields = set(headers.values())
+    missing_fields = [f for f in required_fields if f not in found_fields]
     if missing_fields:
-        return [], [f"Excel缺少必填列: {', '.join(missing_fields)}"], headers
+        return [], [f"Excel缺少必填列: {', '.join(missing_fields)}，请确保表头包含这些列"], headers
     
     valid_rows = []
     errors = []
@@ -237,14 +250,27 @@ def parse_excel_rows(file, header_map, required_fields):
     
     return valid_rows, errors, headers
 
-
-def format_import_result(success_count, error_rows, total_rows=None):
-    """格式化导入结果"""
+def format_import_result(success_count, error_rows, update_count=0, total_rows=None):
+    """格式化导入结果
+    
+    Args:
+        success_count: 成功处理的总数（包括新增和更新）
+        error_rows: 错误行列表
+        update_count: 更新记录数（可选，默认为0）
+        total_rows: 总行数（可选）
+    
+    Returns:
+        dict: 格式化后的结果字典
+    """
+    new_count = success_count - update_count
     result = {
         "success": True,
         "success_count": success_count,
+        "update_count": update_count,
+        "new_count": new_count,
         "error_count": len(error_rows),
-        "errors": error_rows[:20]  # 最多返回20条错误
+        "errors": error_rows[:20],  # 最多返回20条错误
+        "message": f"导入完成: 成功 {success_count} 条（新增 {new_count}，更新 {update_count}），失败 {len(error_rows)} 条"
     }
     if total_rows:
         result["total"] = total_rows

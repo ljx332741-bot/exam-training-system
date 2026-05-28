@@ -566,11 +566,74 @@
         }
     }
 
-    // ========== 导入导出 ==========
-    document.getElementById('importWhBtn').addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('importWhFileInput').click();
-    });
+    // ==================== 库房批量导入功能 ====================
+    const importWhBtn = document.getElementById('importWhBtn');
+    const importWhFileInput = document.getElementById('importWhFileInput');
+
+    if (importWhBtn) {
+        importWhBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            importWhFileInput.click();
+        });
+    }
+
+    if (importWhFileInput) {
+        importWhFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!confirm(`${t('t_confirm_import_file')}: ${file.name}`)) {
+                e.target.value = '';
+                return;
+            }
+            
+            // ✅ 显示导入模态框
+            showImportModal(
+                t('importing_title') || '正在导入数据...',
+                t('importing_file') + ': ' + file.name
+            );
+            
+            updateImportProgress(30);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                updateImportProgress(60);
+                
+                const res = await fetch('/api/admin/wh/import', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                updateImportProgress(90);
+                
+                const result = await res.json();
+                
+                updateImportProgress(100);
+                
+                if (result.success) {
+                    let message = `${t('t_import_done')} ${result.success_count} ${t('t_count_success')}，${result.error_count} ${t('t_count_failure')}`;
+                    if (result.update_count) {
+                        message += `（新增 ${result.new_count || result.success_count - result.update_count}，更新 ${result.update_count}）`;
+                    }
+                    if (result.errors && result.errors.length > 0) {
+                        message += `\n\n${t('t_failed_details_')}${result.errors.slice(0, 5).join('\n')}`;
+                    }
+                    closeImportModal(true, message);
+                    loadWhList();
+                } else {
+                    closeImportModal(false, result.message || t('t_import_failed'));
+                }
+            } catch (err) {
+                console.error('库房导入失败:', err);
+                closeImportModal(false, err.message);
+            } finally {
+                e.target.value = '';
+            }
+        });
+    }
 
     document.getElementById('downloadWhTemplateBtn').addEventListener('click', async (e) => {
         e.preventDefault();
@@ -587,58 +650,6 @@
             URL.revokeObjectURL(url);
         } catch (err) {
             alert(t('t_download_template_failed') + err.message);
-        }
-    });
-
-    document.getElementById('importWhFileInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        if (!confirm(`${t('t_confirm_import_file')}: ${file.name} `)) {
-            e.target.value = '';
-            return;
-        }
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const importBtn = document.getElementById('importWhBtn');
-        importBtn.disabled = true;
-        importBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 导入中...';
-        
-        try {
-            const res = await fetch('/api/admin/wh/import', { method: 'POST', body: formData });
-            const result = await res.json();
-            
-            if (result.success) {
-                if (result.error_count > 0) {
-                    // ✅ 显示详细错误信息
-                    let errorMsg = `导入完成: 成功 ${result.success_count} 条，失败 ${result.error_count} 条。`;
-                    if (result.errors && result.errors.length > 0) {
-                        errorMsg += '\n\n失败详情:\n' + result.errors.slice(0, 10).join('\n');
-                        if (result.errors.length > 10) {
-                            errorMsg += `\n... 共 ${result.errors.length} 条错误`;
-                        }
-                    }
-                    alert(errorMsg);
-                } else {
-                    alert(`导入成功: ${result.success_count} 条`);
-                }
-                loadWhList();
-            } else {
-                // ✅ 显示解析错误
-                let errorMsg = '导入失败: ' + (result.message || '');
-                if (result.errors && result.errors.length > 0) {
-                    errorMsg += '\n\n错误详情:\n' + result.errors.join('\n');
-                }
-                alert(errorMsg);
-            }
-        } catch (err) {
-            alert('导入失败: ' + err.message);
-        } finally {
-            importBtn.disabled = false;
-            importBtn.innerHTML = '<i class="bi bi-file-earmark-excel"></i> 批量导入';
-            e.target.value = '';
         }
     });
 

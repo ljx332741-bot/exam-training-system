@@ -15,6 +15,7 @@ from utils.permissions import (is_developer, apply_country_filter, can_view_user
 )
 from routes.helpers import login_required, admin_required, get_current_user
 from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, generate_import_template, format_import_result
+from utils.i18n_messages import I18nMessages
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,22 @@ def admin_user_list():
 def api_admin_user_detail(user_id):
     """后端单用户查询接口"""
     db = get_supabase()
-    res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
-    if not res.data:
-        return jsonify({"error": "用户不存在"}), 404
-    return jsonify(res.data)
+    
+    try:
+        res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+        
+        # ✅ 检查是否有数据（maybe_single 可能返回 None 或空数据）
+        if not res or not hasattr(res, 'data') or not res.data:
+            return jsonify({"error": "用户不存在"}), 404
+        
+        return jsonify(res.data)
+    except Exception as e:
+        # ✅ 捕获可能的 204 异常
+        error_msg = str(e)
+        if '204' in error_msg or 'Missing response' in error_msg:
+            return jsonify({"error": "用户不存在"}), 404
+        logger.error(f"获取用户详情失败: {e}")
+        return jsonify({"error": "查询失败"}), 500
 
 @admin_user_bp.route('/api/admin/users')
 @login_required
@@ -366,22 +379,16 @@ def api_admin_import_users():
     if not file.filename.endswith(('.xlsx', '.xls')):
         return jsonify({"success": False, "message": "jsonify_only_supports_files", "params": []}), 400
     
-    # 定义表头映射
+    # 定义表头映射（支持中英文）
     header_map = {
-        '国家': 'country',
-        '邮箱': 'email',
-        '姓名': 'name_en',
-        '角色': 'role',
-        '服务商?': 'is_partner',
-        '公司': 'company',
-        '部门': 'department',
-        '库房类型': 'wh_type',
-        '库房ID': 'wh_id',
-        '库房名称(EN)': 'wh_name_en',
-        '工号': 'employee_id',
-        '手机号': 'phone',
-        '生日': 'birthday',
-        '权限范围': 'admin_countries'
+        '国家': 'country', '邮箱': 'email', '姓名': 'name_en', '角色': 'role',
+        '服务商?': 'is_partner', '公司': 'company', '部门': 'department',
+        '库房类型': 'wh_type', '库房ID': 'wh_id', '库房名称(EN)': 'wh_name_en',
+        '工号': 'employee_id', '手机号': 'phone', '生日': 'birthday', '权限范围': 'admin_countries',
+        'country': 'country', 'email': 'email', 'name_en': 'name_en', 'role': 'role',
+        'is_partner': 'is_partner', 'company': 'company', 'department': 'department',
+        'wh_type': 'wh_type', 'wh_id': 'wh_id', 'wh_name_en': 'wh_name_en',
+        'employee_id': 'employee_id', 'phone': 'phone', 'birthday': 'birthday', 'admin_countries': 'admin_countries'
     }
     
     # 解析 Excel，获取有效数据行
@@ -411,7 +418,10 @@ def api_admin_import_users():
         
         name_en = user_data.get('name_en', '')
         if not name_en:
-            error_rows.append(f"第{row_idx}行: 姓名不能为空")
+            # ✅ 修复：使用结构化错误
+            error_rows.append(I18nMessages.format_error(
+                row_idx, "name_required"
+            ))
             continue
         
         # 国家与库房ID一致性校验
@@ -420,13 +430,22 @@ def api_admin_import_users():
         final_country, is_valid, error_msg = validate_country_and_wh_id(country_input, wh_id)
         
         if not is_valid:
-            error_rows.append(f"第{row_idx}行: {error_msg}")
+            # ✅ 修复：使用结构化错误
+            error_rows.append(I18nMessages.format_error(
+                row_idx, "country_wh_mismatch",
+                country=country_input or '',
+                wh_id=wh_id or ''
+            ))
             continue
         
         # 权限校验
         if final_country:
             if allowed_countries is not None and final_country not in allowed_countries:
-                error_rows.append(f"第{row_idx}行: 国家 {final_country} 不在您的权限范围内")
+                # ✅ 修复：使用结构化错误
+                error_rows.append(I18nMessages.format_error(
+                    row_idx, "country_not_allowed",
+                    country=final_country
+                ))
                 continue
         
         # 角色处理
@@ -439,7 +458,11 @@ def api_admin_import_users():
         if role in ['admin', 'super_admin']:
             admin_countries_raw = user_data.get('admin_countries', '')
             if not admin_countries_raw:
-                error_rows.append(f"第{row_idx}行: {role}角色必须填写权限范围")
+                # ✅ 修复：使用结构化错误
+                error_rows.append(I18nMessages.format_error(
+                    row_idx, "admin_countries_required",
+                    role=role
+                ))
                 continue
             if ',' in admin_countries_raw:
                 countries_list = [c.strip().upper() for c in admin_countries_raw.split(',')]
@@ -448,7 +471,11 @@ def api_admin_import_users():
             if allowed_countries is not None:
                 invalid_countries = [c for c in countries_list if c not in allowed_countries]
                 if invalid_countries:
-                    error_rows.append(f"第{row_idx}行: 权限范围包含无权管理的国家: {', '.join(invalid_countries)}")
+                    # ✅ 修复：使用结构化错误
+                    error_rows.append(I18nMessages.format_error(
+                        row_idx, "admin_countries_invalid",
+                        countries=', '.join(invalid_countries)
+                    ))
                     continue
             user_data['admin_countries'] = json.dumps(countries_list)
         else:
@@ -473,14 +500,15 @@ def api_admin_import_users():
         
         # 移除空值字段
         user_data = {k: v for k, v in user_data.items() if v != '' and v is not None}
-        from utils.i18n_messages import I18nMessages
-
+        
+        # 修改错误添加部分
         try:
             # 检查是否已存在同名用户
             existing = db.table("users").select("id, deleted_at").eq("name_en", name_en).execute()
             if existing.data:
                 existing_user = existing.data[0]
                 if existing_user.get('deleted_at') is None:
+                    # ✅ 使用 I18nMessages 格式化错误
                     error_rows.append(I18nMessages.format_error(
                         row_idx, "user_already_exists", name=name_en
                     ))
@@ -493,16 +521,24 @@ def api_admin_import_users():
                     db.table("users").update(update_data).eq("id", existing_user['id']).execute()
                     success_count += 1
                     continue
-            
+
             db.table("users").insert(user_data).execute()
             success_count += 1
+            
         except Exception as e:
+            # ✅ 使用 I18nMessages 格式化错误
             error_rows.append(I18nMessages.format_error(
                 row_idx, "insert_failed", error=str(e)
             ))
             logger.error(f"导入用户失败第{row_idx}行: {e}")
     
-    result = format_import_result(success_count, error_rows)
+    # ✅ 返回纯字符串格式的错误信息
+    result = {
+        "success": True,
+        "success_count": success_count,
+        "error_count": len(error_rows),
+        "errors": error_rows  # 直接返回字符串列表
+    }
     return jsonify(result)
 
 # ✅ 添加模板下载接口

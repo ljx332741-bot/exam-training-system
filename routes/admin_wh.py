@@ -202,10 +202,15 @@ def import_wh():
     # 定义表头映射
     header_map = {
         'wh_id': 'wh_id',
+        '库房ID': 'wh_id',
         'wh_name_cn': 'wh_name_cn',
+        '库房名称(CN)': 'wh_name_cn',
         'wh_name_en': 'wh_name_en',
+        '库房名称(EN)': 'wh_name_en',
         'wh_type': 'wh_type',
-        'country_code': 'country_code'
+        '库房类型': 'wh_type',
+        'country_code': 'country_code',
+        '国家代码': 'country_code'
     }
     
     # 解析 Excel，获取有效数据行
@@ -222,6 +227,7 @@ def import_wh():
     allowed_countries = get_admin_allowed_countries()
     
     success_count = 0
+    update_count = 0   # ✅ 新增：记录更新的数量
     error_rows = []
     
     for row_idx, wh_data in valid_rows:
@@ -250,6 +256,7 @@ def import_wh():
             
             if existing.data:
                 existing_record = existing.data[0]
+                update_count += 1
                 # 更新记录（无论是软删除还是正常状态）
                 db.table("wh_info").update({
                     "wh_name_cn": wh_data.get('wh_name_cn', ''),
@@ -278,7 +285,7 @@ def import_wh():
             error_rows.append(f"第{row_idx}行: 操作失败 - {str(e)}")
             logger.error(f"导入库房失败第{row_idx}行: {e}")
     
-    result = format_import_result(success_count, error_rows)
+    result = format_import_result(success_count, error_rows, update_count)
     return jsonify(result)
 
 def check_wh_has_users(wh_id):

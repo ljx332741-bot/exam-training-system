@@ -1667,12 +1667,6 @@
         if (adminCountriesGroup) adminCountriesGroup.style.display = 'none';
     });
 
-    // 导入按钮点击触发文件选择 → 触发1下载用户导入模板和2文件选择
-    document.getElementById('importUserBtn').addEventListener('click', (e) => {
-        e.preventDefault();
-        document.getElementById('importFileInput').click();
-    });
-
     // 1下载用户导入模板
     document.getElementById('downloadUserTemplateBtn').addEventListener('click', async (e) => {
         e.preventDefault();
@@ -1693,96 +1687,84 @@
     });
 
     // 2文件选择后自动上传
-    // 格式化错误对象为可读字符串
     function formatImportError(error) {
+        console.log('调试 error:', error);
+        console.log('error 类型:', typeof error);
+        console.log('error.code:', error?.code);
+        console.log('error.row:', error?.row);
+        console.log('error.params:', error?.params);
+        
         // 如果是字符串，直接返回
         if (typeof error === 'string') {
             return error;
         }
         
-        // 如果是对象，根据 code 获取翻译
-        if (typeof error === 'object' && error.code) {
-            // 获取翻译模板
-            let template = t(error.code);
-            
-            // 如果翻译不存在，使用默认英文
-            if (template === error.code) {
-                // 默认消息映射
-                const defaultMessages = {
-                    'user_already_exists': 'User {name} already exists',
-                    'insert_failed': 'Insert failed: {error}',
-                    'country_not_allowed': 'Country {country} not allowed',
-                    'country_wh_mismatch': 'Country mismatch with warehouse ID',
-                    'admin_countries_invalid': 'Invalid permission countries: {countries}',
-                    'admin_countries_required': '{role} role requires permission scope',
-                    'name_required': 'Name cannot be empty'
-                };
-                template = defaultMessages[error.code] || error.code;
-            }
-            
-            // 替换参数
-            let message = `第 ${error.row} 行: `;
-            let content = template;
-            if (error.params) {
-                Object.keys(error.params).forEach(key => {
-                    content = content.replace(`{${key}}`, error.params[key]);
-                });
-            }
-            message += content;
-            return message;
-        }
-        
-        // 其他情况，转为 JSON 字符串
-        return JSON.stringify(error);
-    }
-
-    // 修改导入结果处理
-    document.getElementById('importFileInput').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        
-        if (!confirm(`${t('t_confirm_import_file')} ${file.name} `)) {
-            e.target.value = '';
-            return;
-        }
-        
-        const formData = new FormData();
-        formData.append('file', file);
-        
-        const importUserBtn = document.getElementById('importUserBtn');
-        importUserBtn.disabled = true;
-        importUserBtn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${t('t_importing')}`;
-        
-        try {
-            const res = await fetch('/api/admin/users/import', {
-                method: 'POST',
-                body: formData
-            });
-            const result = await res.json();
-            
-            if (result.success) {
-                // ✅ 使用格式化函数处理错误
-                const message = `${t('t_import_done')} ${result.success_count} ${t('t_count_success')}，${result.error_count} ${t('t_count_failure')}。`;
-                alert(message);
+        // 如果是对象
+        if (typeof error === 'object' && error !== null) {
+            // 如果有 code，进行翻译
+            if (error.code) {
+                // 尝试从 i18n 获取翻译
+                let template = t(error.code);
                 
-                if (result.errors && result.errors.length > 0) {
-                    console.warn(t('t_failed_details'), result.errors);
-                    // ✅ 格式化每个错误对象
-                    const formattedErrors = result.errors.map(formatImportError);
-                    alert(t('t_failed_details_') + formattedErrors.slice(0, 10).join('\n'));
+                // 如果翻译不存在，使用默认模板
+                if (template === error.code) {
+                    const defaults = {
+                        'user_already_exists': '第{row}行: 用户 {name} 已存在',
+                        'insert_failed': '第{row}行: 插入失败 - {error}',
+                        'name_required': '第{row}行: 姓名不能为空',
+                        'country_wh_mismatch': '第{row}行: 国家({country})与库房ID({wh_id})提取的国家不一致',
+                        'country_not_allowed': '第{row}行: 国家 {country} 不在您的权限范围内',
+                        'admin_countries_required': '第{row}行: {role}角色必须填写权限范围',
+                        'admin_countries_invalid': '第{row}行: 权限范围包含无权管理的国家: {countries}'
+                    };
+                    template = defaults[error.code] || error.code;
                 }
-                loadUsers();
-            } else {
-                alert(t('t_import failed') + (result.message || t('t_unknown_error')));
+                
+                // 获取参数（兼容多种结构）
+                let params = {};
+                if (error.params) {
+                    params = error.params;
+                }
+                // 确保 row 参数存在
+                if (error.row !== undefined && params.row === undefined) {
+                    params.row = error.row;
+                }
+                // 如果 params 中都没有 row，使用 error.row
+                if (params.row === undefined && error.row !== undefined) {
+                    params.row = error.row;
+                }
+                
+                // 替换所有参数
+                let result = template;
+                for (const [key, value] of Object.entries(params)) {
+                    if (value !== undefined && value !== null) {
+                        result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+                    }
+                }
+                
+                // 最后检查是否还有 {row} 未替换
+                if (result.includes('{row}')) {
+                    result = result.replace(/\{row\}/g, params.row || error.row || '?');
+                }
+                
+                return result;
             }
-        } catch (err) {
-            alert(t('t_network_error') + err.message);
-        } finally {
-            importUserBtn.disabled = false;
-            importUserBtn.innerHTML = `<i class="bi bi-file-earmark-excel"></i> ${t('t_batch_import')}`;
-            e.target.value = '';
+            
+            // 如果有 message 字段
+            if (error.message) {
+                return error.message;
+            }
+            
+            // 降级：返回 JSON 字符串
+            try {
+                return JSON.stringify(error);
+            } catch(e) {
+                return String(error);
+            }
         }
-    });
+        
+        return String(error);
+    }
 
     // 重置密码按钮
     document.getElementById('confirmResetBtn').addEventListener('click', () => {
@@ -2328,6 +2310,134 @@
         return error;
     }
 
+    // ==================== 批量导入功能（使用全局模态框） ====================
+    // ==================== 批量导入功能（使用全局模态框） ====================
+    const importUserBtn = document.getElementById('importUserBtn');
+    let importFileInput = document.getElementById('importFileInput');
+
+    // ✅ 1. 检查全局函数是否存在，提供降级方案
+    if (typeof showImportModal === 'undefined') {
+        window.showImportModal = function(title, message, showProgress) {
+            console.log('导入模态框:', title, message);
+            alert(`${title}\n${message}`);
+        };
+        window.updateImportProgress = function(percent) {
+            console.log('导入进度:', percent + '%');
+        };
+        window.closeImportModal = function(success, message) {
+            console.log('导入完成:', success, message);
+            alert(message);
+        };
+    }
+
+    // ✅ 2. 移除旧事件，避免重复绑定
+    if (importFileInput) {
+        const newInput = importFileInput.cloneNode(true);
+        importFileInput.parentNode.replaceChild(newInput, importFileInput);
+        importFileInput = newInput;
+    }
+
+    if (importUserBtn) {
+        // 移除旧事件
+        const newBtn = importUserBtn.cloneNode(true);
+        importUserBtn.parentNode.replaceChild(newBtn, importUserBtn);
+        
+        newBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            importFileInput.click();
+        });
+    }
+
+    if (importFileInput) {
+        importFileInput.addEventListener('change', async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            
+            if (!confirm(`${t('t_confirm_import_file')} ${file.name}`)) {
+                e.target.value = '';
+                return;
+            }
+            
+            // ✅ 4. 显示导入模态框（使用安全的值）
+            // const importingTitle = (typeof t === 'function' ? t('importing_title') : '正在导入数据...') || '正在导入数据...';
+            // const importingFile = (typeof t === 'function' ? t('importing_file') : '正在导入文件') || '正在导入文件';
+
+            showImportModal(
+                t('importing_title'),
+                `${t('importing_file')}: ${file.name}`,
+                true
+            );
+            
+            updateImportProgress(30);
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                updateImportProgress(60);
+                
+                const res = await fetch('/api/admin/users/import', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                updateImportProgress(90);
+                
+                const result = await res.json();
+                
+                updateImportProgress(100);
+                
+                if (result.success) {
+                    // 确定标题
+                    let titleKey = '';
+                    if (result.success_count === 0 && result.error_count > 0) {
+                        titleKey = 'import_failed';
+                    } else if (result.success_count > 0 && result.error_count === 0) {
+                        titleKey = 'import_success';
+                    } else {
+                        titleKey = 'import_partial';
+                    }
+                    let title = t(titleKey);
+                    
+                    // 构建消息
+                    let message = `${title}<br>`;
+                    let summary = t('import_result_summary')
+                        .replace('{success}', result.success_count)
+                        .replace('{failed}', result.error_count);
+                    message += `${summary}<br><br>`;
+                    
+                    if (result.errors && result.errors.length > 0) {
+                        message += `${t('import_error_details')}:<br>`;
+                        // ✅ 关键修复：使用 formatImportError 函数
+                        const errorMessages = result.errors.map(err => formatImportError(err));
+                        
+                        errorMessages.slice(0, 10).forEach((err, idx) => {
+                            message += `${idx + 1}. ${err}<br>`;
+                        });
+                        if (errorMessages.length > 10) {
+                            let moreText = t('import_more_errors')
+                                .replace('{count}', errorMessages.length)
+                                .replace('{limit}', '10');
+                            message += moreText;
+                        }
+                    }
+                    
+                    closeImportModal(true, message);
+                    if (result.success_count > 0) {
+                        loadUsers();
+                    }
+                }
+            } catch (err) {
+                console.error('导入失败:', err);
+                const errorMsg = err.message || '网络错误';
+                closeImportModal(false, errorMsg);
+            } finally {
+                e.target.value = '';
+            }
+        });
+    }
+
     // 初始化国家列表
     document.addEventListener('DOMContentLoaded', async () => {
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
@@ -2350,7 +2460,6 @@
             await loadDeletedUsers();
             new bootstrap.Modal(document.getElementById('deletedUsersModal')).show();
         });
-        
         // 批量恢复和批量永久删除
         document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
         document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
