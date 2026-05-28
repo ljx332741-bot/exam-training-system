@@ -828,6 +828,14 @@
                 selectAllCheckbox._hasListener = true;
             }
         }, 100);
+        // ✅ 刷新后，重新同步 selectedUserIds（只保留仍然存在的用户）
+        const existingIds = new Set(currentUsersData.map(u => u.id));
+        for (const id of selectedUserIds) {
+            if (!existingIds.has(id)) {
+                selectedUserIds.delete(id);
+            }
+        }
+        updateBatchDeleteButton();
     }
 
     // ==================== 权限判断函数 ====================
@@ -947,15 +955,15 @@
         }
         // 权限范围列（仅超管显示）
         if (CURRENT_USER_ROLE === 'super_admin' && visibleFields && visibleFields.power_scope !== false) {
-            headerHtml += `<th><span data-i18n="power_scope">权限范围</span></th>`;
+            headerHtml += `<th><span data-i18n="power_scope">${t('power_scope')}</span></th>`;
         }
-        headerHtml += '<th>操作</th></tr></thead>';
+        headerHtml += `<th>${t('actions')}</th></tr></thead>`;
         
         // ==================== 构建数据行 ====================
         let bodyHtml = '<tbody>';
         for (const u of displayUsers) {
             bodyHtml += `<tr>
-                <td><input type="checkbox" class="user-checkbox" data-id="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''}></td>`;
+                <td><input type="checkbox" class="user-checkbox" data-id="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''}>${'</td>'}`;
             
             for (const field of fieldOrder) {
                 if (visibleFields && visibleFields[field]) {
@@ -1122,17 +1130,21 @@
     }
 
     function handleCheckboxChange(e) {
+        console.log('复选框变化, 选中数量:', selectedUserIds.size);
         const cb = e.target;
         const id = cb.dataset.id;
+        console.log('复选框变化, id:', id, 'checked:', cb.checked);  // ✅ 调试
         if (cb.checked) {
             selectedUserIds.add(id);
         } else {
             selectedUserIds.delete(id);
         }
+        console.log('当前选中数量:', selectedUserIds.size);  // ✅ 调试
         updateBatchDeleteButton();
     }
 
     function handleSelectAll(e) {
+        console.log('全选变化, isChecked:', e.target.checked);
         const isChecked = e.target.checked;
         document.querySelectorAll('.user-checkbox').forEach(cb => {
             cb.checked = isChecked;
@@ -1151,8 +1163,12 @@
 
         const count = selectedUserIds.size;
         
-        // 1. 始终显示，仅动态更新文案
-        btn.innerHTML = `<i class="bi bi-trash3"></i> ${t('batch_delete')} (${count})`;
+        // ✅ 修复：使用 t() 函数翻译按钮文本，支持参数
+        let buttonText = t('batch_delete');
+        if (count > 0) {
+            buttonText = `${buttonText} (${count})`;
+        }
+        btn.innerHTML = `<i class="bi bi-trash3"></i> ${buttonText}`;
         
         // 2. 交互优化：未选中时禁用按钮，选中后恢复可用
         btn.disabled = (count === 0);
@@ -1191,64 +1207,41 @@
 
     async function batchDeleteSelected() {
         if (selectedUserIds.size === 0) {
-            const msg = t('select_at_least_one') || '请至少选择一个用户';
-            alert(msg);
+            alert(t('select_at_least_one'));
             return;
         }
         
-        // 获取确认消息
-        let confirmMsg = t('confirm_batch_delete_users');
-        if (confirmMsg === 'confirm_batch_delete_users') {
-            confirmMsg = '确定要删除选中的 {count} 个用户吗？';
-        }
-        const message = confirmMsg.replace('{count}', selectedUserIds.size);
+        const confirmMsg = t('confirm_batch_delete_users').replace('{count}', selectedUserIds.size);
+        if (!confirm(confirmMsg)) return;
         
-        if (!confirm(message)) return;
+        // ✅ 保存要删除的 ID 列表
+        const idsToDelete = Array.from(selectedUserIds);
         
         try {
             // 创建所有删除请求的 Promise
-            const deletePromises = Array.from(selectedUserIds).map(id => 
+            const deletePromises = idsToDelete.map(id => 
                 fetch(`/api/admin/users/${id}`, { method: 'DELETE' })
                     .then(res => res.json())
                     .catch(err => ({ success: false, message: err.message }))
             );
             
-            // 等待所有请求完成
             const results = await Promise.all(deletePromises);
-            
-            // 统计结果
             const successCount = results.filter(r => r && r.success === true).length;
             const failedCount = results.length - successCount;
             
-            // 显示结果
-            let resultMsg = t('batch_deleted_user_hint');
-            if (resultMsg === 'batch_deleted_user_hint') {
-                resultMsg = '删除完成：成功 {successCount} 条，失败 {failedCount} 条';
-            }
-            alert(resultMsg
-                .replace('{successCount}', successCount)
-                .replace('{failedCount}', failedCount)
-            );
-            
-            // 显示失败详情（如果有）
-            const failedResults = results.filter(r => r && r.success !== true);
-            if (failedResults.length > 0) {
-                console.warn('删除失败的用户:', failedResults);
-                const failedDetails = failedResults.map((r, i) => 
-                    `${i + 1}. ${r.message || '未知错误'}`
-                ).join('\n');
-                alert(`失败详情:\n${failedDetails}`);
-            }
-            
-            // 清空选中并刷新列表
+            // ✅ 清空选中集合（无论成功还是失败，都清空，因为列表会刷新）
             selectedUserIds.clear();
             updateBatchDeleteButton();
-            loadUsers();
+            
+            alert(t('batch_deleted_user_hint')
+                .replace('{successCount}', successCount)
+                .replace('{failedCount}', failedCount));
+            
+            loadUsers();  // 刷新列表
             
         } catch (err) {
             console.error('批量删除失败:', err);
-            const errorMsg = t('delete_failed') || '删除失败: ';
-            alert(errorMsg + err.message);
+            alert(t('delete_failed') + err.message);
         }
     }
 
@@ -1291,6 +1284,13 @@
 
     async function deleteUser(userId) {
         if (!(await showConfirm(window.i18n.t('delete_user_tip')))) return;
+
+        // ✅ 先从选中集合中移除
+        if (selectedUserIds.has(userId)) {
+            selectedUserIds.delete(userId);
+            updateBatchDeleteButton();
+        }
+
         fetch(`/api/admin/users/${userId}`, { method: 'DELETE' })
             .then(res => res.json())
             .then(data => {
@@ -2224,6 +2224,7 @@
         // 语言切换时，重新加载列表以刷新动态文本
         window.i18n.subscribe(() => {
             loadUsers();
+            updateBatchDeleteButton();
         });
     })();
 
