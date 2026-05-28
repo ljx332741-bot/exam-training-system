@@ -1,4 +1,5 @@
-{"user_already_exists": "User {name} already exists",
+{"created_by": "Created by",
+"user_already_exists": "User {name} already exists",
 "insert_failed": "Insert failed: {error}",
 "country_not_allowed": "Country {country} not allowed",
 "country_wh_mismatch": "Country({country}) does not match warehouse ID({wh_id})",
