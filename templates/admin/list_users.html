@@ -49,56 +49,63 @@
 
     <!-- 搜索筛选 -->
     <div class="card mb-3">
-        <div class="card-body py-2">
-            <!-- 使用 Flex 实现左右分栏，垂直居中，单行不换行 -->
-            <div class="d-flex align-items-center justify-content-between gap-2 flex-nowrap">
-                
-                <!-- 左侧：筛选条件 + 重置按钮 -->
-                <div class="d-flex align-items-center gap-2">
-                    <input type="text" id="searchInput" class="form-control" style="width: 220px;" 
-                        data-i18n-placeholder="placeholder_mail_name" 
-                        placeholder="搜索邮箱/姓名/工号/库房ID" autocomplete="off">
-                    
-                    <input type="text" id="filterCountry" class="form-control" style="width: 180px;" list="countryDatalist" 
-                        data-i18n-placeholder="placeholder_select_or_input" 
-                        placeholder="输入选择国家" autocomplete="off" data-code-input="filterCountryCode">
-                    <datalist id="countryDatalist"></datalist>
-                    <input type="hidden" id="filterCountryCode" value="">
-                    
-                    <input type="text" id="filterWhId" class="form-control" style="width: 180px;" 
-                    data-i18n-placeholder="wh_id_name"    
-                    placeholder="库房编码/名称" autocomplete="off">
-                        
-                    <button id="resetFiltersBtn" class="btn btn-outline-secondary">
-                        <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
-                    </button>
-                </div>
-
-                <!-- 右侧：操作按钮 -->
-                <div class="d-flex align-items-center gap-2">
-                    <div class="dropdown">
-                        <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-file-earmark-excel"></i> <span data-i18n="batch_import">批量导入</span>
-                        </button>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="#" id="downloadUserTemplateBtn">
-                                <i class="bi bi-download mt-3"></i> <span data-i18n="download_template">下载导入模板</span>
-                            </a></li>
-                            <li><a class="dropdown-item" href="#" id="importUserBtn">
-                                <i class="bi bi-upload mt-3"></i> <span data-i18n="upload_import">上传文件导入</span>
-                            </a></li>
-                        </ul>
+        <div class="card-body">
+            <div class="row g-2 align-items-center">
+                <!-- 左侧筛选条件 -->
+                <div class="col-12 col-md-8">
+                    <div class="row g-2">
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <input type="text" id="searchInput" class="form-control" 
+                                data-i18n-placeholder="placeholder_mail_name" 
+                                placeholder="搜索邮箱/姓名/工号/库房ID" autocomplete="off">
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                                data-i18n-placeholder="placeholder_select_or_input" 
+                                placeholder="输入选择国家" autocomplete="off" data-code-input="filterCountryCode">
+                            <datalist id="countryDatalist"></datalist>
+                            <input type="hidden" id="filterCountryCode" value="">
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <input type="text" id="filterWhId" class="form-control" 
+                                data-i18n-placeholder="wh_id_name"    
+                                placeholder="库房编码/名称" autocomplete="off">
+                        </div>
+                        <div class="col-12 col-sm-6 col-lg-3">
+                            <button id="resetFiltersBtn" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                            </button>
+                        </div>
                     </div>
-                    
-                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
-                        <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
-                    </button>
-                    
-                    <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
-                    
-                    <button class="btn btn-outline-secondary" onclick="history.back();">
-                        ✖ <span data-i18n="close">关闭</span>
-                    </button>
+                </div>
+                
+                <!-- 右侧操作按钮 -->
+                <div class="col-12 col-md-4">
+                    <div class="d-flex gap-2 justify-content-md-end">
+                        <div class="dropdown">
+                            <button class="btn btn-outline-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-file-earmark-excel"></i> <span data-i18n="batch_import">批量导入</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" id="downloadUserTemplateBtn">
+                                    <i class="bi bi-download"></i> <span data-i18n="download_template">下载导入模板</span>
+                                </a></li>
+                                <li><a class="dropdown-item" href="#" id="importUserBtn">
+                                    <i class="bi bi-upload"></i> <span data-i18n="upload_import">上传文件导入</span>
+                                </a></li>
+                            </ul>
+                        </div>
+                        
+                        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                            <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
+                        </button>
+                        
+                        <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
+                        
+                        <button class="btn btn-outline-secondary" onclick="history.back();">
+                            ✖ <span data-i18n="close">关闭</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
