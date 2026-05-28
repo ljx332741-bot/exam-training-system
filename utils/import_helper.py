@@ -61,31 +61,31 @@ def generate_import_template(template_type='user'):
     ws = wb.active
     
     if template_type == 'user':
-        ws.title = "用户导入模板"
+        ws.title = "UserImportTemp"
         headers = [
-            ("国家", "country", "国家代码，如 NP、LK、ID。可不填，从库房ID提取"),
-            ("邮箱", "email", "用户邮箱，必填"),
-            ("姓名", "name_en", "用户姓名，必填"),
-            ("角色", "role", "user/admin/super_admin，默认 user"),
-            ("服务商?", "is_partner", "Y/N，默认 N"),
-            ("公司", "company", "可选"),
-            ("部门", "department", "可选"),
-            ("库房类型", "wh_type", "可选"),
-            ("库房ID", "wh_id", "库房编码，如 NP001。如填写，前两位需与国家一致"),
-            ("库房名称(EN)", "wh_name_en", "可选"),
-            ("工号", "employee_id", "可选"),
-            ("手机号", "phone", "可选"),
-            ("生日", "birthday", "YYYY-MM-DD 格式，可选"),
-            ("权限范围", "admin_countries", "管理员/超管必填，如 NP,LK"),
+            ("country", "country", "国家代码，如 NP、LK、ID。可不填，从库房ID提取"),
+            ("email", "email", "用户邮箱，必填"),
+            ("name_en", "name_en", "用户姓名，必填"),
+            ("role", "role", "user/admin/super_admin，默认 user"),
+            ("is_partner", "is_supplier", "Y/N，默认 N"),
+            ("company", "company", "可选"),
+            ("department", "department", "可选"),
+            ("wh_type", "wh_type", "可选"),
+            ("wh_id", "wh_id", "库房编码，如 NP001。如填写，前两位需与国家一致"),
+            ("wh_name_en", "wh_name_en", "可选"),
+            ("employee_id", "employee_id", "可选"),
+            ("phone", "phone", "可选"),
+            ("birthday", "birthday", "YYYY-MM-DD 格式，可选"),
+            ("admin_countries", "admin_countries", "管理员/超管必填，如 NP,LK"),
         ]
     else:
-        ws.title = "库房导入模板"
+        ws.title = "WHImportTemp"
         headers = [
-            ("库房ID", "wh_id", "必填，如 NP001。前两位将作为国家代码"),
-            ("库房名称(CN)", "wh_name_cn", "中文名称，可选"),
-            ("库房名称(EN)", "wh_name_en", "英文名称，可选"),
-            ("库房类型", "wh_type", "系统库/备件库/第三方库，可选"),
-            ("国家代码", "country_code", "可选，不填则从库房ID提取。如填写需与库房ID前两位一致"),
+            ("wh_id", "wh_id", "必填，如 NP001。前两位将作为国家代码"),
+            ("wh_name_cn", "wh_name_cn", "中文名称，可选"),
+            ("wh_name_en", "wh_name_en", "英文名称，可选"),
+            ("wh_type", "wh_type", "系统库/备件库/第三方库，可选"),
+            ("country_code", "country_code", "可选，不填则从库房ID提取。如填写需与库房ID前两位一致"),
         ]
     
     # 写入表头

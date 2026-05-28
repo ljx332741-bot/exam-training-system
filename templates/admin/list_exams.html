@@ -62,7 +62,6 @@
                     </style>
                     <thead class="table-light">
                         <tr>
-                            <th><span data-i18n="actions">操作</span></th>
                             <th><span data-i18n="sequence">序号</span></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="exam_name">考试名称</span></th>
@@ -74,6 +73,7 @@
                             <th><span data-i18n="highest">最高分</span></th>
                             <th><span data-i18n="lowest">最低分</span></th>
                             <th><span data-i18n="re_exam">复考人数</span></th>
+                            <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="examsTbody">
@@ -343,7 +343,6 @@
             }
             return `
             <tr>
-                <td>${actionButtons}</td>
                 <td>${(currentPage-1)*20 + idx + 1}</td>
                 <td>${escapeHtml(countryDisplay)}</td>  <!-- ✅ 使用格式化后的国家显示 -->
                 <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
@@ -355,6 +354,7 @@
                 <td>${ex.max_score ?? '-'}</td>
                 <td>${ex.min_score ?? '-'}</td>
                 <td>${ex.retake_count}</td>
+                <td>${actionButtons}</td>
             </tr>
             `;
         }).join('');

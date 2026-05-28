@@ -201,11 +201,11 @@ def import_wh():
         return jsonify({"success": False, "message": "只支持 Excel 文件"}), 400
     # 定义表头映射
     header_map = {
-        '库房ID': 'wh_id',
-        '库房名称(CN)': 'wh_name_cn',
-        '库房名称(EN)': 'wh_name_en',
-        '库房类型': 'wh_type',
-        '国家代码': 'country_code'
+        'wh_id': 'wh_id',
+        'wh_name_cn': 'wh_name_cn',
+        'wh_name_en': 'wh_name_en',
+        'wh_type': 'wh_type',
+        'country_code': 'country_code'
     }
     
     # 解析 Excel，获取有效数据行

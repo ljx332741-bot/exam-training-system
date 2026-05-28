@@ -42,70 +42,82 @@ def api_admin_users():
     """获取用户列表（带完整权限控制）"""
     logger.info("=" * 50)
     logger.info("调用 api_admin_users")
-    logger.info(f"当前用户 role={session.get('role')}, user_country={session.get('user_country')}")
 
     db = get_supabase()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('search', '').strip()
-    country = request.args.get('country', '')
+    country = request.args.get('country', '').strip()  # 国家模糊匹配关键字
+    wh_id = request.args.get('wh_id', '').strip()     # 库房模糊匹配关键字
     user_status = request.args.get('status', '')
-    
-    # 批量查询支持
-    if 'ids' in request.args:
-        ids = request.args.get('ids').split(',')
-        if ids:
-            query = db.table("users").select("*").in_("id", ids)
-            query = apply_country_filter(query, 'country')
-            res = query.execute()
-            users = [u for u in (res.data or []) if can_view_user(u)]
-            return jsonify({"data": users, "total": len(users)})
     
     allowed_countries = get_admin_allowed_countries()
     current_user_id = session.get('user_id')
     current_role = session.get('role')
     
-    logger.info(f"allowed_countries = {allowed_countries}")
-
-    # ✅ 基础查询：先获取所有符合条件的用户（不做国家过滤）
+    # 基础查询
     query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
     
-    # 非开发者不能看到受保护账号
     if not is_developer():
         query = query.eq("is_protected", False)
     
-    # 角色过滤：非超管不能看到超管和开发者
     if current_role != 'super_admin' and not is_developer():
         query = query.neq("role", "super_admin").neq("role", "developer")
     
     if user_status:
         query = query.eq("user_status", user_status)
     
-    if country and country != '___NONE___':
-        if ',' in country:
-            codes = [c.strip() for c in country.split(',') if c.strip()]
-            query = query.in_("country", codes)
-        else:
-            query = query.eq("country", country)
+    # 获取所有数据（后续内存过滤）
+    all_res = query.execute()
+    all_users = all_res.data or []
     
-    # 如果有搜索条件，先应用搜索
-    if search:
-        search_lower = search.lower()
-        # 先获取所有数据（不带分页），然后在内存中过滤
-        all_res = query.execute()
-        all_users = all_res.data or []
-        # 内存搜索
-        all_users = [u for u in all_users if 
-                     (u.get('email') and search_lower in u['email'].lower()) or
-                     (u.get('name_cn') and search_lower in u['name_cn'].lower()) or
-                     (u.get('name_en') and search_lower in u['name_en'].lower())]
-    else:
-        # 先获取所有数据（不带分页）
-        all_res = query.execute()
-        all_users = all_res.data or []
+    # ✅ 内存过滤（支持模糊匹配）
+    filtered = []
+    for user in all_users:
+        # 姓名/邮箱/工号搜索
+        if search:
+            search_lower = search.lower()
+            name = (user.get('name_en') or '').lower()
+            email = (user.get('email') or '').lower()
+            emp_id = (user.get('employee_id') or '').lower()
+            if search_lower not in name and search_lower not in email and search_lower not in emp_id:
+                continue
+        
+        # 国家模糊匹配（支持中文、英文、代码）
+        if country:
+            country_lower = country.lower()
+            user_country = user.get('country') or ''
+            # 获取国家名称进行匹配
+            match = False
+            # 直接匹配国家代码
+            if country_lower in user_country.lower():
+                match = True
+            else:
+                # 查询国家名称进行匹配
+                try:
+                    country_res = db.table("countries").select("code, name_zh, name_en").eq("code", user_country).execute()
+                    if country_res.data:
+                        c = country_res.data[0]
+                        if (country_lower in (c.get('name_zh') or '').lower() or 
+                            country_lower in (c.get('name_en') or '').lower()):
+                            match = True
+                except:
+                    pass
+            if not match:
+                continue
+        
+        # 库房模糊匹配
+        if wh_id:
+            wh_lower = wh_id.lower()
+            user_wh_id = (user.get('wh_id') or '').lower()
+            user_wh_name = (user.get('wh_name_en') or '').lower()
+            if wh_lower not in user_wh_id and wh_lower not in user_wh_name:
+                continue
+        
+        filtered.append(user)
     
-    # ✅ 在内存中进行国家权限过滤
-    filtered_users = filter_users_by_permission(all_users)
+    # 权限过滤
+    filtered_users = filter_users_by_permission(filtered)
     
     # 按创建时间倒序排序
     filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
@@ -461,14 +473,17 @@ def api_admin_import_users():
         
         # 移除空值字段
         user_data = {k: v for k, v in user_data.items() if v != '' and v is not None}
-        
+        from utils.i18n_messages import I18nMessages
+
         try:
             # 检查是否已存在同名用户
             existing = db.table("users").select("id, deleted_at").eq("name_en", name_en).execute()
             if existing.data:
                 existing_user = existing.data[0]
                 if existing_user.get('deleted_at') is None:
-                    error_rows.append(f"第{row_idx}行: 用户 {name_en} 已存在")
+                    error_rows.append(I18nMessages.format_error(
+                        row_idx, "user_already_exists", name=name_en
+                    ))
                     continue
                 else:
                     # 恢复已删除的用户
@@ -482,7 +497,9 @@ def api_admin_import_users():
             db.table("users").insert(user_data).execute()
             success_count += 1
         except Exception as e:
-            error_rows.append(f"第{row_idx}行: 插入失败 - {str(e)}")
+            error_rows.append(I18nMessages.format_error(
+                row_idx, "insert_failed", error=str(e)
+            ))
             logger.error(f"导入用户失败第{row_idx}行: {e}")
     
     result = format_import_result(success_count, error_rows)
@@ -500,8 +517,8 @@ def download_user_import_template():
         # 备用模板生成
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws.title = "用户导入模板"
-        headers = ['国家', '邮箱', '姓名', '角色', '服务商?', '公司', '部门', '库房类型', '库房ID', '库房名称(EN)', '工号', '手机号', '生日', '权限范围']
+        ws.title = "UserImportTemp"
+        headers = ['country', 'email', 'name_en', 'role', 'is_partner', 'company', 'department', 'wh_type', 'wh_id', 'wh_name_en', 'employee_id', 'phone', 'birthday', 'admin_countries']
         for col, header in enumerate(headers, 1):
             ws.cell(row=1, column=col, value=header)
         buffer = BytesIO()
@@ -512,7 +529,7 @@ def download_user_import_template():
         buffer,
         mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=f"用户导入模板_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        download_name=f"UserImportTemp_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     )
 
 @admin_user_bp.route('/api/admin/users/<user_id>', methods=['PUT'])
