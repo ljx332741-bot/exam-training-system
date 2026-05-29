@@ -411,14 +411,15 @@
         try {
             const res = await fetch('/api/my/interviews');
             const interviews = await res.json();
-
-            console.log('访谈列表返回数据:', interviews);
-
             const container = document.getElementById('interviewCards');
+            
+            console.log('访谈列表:', interviews);  // 调试日志
+            
             if (!interviews.length) {
                 container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('t_no_active_interview_now') + '</div>';
                 return;
             }
+            
             container.innerHTML = '';
             
             interviews.forEach(inv => {
@@ -438,7 +439,14 @@
                 let progressPercent = 0;
                 let progressText = '';
                 
-                if (isFuture) {
+                if (isCompleted) {
+                    // ✅ 已完成 - 显示"已完成"，禁用按钮
+                    statusBarClass = 'success';
+                    statusBadge = '<span class="badge bg-success ms-2">' + safeT('js_completed') + '</span>';
+                    btnHtml = `<button class="btn btn-secondary btn-sm w-100" disabled>${safeT('js_completed')}</button>`;
+                    progressPercent = 100;
+                    progressText = '✅ ' + safeT('js_completed');
+                } else if (isFuture) {
                     // 未开始
                     statusBarClass = 'secondary';
                     statusBadge = '<span class="badge bg-secondary ms-2">' + safeT('t_not_started') + '</span>';
@@ -452,15 +460,7 @@
                     btnHtml = `<a href="/interview/take/${inv.id}" class="btn btn-gradient btn-sm w-100">${safeT('js_start_interview')}</a>`;
                     progressPercent = 0;
                     progressText = '📋 ' + safeT('js_in_progress');
-                } else if (isCompleted) {
-                    // 已完成
-                    statusBarClass = 'success';
-                    statusBadge = '<span class="badge bg-success ms-2">' + safeT('js_completed') + '</span>';
-                    btnHtml = `<button class="btn btn-secondary btn-sm w-100" disabled>${safeT('js_completed')}</button>`;
-                    progressPercent = 100;
-                    progressText = '✅ ' + safeT('js_completed');
                 } else {
-                    // 已过期或其他情况，不显示
                     return;
                 }
                 
@@ -499,6 +499,21 @@
         }
     }
 
+    // 监听访谈提交完成事件（从 iframe 或弹窗触发）
+    window.addEventListener('interviewSubmitted', function() {
+        console.log('访谈已提交，刷新列表');
+        loadMyInterviews();
+    });
+
+    // 如果希望更可靠，也可以在页面显示时重新加载（当从访谈页面返回时）
+    window.addEventListener('pageshow', function(event) {
+        // 如果是通过后退按钮返回，刷新访谈列表
+        if (event.persisted || performance.getEntriesByType('navigation')[0].type === 'back_forward') {
+            loadMyInterviews();
+        }
+    });
+
+    
     function escapeHtml(str) {
         if(!str) return '';
         return str.replace(/[&<>]/g, function(m) {
