@@ -517,7 +517,7 @@
   "js_exam_delete_tip": "⚠️Delete exam and questions? This cannot be reversed.",
   "no_exam_datas": "No exam datas",
   "view_status": "Candidate's status (select exam)",
-  "select_exam": "Select exam",
+  "select_exam": "-- Select exam --",
   "js_sign_in_enabled": "On: Sign-in enabled",
   "js_sign_in_disabled": "Off: Sign-in disabled",
   "js_saving": "Saving...",

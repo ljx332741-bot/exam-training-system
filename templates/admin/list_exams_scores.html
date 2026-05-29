@@ -1,4 +1,4 @@
-﻿<!-- templates/admin/list_exams_scores.html -->
+﻿﻿<!-- templates/admin/list_exams_scores.html -->
 {% extends "base.html" %}
 {% block title %}{{ _('exam_scores_detail') }}{% endblock %}
 
@@ -20,9 +20,9 @@
                         </div>
                         <div class="col-md-6">
                             <select id="submitMethodFilter" class="form-select">
-                                <option value=""><span data-i18n="submit_method_all">全部提交方式</span></option>
-                                <option value="manual"><span data-i18n="student_submit">考生提交</span></option>
-                                <option value="auto"><span data-i18n="systme_submit">自动提交</span></option>
+                                <option value="" data-i18n="submit_method_all">全部提交方式</option>
+                                <option value="manual" data-i18n="student_submit">考生提交</option>
+                                <option value="auto" data-i18n="systme_submit">自动提交</option>
                             </select>
                         </div>
                     </div>
@@ -32,7 +32,9 @@
                 </div>
                 <div class="col-md-5 d-flex justify-content-end">
                     <button id="batchExportBtn" class="btn btn-success me-2"><i class="bi bi-file-earmark-pdf"></i> <span data-i18n="batch_export">批量导出选中PDF</span></button>
+                    {% if is_super_admin %}
                     <button id="batchDeleteBtn" class="btn btn-danger me-2"><i class="bi bi-trash"></i> <span data-i18n="batch_delete">批量删除</span></button>
+                    {% endif %}
                     <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
@@ -76,6 +78,7 @@
 
 <script>
     const examId = {{ exam_id }};
+    const isSuperAdmin = {{ 'true' if is_super_admin else 'false' }};
     let currentPage = 1;
     let currentSearch = '';
     let currentSubmitMethod = '';
@@ -95,22 +98,27 @@
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
 
-    // 批量删除
+    // 批量删除（使用全局删除模态框）
     async function batchDeleteSelected() {
+        if (!isSuperAdmin) {
+            alert('您没有权限执行此操作，只有超级管理员可以删除考试成绩');
+            return;
+        }
+        
         const selectedResultIds = Array.from(document.querySelectorAll('.user-checkbox:checked'))
             .map(cb => cb.dataset.resultId);
         
         if (selectedResultIds.length === 0) {
-            alert(t('select_at_least_one') || "请至少选择一个成绩记录");
+            alert('请至少选择一个成绩记录');
             return;
         }
     
         // 使用全局删除模态框
         window.showDeleteConfirm({
-            title: t('delete_exam_results'),
-            message: t('confirm_delete_exam_results'),
+            title: '删除考试成绩',
+            message: `确定要删除选中的 ${selectedResultIds.length} 条成绩记录吗？`,
             ids: selectedResultIds,
-            type: 'soft',  // 默认选中软删除
+            type: 'soft',
             onConfirm: async (deleteType, ids) => {
                 const response = await fetch('/api/admin/exam/result/batch_delete', {
                     method: 'POST',
@@ -123,20 +131,26 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    alert(`${t('delete_success')}: ${data.success_count} 条`);
-                    loadScores(); // 刷新列表
+                    alert(`成功删除 ${data.success_count} 条记录`);
+                    setTimeout(() => loadScores(), 500);
                 } else {
-                    alert(t('delete_failed') + ': ' + (data.message || ''));
+                    alert('删除失败: ' + (data.errors ? data.errors.join(', ') : '未知错误'));
                 }
             }
         });
     }
 
-    // 单个删除
+    // 单个删除（使用全局删除模态框）
     async function deleteSingleResult(resultId, userName) {
+        if (!isSuperAdmin) {
+            alert('您没有权限执行此操作，只有超级管理员可以删除考试成绩');
+            return;
+        }
+        
+        // 使用全局删除模态框
         window.showDeleteConfirm({
-            title: t('delete_exam_result'),
-            message: t('confirm_delete_single_result').replace('{name}', userName),
+            title: '删除考试成绩',
+            message: `确定要删除考生 "${userName}" 的成绩记录吗？`,
             ids: [resultId],
             type: 'soft',
             onConfirm: async (deleteType, ids) => {
@@ -146,18 +160,16 @@
                     body: JSON.stringify({ ids: ids, delete_type: deleteType })
                 });
                 const data = await response.json();
-                if (data.success) {
-                    alert(t('delete_success'));
-                    loadScores();
+                
+                if (data.success && data.success_count > 0) {
+                    alert('删除成功');
+                    setTimeout(() => loadScores(), 500);
                 } else {
-                    alert(t('delete_failed'));
+                    alert('删除失败: ' + (data.errors ? data.errors[0] : '未知错误'));
                 }
             }
         });
     }
-
-    // 绑定事件
-    document.getElementById('batchDeleteBtn')?.addEventListener('click', batchDeleteSelected);
 
     function renderScoresTable(scores) {
         const tbody = document.getElementById('scoresTbody');
@@ -165,7 +177,15 @@
             tbody.innerHTML = '<tr><td colspan="13" class="text-center">暂无数据</td></tr>';
             return;
         }
-        tbody.innerHTML = scores.map((s, idx) => `
+        
+        tbody.innerHTML = scores.map((s, idx) => {
+            // 只有超级管理员才显示删除按钮
+            const deleteButtonHtml = isSuperAdmin ? 
+                `<button class="btn btn-sm btn-outline-danger delete-result-btn" data-result-id="${s.result_id}" data-user-name="${escapeHtml(s.name)}">
+                    <i class="bi bi-trash"></i> ${t('t_delete')}
+                </button>` : '';
+            
+            return `
             <tr>
                 <td><input type="checkbox" class="user-checkbox" data-user-id="${s.user_id}" data-result-id="${s.result_id}"></td>
                 <td>${(currentPage-1)*20 + idx + 1}</td>
@@ -182,32 +202,38 @@
                 <td>
                     <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info">${t('t_details')}</a>
                     <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
-                    <button class="btn btn-sm btn-outline-danger delete-result-btn" data-result-id="${s.result_id}" data-user-name="${escapeHtml(s.name)}">
-                        <i class="bi bi-trash"></i> ${t('t_delete')}
-                    </button>
+                    ${deleteButtonHtml}
                 </td>
             </tr>
-        `).join('');
+            `;
+        }).join('');
 
         // 绑定删除按钮事件
         document.querySelectorAll('.delete-result-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                const resultId = btn.dataset.resultId;
-                const userName = btn.dataset.userName;
-                deleteSingleResult(resultId, userName);
+                deleteSingleResult(btn.dataset.resultId, btn.dataset.userName);
             });
         });
 
         // 全选逻辑
         const selectAll = document.getElementById('selectAll');
-        selectAll.addEventListener('change', (e) => {
-            document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
-        });
-        // 收集选中的用户ID
+        if (selectAll) {
+            // 移除旧监听器
+            const newSelectAll = selectAll.cloneNode(true);
+            selectAll.parentNode.replaceChild(newSelectAll, selectAll);
+            newSelectAll.addEventListener('change', (e) => {
+                document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
+            });
+        }
+        
+        // 更新选中状态
         document.querySelectorAll('.user-checkbox').forEach(cb => {
-            cb.addEventListener('change', updateSelected);
+            const newCb = cb.cloneNode(true);
+            cb.parentNode.replaceChild(newCb, cb);
+            newCb.addEventListener('change', updateSelected);
         });
+        
         updateSelected();
     }
 
@@ -217,7 +243,11 @@
 
     function formatDate(iso) {
         if (!iso) return '-';
-        return new Date(iso).toLocaleString();
+        try {
+            return new Date(iso).toLocaleString();
+        } catch(e) {
+            return '-';
+        }
     }
 
     function escapeHtml(str) {
@@ -232,7 +262,10 @@
 
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
-        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        if (totalPages <= 1) { 
+            pagination.innerHTML = ''; 
+            return; 
+        }
         let html = '';
         for (let i = 1; i <= totalPages; i++) {
             html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
@@ -247,6 +280,7 @@
         });
     }
 
+    // 绑定事件
     document.getElementById('searchBtn').addEventListener('click', () => {
         currentSearch = document.getElementById('searchInput').value;
         currentSubmitMethod = document.getElementById('submitMethodFilter').value;
@@ -254,21 +288,27 @@
         loadScores();
     });
 
-    // 绑定指定考生批量导出按钮
     document.getElementById('batchExportBtn').addEventListener('click', batchExportSelected);
+    
+    // 批量删除按钮（仅当元素存在时绑定）
+    const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+    if (batchDeleteBtn) {
+        batchDeleteBtn.addEventListener('click', batchDeleteSelected);
+    }
 
     async function batchExportSelected() {
         const selectedResultIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.dataset.resultId);
         if (selectedResultIds.length === 0) {
-            alert(t('select_at_least_one') || "请至少选择一个考生成绩记录");
+            alert('请至少选择一个考生成绩记录');
             return;
         }
-        const examId = {{ exam_id }};
+        
         const response = await fetch(`/api/admin/exam/batch_export_by_result`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ result_ids: selectedResultIds, exam_id: examId })
         });
+        
         if (response.ok) {
             const blob = await response.blob();
             const url = URL.createObjectURL(blob);
@@ -280,12 +320,16 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         } else {
-            alert(t('export_failed') || "导出失败");
+            alert('导出失败');
         }
-    };
+    }
+    
+    // 初始化加载
     loadScores();
+    
+    // 语言切换时重新加载
     window.addEventListener('app:languageChanged', function() {
-        if (typeof loadScores === 'function') loadScores();
+        loadScores();
     });
 </script>
 {% endblock %}

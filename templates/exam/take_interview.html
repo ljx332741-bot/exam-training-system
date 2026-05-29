@@ -66,6 +66,21 @@
     document.addEventListener('DOMContentLoaded', function() {
         refreshTranslations();
     });
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
 
     document.getElementById('submitInterviewBtn').addEventListener('click', async () => {
         const answers = {};

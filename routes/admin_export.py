@@ -252,47 +252,199 @@ def export_filtered_excel():
 @admin_export_bp.route('/admin/export_pdf_by_result/<int:result_id>')
 @login_required
 @admin_required
+
 def admin_export_pdf_by_result(result_id):
+    """通过成绩记录ID直接导出PDF（精确匹配，避免取错记录）"""
     db = get_supabase()
-    result = db.table("exam_results").select("*").eq("id", result_id).execute().data[0] if db.table("exam_results").select("*").eq("id", result_id).execute().data else None
-    if not result: return redirect(request.referrer)
-    user_data = db.table("users").select("*").eq("id", result['user_id']).execute().data[0] if db.table("users").select("*").eq("id", result['user_id']).execute().data else {}
-    exam_data = db.table("exams").select("*").eq("id", result['exam_id']).execute().data[0] if db.table("exams").select("*").eq("id", result['exam_id']).execute().data else {}
-    questions = db.table("questions").select("*").eq("exam_id", result['exam_id']).order("num").execute().data or []
-    reviewer = get_reviewer_by_country(user_data.get('country'), exam_data.get('reviewer'), request.args.get('reviewer'))
+    
+    # 获取成绩记录
+    result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
+    if not result_res.data:
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
+        return redirect(url_for('admin_dashboard'))
+    result = result_res.data[0]
+    
+    exam_id = result['exam_id']
+    user_id = result['user_id']
+    
+    # 获取考试信息
+    exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
+    if not exam_res.data:
+        #flash("考试不存在", "danger")
+        flash({'msg': 'exam_not_found', 'params': []}, 'danger')
+        return redirect(url_for('admin_dashboard'))
+    exam_data = exam_res.data[0]
+    
+    # 获取考生信息
+    user_res = db.table("users").select("*").eq("id", user_id).execute()
+    if not user_res.data:
+        #flash("考生不存在", "danger")
+        flash({'msg': 'student_not_found', 'params': []}, 'danger')
+        return redirect(url_for('admin_dashboard'))
+    user_data = user_res.data[0]
+    user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生')
+
+    # 解析 answers 和 details（递归处理双重转义）
+    def robust_parse_json(value):
+        if not value:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, str):
+                    return robust_parse_json(parsed)
+                return parsed
+            except:
+                return {}
+        return {}
+    
+    answers = robust_parse_json(result.get('answers'))
+    details = robust_parse_json(result.get('details'))
+    
+    logger.info(f"导出 result_id={result_id}, answers 键数: {len(answers)}, details 键数: {len(details)}")
+    
+    # 获取题目列表
+    questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    questions = questions_res.data or []
+    
+    # 阅卷人
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=request.args.get('reviewer')
+    )
+    
+    # 生成 PDF
     try:
-        pdf = export.generate_user_pdf(user_data.get('name_cn') or user_data.get('name_en', '未知考生'), user_data.get('email', ''), exam_data.get('title', '考试'), result.get('total_score', 0), questions, robust_parse_json(result.get('answers')), robust_parse_json(result.get('details')), result.get('created_at', ''), reviewer)
-        return send_file(pdf, mimetype="application/pdf", as_attachment=True, download_name=f"Transcript_{user_data.get('name_en', 'exam')}.pdf")
+        pdf_buffer = export.generate_user_pdf(
+            user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
+            user_email=user_data.get('email', ''),
+            exam_title=exam_data.get('title', '未命名考试'),
+            score=result.get('total_score', 0),
+            questions=questions,
+            answers=answers,
+            details=details,
+            submitted_at=result.get('created_at', ''),
+            reviewer=reviewer
+        )
     except Exception as e:
-        logger.error(f"PDF 失败: {e}"); return redirect(request.referrer)
+        logger.error(f"PDF 生成失败: {e}")
+        #flash(f"PDF 生成失败: {str(e)}", "danger")
+        flash({'msg': 'pdf_generation_error', 'params': []}, 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
+    filename = f"Transcript_{user_name}_{exam_data.get('title', 'exam')}.pdf"
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename
+    )
 
 def generate_pdf_by_result_id(result_id):
+    """根据 result_id 直接生成 PDF 字节流"""
     db = get_supabase()
-    result = db.table("exam_results").select("*").eq("id", result_id).execute().data[0]
-    user = db.table("users").select("*").eq("id", result['user_id']).execute().data[0]
-    exam = db.table("exams").select("*").eq("id", result['exam_id']).execute().data[0]
-    questions = db.table("questions").select("*").eq("exam_id", result['exam_id']).order("num").execute().data or []
-    reviewer = get_reviewer_by_country(user.get('country'), exam.get('reviewer'), None)
-    return export.generate_user_pdf(user.get('name_cn') or user.get('name_en', '未知'), user.get('email', ''), exam.get('title', ''), result.get('total_score', 0), questions, robust_parse_json(result.get('answers')), robust_parse_json(result.get('details')), result.get('created_at', ''), reviewer)
+    # 获取成绩记录
+    result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
+    if not result_res.data:
+        return None
+    result = result_res.data[0]
+    exam_id = result['exam_id']
+    user_id = result['user_id']
+
+    # 获取考试信息
+    exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
+    exam_data = exam_res.data[0] if exam_res.data else {}
+
+    # 获取考生信息
+    user_res = db.table("users").select("*").eq("id", user_id).execute()
+    user_data = user_res.data[0] if user_res.data else {}
+
+    # 递归解析 answers, details
+    def robust_parse_json(value):
+        if not value:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, str):
+                    return robust_parse_json(parsed)
+                return parsed
+            except:
+                return {}
+        return {}
+
+    answers = robust_parse_json(result.get('answers'))
+    details = robust_parse_json(result.get('details'))
+
+    # 获取题目列表
+    questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    questions = questions_res.data or []
+
+    # 阅卷人
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=None
+    )
+
+    # 生成 PDF 并返回字节数据
+    pdf_buffer = export.generate_user_pdf(
+        user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
+        user_email=user_data.get('email', ''),
+        exam_title=exam_data.get('title', '未命名考试'),
+        score=result.get('total_score', 0),
+        questions=questions,
+        answers=answers,
+        details=details,
+        submitted_at=result.get('created_at', ''),
+        reviewer=reviewer
+    )
+    return pdf_buffer.getvalue()  # 返回字节数据
 
 @admin_export_bp.route('/api/admin/exam/batch_export_by_result', methods=['POST'])
 @login_required
 @admin_required
 def admin_batch_export_by_result():
+    db = get_supabase()
     data = request.json
-    ids = data.get('result_ids', [])
-    if not ids: return jsonify({"error": "未选择"}), 400
-    buf = BytesIO()
-    with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for rid in ids:
-            try:
-                pdf = generate_pdf_by_result_id(rid)
-                if pdf:
-                    name = db.table("users").select("name_en").eq("id", db.table("exam_results").select("user_id").eq("id", rid).execute().data[0]['user_id']).execute().data[0].get('name_en', 'user')
-                    zf.writestr(f"{name}_{rid}.pdf", pdf.getvalue())
-            except: pass
-    buf.seek(0)
-    return send_file(buf, mimetype='application/zip', as_attachment=True, download_name="export.zip")
+    result_ids = data.get('result_ids', [])
+    exam_id = data.get('exam_id')
+    if not result_ids:
+        return jsonify({"error": "未选择成绩记录"}), 400
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for rid in result_ids:
+            pdf_bytes = generate_pdf_by_result_id(rid)
+            if pdf_bytes:
+                # 获取考生姓名用于文件名
+                result_res = db.table("exam_results").select("user_id").eq("id", rid).execute()
+                if result_res.data:
+                    user_id = result_res.data[0]['user_id']
+                    user_res = db.table("users").select("name_en").eq("id", user_id).execute()
+                    name = user_res.data[0].get('name_en', user_id) if user_res.data else str(user_id)
+                    filename = f"{name}_{rid}.pdf"
+                    zf.writestr(filename, pdf_bytes)
+                else:
+                    # 降级文件名
+                    zf.writestr(f"result_{rid}.pdf", pdf_bytes)
+            else:
+                logger.warning(f"无法生成 PDF，result_id={rid}")
+    zip_buffer.seek(0)
+    return send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f"exam_{exam_id}_selected_scores.zip"
+    )
 
 @admin_export_bp.route('/admin/export_pdf/<int:exam_id>/<user_id>')
 @login_required

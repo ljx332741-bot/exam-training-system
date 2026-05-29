@@ -368,9 +368,9 @@
           <td class="q-num">{{ q.num }}</td>
           <td>
             <select class="form-select form-select-sm q-type" {% if not can_edit_questions or exam_status == 'closed' %}disabled{% endif %}>
-              <option value="single" {% if q.type=='single' %}selected{% endif %}><span data-i18n="single">单选</span></option>
-              <option value="multi" {% if q.type=='multi' %}selected{% endif %}><span data-i18n="multi">多选</span></option>
-              <option value="judge" {% if q.type=='judge' %}selected{% endif %}><span data-i18n="judge">判断</span></option>
+              <option value="single" {% if q.type=='single' %}selected{% endif %} data-i18n="single">单选</option>
+              <option value="multi" {% if q.type=='multi' %}selected{% endif %} data-i18n="multi">多选</option>
+              <option value="judge" {% if q.type=='judge' %}selected{% endif %} data-i18n="judge">判断</option>
             </select>
           </td>
           <td><textarea class="form-control form-control-sm q-content" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}>{{ q.content }}</textarea></td>
@@ -654,9 +654,9 @@
       <td class="q-num"></td>
       <td>
         <select class="form-select form-select-sm q-type">
-          <option value="single" selected>单选</option>
-          <option value="multi">多选</option>
-          <option value="judge">判断</option>
+          <option value="single" selected data-i18n="single">单选</option>
+          <option value="multi" data-i18n="multi">多选</option>
+          <option value="judge" data-i18n="judge">判断</option>
         </select>
       </td>
       <td><textarea class="form-control form-control-sm q-content"></textarea></td>

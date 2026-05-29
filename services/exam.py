@@ -63,7 +63,7 @@ def _post_process(questions: list[dict], exam_id: int = 1) -> list[dict]:
 
 def _parse_inline_options_zte(text: str, q: dict):
     """
-    解析 ZTE 格式的同行选项
+    解析同行选项
     示例：A、Roscoe C. Howard, Jr.   B、Koh Sow Koon   C、黄智敏   D、颜伟
     """
     import re

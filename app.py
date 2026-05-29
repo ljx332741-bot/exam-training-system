@@ -9,12 +9,13 @@ import re
 import string
 from routes import register_blueprints
 from datetime import datetime, timezone, date
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, session, make_response
 from services.db import get_supabase
 from services import auth, exam, export
 from services.auth import hash_password
 from config import Config
 from services.scheduler import init_scheduler
+from utils.i18n_messages import I18nMessages
 
 # 1. 日志配置
 logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s', handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')])
@@ -27,6 +28,15 @@ app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
 app.debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+
+@app.context_processor
+def inject_translation():
+    """注入翻译函数到所有模板"""
+    def t(key, **params):
+        """服务端翻译函数"""
+        lang = session.get('lang', 'zh')
+        return I18nMessages.get_message(key, lang, **params)
+    return dict(t=t)
 
 @app.route('/debug/routes')
 def debug_routes():

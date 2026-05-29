@@ -516,7 +516,7 @@
   "js_exam_delete_tip": "⚠️确定删除该考试及所有题目？此操作不可恢复！",
   "no_exam_datas": "暂无考试数据",
   "view_status": "考生考试状态（选择考试查看）",
-  "select_exam": "选择考试",
+  "select_exam": "-- 选择考试 --",
   "js_sign_in_enabled": "已开启：允许签到",
   "js_sign_in_disabled": "已关闭：禁止签到",
   "js_saving": "保存中...",
