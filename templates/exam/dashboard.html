@@ -411,31 +411,67 @@
             const res = await fetch('/api/my/interviews');
             const interviews = await res.json();
             const container = document.getElementById('interviewCards');
+            
+            console.log('访谈列表:', interviews);  // 调试日志
+            
             if (!interviews.length) {
                 container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('t_no_active_interview_now') + '</div>';
                 return;
             }
+            
             container.innerHTML = '';
+            
             interviews.forEach(inv => {
                 const col = document.createElement('div');
                 col.className = 'col-md-6 col-lg-4';
                 const card = document.createElement('div');
                 card.className = 'card h-100 shadow-sm';
-                // 修改 card.innerHTML 部分
-                const isCompleted = inv.is_completed;
-                const statusClass = isCompleted ? 'success' : 'primary';
-                const btnClass = isCompleted ? 'btn-secondary' : 'btn-gradient';
-                const btnText = isCompleted ? safeT('js_completed') : safeT('js_start_interview');
-                const progressPercent = isCompleted ? 100 : 0; // 可扩展实际答题进度
-
+                
+                // ✅ 根据访谈状态确定样式
+                const isFuture = inv.is_future === true;
+                const isActive = inv.is_active === true;
+                const isCompleted = inv.is_completed === true;
+                
+                let statusBarClass = '';
+                let statusBadge = '';
+                let btnHtml = '';
+                let progressPercent = 0;
+                let progressText = '';
+                
+                if (isCompleted) {
+                    // ✅ 已完成 - 显示"已完成"，禁用按钮
+                    statusBarClass = 'success';
+                    statusBadge = '<span class="badge bg-success ms-2">' + safeT('js_completed') + '</span>';
+                    btnHtml = `<button class="btn btn-secondary btn-sm w-100" disabled>${safeT('js_completed')}</button>`;
+                    progressPercent = 100;
+                    progressText = '✅ ' + safeT('js_completed');
+                } else if (isFuture) {
+                    // 未开始
+                    statusBarClass = 'secondary';
+                    statusBadge = '<span class="badge bg-secondary ms-2">' + safeT('t_not_started') + '</span>';
+                    btnHtml = `<button class="btn btn-secondary btn-sm w-100" disabled>${safeT('t_not_started')}</button>`;
+                    progressPercent = 0;
+                    progressText = '📋 ' + safeT('js_in_progress');
+                } else if (isActive) {
+                    // 进行中
+                    statusBarClass = 'primary';
+                    statusBadge = '<span class="badge bg-success ms-2">' + safeT('t_on_going') + '</span>';
+                    btnHtml = `<a href="/interview/take/${inv.id}" class="btn btn-gradient btn-sm w-100">${safeT('js_start_interview')}</a>`;
+                    progressPercent = 0;
+                    progressText = '📋 ' + safeT('js_in_progress');
+                } else {
+                    return;
+                }
+                
                 card.innerHTML = `
                     <div class="card-dashboard interview-card position-relative">
-                        <div class="card-status-bar ${statusClass}"></div>
+                        <div class="card-status-bar ${statusBarClass}"></div>
                         <div class="card-body">
                             <div class="card-title">
                                 <i class="bi bi-chat-dots-fill text-info"></i>
                                 ${escapeHtml(inv.title)}
                                 <span class="question-count">${inv.question_count || '?'} ${safeT('t_question')}</span>
+                                ${statusBadge}
                             </div>
                             <div class="card-meta">
                                 <div class="date-range">
@@ -444,18 +480,16 @@
                                 </div>
                             </div>
                             <div class="progress-indicator">
-                                <span>${isCompleted ? '✅' : '📋'} ${isCompleted ? safeT('js_completed') : safeT('js_in_progress')}</span>
+                                <span>${progressText}</span>
                                 <div class="progress-bar-custom"><div style="width: ${progressPercent}%;"></div></div>
                             </div>
                             <div class="mt-2">
-                                <a href="${isCompleted ? '#' : '/interview/take/' + inv.id}" 
-                                  class="btn ${btnClass} btn-sm w-100 ${isCompleted ? 'disabled' : ''}"
-                                  ${isCompleted ? 'disabled' : ''}>${btnText}</a>
+                                ${btnHtml}
                             </div>
                         </div>
                     </div>
                 `;
-
+                
                 col.appendChild(card);
                 container.appendChild(col);
             });
@@ -464,6 +498,21 @@
         }
     }
 
+    // 监听访谈提交完成事件（从 iframe 或弹窗触发）
+    window.addEventListener('interviewSubmitted', function() {
+        console.log('访谈已提交，刷新列表');
+        loadMyInterviews();
+    });
+
+    // 如果希望更可靠，也可以在页面显示时重新加载（当从访谈页面返回时）
+    window.addEventListener('pageshow', function(event) {
+        // 如果是通过后退按钮返回，刷新访谈列表
+        if (event.persisted || performance.getEntriesByType('navigation')[0].type === 'back_forward') {
+            loadMyInterviews();
+        }
+    });
+
+    
     function escapeHtml(str) {
         if(!str) return '';
         return str.replace(/[&<>]/g, function(m) {

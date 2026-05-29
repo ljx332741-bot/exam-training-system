@@ -327,17 +327,70 @@ def exam_export_pdf(result_id):
 @exam_bp.route('/api/my/interviews')
 @login_required
 def my_interviews():
-    db = get_supabase()
+    """获取学员的访谈列表（未开始/进行中）"""
     user_id = session['user_id']
-    res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
-    ids = list(set(r['interview_id'] for r in res.data or []))
-    if not ids: return jsonify([])
-    inv_res = db.table("interviews").select("*").in_("id", ids).execute()
+    db = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
-    active = []
-    for inv in inv_res.data or []:
-        if inv.get('start_time') and inv.get('end_time') and inv['start_time'] < now < inv['end_time']:
-            answers = db.table("interview_results").select("answer").eq("interview_id", inv['id']).eq("user_id", user_id).execute()
-            inv['is_completed'] = all(row.get('answer') for row in answers.data or [])
-            active.append(inv)
-    return jsonify(active)
+
+    print(f"=== 调试 my_interviews ===")
+    print(f"用户ID: {user_id}")
+    print(f"当前时间(UTC): {now}")
+    
+    # 获取用户所有访谈记录
+    res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
+    interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
+
+    print(f"用户参与的访谈ID: {interview_ids}")
+
+    if not interview_ids:
+        return jsonify([])
+    
+    # 获取访谈信息
+    inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
+    
+    result = []
+    for inv in (inv_res.data or []):
+        start_time = inv.get('start_time')
+        end_time = inv.get('end_time')
+
+        print(f"访谈: {inv.get('title')}, start={start_time}, end={end_time}")
+
+        # 跳过没有有效期的访谈
+        if not start_time or not end_time:
+            print(f"  跳过: 没有有效期")
+            continue
+        
+        # 判断状态
+        is_future = now < start_time
+        is_active = start_time <= now <= end_time
+        is_expired = now > end_time
+        
+        print(f"  is_future={is_future}, is_active={is_active}, is_expired={is_expired}")
+
+        # 已过期的不显示
+        if is_expired:
+            print(f"  跳过: 已过期")
+            continue
+        
+        # 检查是否已完成（所有题目都已作答）
+        answers = db.table("interview_results").select("answer").eq("interview_id", inv['id']).eq("user_id", user_id).is_("deleted_at", "null").execute()
+        is_completed = all(row.get('answer') for row in (answers.data or []))
+        
+        print(f"  is_completed={is_completed}")
+
+        result.append({
+            "id": inv['id'],
+            "title": inv.get('title', ''),
+            "start_time": start_time,
+            "end_time": end_time,
+            "question_count": inv.get('question_count', 0),
+            "is_future": is_future,
+            "is_active": is_active,
+            "is_completed": is_completed
+        })
+    
+    print(f"返回结果数量: {len(result)}")
+    for r in result:
+        print(f"  - {r['title']}: is_future={r['is_future']}, is_active={r['is_active']}")
+
+    return jsonify(result)

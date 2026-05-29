@@ -45,6 +45,7 @@
                             <th><input type="checkbox" id="selectAll"></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="name_en">姓名</span></th>
+                            <th><span data-i18n="email">邮箱</span></th>
                             <th><span data-i18n="wh_id">库房编码</span></th>
                             <th><span data-i18n="check_at">检查时间</span></th>
                             <th><span data-i18n="ask_qty">访谈问题数量</span></th>
@@ -122,6 +123,7 @@
                 <td><input type="checkbox" class="interview-checkbox" data-user-id="${r.user_id}"></td>
                 <td>${escapeHtml(r.country || '-')}</td>
                 <td>${escapeHtml(r.name)}</td>
+                <td>${escapeHtml(r.email)}</td>
                 <td>${escapeHtml(r.wh_id || '-')}</td>
                 <td>${r.submitted_at ? new Date(r.submitted_at).toLocaleString() : '-'}</td>
                 <td>${r.total_questions}</td>
