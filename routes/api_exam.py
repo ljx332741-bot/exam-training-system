@@ -327,57 +327,76 @@ def exam_export_pdf(result_id):
 @exam_bp.route('/api/my/interviews')
 @login_required
 def my_interviews():
-    """获取学员的访谈列表（未开始/进行中）"""
+    """获取学员的访谈列表（检查考试完成状态）"""
     user_id = session['user_id']
     db = get_supabase()
     now = datetime.now(timezone.utc).isoformat()
 
     print(f"=== 调试 my_interviews ===")
     print(f"用户ID: {user_id}")
-    print(f"当前时间(UTC): {now}")
     
     # 获取用户所有访谈记录
     res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
     interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
+    
 
-    print(f"用户参与的访谈ID: {interview_ids}")
+    print(f"访谈ID列表: {interview_ids}")
 
     if not interview_ids:
         return jsonify([])
     
-    # 获取访谈信息
+    # 获取访谈信息（同时关联考试信息）
     inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
     
     result = []
     for inv in (inv_res.data or []):
         start_time = inv.get('start_time')
         end_time = inv.get('end_time')
+        exam_id = inv.get('exam_id')
 
-        print(f"访谈: {inv.get('title')}, start={start_time}, end={end_time}")
-
-        # 跳过没有有效期的访谈
+        print(f"\n--- 处理访谈: {inv.get('title')} (ID: {inv.get('id')}) ---")
+        print(f"  关联考试ID: {exam_id}")
+        print(f"  有效期: {start_time} -> {end_time}")
+        
         if not start_time or not end_time:
             print(f"  跳过: 没有有效期")
             continue
         
-        # 判断状态
         is_future = now < start_time
         is_active = start_time <= now <= end_time
         is_expired = now > end_time
         
-        print(f"  is_future={is_future}, is_active={is_active}, is_expired={is_expired}")
+        print(f"  状态: future={is_future}, active={is_active}, expired={is_expired}")
 
-        # 已过期的不显示
         if is_expired:
             print(f"  跳过: 已过期")
             continue
         
-        # 检查是否已完成（所有题目都已作答）
+        # ✅ 1. 检查是否已完成访谈
         answers = db.table("interview_results").select("answer").eq("interview_id", inv['id']).eq("user_id", user_id).is_("deleted_at", "null").execute()
         is_completed = all(row.get('answer') for row in (answers.data or []))
         
-        print(f"  is_completed={is_completed}")
-
+        print(f"  访谈完成: {is_completed}, 答题数量: {len(answers.data or [])}")
+        
+        # ✅ 2. 检查关联考试是否已完成
+        exam_completed = False
+        exam_total_score = 0
+        if exam_id:
+            print(f"  查询考试结果: exam_id={exam_id}, user_id={user_id}")
+            exam_result = db.table("exam_results").select("total_score").eq("exam_id", exam_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+            print(f"  考试结果数量: {len(exam_result.data or [])}")
+            if exam_result.data:
+                for r in exam_result.data:
+                    print(f"    记录: total_score={r.get('total_score')}, deleted_at={r.get('deleted_at')}")
+                    if r.get('deleted_at') is None:
+                        exam_completed = True
+                        exam_total_score = r.get('total_score', 0)
+                        print(f"    有效考试结果: score={exam_total_score}")
+                        break
+            else:
+                print(f"  未找到考试结果")
+        
+        
         result.append({
             "id": inv['id'],
             "title": inv.get('title', ''),
@@ -386,11 +405,9 @@ def my_interviews():
             "question_count": inv.get('question_count', 0),
             "is_future": is_future,
             "is_active": is_active,
-            "is_completed": is_completed
+            "is_completed": is_completed,
+            "exam_completed": exam_completed,      # ✅ 新增：考试是否完成
+            "exam_total_score": exam_total_score   # ✅ 新增：考试成绩
         })
     
-    print(f"返回结果数量: {len(result)}")
-    for r in result:
-        print(f"  - {r['title']}: is_future={r['is_future']}, is_active={r['is_active']}")
-
     return jsonify(result)
