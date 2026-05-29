@@ -706,5 +706,11 @@
     "country_wh_mismatch": "Row {row}: Country({country}) mismatch with warehouse ID({wh_id})",
     "country_not_allowed": "Row {row}: Country {country} not in your permission scope",
     "admin_countries_required": "Row {row}: {role} role requires permission scope",
-    "admin_countries_invalid": "Row {row}: Permission scope contains unauthorized countries: {countries}"
+    "admin_countries_invalid": "Row {row}: Permission scope contains unauthorized countries: {countries}",
+        "t_exam_required": "Exam Required",
+    "t_complete_exam_first": "Please complete the associated exam first",
+    "t_waiting_for_exam": "Waiting for exam completion",
+    "t_exam_score": "Exam Score",
+    "t_points": "points",
+    "t_exam_not_completed": "Exam not completed yet"
 }
