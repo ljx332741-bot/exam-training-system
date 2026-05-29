@@ -1,8 +1,10 @@
 # routes/helpers.py - 精简版，只保留装饰器和业务辅助函数
 import os
 import json
+import re
 import random
 import logging
+from dateutil import parser
 from datetime import datetime, timezone
 from functools import wraps
 from flask import session, redirect, url_for, flash
@@ -161,23 +163,24 @@ def local_to_utc(local_time_str, local_tz=None):
     utc_dt = local_dt_aware.astimezone(timezone.utc)
     return utc_dt.isoformat()
 
-
 def safe_parse_datetime(time_str):
-    """安全解析时间字符串，返回带时区的 datetime 对象"""
+    """兼容 datetime.fromisoformat 的安全版本，自动处理格式异常"""
     if not time_str:
         return None
-    if time_str.endswith('Z'):
-        time_str = time_str.replace('Z', '+00:00')
     try:
-        dt = datetime.fromisoformat(time_str)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
-    except Exception as e:
-        logger.error(f"解析时间失败: {time_str}, {e}")
-        return None
-
-
+        # 优先使用标准方法（性能更好）
+        return datetime.fromisoformat(time_str)
+    except (ValueError, TypeError):
+        try:
+            # 降级使用 dateutil（更宽容）
+            dt = parser.isoparse(str(time_str))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception as e:
+            logger.error(f"解析时间失败: {time_str}, {e}")
+            return None
+            
 # ================= 考试国家辅助函数 =================
 def parse_exam_countries(exam):
     """解析考试的国家列表，支持新旧格式"""

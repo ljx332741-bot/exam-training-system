@@ -68,21 +68,7 @@ def get_quarter_from_date(date_iso):
 # 阅卷人配置文件路径（项目根目录）
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REVIEWER_CONFIG_FILE = os.path.join(PROJECT_ROOT, 'reviewers.json')
-'''
-def load_reviewers_config():
-    """
-    加载阅卷人配置文件
-    返回: dict 格式如 {"default": "管理员", "NP": "Birendra", ...}
-    """
-    if os.path.exists(REVIEWER_CONFIG_FILE):
-        try:
-            with open(REVIEWER_CONFIG_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"加载阅卷人配置文件失败: {e}")
-            return {}
-    return {}
-'''
+
 def load_reviewers_config():
     """加载阅卷人配置文件"""
     if os.path.exists(REVIEWER_CONFIG_FILE):

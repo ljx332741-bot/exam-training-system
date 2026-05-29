@@ -1,57 +1,20 @@
 # routes/api_exam.py
 import logging
 import json
-from datetime import datetime, timezone
 from . import exam_bp
-from services.db import get_supabase
-from services import exam, export
-from utils.status import get_exam_status
-from routes.helpers import login_required
 import os
-import uuid
-import sys
-import traceback
-import atexit
-import zipfile
-import pytz
-import pdfkit
-import openpyxl
-import random
-import base64, re
-import secrets, string
-from datetime import datetime, timezone, timedelta, date
+import re
 from dateutil import parser
-from apscheduler.schedulers.background import BackgroundScheduler
-from io import BytesIO
+from datetime import datetime, timezone, date
 from flask import (
     Flask, render_template, request, redirect, url_for, 
-    session, flash, jsonify, send_file, make_response
+    session, flash, jsonify, send_file
 )
-from routes.helpers import login_required, admin_required, robust_parse_json
-from supabase import create_client
-from functools import wraps
+from routes.helpers import login_required, admin_required, robust_parse_json, get_default_reviewer_by_country, safe_parse_datetime
 from services.db import get_supabase
 from services import auth, exam, export
-from services.export import find_wkhtmltopdf
-from services.auth import hash_password
-from config import Config
 from utils.status import get_exam_status
-from utils.common import (
-    match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display,
-    format_countries_display,  # ✅ 新增
-    format_single_country_display  # ✅ 新增（可选）
-)
-from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time, _send_training_notifications
-from utils.permissions import (
-    is_developer, get_developer_id, has_role, can_manage_role,
-    can_view_user, get_admin_allowed_countries, set_admin_allowed_countries,
-    parse_countries_input, developer_required, super_admin_required,
-    apply_country_filter
-)
-from utils.training_helpers import get_training_country_templates_status
-from dotenv import load_dotenv
-from routes import register_blueprints
-from services.scheduler import init_scheduler
+
 logger = logging.getLogger(__name__)
 
 @exam_bp.route('/dashboard')
@@ -151,178 +114,466 @@ def dashboard():
 @exam_bp.route('/exam/take/<int:exam_id>')
 @login_required
 def take_exam(exam_id):
-    db = get_supabase()
-    user_id = session['user_id']
-    now = datetime.now(timezone.utc)
     try:
+        db = get_supabase()
+        user_id = session['user_id']
+        now = datetime.now(timezone.utc)
+
+        # 1. 获取考试基本信息（有效期和时长）
         exam_info = db.table("exams").select("start_time, end_time, duration").eq("id", exam_id).maybe_single().execute()
-        if not exam_info.data: flash("考试不存在", "danger"); return redirect(url_for('exam.dashboard'))
+        if not exam_info.data:
+            flash("考试不存在", "danger")
+            return redirect(url_for('dashboard'))
+        
         exam = exam_info.data
-        if exam.get('end_time') and now > datetime.fromisoformat(exam['end_time']): flash({'msg': 'exam_ended'}, 'warning'); return redirect(url_for('exam.dashboard'))
-        if exam.get('start_time') and now < datetime.fromisoformat(exam['start_time']): flash({'msg': 'exam_not_started'}, 'warning'); return redirect(url_for('exam.dashboard'))
-        
-        status = db.table("user_exam_status").select("*").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-        if status and status.data and status.data.get("is_submitted"): flash("已完成本场考试", "warning"); return redirect(url_for('exam.dashboard'))
-        
+        start_time = exam.get('start_time')
+        end_time = exam.get('end_time')
         duration_minutes = exam.get('duration', 60)
-        total_seconds = duration_minutes * 60
-        started_at = None; reset_timer = False; reset_token = ''
+
+        # 2. 检查考试是否已结束（带异常处理
+        if end_time:
+            try:
+                end_dt = safe_parse_datetime(end_time)
+                if end_dt and now > end_dt:
+                    flash({'msg': 'exam_ended', 'params': []}, 'warning')
+                    return redirect(url_for('dashboard'))
+            except ValueError as e:
+                logger.warning(f"解析 end_time 失败: {e}, 原始值: {end_time}")
+                # 解析失败时允许进入，避免误拦截
+
+        # ✅ 3. 检查考试是否未开始（带异常处理）
+        if start_time:
+            try:
+                start_dt = safe_parse_datetime(start_time)
+                if start_dt and now < start_dt:
+                    flash({'msg': 'exam_not_started', 'params': []}, 'warning')
+                    return redirect(url_for('dashboard'))
+            except ValueError as e:
+                logger.warning(f"解析 start_time 失败: {e}, 原始值: {start_time}")
+                # 解析失败时允许进入，避免误拦截
+
+        # 4. 检查是否已交卷
+        status = db.table("user_exam_status").select("*").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
+        if status and status.data and status.data.get("is_submitted"):
+            flash("您已完成本场考试，无法再次进入。", "warning")
+            return redirect(url_for('dashboard'))
         
+        total_seconds = duration_minutes * 60
+        
+        # 5. 处理开始时间和重置标志
+        started_at = None
+        reset_timer = False
+        reset_token = ''
+
         if status and status.data:
             started_at = status.data.get("started_at")
+            submitted_at = status.data.get("submitted_at")
             reset_at = status.data.get("reset_at")
-            if reset_at and (not status.data.get("submitted_at") or reset_at > status.data.get("submitted_at")):
-                reset_timer = True; reset_token = reset_at
-            else: reset_token = ''
+            
+            if reset_at and (not submitted_at or reset_at > submitted_at):
+                reset_timer = True
+                reset_token = reset_at
+            else:
+                reset_token = ''
+            
             if not started_at or reset_timer:
                 started_at = now.isoformat()
-                db.table("user_exam_status").update({"started_at": started_at, "reset_at": None}).eq("user_id", user_id).eq("exam_id", exam_id).execute()
+                db.table("user_exam_status").update({
+                    "started_at": started_at,
+                    "reset_at": None
+                }).eq("user_id", user_id).eq("exam_id", exam_id).execute()
         else:
             started_at = now.isoformat()
-            db.table("user_exam_status").insert({"user_id": user_id, "exam_id": exam_id, "started_at": started_at, "is_submitted": False}).execute()
+            db.table("user_exam_status").insert({
+                "user_id": user_id,
+                "exam_id": exam_id,
+                "started_at": started_at,
+                "is_submitted": False
+            }).execute()
         
-        remaining = total_seconds
+        # ✅ 6. 剩余时间计算（带异常处理）
         if started_at:
             try:
-                elapsed = (now - datetime.fromisoformat(started_at)).total_seconds()
-                remaining = max(0, total_seconds - int(elapsed))
-            except: pass
+                start_dt = safe_parse_datetime(started_at)
+                if start_dt:
+                    elapsed = (now - start_dt).total_seconds()
+                else:
+                    elapsed = 0
+            except Exception as e:
+                logger.warning(f"解析 started_at 失败: {e}, 原始值: {started_at}")
+                elapsed = 0
+            remaining = max(0, total_seconds - int(elapsed))
+        else:
+            remaining = total_seconds
         
+        # 7. 超时处理
         if remaining <= 0:
-            # 自动提交逻辑简化，复用 submit_exam 逻辑或保留原样
             if not (status and status.data and status.data.get("is_submitted")):
+                logger.info(f"⏰ 考试 {exam_id} 用户 {user_id} 超时，自动提交")
                 try:
+                    # 尝试从草稿表获取答案
                     draft = db.table("user_exam_drafts").select("answers").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
                     answers = {}
                     if draft and draft.data:
                         raw = draft.data.get('answers')
-                        try: answers = json.loads(raw) if isinstance(raw, str) else raw
-                        except: pass
+                        try:
+                            answers = json.loads(raw) if isinstance(raw, str) else raw
+                        except:
+                            answers = {}
+                    
                     grade = exam.auto_grade(answers, exam_id)
-                    exam.save_result(user_id, exam_id, answers, grade['total'], grade['details'], {})
+                    customs = {}
+                    exam.save_result(user_id, exam_id, answers, grade['total'], grade['details'], customs)
+                    
                     existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-                    update_data = {"is_submitted": True, "submitted_at": now.isoformat(), "reset_at": None}
-                    if existing and existing.data: db.table("user_exam_status").update(update_data).eq("id", existing.data['id']).execute()
-                    else: update_data.update({"user_id": user_id, "exam_id": exam_id, "started_at": started_at}); db.table("user_exam_status").insert(update_data).execute()
-                    db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-                    flash({'msg': 'flash_time_expired_exam_automatically'}, "info")
-                except: flash({'msg': 'flash_time_expired_exam_automatic_failed'}, "danger")
-            return redirect(url_for('exam.dashboard'))
+                    update_data = {
+                        "is_submitted": True,
+                        "submitted_at": datetime.now(timezone.utc).isoformat(),
+                        "reset_at": None
+                    }
+                    if existing and existing.data:
+                        db.table("user_exam_status").update(update_data).eq("id", existing.data['id']).execute()
+                    else:
+                        update_data.update({"user_id": user_id, "exam_id": exam_id, "started_at": started_at})
+                        db.table("user_exam_status").insert(update_data).execute()
+                    
+                    logger.info(f"✅ 超时自动提交完成，得分 {grade['total']}")
+                    flash({'msg': 'flash_time_expired_exam_automatically', 'params': []}, "info")
+                except Exception as e:
+                    logger.error(f"❌ 超时自动提交失败: {e}")
+                    flash({'msg': 'flash_time_expired_exam_automatic_failed', 'params': []}, "danger")
+            else:
+                flash({'msg': 'flash_completed_exam_cannot_reenter', 'params': []}, "warning")
+            return redirect(url_for('dashboard'))
 
+        # 8. 查询题目
         qs = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
         questions = qs.data or []
         for q in questions:
             if isinstance(q.get('options'), str):
-                try: q['options'] = json.loads(q['options'])
-                except: q['options'] = {}
-        user_info = db.table("users").select("name_en, email").eq("id", user_id).single().execute().data
+                try:
+                    q['options'] = json.loads(q['options'])
+                except:
+                    q['options'] = {}
+        
+        # 9. 获取用户信息
+        user_info_res = db.table("users").select("name_en, email").eq("id", user_id).single().execute()
+        user_info = user_info_res.data
         user_display_name = f"{user_info.get('name_en', '')} ({session.get('user_email', '')})" if user_info.get('name_en') else session.get('user_email', 'User')
-        return render_template('exam/take.html', exam_id=exam_id, questions=questions, duration_minutes=duration_minutes, server_remaining_seconds=remaining, reset_timer=reset_timer, reset_token=reset_token, user_id=user_id, user_display_name=user_display_name)
+
+        logger.info(f"考试 {exam_id} 用户 {user_id} 进入，剩余 {remaining} 秒")
+        return render_template(
+            'exam/take.html',
+            exam_id=exam_id,
+            questions=questions,
+            duration_minutes=duration_minutes,
+            server_remaining_seconds=remaining,
+            reset_timer=reset_timer,
+            reset_token=reset_token,
+            user_id=session['user_id'],
+            user_display_name=user_display_name
+        )
     except Exception as e:
-        logger.error(f"take_exam 异常: {e}")
-        flash({'msg': 'flash_loading_failed_try_later'}, "danger")
-        return redirect(url_for('exam.dashboard'))
+        logger.error(f"take_exam 发生异常: {e}", exc_info=True)
+        flash({'msg': 'flash_loading_failed_try_later', 'params': []}, "danger")
+        return redirect(url_for('dashboard'))
 
 @exam_bp.route('/api/exam/draft', methods=['POST'])
 @login_required
 def save_exam_draft():
-    db = get_supabase()
-    data = request.get_json()
-    if not data: return jsonify({"success": False, "message": "无效请求"}), 400
-    exam_id = data.get('exam_id'); answers = data.get('answers', {})
-    if not exam_id: return jsonify({"success": False, "message": "缺少考试ID"}), 400
-    user_id = session.get('user_id')
-    if not user_id: return jsonify({"success": False, "message": "未登录"}), 401
-    answers_json = json.dumps(answers) if isinstance(answers, dict) else json.dumps({})
-    existing = db.table("user_exam_drafts").select("id").eq("user_id", user_id).eq("exam_id", int(exam_id)).maybe_single().execute()
-    now = datetime.utcnow().isoformat()
-    if existing and hasattr(existing, 'data') and existing.data:
-        db.table("user_exam_drafts").update({"answers": answers_json, "updated_at": now}).eq("id", existing.data['id']).execute()
-    else:
-        db.table("user_exam_drafts").insert({"user_id": user_id, "exam_id": int(exam_id), "answers": answers_json, "updated_at": now}).execute()
-    return jsonify({"success": True})
+    """保存考试草稿（答案）"""
+    try:
+        db = get_supabase()
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "message": "无效的请求数据"}), 400
+
+        exam_id = data.get('exam_id')
+        answers = data.get('answers', {})
+        if not exam_id:
+            return jsonify({"success": False, "message": "缺少考试ID"}), 400
+
+        user_id = session['user_id']
+        if not user_id:
+            return jsonify({"success": False, "message": "未登录"}), 401
+
+        # 转为 JSON 字符串存入数据库
+        answers_json = json.dumps(answers) if isinstance(answers, dict) else json.dumps({})
+        
+        # 检查是否已存在草稿记录
+        try:
+            existing = db.table("user_exam_drafts").select("id").eq("user_id", user_id).eq("exam_id", int(exam_id)).maybe_single().execute()
+        except Exception as e:
+            logger.warning(f"草稿查询失败，假定不存在: {e}")
+            existing = None
+
+        now = datetime.utcnow().isoformat()
+
+        # 判断是否存在有效数据
+        if existing and hasattr(existing, 'data') and existing.data:
+            # 更新现有记录
+            db.table("user_exam_drafts").update({
+                    "answers": answers_json,
+                    "updated_at": now}).eq("id", existing.data['id']).execute()
+            logger.info(f"✏️ 草稿已更新：用户 {user_id}，考试 {exam_id}")
+        else:
+            # 插入新记录
+            db.table("user_exam_drafts").insert({
+                    "user_id": user_id,
+                    "exam_id": int(exam_id),
+                    "answers": answers_json,
+                    "updated_at": now}).execute()
+            logger.info(f"✅ 草稿已创建：用户 {user_id}，考试 {exam_id}")
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"❌ 保存草稿失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @exam_bp.route('/exam/submit/<int:exam_id>', methods=['POST'])
 @login_required
 def submit_exam(exam_id):
     db = get_supabase()
     user_id = session['user_id']
-    # 超时检查
+    logger.info(f"📥 收到交卷请求：用户 {user_id}，考试 {exam_id}")
+
+    # 超时检查（使用安全解析）
     exam_info = db.table("exams").select("duration").eq("id", exam_id).maybe_single().execute()
     duration_minutes = exam_info.data.get("duration", 60) if exam_info.data else 60
+    total_seconds = duration_minutes * 60
+    now = datetime.now(timezone.utc)
+
     status = db.table("user_exam_status").select("started_at").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
+    
+    # ✅ 使用 safe_parse_datetime 替代 datetime.fromisoformat
     if status.data and status.data.get("started_at"):
-        start_dt = datetime.fromisoformat(status.data['started_at'])
-        if (datetime.now(timezone.utc) - start_dt).total_seconds() > duration_minutes * 60:
-            flash({'msg': 'exam_timeout'}, 'danger'); return redirect(url_for('exam.dashboard'))
-    # 重复提交检查
+        start_dt = safe_parse_datetime(status.data['started_at'])
+        if start_dt:
+            elapsed = (now - start_dt).total_seconds()
+            if elapsed > total_seconds:
+                flash({'msg': 'exam_timeout', 'params': []}, 'danger')
+                return redirect(url_for('dashboard'))
+
+    # 检查是否已交卷
     try:
         existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-        if existing.data and existing.data.get("is_submitted"): flash({'msg': 'already_submitted'}, 'warning'); return redirect(url_for('exam.dashboard'))
-    except: pass
+        if existing.data and existing.data.get("is_submitted"):
+            flash({'msg': 'already_submitted', 'params': []}, 'warning')
+            return redirect(url_for('dashboard'))
+    except Exception as e:
+        logger.warning(f"状态检查失败: {e}")
 
+    # 解析答案
     answers = {}
     for key, values in request.form.to_dict(flat=False).items():
         if key.startswith('q_'):
-            answers[key] = values[0] if len(values) == 1 else ''.join(sorted(values))
-    try: grade = exam.auto_grade(answers, exam_id)
-    except Exception as e: logger.error(f"评分失败: {e}"); flash({'msg': 'grading_error'}, 'danger'); return redirect(url_for('exam.dashboard'))
+            if len(values) == 1:
+                answers[key] = values[0]
+            else:
+                answers[key] = ''.join(sorted(values))
+    
+    logger.info(f"📥 考生提交答案：{answers}")
 
-    customs = {f"c{i}": request.form.get(f"custom{i}", "") for i in range(1, 6)}
-    exam.save_result(user_id, exam_id, answers, grade['total'], grade['details'], customs)
-    # 备份答案
+    # 评分
     try:
-        draft_res = db.table("user_exam_drafts").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-        if draft_res and draft_res.data: db.table("user_exam_drafts").update({"answers": json.dumps(answers)}).eq("id", draft_res.data['id']).execute()
-        else: db.table("user_exam_drafts").insert({"user_id": user_id, "exam_id": exam_id, "answers": json.dumps(answers)}).execute()
-    except: pass
+        grade = exam.auto_grade(answers, exam_id)
+        logger.info(f"📊 评分结果：总分={grade['total']}，详情={grade['details']}")
+    except Exception as e:
+        logger.error(f"❌ 评分失败: {e}")
+        flash({'msg': 'grading_error', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
 
-    update_data = {"is_submitted": True, "submitted_at": datetime.now().isoformat(), "reset_at": None}
-    existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-    if existing.data: db.table("user_exam_status").update(update_data).eq("id", existing.data['id']).execute()
-    else: update_data.update({"user_id": user_id, "exam_id": exam_id}); db.table("user_exam_status").insert(update_data).execute()
+    # 保存成绩
+    customs = {f"c{i}": request.form.get(f"custom{i}", "") for i in range(1, 6)}
+    try:
+        exam.save_result(user_id, exam_id, answers, grade['total'], grade['details'], customs)
+        logger.info(f"💾 成绩保存成功")
+        
+        # 备份答案到草稿表
+        try:
+            answers_json = json.dumps(answers)
+            draft_res = db.table("user_exam_drafts").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
+            if draft_res and draft_res.data:
+                db.table("user_exam_drafts").update({"answers": answers_json}).eq("id", draft_res.data['id']).execute()
+            else:
+                db.table("user_exam_drafts").insert({"user_id": user_id, "exam_id": exam_id, "answers": answers_json}).execute()
+            logger.info("✅ 答案已备份到草稿表")
+        except Exception as e:
+            logger.warning(f"备份草稿失败: {e}")
+    except Exception as e:
+        logger.error(f"❌ 成绩保存失败: {e}")
+        flash({'msg': 'save_score_failed', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
+
+    # 标记已提交
+    try:
+        existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
+        update_data = {
+            "is_submitted": True,
+            "submitted_at": datetime.now().isoformat(),
+            "reset_at": None
+        }
+        if existing.data:
+            db.table("user_exam_status").update(update_data).eq("id", existing.data['id']).execute()
+            logger.info(f"✅ 考试状态已更新：用户 {user_id}，考试 {exam_id}")
+        else:
+            update_data.update({"user_id": user_id, "exam_id": exam_id})
+            db.table("user_exam_status").insert(update_data).execute()
+            logger.info(f"✅ 考试状态已插入：用户 {user_id}，考试 {exam_id}")
+    except Exception as e:
+        logger.error(f"❌ 状态写入失败: {e}")
+
+    # 清理草稿
     db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-    flash(f'交卷成功！得分：{grade["total"]}', 'success')
-    return redirect(url_for('exam.dashboard'))
+    
+    flash(f'✅ 交卷成功！得分：{grade["total"]}', 'success')
+    return redirect(url_for('dashboard'))
 
 @exam_bp.route('/exam/result/<int:result_id>')
 @login_required
 def exam_result_detail(result_id):
+    """学员查看自己的考试详情"""
     db = get_supabase()
+    # 获取成绩记录
     result_res = db.table("exam_results").select("*").eq("id", result_id).maybe_single().execute()
-    if not result_res.data: flash({'msg': 'result_not_found'}, 'danger'); return redirect(url_for('exam.dashboard'))
+    if not result_res.data:
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
     result = result_res.data
-    if result['user_id'] != session['user_id']: flash({'msg': 'access_denied'}, 'danger'); return redirect(url_for('exam.dashboard'))
-    user_info = db.table("users").select("email, name_en").eq("id", result['user_id']).maybe_single().execute()
-    result['users'] = user_info.data if user_info.data else {}
-    exam_res = db.table("exams").select("title").eq("id", result['exam_id']).maybe_single().execute()
-    result['exams'] = {"title": exam_res.data.get("title") if exam_res.data else "未知考试"}
-    questions = db.table("questions").select("*").eq("exam_id", result['exam_id']).order("num").execute()
-    return render_template('exam/result_detail.html', result=result, questions=questions.data or [], answers=robust_parse_json(result.get('answers')), details=robust_parse_json(result.get('details')))
+    if result['user_id'] != session['user_id']:
+        #flash("无权访问", "danger")
+        flash({'msg': 'access_denied', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
+    
+    exam_id = result['exam_id']
+    user_id = result['user_id']
+    
+    # 获取用户信息
+    user_res = db.table("users").select("email, name_en").eq("id", user_id).maybe_single().execute()
+    user_info = user_res.data if user_res.data else {"email": "未知", "name_en": "未知"}
+    
+    # 获取考试信息
+    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+    exam_title = exam_res.data.get("title", "未知考试") if exam_res.data else "未知考试"
+    
+    # 附加信息
+    result['users'] = user_info
+    result['exams'] = {"title": exam_title}
+    
+    # 获取题目列表
+    questions = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    
+    # 解析 answers 和 details
+    def deep_parse(val):
+        if not val:
+            return {}
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, str):
+                    return deep_parse(parsed)
+                return parsed
+            except:
+                return {}
+        return {}
+    
+    answers = deep_parse(result.get('answers'))
+    details = deep_parse(result.get('details'))
+    
+    return render_template(
+        'exam/result_detail.html',  # 可以复用 admin/result_detail.html，但需调整布局
+        result=result,
+        questions=questions.data or [],
+        answers=answers,
+        details=details
+    )
 
 @exam_bp.route('/exam/export_pdf/<int:result_id>')
 @login_required
 def exam_export_pdf(result_id):
+    """学员导出自己的考试PDF"""
     db = get_supabase()
+    # 获取成绩记录
     result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
-    if not result_res.data: flash({'msg': 'result_not_found'}, 'danger'); return redirect(url_for('exam.dashboard'))
+    if not result_res.data:
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
     result = result_res.data[0]
-    if result['user_id'] != session['user_id']: flash({'msg': 'access_denied'}, 'danger'); return redirect(url_for('exam.dashboard'))
-    user_data = db.table("users").select("*").eq("id", result['user_id']).execute().data[0] if db.table("users").select("*").eq("id", result['user_id']).execute().data else {}
-    exam_data = db.table("exams").select("*").eq("id", result['exam_id']).execute().data[0] if db.table("exams").select("*").eq("id", result['exam_id']).execute().data else {}
-    from routes.helpers import robust_parse_json
-    answers = robust_parse_json(result.get('answers'))
-    details = robust_parse_json(result.get('details'))
-    questions = db.table("questions").select("*").eq("exam_id", result['exam_id']).order("num").execute().data or []
-    from routes.helpers import get_default_reviewer_by_country
-    reviewer = get_default_reviewer_by_country(user_data.get('country')) or exam_data.get('reviewer') or "Administrator"
+    if result['user_id'] != session['user_id']:
+        #flash("无权访问", "danger")
+        flash({'msg': 'access_denied', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
+    
+    exam_id = result['exam_id']
+    user_id = result['user_id']
+    
+    # 获取考试信息
+    exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
+    exam_data = exam_res.data[0] if exam_res.data else {}
+    
+    # 获取考生信息
+    user_res = db.table("users").select("*").eq("id", user_id).execute()
+    user_data = user_res.data[0] if user_res.data else {}
+    user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生')
+
+    # 解析 answers 和 details
+    def deep_parse(val):
+        if not val:
+            return {}
+        if isinstance(val, dict):
+            return val
+        if isinstance(val, str):
+            try:
+                parsed = json.loads(val)
+                if isinstance(parsed, str):
+                    return deep_parse(parsed)
+                return parsed
+            except:
+                return {}
+        return {}
+    
+    answers = deep_parse(result.get('answers'))
+    details = deep_parse(result.get('details'))
+    
+    # 获取题目列表
+    questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    questions = questions_res.data or []
+    
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=request.args.get('reviewer')
+    )
+    
     try:
-        pdf_buffer = export.generate_user_pdf(user_data.get('name_cn') or user_data.get('name_en', '未知考生'), user_data.get('email', ''), exam_data.get('title', '未命名考试'), result.get('total_score', 0), questions, answers, details, result.get('created_at', ''), reviewer)
-        from flask import send_file
-        return send_file(pdf_buffer, mimetype="application/pdf", as_attachment=True, download_name=f"Transcript_{user_data.get('name_en', 'exam')}_{exam_data.get('title', 'exam')}.pdf")
+        pdf_buffer = export.generate_user_pdf(
+            user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
+            user_email=user_data.get('email', ''),
+            exam_title=exam_data.get('title', '未命名考试'),
+            score=result.get('total_score', 0),
+            questions=questions,
+            answers=answers,
+            details=details,
+            submitted_at=result.get('created_at', ''),
+            reviewer=reviewer
+        )
     except Exception as e:
         logger.error(f"PDF生成失败: {e}")
-        flash({'msg': 'pdf_generation_error'}, 'danger'); return redirect(url_for('exam.dashboard'))
+        #flash("PDF生成失败", "danger")
+        flash({'msg': 'pdf_generation_error', 'params': []}, 'danger')
+        return redirect(url_for('dashboard'))
+    
+    filename = f"Transcript_{user_name}_{exam_data.get('title', 'exam')}.pdf"
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=filename
+    )
 
 @exam_bp.route('/api/my/interviews')
 @login_required
