@@ -351,14 +351,14 @@ def submit_exam(exam_id):
             elapsed = (now - start_dt).total_seconds()
             if elapsed > total_seconds:
                 flash({'msg': 'exam_timeout', 'params': []}, 'danger')
-                return redirect(url_for('dashboard'))
+                return redirect(url_for('exam.dashboard'))
 
     # 检查是否已交卷
     try:
         existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
         if existing.data and existing.data.get("is_submitted"):
             flash({'msg': 'already_submitted', 'params': []}, 'warning')
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('exam.dashboard'))
     except Exception as e:
         logger.warning(f"状态检查失败: {e}")
 
@@ -380,7 +380,7 @@ def submit_exam(exam_id):
     except Exception as e:
         logger.error(f"❌ 评分失败: {e}")
         flash({'msg': 'grading_error', 'params': []}, 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('exam.dashboard'))
 
     # 保存成绩
     customs = {f"c{i}": request.form.get(f"custom{i}", "") for i in range(1, 6)}
@@ -402,7 +402,7 @@ def submit_exam(exam_id):
     except Exception as e:
         logger.error(f"❌ 成绩保存失败: {e}")
         flash({'msg': 'save_score_failed', 'params': []}, 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('exam.dashboard'))
 
     # 标记已提交
     try:
@@ -426,7 +426,7 @@ def submit_exam(exam_id):
     db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
     
     flash(f'✅ 交卷成功！得分：{grade["total"]}', 'success')
-    return redirect(url_for('dashboard'))
+    return redirect(url_for('exam.dashboard'))
 
 @exam_bp.route('/exam/result/<int:result_id>')
 @login_required

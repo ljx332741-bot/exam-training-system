@@ -6,35 +6,30 @@ from datetime import datetime, timezone, timedelta, date
 from flask import Flask, request, jsonify, redirect, url_for, render_template, session, flash, send_file, make_response
 from . import admin_exam_bp
 from services.db import get_supabase
-from routes.helpers import (
-    login_required, admin_required, get_allowed_countries, random_pick_questions, 
-    get_default_reviewer_by_country, robust_parse_json,
-    parse_exam_countries, exam_countries_intersection, get_exam_countries_display
-)
-from supabase import create_client
-from functools import wraps
+from routes.helpers import login_required, admin_required, parse_exam_countries, get_exam_countries_display
 from services import auth, exam, export
-from services.export import find_wkhtmltopdf
-from services.auth import hash_password
 from config import Config
 from utils.status import get_exam_status
-from utils.common import (
-    match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display,
-    format_countries_display,  # ✅ 新增
-    format_single_country_display  # ✅ 新增（可选）
-)
-from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time, _send_training_notifications
+from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country
+from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.permissions import (
-    is_developer, get_developer_id, has_role, can_manage_role,
-    can_view_user, get_admin_allowed_countries, set_admin_allowed_countries,
-    parse_countries_input, developer_required, super_admin_required,
-    filter_users_by_permission, apply_country_filter
+    is_developer, get_admin_allowed_countries, set_admin_allowed_countries, 
+    developer_required, get_allowed_countries, apply_country_filter, has_role
 )
-from utils.training_helpers import get_training_country_templates_status
-from dotenv import load_dotenv
-from services.scheduler import init_scheduler
-from routes import register_blueprints
 logger = logging.getLogger(__name__)
+
+@admin_exam_bp.route('/api/admin/current_user_permissions')
+@login_required
+@admin_required
+def api_admin_current_user_permissions():
+    """获取当前用户的权限信息"""
+    return jsonify({
+        "role": session.get('role', 'user'),
+        "user_id": session.get('user_id'),
+        "is_developer": is_developer(),
+        "is_super_admin": session.get('role') == 'super_admin' or is_developer(),
+        "allowed_countries": get_allowed_countries()
+    })
 
 @admin_exam_bp.route('/admin/dashboard')
 @login_required
@@ -406,60 +401,214 @@ def edit_exam_preview(exam_id):
 @login_required
 @admin_required
 def admin_import():
+    """Word 题库导入页面"""
+    print(f"\n🔥🔥🔥 admin_import 被调用！method={request.method} 🔥🔥🔥\n", flush=True)
+    
     if request.method == 'POST' and 'docx_file' in request.files:
         file = request.files['docx_file']
+        logger.info(f"📄 收到文件: {file.filename}, size={file.content_length}")
+        
+        if not file.filename.endswith('.docx'):
+            logger.warning(f"❌ 文件格式错误: {file.filename}")
+            #flash('❌ 仅支持 .docx 格式', 'danger')
+            flash({'msg': 'only_docx', 'params': []}, 'danger')
+            return redirect(request.url)
+        
         import tempfile, os
         tmp_path = None
+        
         try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.docx', dir=os.getenv('TEMP', '/tmp')) as tmp:
-                file.save(tmp.name); tmp_path = tmp.name
-            exam_title, qs = exam.parse_docx_bilingual(tmp_path, exam_id=0)
-            if not exam_title or exam_title == '未命名考试': exam_title = os.path.splitext(file.filename)[0]
-            if not qs: flash({'msg': 'no_valid_question', 'params': []}, 'warning'); return render_template('admin/import.html')
+            # Windows 兼容的临时文件处理
+            with tempfile.NamedTemporaryFile(
+                delete=False, suffix='.docx', dir=os.getenv('TEMP', '/tmp')
+            ) as tmp:
+                file.save(tmp.name)
+                tmp_path = tmp.name
+            logger.info(f"💾 临时文件已保存: {tmp_path}")
+            
+            # 调用双语解析函数
+            exam_title, qs = exam.parse_docx_bilingual(tmp_path, exam_id=0)  # 不再需要 exam_id 参数
+            # 如果解析出的标题无效（空或默认值），则使用文件名
+            if not exam_title or exam_title == '未命名考试':
+                exam_title = os.path.splitext(os.path.basename(file.filename))[0]
+                logger.info(f"使用文件名作为考试标题: {exam_title}")
+            logger.info(f"✅ 解析成功: 返回 {len(qs)} 道题目")
+            
+            if not qs:
+                logger.warning("⚠️ 解析结果为空")
+                #flash('⚠️ 未识别到有效题目，请检查 Word 格式', 'warning')
+                flash({'msg': 'no_valid_question', 'params': []}, 'warning')
+                return render_template('admin/import.html')
+            
+            logger.info("🔄 跳转预览页")
             return render_template('admin/import_preview.html', questions=qs, exam_title=exam_title)
+            
+        except AttributeError as e:
+            logger.error(f"❌ AttributeError: {e}")
+            logger.error(f"💡 请确认 services/exam.py 中存在 parse_docx_bilingual 函数")
+            #flash('❌ 系统错误: 解析函数未找到', 'danger')
+            flash({'msg': 'parse_func_missing', 'params': []}, 'danger')
+        except FileNotFoundError as e:
+            logger.error(f"❌ 文件未找到: {e}")
+            #flash('❌ 临时文件创建失败', 'danger')
+            flash({'msg': 'temp_file_failed', 'params': []}, 'danger')
+        except PermissionError as e:
+            logger.error(f"❌ 权限错误: {e}")
+            #flash('❌ 文件访问权限不足', 'danger')
+            flash({'msg': 'file_permission_denied', 'params': []}, 'danger')
         except Exception as e:
-            logger.error(f"解析失败: {e}"); flash({'msg': 'parse_error', 'params': [str(e)]}, 'danger')
+            logger.error(f"❌ 未知异常: {type(e).__name__}: {e}")
+            logger.error(f"📋 完整堆栈:\n{traceback.format_exc()}")
+            #flash(f'❌ 解析失败: {str(e)}', 'danger')
+            flash({'msg': 'parse_error', 'params': [str(e)]}, 'danger')          # 带参数
         finally:
-            if tmp_path and os.path.exists(tmp_path): os.remove(tmp_path)
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                    logger.debug(f"🗑️ 已清理临时文件: {tmp_path}")
+                except Exception:
+                    pass
+        return redirect(request.url)
+    
+    # GET 请求：渲染上传表单
+    logger.info("📄 渲染 import.html")
     return render_template('admin/import.html')
 
 @admin_exam_bp.route('/admin/import/save', methods=['POST'])
 @login_required
 @admin_required
 def admin_import_save():
+    logger.info(f"/admin/import/save 收到请求，questions 长度: {len(request.json.get('questions', []))}")
     data = request.json.get('questions', [])
-    if not data: return jsonify({"success": False, "message": "无数据"})
+    if not data:
+        return jsonify({"success": False, "message": "无数据"})
+
     exam_title = request.args.get('title', '未命名考试')
     is_draft = request.args.get('draft', 'false').lower() == 'true'
-    countries = request.json.get('countries', [])
     db = get_supabase()
-    new_exam_id = None
+    
+    # ✅ 修改：支持多国家，接收 countries 数组
+    countries = request.json.get('countries', [])  # 数组格式 ["NP", "LK", "BD"]
+    country_code = request.json.get('country_code', '')  # 兼容旧版单国家
+    
+    # 如果没有 countries 但有 country_code，转换为数组
+    if not countries and country_code:
+        countries = [country_code]
+    
+    # 权限检查
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    
+    user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
+    user_data = user_res.data if user_res and user_res.data else {}
+    
+    allowed = None
+    if current_role == 'super_admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+    elif current_role == 'admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+        
+        if not allowed:
+            user_country = user_data.get('country')
+            if user_country:
+                allowed = [user_country]
+            else:
+                allowed = []
+    
+    # 权限检查：管理员创建的所有国家必须在允许范围内
+    if current_role == 'admin':
+        if not allowed or len(allowed) == 0:
+            return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
+        
+        if not countries:
+            return jsonify({"success": False, "message": "请至少选择一个国家"}), 400
+        
+        for c in countries:
+            if c not in allowed:
+                return jsonify({"success": False, "message": f"无权创建国家 {c} 的考试"}), 403
+
     try:
-        res = db.table("exams").insert({
+        # 创建考试记录
+        exam_insert = db.table("exams").insert({
             "title": exam_title,
             "is_active": not is_draft,
-            "countries": json.dumps(countries) if countries else None,  # ✅ 存储为 JSON
+            "countries": json.dumps(countries),  # ✅ 存储为 JSON 字符串
             "status": "draft" if is_draft else "active"
         }).execute()
-        if res.data: new_exam_id = res.data[0]['id']
-        for q in data: q['exam_id'] = new_exam_id; q['options'] = json.dumps(q.get('options', {}))
-        if new_exam_id: db.table("questions").insert(data).execute()
+        
+        if not exam_insert.data:
+            raise Exception("创建考试失败")
+        new_exam_id = exam_insert.data[0]['id']
+        
+        # 插入题目
+        for q in data:
+            q['exam_id'] = new_exam_id
+            q['options'] = json.dumps(q.get('options', {}))
+
+        res = db.table("questions").insert(data).execute()
+        logger.info(f"✅ 成功创建考试「{exam_title}」ID={new_exam_id}，插入 {len(res.data)} 道题目，国家: {countries}")
         return jsonify({"success": True, "exam_id": new_exam_id})
-    except Exception as e: return jsonify({"success": False, "message": str(e)}), 500
+    except Exception as e:
+        logger.error(f"❌ 导入保存失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_exam_bp.route('/admin/result/<int:result_id>')
 @login_required
 @admin_required
 def admin_result_detail(result_id):
+    """管理查看考生考试详情"""
     db = get_supabase()
-    result = db.table("exam_results").select("*").eq("id", result_id).maybe_single().execute().data
-    if not result: flash({'msg': 'result_not_found'}, 'danger'); return redirect(url_for('exam.dashboard'))
-    result['users'] = db.table("users").select("email, name_en").eq("id", result['user_id']).maybe_single().execute().data or {}
-    result['exams'] = {"title": db.table("exams").select("title").eq("id", result['exam_id']).maybe_single().execute().data.get("title", "未知")}
-    questions = db.table("questions").select("*").eq("exam_id", result['exam_id']).order("num").execute()
-    answers = json.loads(result['answers']) if isinstance(result['answers'], str) else result['answers']
-    details = json.loads(result['details']) if isinstance(result['details'], str) else result['details']
-    return render_template('admin/result_detail.html', result=result, questions=questions.data or [], answers=answers, details=details)
+    # 1. 获取成绩记录
+    result_res = db.table("exam_results").select("*").eq("id", result_id).maybe_single().execute()
+    if not result_res.data:
+        #flash("成绩记录不存在", "danger")
+        flash({'msg': 'result_not_found', 'params': []}, 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
+    result = result_res.data
+    exam_id = result['exam_id']
+    user_id = result['user_id']
+
+    # 2. 获取用户信息
+    user_res = db.table("users").select("email, name_en").eq("id", user_id).maybe_single().execute()
+    user_info = user_res.data if user_res.data else {"email": "未知", "name_en": "未知"}
+    
+    # 3. 获取考试信息
+    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+    exam_title = exam_res.data.get("title", "未知考试") if exam_res.data else "未知考试"
+    
+    # 将关联信息附加到 result 对象（模板中会使用 result.users.email 等形式）
+    result['users'] = user_info
+    result['exams'] = {"title": exam_title}
+    
+    # 4. 获取题目列表
+    questions = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    
+    # 5. 解析 JSON 字段（answers 和 details）
+    answers = result.get('answers', {})
+    if isinstance(answers, str):
+        answers = json.loads(answers)
+    details = result.get('details', {})
+    if isinstance(details, str):
+        details = json.loads(details)
+    
+    return render_template(
+        'admin/result_detail.html',
+        result=result,
+        questions=questions.data or [],
+        answers=answers,
+        details=details
+    )
 
 @admin_exam_bp.route('/admin/reset_exam/<int:exam_id>/<user_id>', methods=['POST'])
 @login_required
@@ -1489,6 +1638,12 @@ def api_admin_exam_scores(exam_id):
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
 
+    # 使用权限函数获取当前用户信息
+    current_user_role = session.get('role', 'user')
+    current_user_id = session.get('user_id')
+    is_dev = is_developer()
+    is_super_admin = current_user_role == 'super_admin' or is_dev
+
     # 1. 获取该考试的所有成绩记录
     query = db.table("exam_results").select("*").eq("exam_id", exam_id).is_("deleted_at", "null")
     if submit_method:
@@ -1540,17 +1695,33 @@ def api_admin_exam_scores(exam_id):
     scores = []
     for r in paginated:
         user = users_dict.get(r['user_id'], {})
+        user_country = user.get('country', '')
+        
+        # ✅ 使用权限函数判断是否有删除权限
+        can_delete = is_super_admin  # 超管和开发者都可以删除
+        
+        # 获取考试信息以获取阅卷人
+        exam_res = db.table("exams").select("reviewer").eq("id", exam_id).maybe_single().execute()
+        reviewer = exam_res.data.get('reviewer', '-') if exam_res.data else '-'
+        
+        # 获取开始时间（从 user_exam_status 表）
+        status_res = db.table("user_exam_status").select("started_at").eq("user_id", r['user_id']).eq("exam_id", exam_id).maybe_single().execute()
+        started_at = status_res.data.get('started_at') if status_res.data else None
+        
         scores.append({
             "user_id": r['user_id'],
             "name": user.get('name_cn') or user.get('name_en') or user.get('email', ''),
             "email": user.get('email', ''),
-            "country": user.get('country', ''),
+            "country": user_country,
             "status": "Submitted",
+            "started_at": started_at,
             "submitted_at": r.get('created_at'),
             "submit_method": r.get('submit_method', 'manual'),
-            "time_used": r.get('time_used'),      # 如果存在该字段
+            "time_used": r.get('time_used'),
             "score": r.get('total_score', 0),
-            "result_id": r['id']
+            "result_id": r['id'],
+            "reviewer": reviewer,
+            "can_delete": can_delete  # 权限字段
         })
 
     return jsonify({"data": scores, "total": total, "page": page, "per_page": per_page})
@@ -1561,7 +1732,7 @@ def api_admin_exam_scores(exam_id):
 def admin_exam_scores_page(exam_id):
     db = get_supabase()
     
-    # 🔧 获取考试标题
+    # 获取考试标题
     exam_res = db.table("exams") \
         .select("title") \
         .eq("id", exam_id) \
@@ -1570,11 +1741,140 @@ def admin_exam_scores_page(exam_id):
     
     exam_title = exam_res.data.get('title', f'考试 #{exam_id}') if exam_res.data else f'考试 #{exam_id}'
     
+    # ✅ 使用权限函数获取用户角色
+    is_dev = is_developer()
+    is_super_admin = session.get('role') == 'super_admin' or is_dev
+    
     return render_template(
         'admin/list_exams_scores.html',
         exam_id=exam_id,
-        exam_title=exam_title  # 🔧 传递标题
+        exam_title=exam_title,
+        is_super_admin=is_super_admin  # 传递是否超管/开发者
     )
+
+@admin_exam_bp.route('/api/admin/exam/result/<int:result_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_delete_exam_result(result_id):
+    """删除考试成绩记录（软删除，保留审计日志）"""
+    db = get_supabase()
+    user_id = session['user_id']
+    
+    # 1. 先获取成绩记录
+    result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
+    if not result_res.data:
+        return jsonify({"success": False, "message": "成绩记录不存在"}), 404
+    
+    result = result_res.data[0]
+    exam_id = result.get('exam_id')
+    
+    # 2. 再获取考试信息（单独查询，不使用关联）
+    exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
+    exam_country = exam_res.data.get('country') if exam_res.data else None
+    
+    # 3. 权限检查
+    allowed = get_admin_allowed_countries()
+    if allowed is not None and exam_country not in allowed:
+        return jsonify({"success": False, "message": "无权删除此考试成绩"}), 403
+    
+    try:
+        # 4. 软删除
+        db.table("exam_results").update({
+            "deleted_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_by": user_id
+        }).eq("id", result_id).execute()
+        
+        # 5. 同步更新 user_exam_status 表，允许重新考试
+        db.table("user_exam_status").update({
+            "is_submitted": False,
+            "reset_at": datetime.now(timezone.utc).isoformat(),
+            "submitted_at": None
+        }).eq("user_id", result['user_id']).eq("exam_id", exam_id).execute()
+        
+        logger.info(f"考试成绩已删除: result_id={result_id}, 操作人={user_id}")
+        return jsonify({"success": True, "message": "成绩记录已删除，考生可重新考试"})
+    except Exception as e:
+        logger.error(f"删除成绩记录失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exam/result/batch_delete', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_delete_exam_results():
+    """批量删除考试成绩记录（支持软删除和永久删除）"""
+    # ✅ 权限检查：只有超管或开发者可以删除
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({
+            "success": False, 
+            "message": "只有超级管理员可以删除考试成绩"
+        }), 403
+
+    data = request.json
+    result_ids = data.get('ids', [])
+    delete_type = data.get('delete_type', 'soft')  # 'soft' 或 'hard'
+    
+    if not result_ids:
+        return jsonify({"success": False, "message": "请选择要删除的成绩记录"}), 400
+    
+    db = get_supabase()
+    user_id = session['user_id']
+    success_count = 0
+    fail_count = 0
+    errors = []
+    
+    allowed = get_admin_allowed_countries()
+    
+    for result_id in result_ids:
+        try:
+            # 获取成绩记录
+            result_res = db.table("exam_results").select("*").eq("id", result_id).execute()
+            if not result_res.data:
+                fail_count += 1
+                errors.append(f"记录 {result_id} 不存在")
+                continue
+            
+            result = result_res.data[0]
+            exam_id = result.get('exam_id')
+            
+            # 获取考试国家
+            exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
+            exam_country = exam_res.data.get('country') if exam_res.data else None
+            
+            # 权限检查
+            if allowed is not None and exam_country not in allowed:
+                fail_count += 1
+                errors.append(f"记录 {result_id}: 无权限删除")
+                continue
+            
+            if delete_type == 'hard':
+                # 永久删除
+                db.table("exam_results").delete().eq("id", result_id).execute()
+            else:
+                # 软删除
+                db.table("exam_results").update({
+                    "deleted_at": datetime.now(timezone.utc).isoformat(),
+                    "deleted_by": user_id
+                }).eq("id", result_id).execute()
+                
+                # 重置考试状态（仅软删除时）
+                db.table("user_exam_status").update({
+                    "is_submitted": False,
+                    "reset_at": datetime.now(timezone.utc).isoformat(),
+                    "submitted_at": None
+                }).eq("user_id", result['user_id']).eq("exam_id", exam_id).execute()
+            
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            errors.append(f"记录 {result_id}: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "errors": errors[:10]
+    })
+
 
 @admin_exam_bp.route('/api/common/quarters')
 def api_quarters():
