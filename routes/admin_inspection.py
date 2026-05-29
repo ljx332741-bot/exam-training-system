@@ -289,7 +289,7 @@ def api_interview_results(interview_id):
     interview = inv_res.data
 
     # 查询访谈结果并关联用户信息
-    query = db.table("interview_results").select("*, users(name_cn, name_en, country, wh_id)").eq("interview_id", interview_id)
+    query = db.table("interview_results").select("*, users(name_cn, name_en, email, country, wh_id)").eq("interview_id", interview_id)
     if country:
         query = query.eq("users.country", country)
     if search:
@@ -310,6 +310,7 @@ def api_interview_results(interview_id):
             user_results[uid] = {
                 "user_id": uid,
                 "name": user_info.get('name_cn') or user_info.get('name_en', ''),
+                "email": user_info.get('email', ''), 
                 "country": user_info.get('country', ''),
                 "wh_id": user_info.get('wh_id', ''),
                 "results": [],
@@ -333,6 +334,7 @@ def api_interview_results(interview_id):
         result_list.append({
             "user_id": uid,
             "name": data['name'],
+            "email": data['email'],
             "country": data['country'],
             "wh_id": data['wh_id'],
             "total_questions": total_questions,
@@ -888,7 +890,7 @@ def api_interview_details(interview_id):
     user_ids = list(set(r['user_id'] for r in all_data))
     users_map = {}
     if user_ids:
-        users_res = db.table("users").select("id, name_cn, name_en, country, wh_id, department").in_("id", user_ids).execute()
+        users_res = db.table("users").select("id, name_cn, name_en, email, country, wh_id, department").in_("id", user_ids).execute()
         for u in (users_res.data or []):
             users_map[u['id']] = u
 
@@ -910,6 +912,7 @@ def api_interview_details(interview_id):
             user_results[uid] = {
                 "user_id": uid,
                 "name": user_info.get('name_cn') or user_info.get('name_en', ''),
+                "email": user_info.get('email'),
                 "country": user_info.get('country', ''),
                 "wh_id": user_info.get('wh_id', ''),
                 "department": user_info.get('department', ''),
@@ -933,6 +936,7 @@ def api_interview_details(interview_id):
         detail_list.append({
             "user_id": data["user_id"],
             "name": data["name"],
+            "email": data['email'],
             "country": data["country"],
             "wh_id": data["wh_id"],
             "department": data["department"],

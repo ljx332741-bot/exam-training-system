@@ -34,9 +34,9 @@ ENDPOINT_ALIAS = {
     'submit_exam': 'exam.submit_exam',
     'exam_result_detail': 'exam.exam_result_detail',
     'exam_export_pdf': 'exam.exam_export_pdf',
-    'my_interviews': 'exam.my_interviews',
     'take_interview': 'exam.take_interview',
     'submit_interview': 'exam.submit_interview',
+    'my_interviews': 'exam.my_interviews',
     
     # ========== 学员培训模块 ==========
     'api_available_trainings': 'training.api_available_trainings',
