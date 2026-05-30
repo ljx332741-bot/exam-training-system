@@ -69,7 +69,6 @@ ENDPOINT_ALIAS = {
     'admin_push_exam_with_settings': 'admin_exam.admin_push_exam_with_settings',
     'api_admin_exams_list': 'admin_exam.api_admin_exams_list',
     'api_admin_exam_scores': 'admin_exam.api_admin_exam_scores',
-    'admin_batch_export_pdf': 'admin_exam.admin_batch_export_pdf',
     'admin_push_exam': 'admin_exam.admin_push_exam',
     'api_admin_delete_exam_result': 'admin_exam.api_admin_delete_exam_result',
     'api_admin_batch_delete_exam_results': 'admin_exam.api_admin_batch_delete_exam_results',
@@ -132,6 +131,7 @@ ENDPOINT_ALIAS = {
     'admin_export_pdf_by_result': 'admin_export.admin_export_pdf_by_result',
     'admin_batch_export_by_result': 'admin_export.admin_batch_export_by_result',
     'admin_export_user_pdf': 'admin_export.admin_export_user_pdf',
+    'admin_batch_export_pdf': 'admin_export.admin_batch_export_pdf',
 }
 
 # ========== 3. 注册蓝图函数 ==========
@@ -145,7 +145,7 @@ def register_blueprints(app):
     from . import admin_training
     from . import admin_inspection
     from . import admin_export
-    from . import api_auth, api_exam, api_training, admin_exam, admin_user, admin_training, admin_inspection, admin_export, admin_wh
+    from . import admin_wh
 
     app.register_blueprint(api_auth.auth_bp)
     app.register_blueprint(api_exam.exam_bp)

@@ -10,6 +10,7 @@ from flask import (
     Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file
 )
+from utils.common import get_reviewer_by_country
 from routes.helpers import login_required, admin_required, robust_parse_json, get_default_reviewer_by_country, safe_parse_datetime
 from services.db import get_supabase
 from services import auth, exam, export

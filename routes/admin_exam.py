@@ -1875,7 +1875,6 @@ def api_admin_batch_delete_exam_results():
         "errors": errors[:10]
     })
 
-
 @admin_exam_bp.route('/api/common/quarters')
 def api_quarters():
     """根据数据库中考试的有效期动态生成季度选项列表"""

@@ -1,0 +1,488 @@
+﻿<!-- templates/admin/list_training_status_view.html -->
+{% extends "base.html" %}
+{% block title %}培训签到人员状态{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_status">培训签到人员状态</span></h2>
+        <div>
+            <button class="btn btn-success me-2" id="exportExcelBtn">
+                <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
+            </button>
+            <button class="btn btn-outline-secondary" onclick="window.close();">✖ <span data-i18n="close">关闭</span></button>
+        </div>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-3">
+                    <input type="text" id="searchInput" class="form-control" 
+                           data-i18n-placeholder="placeholder_mail_name"
+                           placeholder="姓名/邮箱" autocomplete="off">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                           data-i18n-placeholder="placeholder_country"
+                           placeholder="国家" autocomplete="off">
+                    <datalist id="countryDatalist"></datalist>
+                    <input type="hidden" id="filterCountryCode">
+                </div>
+                <div class="col-md-3">
+                    <input type="text" id="filterWhId" class="form-control" 
+                           data-i18n-placeholder="wh_id_name"
+                           placeholder="库房编码/名称" autocomplete="off">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterTrainingName" class="form-control" 
+                           data-i18n-placeholder="placeholder_training_name"
+                           placeholder="培训名称" autocomplete="off">
+                </div>
+                <div class="col-md-2 d-flex gap-2">
+                    <button id="resetFiltersBtn" class="btn btn-outline-secondary w-100">
+                        <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row mb-3">
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div><i class="bi bi-check-circle-fill fs-4"></i></div>
+                        <div class="text-end">
+                            <h5 class="mb-0" id="signedCount">0</h5>
+                            <small data-i18n="signed">已签到</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div><i class="bi bi-clock-history fs-4"></i></div>
+                        <div class="text-end">
+                            <h5 class="mb-0" id="pendingCount">0</h5>
+                            <small data-i18n="pending_sign">待签到</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div><i class="bi bi-exclamation-triangle-fill fs-4"></i></div>
+                        <div class="text-end">
+                            <h5 class="mb-0" id="resignCount">0</h5>
+                            <small data-i18n="need_re-sign">需重新签名</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-secondary text-white">
+                <div class="card-body py-2">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div><i class="bi bi-people fs-4"></i></div>
+                        <div class="text-end">
+                            <h5 class="mb-0" id="totalCount">0</h5>
+                            <small data-i18n="total">总计</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 人员列表表格 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive" style="overflow-x: auto; white-space: nowrap;">
+                <table class="table table-hover align-middle mb-0" style="white-space: nowrap;">
+                    <thead class="table-light">
+                        <tr>
+                            <th><span data-i18n="sequence">序号</span></th>
+                            <th><span data-i18n="training_name">培训名称</span></th>
+                            <th><span data-i18n="country">国家</span></th>
+                            <th><span data-i18n="name_en">姓名</span></th>
+                            <th><span data-i18n="email">邮箱</span></th>
+                            <th><span data-i18n="wh_id">库房编码</span></th>
+                            <th><span data-i18n="wh_name_en">库房名称(EN)</span></th>
+                            <th><span data-i18n="company">公司</span></th>
+                            <th><span data-i18n="sign_time">签到时间</span></th>
+                            <th><span data-i18n="status">签到状态</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr><td colspan="10" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div><span data-i18n="total">共</span> <span id="totalRecordCount">0</span> <span data-i18n="record">条记录</span></div>
+            <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+
+<!-- 查看签到详情模态框 -->
+<div class="modal fade" id="attendanceModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-calendar-check"></i> <span data-i18n="sign_in_details">签到详情</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <div id="modalSignature" class="mb-2">
+                        <img id="signatureImage" src="" style="max-width: 200px; max-height: 100px; display: none;">
+                        <div id="noSignature" class="text-muted" style="display: none;"><span data-i18n="no_data">暂无数据</span></div>
+                    </div>
+                    <p><strong><span data-i18n="sign_time">签到时间</span>：</strong><span id="modalSignTime"></span></p>
+                    <p><strong><span data-i18n="signature_name">签名姓名</span>：</strong><span id="modalSignedName"></span></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentPage = 1;
+    let filters = { search: '', country: '', wh_id: '', training_name: '' };
+    let allData = [];
+    let filteredData = [];
+    const perPage = 20;
+
+    // 加载数据
+    async function loadData() {
+        const params = new URLSearchParams({
+            search: filters.search,
+            country: filters.country,
+            wh_id: filters.wh_id
+        });
+        
+        try {
+            const res = await fetch(`/api/admin/training/users_with_status?${params}`);
+            const data = await res.json();
+            allData = data.data || [];
+            applyFilters();
+        } catch (err) {
+            console.error('加载数据失败:', err);
+            document.getElementById('usersTableBody').innerHTML = `<td><td colspan="11" class="text-center text-danger">加载失败</td></tr>`;
+        }
+    }
+
+    // 应用筛选（前端内存过滤）
+    function applyFilters() {
+        let filtered = [...allData];
+        
+        if (filters.search) {
+            const searchLower = filters.search.toLowerCase();
+            filtered = filtered.filter(item => 
+                (item.name_en && item.name_en.toLowerCase().includes(searchLower)) ||
+                (item.email && item.email.toLowerCase().includes(searchLower))
+            );
+        }
+        
+        if (filters.country) {
+            filtered = filtered.filter(item => item.user_country === filters.country);
+        }
+        
+        if (filters.wh_id) {
+            const whLower = filters.wh_id.toLowerCase();
+            filtered = filtered.filter(item => 
+                (item.wh_id && item.wh_id.toLowerCase().includes(whLower)) ||
+                (item.wh_name_en && item.wh_name_en.toLowerCase().includes(whLower))
+            );
+        }
+        
+        if (filters.training_name) {
+            const nameLower = filters.training_name.toLowerCase();
+            filtered = filtered.filter(item => 
+                item.training_name && item.training_name.toLowerCase().includes(nameLower)
+            );
+        }
+        
+        filteredData = filtered;
+        
+        // 更新统计卡片
+        updateStats(filteredData);
+        
+        // 重置分页
+        currentPage = 1;
+        renderTable();
+        renderPagination();
+    }
+
+    // 更新统计卡片
+    function updateStats(data) {
+        let signed = 0;
+        let pending = 0;
+        let resign = 0;
+        
+        data.forEach(item => {
+            if (item.sign_status === 'signed') signed++;
+            else if (item.sign_status === 'pending') pending++;
+            else if (item.sign_status === 'resign') resign++;
+        });
+        
+        document.getElementById('signedCount').innerText = signed;
+        document.getElementById('pendingCount').innerText = pending;
+        document.getElementById('resignCount').innerText = resign;
+        document.getElementById('totalCount').innerText = data.length;
+    }
+
+    // 渲染表格
+    function renderTable() {
+        const tbody = document.getElementById('usersTableBody');
+        const totalCount = filteredData.length;
+        document.getElementById('totalRecordCount').innerText = totalCount;
+        
+        if (totalCount === 0) {
+            tbody.innerHTML = `<tr><td colspan="11" class="text-center">${t('t_no_data') || '暂无数据'}</td></tr>`;
+            return;
+        }
+        
+        const start = (currentPage - 1) * perPage;
+        const end = start + perPage;
+        const pageData = filteredData.slice(start, end);
+        
+        console.log('渲染数据示例:', pageData[0]);  // 调试日志，查看数据结构
+        
+        tbody.innerHTML = pageData.map((item, idx) => {
+            let statusBadge = '';
+            
+            switch (item.sign_status) {
+                case 'signed':
+                    statusBadge = '<span class="badge bg-success"><i class="bi bi-check-circle"></i> ' + (t('signed') || '已签到') + '</span>';
+                    break;
+                case 'pending':
+                    statusBadge = '<span class="badge bg-warning text-dark"><i class="bi bi-clock"></i> ' + (t('pending_sign') || '待签到') + '</span>';
+                    break;
+                case 'resign':
+                    statusBadge = '<span class="badge bg-danger"><i class="bi bi-exclamation-triangle"></i> ' + (t('need_re-sign') || '需重新签名') + '</span>';
+                    break;
+                default:
+                    statusBadge = '<span class="badge bg-secondary">-</span>';
+            }
+
+            // 添加查看详情按钮（如果有签到记录）
+            let actionHtml = '';
+            if (item.sign_status === 'signed' || item.sign_status === 'resign') {
+                actionHtml = `<button class="btn btn-sm btn-outline-info view-attendance-btn ms-2" 
+                                    data-user-id="${item.user_id}" 
+                                    data-signed-name="${escapeHtml(item.signed_name || '')}"
+                                    data-sign-time="${item.sign_time || ''}"
+                                    data-signature-url="${item.signature_url || ''}">
+                                <i class="bi bi-eye"></i>
+                            </button>`;
+            }
+
+            return `
+                <tr>
+                    <td>${start + idx + 1}</td>
+                    <td><strong>${escapeHtml(item.training_name || '-')}</strong></td>  <!-- ✅ 培训名称 -->
+                    <td>${escapeHtml(item.user_country || item.country || '-')}</td>
+                    <td>${escapeHtml(item.name_en || '-')} ${actionHtml}</td>
+                    <td>${escapeHtml(item.email || '-')}</td>
+                    <td>${escapeHtml(item.wh_id || '-')}</td>
+                    <td>${escapeHtml(item.wh_name_en || '-')}</td>
+                    <td>${escapeHtml(item.company || '-')}</td>
+                    <td>${item.sign_time ? new Date(item.sign_time).toLocaleString() : '-'}</td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+
+        // 绑定查看详情事件
+        document.querySelectorAll('.view-attendance-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const signedName = btn.dataset.signedName;
+                const signTime = btn.dataset.signTime;
+                const signatureUrl = btn.dataset.signatureUrl;
+                
+                document.getElementById('modalSignedName').innerText = signedName || '-';
+                document.getElementById('modalSignTime').innerText = signTime ? new Date(signTime).toLocaleString() : '-';
+                
+                const signatureImg = document.getElementById('signatureImage');
+                const noSignature = document.getElementById('noSignature');
+                
+                if (signatureUrl && signatureUrl !== 'null' && signatureUrl !== '') {
+                    signatureImg.src = signatureUrl;
+                    signatureImg.style.display = 'inline-block';
+                    noSignature.style.display = 'none';
+                } else {
+                    signatureImg.style.display = 'none';
+                    noSignature.style.display = 'block';
+                }
+                
+                new bootstrap.Modal(document.getElementById('attendanceModal')).show();
+            });
+        });
+    }
+
+
+    // 分页
+    function renderPagination() {
+        const totalCount = filteredData.length;
+        const totalPages = Math.ceil(totalCount / perPage);
+        const pagination = document.getElementById('pagination');
+        
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+        
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                     </li>`;
+        }
+        pagination.innerHTML = html;
+        
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                renderTable();
+                renderPagination();
+            });
+        });
+    }
+
+    // 导出Excel
+    document.getElementById('exportExcelBtn').addEventListener('click', async () => {
+        try {
+            const params = new URLSearchParams({
+                search: filters.search,
+                country: filters.country,
+                wh_id: filters.wh_id
+            });
+            
+            const response = await fetch(`/api/admin/training/export_attendance_status?${params}`);
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `培训签到状态_${new Date().toISOString().slice(0, 19)}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('导出失败:', err);
+            alert('导出失败');
+        }
+    });
+
+    // 绑定筛选事件
+    function bindFilterEvents() {
+        const searchInput = document.getElementById('searchInput');
+        const countryInput = document.getElementById('filterCountry');
+        const whInput = document.getElementById('filterWhId');
+        const trainingNameInput = document.getElementById('filterTrainingName');
+        const resetBtn = document.getElementById('resetFiltersBtn');
+        
+        const debounce = (fn, delay) => {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
+        
+        const updateFilters = () => {
+            filters.search = searchInput?.value || '';
+            filters.country = document.getElementById('filterCountryCode')?.value || '';
+            filters.wh_id = whInput?.value || '';
+            filters.training_name = trainingNameInput?.value || '';
+            currentPage = 1;
+            applyFilters();
+        };
+        
+        const debouncedUpdate = debounce(updateFilters, 300);
+        
+        if (searchInput) searchInput.addEventListener('input', debouncedUpdate);
+        if (countryInput) countryInput.addEventListener('change', updateFilters);
+        if (whInput) whInput.addEventListener('input', debouncedUpdate);
+        if (trainingNameInput) trainingNameInput.addEventListener('input', debouncedUpdate);
+        
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                if (searchInput) searchInput.value = '';
+                if (countryInput) countryInput.value = '';
+                if (whInput) whInput.value = '';
+                if (trainingNameInput) trainingNameInput.value = '';
+                document.getElementById('filterCountryCode').value = '';
+                filters = { search: '', country: '', wh_id: '', training_name: '' };
+                currentPage = 1;
+                applyFilters();
+            });
+        }
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[m]);
+    }
+
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
+        bindFilterEvents();
+    
+        // 等待 i18n 就绪后加载列表
+        await waitForI18n();
+        window.i18n.applyTranslations();  // 处理静态文本
+        loadData();
+        
+        // ✅ 语言切换时重新加载列表
+        if (window.i18n && window.i18n.subscribe) {
+            window.i18n.subscribe(() => {
+                loadData();  // 重新加载列表，会触发 renderWhTable 使用新的翻译
+            });
+        }
+    });
+
+    window.addEventListener('app:languageChanged', function() {
+        loadData();
+    });
+</script>
+{% endblock %}

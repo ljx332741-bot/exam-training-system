@@ -1,6 +1,6 @@
 # routes/admin_export.py
 import logging
-import zipfile, json
+import zipfile, json, re
 import openpyxl 
 from datetime import datetime, timezone, timedelta, date
 from . import admin_export_bp
@@ -252,7 +252,6 @@ def export_filtered_excel():
 @admin_export_bp.route('/admin/export_pdf_by_result/<int:result_id>')
 @login_required
 @admin_required
-
 def admin_export_pdf_by_result(result_id):
     """通过成绩记录ID直接导出PDF（精确匹配，避免取错记录）"""
     db = get_supabase()
@@ -413,38 +412,136 @@ def generate_pdf_by_result_id(result_id):
 @login_required
 @admin_required
 def admin_batch_export_by_result():
-    db = get_supabase()
-    data = request.json
-    result_ids = data.get('result_ids', [])
-    exam_id = data.get('exam_id')
-    if not result_ids:
-        return jsonify({"error": "未选择成绩记录"}), 400
-
-    zip_buffer = BytesIO()
-    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-        for rid in result_ids:
-            pdf_bytes = generate_pdf_by_result_id(rid)
-            if pdf_bytes:
-                # 获取考生姓名用于文件名
-                result_res = db.table("exam_results").select("user_id").eq("id", rid).execute()
-                if result_res.data:
-                    user_id = result_res.data[0]['user_id']
-                    user_res = db.table("users").select("name_en").eq("id", user_id).execute()
-                    name = user_res.data[0].get('name_en', user_id) if user_res.data else str(user_id)
-                    filename = f"{name}_{rid}.pdf"
-                    zf.writestr(filename, pdf_bytes)
-                else:
-                    # 降级文件名
-                    zf.writestr(f"result_{rid}.pdf", pdf_bytes)
+    """根据成绩记录ID批量导出PDF（自动去重，每个考生只导出最新一次考试）"""
+    try:
+        data = request.json
+        result_ids = data.get('result_ids', [])
+        exam_id = data.get('exam_id')
+        
+        if not result_ids:
+            return jsonify({"success": False, "message": "请选择要导出的成绩记录"}), 400
+        
+        db = get_supabase()
+        
+        # 获取所有选中的成绩记录
+        results_res = db.table("exam_results").select("*").in_("id", result_ids).is_("deleted_at", "null").execute()
+        results = results_res.data or []
+        
+        if not results:
+            return jsonify({"success": False, "message": "未找到有效的成绩记录"}), 404
+        
+        # ✅ 关键：按 user_id 去重，只保留每个考生最新的成绩记录
+        user_latest_result = {}
+        for result in results:
+            user_id = result['user_id']
+            created_at = result.get('created_at', '')
+            
+            # 如果该用户还没有记录，或者当前记录更新，则保存
+            if user_id not in user_latest_result:
+                user_latest_result[user_id] = result
             else:
-                logger.warning(f"无法生成 PDF，result_id={rid}")
-    zip_buffer.seek(0)
-    return send_file(
-        zip_buffer,
-        mimetype='application/zip',
-        as_attachment=True,
-        download_name=f"exam_{exam_id}_selected_scores.zip"
-    )
+                existing_created_at = user_latest_result[user_id].get('created_at', '')
+                if created_at > existing_created_at:
+                    user_latest_result[user_id] = result
+        
+        # 获取去重后的最新成绩记录列表
+        unique_latest_results = list(user_latest_result.values())
+        
+        logger.info(f"批量导出: 原始选中 {len(results)} 条记录，去重后 {len(unique_latest_results)} 个考生")
+        
+        # 记录被过滤掉的重复记录
+        if len(results) > len(unique_latest_results):
+            logger.info(f"过滤掉 {len(results) - len(unique_latest_results)} 条重复记录（同一考生的旧成绩）")
+        
+        # 获取考试信息
+        exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
+        if not exam_res.data:
+            return jsonify({"success": False, "message": "考试不存在"}), 404
+        exam_data = exam_res.data
+        
+        # 获取所有用户信息
+        user_ids = list(set(r['user_id'] for r in unique_latest_results))
+        users_res = db.table("users").select("*").in_("id", user_ids).execute()
+        users_dict = {u['id']: u for u in (users_res.data or [])}
+        
+        # 获取题目列表
+        questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+        questions = questions_res.data or []
+        
+        from io import BytesIO
+        import zipfile
+        import re
+        
+        zip_buffer = BytesIO()
+        
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for result in unique_latest_results:
+                user_id = result['user_id']
+                user_data = users_dict.get(user_id, {})
+                score = result.get('total_score', 0)
+                
+                # 解析答案和详情
+                answers = {}
+                details = {}
+                
+                if result.get('answers'):
+                    try:
+                        answers = json.loads(result['answers']) if isinstance(result['answers'], str) else result['answers']
+                    except:
+                        pass
+                
+                if result.get('details'):
+                    try:
+                        details = json.loads(result['details']) if isinstance(result['details'], str) else result['details']
+                    except:
+                        pass
+                
+                # 获取阅卷人
+                reviewer = get_reviewer_by_country(
+                    user_country=user_data.get('country'),
+                    exam_reviewer=exam_data.get('reviewer'),
+                    url_reviewer=None
+                )
+                
+                user_name = user_data.get('name_cn') or user_data.get('name_en', '未知考生')
+                
+                # 生成PDF
+                pdf_buffer = export.generate_user_pdf(
+                    user_name=user_name,
+                    user_email=user_data.get('email', ''),
+                    exam_title=exam_data.get('title', '未命名考试'),
+                    score=score,
+                    questions=questions,
+                    answers=answers,
+                    details=details,
+                    submitted_at=result.get('created_at', ''),
+                    reviewer=reviewer
+                )
+                
+                # 清理文件名中的非法字符
+                safe_name = re.sub(r'[\\/*?:"<>|]', '_', user_name)
+                safe_title = re.sub(r'[\\/*?:"<>|]', '_', exam_data.get('title', 'exam'))
+                
+                # 文件名包含得分和提交时间（用于区分多次考试）
+                submitted_date = result.get('created_at', '')[:10] if result.get('created_at') else 'unknown'
+                filename = f"Transcript_{safe_name}_{safe_title}_{submitted_date}_{score}.pdf"
+                
+                zf.writestr(filename, pdf_buffer.getvalue())
+                logger.info(f"  已添加: {filename}")
+        
+        zip_buffer.seek(0)
+        
+        safe_title = re.sub(r'[\\/*?:"<>|]', '_', exam_data.get('title', 'exam'))
+        return send_file(
+            zip_buffer,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'{safe_title}_考试成绩_{len(unique_latest_results)}人.zip'
+        )
+        
+    except Exception as e:
+        logger.error(f"批量导出失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_export_bp.route('/admin/export_pdf/<int:exam_id>/<user_id>')
 @login_required
@@ -553,3 +650,137 @@ def admin_export_user_pdf(exam_id, user_id):
         as_attachment=True,
         download_name=filename
     )
+
+@admin_export_bp.route('/api/admin/exam/<int:exam_id>/batch_export', methods=['POST'])
+@admin_required
+def admin_batch_export_pdf(exam_id):
+    logger.info(f"✅ batch_export 被调用，exam_id={exam_id}")
+
+    data = request.json
+    db = get_supabase()
+    user_ids = data.get('user_ids', [])
+    if not user_ids:
+        return jsonify({"error": "未选择考生"}), 400
+    # 去重
+    user_ids = list(set(user_ids))
+    logger.info(f"批量导出考试 {exam_id}，考生数量: {len(user_ids)}，IDs: {user_ids}")
+
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for uid in user_ids:
+            # 调用生成单个考生PDF的函数，返回字节流
+            pdf_bytes, score, result_id = generate_single_user_pdf(exam_id, uid)
+            if pdf_bytes:
+                # 获取考生姓名
+                user_res = db.table("users").select("name_en, email").eq("id", uid).execute()
+                name = user_res.data[0].get('name_en', uid) if user_res.data else uid                
+                result_id = get_latest_result_id(exam_id, uid)  # 需实现该函数
+                safe_name = re.sub(r'[\\/*?:"<>|]', '_', name)
+                # filename = f"{name}_{exam_id}_{result_id}.pdf"
+                if score is not None:
+                    filename = f"{safe_name}_({exam_id}_{result_id})_{score}.pdf"
+                else:
+                    filename = f"{safe_name}_({exam_id}_{result_id}).pdf"
+                zf.writestr(filename, pdf_bytes)
+                logger.info(f"  已添加文件: {filename}")
+    zip_buffer.seek(0)
+    
+    # 获取考试标题用于文件名
+    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+    exam_title = exam_res.data.get('title', 'exam') if exam_res.data else 'exam'
+    safe_title = re.sub(r'[\\/*?:"<>|]', '_', exam_title)
+    
+    return send_file(zip_buffer, mimetype='application/zip', as_attachment=True, download_name=f"{safe_title}_{exam_id}_scores.zip")
+
+def generate_single_user_pdf(exam_id, user_id):
+    """为指定考试和考生生成PDF字节流，返回 (pdf_bytes, score, result_id)"""
+    # logger.info(f"[批量导出] 开始生成 PDF: exam_id={exam_id}, user_id={user_id}")
+    db = get_supabase()
+    # 1. 获取该考生在该考试的最新成绩记录
+    result_res = db.table("exam_results") \
+        .select("*") \
+        .eq("exam_id", exam_id) \
+        .eq("user_id", user_id) \
+        .order("created_at", desc=True) \
+        .limit(1) \
+        .execute()
+    if not result_res.data:
+        logger.warning(f"未找到考试 {exam_id} 用户 {user_id} 的成绩记录")
+        return None, None, None
+
+    result = result_res.data[0]
+    score = result.get('total_score', 0)
+    result_id = result.get('id')
+    # logger.info(f"  找到成绩记录 result_id={result['id']}, score={result.get('total_score')}")
+
+    # 2. 获取考试信息
+    exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
+    if not exam_res.data:
+        return None, None, None
+    exam_data = exam_res.data[0]
+
+    # 3. 获取考生信息
+    user_res = db.table("users").select("*").eq("id", user_id).execute()
+    if not user_res.data:
+        return None, None, None
+    user_data = user_res.data[0]
+
+    # 4. 解析 answers, details（递归）
+    def robust_parse_json(value):
+        if not value:
+            return {}
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, str):
+                    return robust_parse_json(parsed)
+                return parsed
+            except:
+                return {}
+        return {}
+    answers = robust_parse_json(result.get('answers'))
+    details = robust_parse_json(result.get('details'))
+
+    # 5. 获取题目列表
+    questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    questions = questions_res.data or []
+
+    # 6. 阅卷人（默认）
+    # ---------- 获取阅卷人（多级优先级）----------
+    reviewer = get_reviewer_by_country(
+        user_country=user_data.get('country'),
+        exam_reviewer=exam_data.get('reviewer'),
+        url_reviewer=None  # 批量导出时没有 URL 参数
+    )
+
+    '''
+    # ✅ 添加调试日志
+    logger.info(f"========== generate_single_user_pdf 阅卷人 ==========")
+    logger.info(f"考生国家: {user_data.get('country')}")
+    logger.info(f"考试表 reviewer: {exam_data.get('reviewer')}")
+    logger.info(f"最终 reviewer: {reviewer}")
+    logger.info(f"=================================================")
+    '''
+
+    # 7. 生成PDF字节流
+    pdf_buffer = export.generate_user_pdf(
+        user_name=user_data.get('name_cn') or user_data.get('name_en', '未知考生'),
+        user_email=user_data.get('email', ''),
+        exam_title=exam_data.get('title', '未命名考试'),
+        score=score,
+        questions=questions,
+        answers=answers,
+        details=details,
+        submitted_at=result.get('created_at', ''),
+        reviewer=reviewer
+    )
+    # 返回字节数据（BytesIO 需要 .getvalue()）
+    return pdf_buffer.getvalue(), score, result_id  # 注意：generate_user_pdf 返回 BytesIO，需提取内容
+
+def get_latest_result_id(exam_id, user_id):
+    db = get_supabase()
+    res = db.table("exam_results").select("id").eq("exam_id", exam_id).eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
+    return res.data[0]['id'] if res.data else None
+

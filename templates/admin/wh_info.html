@@ -87,7 +87,7 @@
                         </tr>
                     </thead>
                     <tbody id="whTableBody">
-                        <tr><td colspan="10" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="9" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -124,13 +124,13 @@
                         </datalist>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label"><span data-i18n="wh_id">库房编码</span></label>
+                        <label class="form-label"><span data-i18n="wh_name_en">库房名称</span></label>
                         <input type="text" id="whNameEn" class="form-control">
                     </div>
                     <div class="mb-3">
                         <label class="form-label"><span data-i18n="country">国家</span></label>
                         <input type="text" id="countryCode" class="form-control" 
-                        <span data-i18n="placeholde_extracte_or_write">自动提取或手动填写</span> 
+                        data-i18n-placeholder="placeholder_extracte_or_write" 
                         placeholder="自动提取或手动填写">
                     </div>
                     <div class="mb-3">
@@ -669,7 +669,7 @@
                 document.getElementById('countryCode').value = wh.country_code || '';
                 document.getElementById('remark').value = wh.remark || '';
                 document.getElementById('isActive').checked = wh.is_active;
-                document.getElementById('modalTitle').innerText = '编辑库房';
+                document.getElementById('modalTitle').innerText = t('edit_warehoues') || '编辑库房';
                 document.getElementById('whId').disabled = true;
                 new bootstrap.Modal(document.getElementById('addWhModal')).show();
             }
@@ -687,7 +687,7 @@
         document.getElementById('remark').value = '';
         document.getElementById('isActive').checked = true;
         document.getElementById('whId').disabled = false;
-        document.getElementById('modalTitle').innerText = '添加库房';
+        document.getElementById('modalTitle').innerText = t('add_wh') || '添加库房';
     }
 
     // ========== 辅助函数 ==========

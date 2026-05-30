@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 from services.export import find_wkhtmltopdf
 from utils.training_helpers import get_training_country_templates_status, _save_country_template
 from routes.helpers import login_required, admin_required, get_attendance_data, get_training_status, upload_signature
-from flask import render_template, request, redirect, url_for, session, flash, jsonify, make_response
+from flask import render_template, request, redirect, send_file, url_for, session, flash, jsonify, make_response
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
 from utils.permissions import get_admin_allowed_countries
@@ -762,3 +762,285 @@ def api_admin_batch_delete_training_attendances():
         "fail_count": fail_count,
         "errors": errors[:10]
     })
+
+@admin_training_bp.route('/admin/training/attendance_status_view')
+@login_required
+@admin_required
+def training_attendance_status_view():
+    """培训签到人员状态查看页面"""
+    return render_template('admin/list_training_status_view.html')
+
+@admin_training_bp.route('/api/admin/training/users_with_status')
+@login_required
+@admin_required
+def api_training_users_with_status():
+    """获取权限范围内所有培训的学员签到状态（只显示培训对应国家的学员）"""
+    db = get_supabase()
+    
+    # 获取当前管理员的权限范围
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 1. 获取权限范围内的所有培训
+    trainings_query = db.table("trainings").select("id, name, country").is_("deleted_at", "null")
+    
+    if allowed_countries is not None:
+        if not allowed_countries:
+            return jsonify({"data": []})
+        trainings_query = trainings_query.in_("country", allowed_countries)
+    
+    trainings_res = trainings_query.execute()
+    trainings = trainings_res.data or []
+    
+    if not trainings:
+        return jsonify({"data": []})
+    
+    # 2. 获取所有培训涉及的国家列表（用于后续过滤用户）
+    training_countries = list(set([t.get('country') for t in trainings if t.get('country')]))
+    
+    # 3. 只获取培训国家范围内的用户
+    users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered")
+    
+    if training_countries:
+        users_query = users_query.in_("country", training_countries)
+    
+    # 额外筛选条件
+    search = request.args.get('search', '')
+    country = request.args.get('country', '')
+    wh_id = request.args.get('wh_id', '')
+    
+    if search:
+        users_query = users_query.or_(f"name_en.ilike.%{search}%,email.ilike.%{search}%")
+    if country:
+        users_query = users_query.eq("country", country)
+    if wh_id:
+        users_query = users_query.filter("wh_id", "ilike", f"%{wh_id}%")
+    
+    users_res = users_query.execute()
+    users = users_res.data or []
+    user_ids = [u['id'] for u in users]
+    
+    if not user_ids:
+        return jsonify({"data": []})
+    
+    # 4. 获取所有培训的签到记录
+    training_ids = [t['id'] for t in trainings]
+    att_res = db.table("training_attendances").select(
+        "training_id, user_id, sign_time, signed_name, signature_url"
+    ).in_("training_id", training_ids).in_("user_id", user_ids).is_("deleted_at", "null").execute()
+    
+    # 构建签到记录映射
+    attendance_map = {}
+    for att in (att_res.data or []):
+        key = f"{att['training_id']}_{att['user_id']}"
+        attendance_map[key] = {
+            "sign_time": att.get('sign_time'),
+            "signed_name": att.get('signed_name', ''),
+            "signature_url": att.get('signature_url', '')
+        }
+    
+    # 5. 构建返回数据（✅ 关键：只显示培训国家对应的学员）
+    result = []
+    for training in trainings:
+        training_id = training['id']
+        training_name = training.get('name', '')
+        training_country = training.get('country', '')
+        
+        # ✅ 只遍历与该培训国家匹配的用户
+        for user in users:
+            user_country = user.get('country', '')
+            
+            # ✅ 关键过滤：用户国家必须与培训国家一致
+            if user_country != training_country:
+                continue
+            
+            key = f"{training_id}_{user['id']}"
+            attendance = attendance_map.get(key, {})
+            sign_time = attendance.get('sign_time')
+            signature_url = attendance.get('signature_url', '')
+            
+            # 判断签到状态
+            if not sign_time:
+                sign_status = 'pending'
+            elif not signature_url:
+                sign_status = 'resign'
+            else:
+                sign_status = 'signed'
+            
+            result.append({
+                "training_id": training_id,
+                "training_name": training_name,
+                "training_country": training_country,
+                "user_id": user['id'],
+                "country": user_country,
+                "name_en": user.get('name_en', ''),
+                "email": user.get('email', ''),
+                "wh_id": user.get('wh_id', ''),
+                "wh_name_en": user.get('wh_name_en', ''),
+                "company": user.get('company', ''),
+                "sign_status": sign_status,
+                "sign_time": sign_time,
+                "signed_name": attendance.get('signed_name', ''),
+                "signature_url": signature_url
+            })
+    
+    # 按培训名称和学员姓名排序
+    result.sort(key=lambda x: (x.get('training_name', ''), x.get('name_en', '')))
+    
+    return jsonify({"data": result})
+
+@admin_training_bp.route('/api/admin/training/export_attendance_status')
+@login_required
+@admin_required
+def export_training_attendance_status():
+    """导出培训签到状态为Excel（只显示培训对应国家的学员）"""
+    from io import BytesIO
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from datetime import datetime
+    
+    db = get_supabase()
+    
+    # 获取当前管理员的权限范围
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 1. 获取权限范围内的所有培训
+    trainings_query = db.table("trainings").select("id, name, country").is_("deleted_at", "null")
+    
+    if allowed_countries is not None:
+        if not allowed_countries:
+            return jsonify({"error": "无权限"}), 403
+        trainings_query = trainings_query.in_("country", allowed_countries)
+    
+    trainings_res = trainings_query.execute()
+    trainings = trainings_res.data or []
+    
+    if not trainings:
+        return jsonify({"error": "没有可导出的数据"}), 404
+    
+    # 2. 获取培训涉及的国家列表
+    training_countries = list(set([t.get('country') for t in trainings if t.get('country')]))
+    
+    # 3. 获取用户
+    users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered")
+    
+    if training_countries:
+        users_query = users_query.in_("country", training_countries)
+    
+    # 筛选条件
+    search = request.args.get('search', '')
+    country = request.args.get('country', '')
+    wh_id = request.args.get('wh_id', '')
+    
+    if search:
+        users_query = users_query.or_(f"name_en.ilike.%{search}%,email.ilike.%{search}%")
+    if country:
+        users_query = users_query.eq("country", country)
+    if wh_id:
+        users_query = users_query.filter("wh_id", "ilike", f"%{wh_id}%")
+    
+    users_res = users_query.execute()
+    users = users_res.data or []
+    user_ids = [u['id'] for u in users]
+    
+    # 4. 获取签到记录
+    attendance_map = {}
+    if user_ids:
+        training_ids = [t['id'] for t in trainings]
+        att_res = db.table("training_attendances").select(
+            "training_id, user_id, sign_time, signed_name, signature_url"
+        ).in_("training_id", training_ids).in_("user_id", user_ids).is_("deleted_at", "null").execute()
+        
+        for att in (att_res.data or []):
+            key = f"{att['training_id']}_{att['user_id']}"
+            attendance_map[key] = {
+                "sign_time": att.get('sign_time'),
+                "signed_name": att.get('signed_name', ''),
+                "signature_url": att.get('signature_url', '')
+            }
+    
+    # 创建工作簿
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "培训签到状态"
+    
+    # 表头样式
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin")
+    )
+    
+    # 表头
+    headers = ["序号", "培训名称", "培训国家", "学员国家", "学员姓名", "邮箱", "库房编码", "库房名称", "公司", "签到时间", "签名姓名", "签到状态"]
+    for col, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.border = thin_border
+    
+    # 数据行
+    status_map = {
+        'signed': '已签到',
+        'pending': '待签到',
+        'resign': '需重新签名'
+    }
+    
+    row_idx = 2
+    for training in trainings:
+        training_name = training.get('name', '')
+        training_country = training.get('country', '')
+        
+        for user in users:
+            user_country = user.get('country', '')
+            
+            # ✅ 关键：只导出培训国家对应的学员
+            if user_country != training_country:
+                continue
+            
+            key = f"{training['id']}_{user['id']}"
+            attendance = attendance_map.get(key, {})
+            sign_time = attendance.get('sign_time')
+            signature_url = attendance.get('signature_url', '')
+            
+            if not sign_time:
+                sign_status = 'pending'
+            elif not signature_url:
+                sign_status = 'resign'
+            else:
+                sign_status = 'signed'
+            
+            ws.cell(row=row_idx, column=1, value=row_idx - 1)
+            ws.cell(row=row_idx, column=2, value=training_name)
+            ws.cell(row=row_idx, column=3, value=training_country)
+            ws.cell(row=row_idx, column=4, value=user_country)
+            ws.cell(row=row_idx, column=5, value=user.get('name_en', ''))
+            ws.cell(row=row_idx, column=6, value=user.get('email', ''))
+            ws.cell(row=row_idx, column=7, value=user.get('wh_id', ''))
+            ws.cell(row=row_idx, column=8, value=user.get('wh_name_en', ''))
+            ws.cell(row=row_idx, column=9, value=user.get('company', ''))
+            ws.cell(row=row_idx, column=10, value=sign_time[:19] if sign_time else '')
+            ws.cell(row=row_idx, column=11, value=attendance.get('signed_name', ''))
+            ws.cell(row=row_idx, column=12, value=status_map.get(sign_status, '-'))
+            
+            row_idx += 1
+    
+    # 调整列宽
+    column_widths = [6, 30, 12, 12, 15, 25, 15, 20, 20, 20, 15, 12]
+    for col, width in enumerate(column_widths, 1):
+        ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+    
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    filename = f"培训签到状态_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        buffer,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+

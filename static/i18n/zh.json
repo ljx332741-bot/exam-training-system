@@ -711,5 +711,15 @@
     "t_waiting_for_exam": "等待完成考试",
     "t_exam_score": "考试成绩",
     "t_points": "分",
-    "t_exam_not_completed": "考试未完成，请先完成考试"
+    "t_exam_not_completed": "考试未完成，请先完成考试",
+    "t_select_exam_first": "请先选择考试",
+"code_extracted_from_wh_id": "国家代码会自动从库房ID前两位提取",
+"placeholder_extracte_or_write": "自动提取或手动填写",
+"no_permission": "您没有权限执行此操作",
+"view_attendance_users": "签到人员",
+"title_view_sign_in_status": "查看签到人员状态",
+"sign_in_details": "签到详情",
+"pending_sign": "待签到",
+"export_excel": "导出Excel",
+"sign_time": "签到时间"
 }
