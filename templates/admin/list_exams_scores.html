@@ -6,6 +6,7 @@
 <div class="container-fluid px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><span data-i18n="exam_scores_detail">考生成绩详情</span> - <span id="examTitle">{{exam_title}}</span></h2>
+        <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
     </div>
 
     <!-- 过滤栏 -->
@@ -13,12 +14,19 @@
         <div class="card-body">
             <div class="row g-3 align-items-end">
                 <div class="col-md-5">
-                    <div class="row g-3">
-                        <div class="col-md-6">
+                    <div class="row g-4">
+                        <div class="col-md-4">
                             <input type="text" id="searchInput" class="form-control" 
                             data-i18n-placeholder="placeholder_mail_name" placeholder="考生姓名/邮箱">
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
+                            <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                            placeholder="输入或选择国家" 
+                            data-i18n-placeholder="placeholder_select_or_input"
+                            autocomplete="off">
+                            <datalist id="countryDatalist"></datalist>
+                        </div>
+                        <div class="col-md-4">
                             <select id="submitMethodFilter" class="form-select">
                                 <option value="" data-i18n="submit_method_all">全部提交方式</option>
                                 <option value="manual" data-i18n="student_submit">考生提交</option>
@@ -35,7 +43,6 @@
                     {% if is_super_admin %}
                     <button id="batchDeleteBtn" class="btn btn-danger me-2"><i class="bi bi-trash"></i> <span data-i18n="batch_delete">批量删除</span></button>
                     {% endif %}
-                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -45,25 +52,25 @@
     <div class="card shadow-sm">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table table-hover mb-0" style="width: 100% !important; min-width: 100%;">
+                <table class="table table-hover mb-0" style="width: 100% !important; min-width: 100%; white-space: nowrap;">
                     <thead class="table-light">
                         <tr>
                             <th><input type="checkbox" id="selectAll"></th>
-                            <th><span data-i18n="sequence">序号</span></th>
-                            <th><span data-i18n="country">国家</span></th>
-                            <th><span data-i18n="name_en">姓名</span></th>
-                            <th><span data-i18n="email">邮箱</span></th>
-                            <th><span data-i18n="status">状态</span></th>
-                            <th><span data-i18n="exam_time_start">考试开始时间</span></th>
-                            <th><span data-i18n="submit_at">提交时间</span></th>
-                            <th><span data-i18n="submit_method">提交方式</span></th>
-                            <th><span data-i18n="time_s">用时(秒)</span>(秒)</th>
-                            <th><span data-i18n="candidate_score">得分</span></th>
-                            <th><span data-i18n="reviewer">阅卷人</span></th>
-                            <th><span data-i18n="actions">操作</span></th>
+                            <th data-i18n="sequence">序号</th>
+                            <th data-i18n="country">国家</th>
+                            <th data-i18n="name_en">姓名</th>
+                            <th data-i18n="email">邮箱</th>
+                            <th data-i18n="status">状态</th>
+                            <th data-i18n="exam_time_start">考试开始时间</th>
+                            <th data-i18n="submit_at">提交时间</th>
+                            <th data-i18n="submit_method">提交方式</th>
+                            <th data-i18n="time_s">用时(秒)</th>
+                            <th data-i18n="candidate_score">得分</th>
+                            <th data-i18n="reviewer">阅卷人</th>
+                            <th data-i18n="actions">操作</th>
                         </tr>
                     </thead>
-                    <tbody id="scoresTbody">
+                    <tbody id="scoresTbody" style="font-size: 0.875rem";>
                         <tr><td colspan="13" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
@@ -193,8 +200,8 @@
                 <td>${escapeHtml(s.name)}</td>
                 <td>${escapeHtml(s.email)}</td>
                 <td>${s.status}</td>
-                <td>${formatDate(s.started_at)}</td>
-                <td>${formatDate(s.submitted_at)}</td>
+                <td>${formatLocalTime(s.started_at)}</td>
+                <td>${formatLocalTime(s.submitted_at)}</td>
                 <td>${s.submit_method === 'manual' ? t('t_manual_submit') : t('t_auto_submit')}</td>
                 <td>${s.time_used ?? '-'}</td>
                 <td>${s.score}</td>

@@ -6,6 +6,7 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
+        <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
     </div>
 
     <!-- 过滤栏 -->
@@ -39,7 +40,13 @@
                 </div>
                 <div class="col-md-5 d-flex justify-content-end">
                     <button class="btn btn-primary me-2" id="newTrainingBtn"><i class="bi bi-plus-circle"></i> <span data-i18n="new_training">新增培训</span></button>
-                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+                    <button class="btn btn-sm btn-outline-info view-attendance-users-btn" 
+                            data-training-id="${t.id}" 
+                            data-training-name="${escapeHtml(t.name)}"
+                            data-i18n-title="title_view_sign_in_status"
+                            title="查看签到人员状态">
+                        <i class="bi bi-eye"></i> <span data-i18n="view_attendance_users">签到人员</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -1091,6 +1098,16 @@
 
         newRow.querySelector('.cancel-new-training').onclick = () => newRow.remove();
     }
+
+    // 绑定查看签到人员按钮事件
+    document.querySelectorAll('.view-attendance-users-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            const trainingName = btn.dataset.trainingName;
+            // 打开新窗口或模态框
+            const url = `/admin/training/attendance_status_view`;
+            window.open(url, 'width=1200,height=800,scrollbars=yes');
+        });
+    });
 
     // 搜索
     document.getElementById('searchBtn').addEventListener('click', () => {

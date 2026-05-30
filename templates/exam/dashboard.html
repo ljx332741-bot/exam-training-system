@@ -486,7 +486,7 @@
                 } else if (!examCompleted && !isCompleted && !isFuture) {
                     examInfoHtml = `<div class="small text-warning mt-1"><i class="bi bi-exclamation-triangle-fill"></i> ${safeT('t_exam_not_completed')}</div>`;
                 }
-                
+            
                 card.innerHTML = `
                     <div class="card-dashboard interview-card position-relative" ${btnDisabled ? `title="${btnTooltip}"` : ''}>
                         <div class="card-status-bar ${statusBarClass}"></div>

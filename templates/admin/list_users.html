@@ -30,6 +30,23 @@
         user-select: none;
         cursor: col-resize;
     }
+    /* 确保 datalist 下拉选项可见 */
+    datalist {
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    datalist option {
+        padding: 8px;
+        cursor: pointer;
+    }
+
+    datalist option:hover {
+        background-color: #f0f0f0;
+    }
 </style>
 {% endblock %}
 
@@ -38,12 +55,16 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
         <div>
+            {% if has_permission('batch_delete') %}
             <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
             </button>
+            {% endif %}
+            {% if has_permission('view_deleted_list') %}
             <button class="btn btn-outline-secondary" id="showDeletedUsersBtn">
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -196,7 +217,7 @@
                         <div class="col-md-6">
                             <label class="form-label" for="wh_id"><span data-i18n="wh_id">库房编码</span></label>
                             <input type="text" id="wh_id" class="form-control" list="whDatalist" 
-                                placeholder="请输入或选择库房" autocomplete="off">
+                            data-i18n-placeholder="placeholder_select_or_input" placeholder="请输入或选择库房" autocomplete="off">
                             <datalist id="whDatalist"></datalist>
                         </div>
                         <div class="col-md-6">
@@ -1133,13 +1154,11 @@
         console.log('复选框变化, 选中数量:', selectedUserIds.size);
         const cb = e.target;
         const id = cb.dataset.id;
-        console.log('复选框变化, id:', id, 'checked:', cb.checked);  // ✅ 调试
         if (cb.checked) {
             selectedUserIds.add(id);
         } else {
             selectedUserIds.delete(id);
         }
-        console.log('当前选中数量:', selectedUserIds.size);  // ✅ 调试
         updateBatchDeleteButton();
     }
 
@@ -1275,6 +1294,19 @@
             currentEditUserId = null;
             document.getElementById('editUserId').value = '';
         }
+        // 确保库房输入框可编辑
+        const whIdInput = document.getElementById('wh_id');
+        if (whIdInput) {
+            whIdInput.disabled = false;
+            whIdInput.readOnly = false;
+        }
+        
+        // 确保库房名称可编辑（新库房可能需要）
+        const whNameEn = document.getElementById('wh_name_en');
+        if (whNameEn) {
+            whNameEn.readOnly = false;
+            whNameEn.style.backgroundColor = '#ffffff';
+        }
     }
 
     function openResetPwd(userId) {
@@ -1324,7 +1356,40 @@
         
         const userStatus = document.getElementById('user_status').value;
         const selectedRole = formData.role;
-        
+    
+        const whId = document.getElementById('wh_id').value.trim().toUpperCase();
+        const whNameEn = document.getElementById('wh_name_en').value.trim();
+        const whType = document.getElementById('wh_type').value.trim();
+
+        // ✅ 如果库房ID不存在于 wh_info 表中，尝试自动创建
+        if (whId) {
+            try {
+                // 检查库房是否存在
+                const checkRes = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(whId)}`);
+                const checkData = await checkRes.json();
+                
+                if (!checkData.data || checkData.data.length === 0) {
+                    // 库房不存在，自动创建
+                    console.log('库房不存在，自动创建:', whId);
+                    const createRes = await fetch('/api/admin/wh', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            wh_id: whId,
+                            wh_name_en: whNameEn,
+                            wh_type: whType,
+                            is_active: true
+                        })
+                    });
+                    const createData = await createRes.json();
+                    if (!createData.success) {
+                        console.warn('自动创建库房失败:', createData.message);
+                    }
+                }
+            } catch(e) {
+                console.error('检查/创建库房失败:', e);
+            }
+        }
         // ========== 角色权限校验 ==========
         if (!canCreateRole(selectedRole)) {
             alert(t('t_no_permission_create_role', { role: selectedRole }));
@@ -1544,6 +1609,7 @@
     });
 
     document.getElementById('addUserModal').addEventListener('shown.bs.modal', async () => {
+        // initWarehouseSearch();
         // 只有在编辑模式且有待填充的数据时才填充
         const editUserIdHidden = document.getElementById('editUserId');
         const isEditMode = editUserIdHidden && editUserIdHidden.value;
@@ -1688,11 +1754,6 @@
 
     // 2文件选择后自动上传
     function formatImportError(error) {
-        console.log('调试 error:', error);
-        console.log('error 类型:', typeof error);
-        console.log('error.code:', error?.code);
-        console.log('error.row:', error?.row);
-        console.log('error.params:', error?.params);
         
         // 如果是字符串，直接返回
         if (typeof error === 'string') {
@@ -2150,15 +2211,46 @@
     document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
     
     // 初始化库房搜索
+    // 初始化库房搜索（带国家校验和自动转大写）
     async function initWarehouseSearch() {
         const whInput = document.getElementById('wh_id');
         const whDatalist = document.getElementById('whDatalist');
+        const whNameEnInput = document.getElementById('wh_name_en');
+        const whTypeInput = document.getElementById('wh_type');
+        const countryCodeInput = document.getElementById('countryCode'); // 用户选择的国家
         
-        if (!whInput) return;
+        if (!whInput) {
+            console.error('库房输入框 wh_id 不存在');
+            return;
+        }
+        if (!whDatalist) {
+            console.error('datalist whDatalist 不存在');
+            return;
+        }
         
-        // 输入时搜索
-        whInput.addEventListener('input', debounce(async function() {
-            const q = this.value.trim();
+        console.log('库房搜索初始化成功');
+        
+        // 防抖函数
+        const debounce = (fn, delay) => {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
+        
+        // 从库房ID提取国家代码
+        function extractCountryFromWhId(whId) {
+            if (!whId) return '';
+            const match = whId.match(/^([A-Z]{2})/);
+            return match ? match[1] : '';
+        }
+        
+        // 输入时模糊搜索（实时下拉提示）
+        whInput.addEventListener('input', debounce(async function(e) {
+            const q = this.value.trim().toUpperCase();
+            console.log('搜索库房:', q);
+            
             if (!q) {
                 whDatalist.innerHTML = '';
                 return;
@@ -2167,35 +2259,85 @@
             try {
                 const res = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(q)}`);
                 const data = await res.json();
-                if (data.data) {
+                
+                if (data.data && data.data.length > 0) {
+                    // 生成下拉选项
                     whDatalist.innerHTML = data.data.map(wh => 
                         `<option value="${escapeHtml(wh.wh_id)}">${escapeHtml(wh.wh_id)} - ${escapeHtml(wh.wh_name_en || wh.wh_name_cn || '')}</option>`
                     ).join('');
+                    console.log(`找到 ${data.data.length} 个匹配库房`);
+                } else {
+                    whDatalist.innerHTML = '';
+                    console.log('未找到匹配库房');
                 }
             } catch(e) {
                 console.error('搜索库房失败', e);
+                whDatalist.innerHTML = '';
             }
         }, 300));
         
-        // 选择时自动填充
+        // 选择时自动填充（从下拉列表选择或手动输入后失焦）
         whInput.addEventListener('change', async function() {
-            const whId = this.value.trim().toUpperCase();
-            if (!whId) return;
+            let whId = this.value.trim().toUpperCase();
+            console.log('库房选择/输入:', whId);
+            
+            if (!whId) {
+                if (whNameEnInput) whNameEnInput.value = '';
+                if (whTypeInput) whTypeInput.value = '';
+                return;
+            }
+            
+            // 自动转大写
+            this.value = whId;
+            
+            // 获取用户选择的国家
+            const userCountry = countryCodeInput ? countryCodeInput.value : '';
+            const extractedCountry = extractCountryFromWhId(whId);
+            
+            // ✅ 国家一致性校验
+            if (userCountry && extractedCountry && userCountry !== extractedCountry) {
+                alert(`库房ID "${whId}" 的国家代码 "${extractedCountry}" 与用户国家 "${userCountry}" 不一致，请修正！`);
+                this.value = '';
+                if (whNameEnInput) whNameEnInput.value = '';
+                if (whTypeInput) whTypeInput.value = '';
+                return;
+            }
             
             try {
                 const res = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(whId)}`);
                 const data = await res.json();
+                
                 if (data.data && data.data.length > 0) {
+                    // 精确匹配，自动填充
                     const wh = data.data[0];
-                    document.getElementById('wh_name_en').value = wh.wh_name_en || '';
-                    document.getElementById('wh_type').value = wh.wh_type || '';
-                    // 自动转大写
-                    document.getElementById('wh_id').value = wh.wh_id.toUpperCase();
+                    if (whNameEnInput) whNameEnInput.value = wh.wh_name_en || '';
+                    if (whTypeInput) whTypeInput.value = wh.wh_type || '';
+                    console.log('自动填充成功:', wh.wh_id, wh.wh_name_en);
+                } else {
+                    // 没有匹配到现有库房，允许手动输入新库房
+                    console.log('新库房，将自动创建');
+                    if (whNameEnInput) whNameEnInput.value = '';
+                    if (whTypeInput) whTypeInput.value = '';
+                    // 提示用户可以手动填写库房名称
+                    if (whNameEnInput) whNameEnInput.placeholder = '请输入库房名称（新库房）';
+                    if (whNameEnInput) whNameEnInput.readOnly = false;
+                    if (whNameEnInput) whNameEnInput.style.backgroundColor = '#ffffff';
                 }
             } catch(e) {
                 console.error('获取库房信息失败', e);
             }
         });
+        
+        // 手动输入库房名称时（如果库房ID是新的，允许手动填写）
+        if (whNameEnInput) {
+            whNameEnInput.addEventListener('focus', function() {
+                const whId = whInput.value.trim().toUpperCase();
+                if (whId && !whNameEnInput.value) {
+                    // 提示用户填写
+                    console.log('新库房，请填写库房名称');
+                }
+            });
+        }
     }
     
     // 页面初始化流程
@@ -2446,7 +2588,7 @@
         // ✅ 只需要这两个筛选绑定
         bindFilterEvents();
         bindDeletedFilterEvents();
-        
+        initWarehouseSearch();
         loadUsers();
         loadFieldConfig();
         bindFieldToggleEvents();

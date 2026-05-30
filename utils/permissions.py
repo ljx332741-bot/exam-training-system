@@ -17,11 +17,9 @@ def is_developer(user_id=None):
     target_id = user_id or session.get('user_id')
     return target_id == dev_id
 
-
 def get_developer_id():
     """获取开发者账号ID"""
     return os.environ.get('DEVELOPER_USER_ID', '')
-
 
 # ==================== 权限范围获取 ====================
 def get_allowed_countries():
