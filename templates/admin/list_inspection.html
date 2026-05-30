@@ -324,8 +324,8 @@
                 <td>${inv.id}</td>
                 <td>${escapeHtml(inv.country || '-')}</td>
                 <td><a href="/admin/interview/${inv.id}" class="text-decoration-none">${escapeHtml(inv.title)}</a></td>
-                <td>${formatLocalDateTime(inv.created_at)}</td>
-                <td>${formatLocalDateTime(inv.start_time)} - ${formatLocalDateTime(inv.end_time)}</td>
+                <td>${formatLocalTime(inv.created_at)}</td>
+                <td>${formatLocalTime(inv.start_time)} - ${formatLocalTime(inv.end_time)}</td>
                 <td>${inv.interviewee_count} ${t('t_people')}</td>
                 <td>${inv.question_count} ${t('t_question_per_people')}</td>
                 <td>${escapeHtml(inv.reviewer || '-')}</td>

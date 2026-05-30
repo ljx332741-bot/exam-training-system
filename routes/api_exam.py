@@ -410,7 +410,7 @@ def submit_exam(exam_id):
         existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
         update_data = {
             "is_submitted": True,
-            "submitted_at": datetime.now().isoformat(),
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
             "reset_at": None
         }
         if existing.data:

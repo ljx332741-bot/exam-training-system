@@ -29,9 +29,9 @@
                             <th>部门/合作伙伴（双语）Department/Partner</th>
                             <th>姓名+工号Name + Employee ID </th>
                             <th>签名Signature</th>
-                            <th class="print-hide"><span data-i18n="sign_in_period">签到时间</span></th>
-                            <th><span data-i18n="country">国家</span></th>
-                            <th class="print-hide"><span data-i18n="actions">操作</span></th>
+                            <th class="print-hide" data-i18n="sign_in_period">签到时间</th>
+                            <th class="print-hide" data-i18n="country">国家</th>
+                            <th class="print-hide" data-i18n="actions">操作</th>
                         </tr>
                     </thead>
                     <tbody id="attendanceTbody">
@@ -371,7 +371,7 @@
             const batchDeleteBtn = document.createElement('button');
             batchDeleteBtn.id = 'batchDeleteBtn';
             batchDeleteBtn.className = 'btn btn-danger no-print';
-            batchDeleteBtn.innerHTML = '<i class="bi bi-trash"></i> <span data-i18n="batch_delete">批量删除</span>';
+            batchDeleteBtn.innerHTML = `<i class="bi bi-trash no-print"></i> ${t('batch_delete')}`;
             batchDeleteBtn.onclick = batchDeleteAttendances;
 
             // ✅ 关键修复：手动触发翻译

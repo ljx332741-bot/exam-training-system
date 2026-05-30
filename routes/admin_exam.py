@@ -10,12 +10,14 @@ from routes.helpers import login_required, admin_required, parse_exam_countries,
 from services import auth, exam, export
 from config import Config
 from utils.status import get_exam_status
-from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country
+from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country, utc_to_local, format_datetime_local
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.permissions import (
     is_developer, get_admin_allowed_countries, set_admin_allowed_countries, 
     developer_required, get_allowed_countries, apply_country_filter, has_role
 )
+from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
+
 logger = logging.getLogger(__name__)
 
 @admin_exam_bp.route('/api/admin/current_user_permissions')
@@ -601,6 +603,10 @@ def admin_result_detail(result_id):
     details = result.get('details', {})
     if isinstance(details, str):
         details = json.loads(details)
+
+    # ✅ 格式化时间
+    result['created_at_local'] = format_datetime(result.get('created_at'))
+    result['submitted_at_local'] = format_datetime_local(result.get('submitted_at'))
     
     return render_template(
         'admin/result_detail.html',
@@ -1367,7 +1373,6 @@ def api_admin_exams_list():
     try:
         # 1. 基础查询
         query = db.table("exams").select("*", count="exact")
-        #query = apply_country_filter(query, 'country')
         if not include_deleted:
             query = query.is_("deleted_at", "null")
         if name:
@@ -1384,9 +1389,6 @@ def api_admin_exams_list():
 
         res = query.execute()
         all_exams = res.data or []
-        
-        # ✅ 添加调试日志
-        logger.info(f"查询到 {len(all_exams)} 条考试记录")
 
         # 2. 管理员权限过滤（如果 allowed 不为 None）
         if allowed is not None:
@@ -1741,7 +1743,7 @@ def admin_exam_scores_page(exam_id):
     
     exam_title = exam_res.data.get('title', f'考试 #{exam_id}') if exam_res.data else f'考试 #{exam_id}'
     
-    # ✅ 使用权限函数获取用户角色
+    # ✅ 使用权限函数获取用户角色 
     is_dev = is_developer()
     is_super_admin = session.get('role') == 'super_admin' or is_dev
     

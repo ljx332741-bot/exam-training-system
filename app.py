@@ -14,8 +14,12 @@ from services.db import get_supabase
 from services import auth, exam, export
 from services.auth import hash_password
 from config import Config
+from routes.helpers import login_required
 from services.scheduler import init_scheduler
+from utils.permissions import is_developer
+from utils.common import utc_to_local, format_datetime_local
 from utils.i18n_messages import I18nMessages
+from utils.timezone_utils import get_user_timezone, format_datetime, utc_string_to_local, format_datetime_24h, format_datetime_24h_short
 
 # 1. 日志配置
 logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s', handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')])
@@ -37,6 +41,97 @@ def inject_translation():
         lang = session.get('lang', 'zh')
         return I18nMessages.get_message(key, lang, **params)
     return dict(t=t)
+
+@app.context_processor
+def utility_processor():
+    from utils.permissions import is_developer
+    
+    def has_permission(permission):
+        """检查特定权限"""
+        role = session.get('role', 'user')
+        is_dev = is_developer()
+        
+        permissions = {
+            'batch_delete': role == 'super_admin' or is_dev,
+            'view_deleted_list': role == 'super_admin' or is_dev,
+            'edit_user': role in ['admin', 'super_admin'] or is_dev,
+            'delete_user': role in ['admin', 'super_admin'] or is_dev,
+            'reset_password': role in ['admin', 'super_admin'] or is_dev,
+            'view_all_list': role in ['admin', 'super_admin'] or is_dev,
+        }
+        result = permissions.get(permission, False)
+        print(f"permission '{permission}' result: {result}")
+        print(f"=========================")
+        
+        return result
+    
+    return {
+        'current_user_role': session.get('role', 'user'),
+        'current_user_id': session.get('user_id'),
+        'is_super_admin': session.get('role') == 'super_admin',
+        'is_developer': is_developer(),
+        'has_permission': has_permission,
+    }
+
+@app.before_request
+def detect_user_timezone():
+    """在每个请求前检测并存储用户时区"""
+    # 从 Cookie 或请求头获取用户时区
+    user_tz = request.cookies.get('user_timezone')
+    if user_tz:
+        from utils.timezone_utils import set_user_timezone
+        set_user_timezone(user_tz)
+    
+    # 如果还没有时区，从请求信息推断
+    if not session.get('user_timezone'):
+        get_user_timezone()
+
+@app.template_filter('local_time')
+def local_time_filter(utc_string, format_str='%Y-%m-%d %H:%M:%S'):
+    """Jinja2 过滤器：将 UTC 时间转换为用户本地时间"""
+    return utc_string_to_local(utc_string, format_str=format_str)
+
+@app.template_filter('local_date')
+def local_date_filter(utc_string):
+    """Jinja2 过滤器：只显示日期"""
+    return utc_string_to_local(utc_string, format_str='%Y-%m-%d')
+
+@app.template_filter('local_datetime')
+def local_datetime_filter(utc_string):
+    """Jinja2 过滤器：显示日期时间（简洁版）"""
+    return utc_string_to_local(utc_string, format_str='%Y-%m-%d %H:%M')
+
+@app.context_processor
+def utility_processor():
+    """向模板注入时区相关函数"""
+    from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
+    
+    def tz_now():
+        """获取当前用户本地时间"""
+        from datetime import datetime
+        from utils.timezone_utils import get_current_local_time
+        return get_current_local_time()
+    
+    return {
+        'user_timezone': get_user_timezone(),
+        'tz_format': utc_string_to_local,
+        'tz_now': tz_now,
+    }
+
+# 4. 注册蓝图
+@app.route('/api/user/timezone', methods=['GET', 'POST'])
+@login_required
+def user_timezone():
+    """获取或设置用户时区"""
+    if request.method == 'POST':
+        timezone_str = request.json.get('timezone')
+        from utils.timezone_utils import set_user_timezone
+        if set_user_timezone(timezone_str):
+            return jsonify({"success": True, "timezone": timezone_str})
+        return jsonify({"success": False, "message": "无效的时区"}), 400
+    else:
+        from utils.timezone_utils import get_user_timezone
+        return jsonify({"timezone": get_user_timezone()})
 
 @app.route('/debug/routes')
 def debug_routes():
@@ -84,17 +179,28 @@ def format_options_filter(options): return join_options_filter(options)
 
 @app.template_filter('utc_to_local')
 def utc_to_local_filter(utc_string):
-    if not utc_string: return ''
-    try:
-        s = utc_string.replace('Z', '+00:00') if utc_string.endswith('Z') else utc_string
-        dt = datetime.fromisoformat(s)
-        if dt.tzinfo is None: dt = pytz.UTC.localize(dt)
-        local_tz = pytz.timezone('Asia/Shanghai')
-        return dt.astimezone(local_tz).strftime('%Y-%m-%dT%H:%M')
-    except: return ''
+    """UTC 转本地时间字符串（24小时制，带秒）"""
+    return format_datetime_24h(utc_string)
 
 @app.template_filter('format_datetime_local')
-def format_datetime_local(utc_string): return utc_to_local_filter(utc_string)
+def format_datetime_local_filter(utc_string):
+    """格式化本地时间（24小时制，简洁版）"""
+    return format_datetime_24h_short(utc_string)
+
+@app.template_filter('format_datetime_local')
+def format_datetime_local(utc_string): 
+    return utc_to_local_filter(utc_string)
+
+# ✅ 新增：专门的24小时制过滤器
+@app.template_filter('datetime_24h')
+def datetime_24h_filter(utc_string):
+    """24小时制时间格式化：YYYY-MM-DD HH:MM:SS"""
+    return format_datetime_24h(utc_string)
+
+@app.template_filter('datetime_24h_short')
+def datetime_24h_short_filter(utc_string):
+    """24小时制时间格式化（简洁版）：YYYY-MM-DD HH:MM"""
+    return format_datetime_24h_short(utc_string)
 
 # 4. 错误处理器
 @app.errorhandler(Exception)
@@ -141,18 +247,6 @@ def register_global_routes(app):
             if func:
                 func()
             return 'Server shutting down...'
-
-    # app.py 临时添加
-    @app.route('/debug/routes')
-    def debug_routes():
-        routes = []
-        for rule in app.url_map.iter_rules():
-            routes.append({
-                "endpoint": rule.endpoint,
-                "methods": list(rule.methods - {'HEAD', 'OPTIONS'}),
-                "url": rule.rule
-            })
-        return jsonify(routes)
 
 @app.route('/static/<path:filename>')
 def static_proxy(filename):

@@ -76,7 +76,7 @@
                             <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
-                    <tbody id="examsTbody">
+                    <tbody id="examsTbody" style="font-size: 0.875rem";>
                         <tr>
                             <td 
                                 colspan="13" class="text-center">
@@ -347,7 +347,7 @@
                 <td>${escapeHtml(countryDisplay)}</td>  <!-- ✅ 使用格式化后的国家显示 -->
                 <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
                 <td>${getStatusText(ex.status)}</td>
-                <td>${formatDate(ex.start_time)} - ${formatDate(ex.end_time)}</td>
+                <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
                 <td>${ex.question_count}</td>
                 <td>${ex.duration}</td>
                 <td>${ex.assigned_count}/${ex.submitted_count}</td>

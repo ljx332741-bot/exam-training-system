@@ -55,12 +55,16 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
         <div>
+            {% if has_permission('batch_delete') %}
             <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
             </button>
+            {% endif %}
+            {% if has_permission('view_deleted_list') %}
             <button class="btn btn-outline-secondary" id="showDeletedUsersBtn">
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
+            {% endif %}
         </div>
     </div>
 
@@ -1150,13 +1154,11 @@
         console.log('复选框变化, 选中数量:', selectedUserIds.size);
         const cb = e.target;
         const id = cb.dataset.id;
-        console.log('复选框变化, id:', id, 'checked:', cb.checked);  // ✅ 调试
         if (cb.checked) {
             selectedUserIds.add(id);
         } else {
             selectedUserIds.delete(id);
         }
-        console.log('当前选中数量:', selectedUserIds.size);  // ✅ 调试
         updateBatchDeleteButton();
     }
 
@@ -1752,11 +1754,6 @@
 
     // 2文件选择后自动上传
     function formatImportError(error) {
-        console.log('调试 error:', error);
-        console.log('error 类型:', typeof error);
-        console.log('error.code:', error?.code);
-        console.log('error.row:', error?.row);
-        console.log('error.params:', error?.params);
         
         // 如果是字符串，直接返回
         if (typeof error === 'string') {

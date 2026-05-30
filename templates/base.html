@@ -262,9 +262,39 @@
             }
         }
 
+        // 获取并设置用户时区
+        async function detectAndSetTimezone() {
+            const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+            console.log('检测到用户时区:', timezone);
+            
+            // 检查是否已设置
+            const savedTimezone = localStorage.getItem('user_timezone');
+            if (savedTimezone !== timezone) {
+                localStorage.setItem('user_timezone', timezone);
+                
+                // 发送到服务器
+                try {
+                    await fetch('/api/user/timezone', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ timezone: timezone })
+                    });
+                    console.log('时区已同步到服务器:', timezone);
+                } catch(e) {
+                    console.error('同步时区失败:', e);
+                }
+            }
+        }
+
+        // 语言切换时也刷新时区（可选）
+        window.addEventListener('app:languageChanged', () => {
+            detectAndSetTimezone();
+        });
+        
         // 解决 "Blocked aria-hidden on an element because its descendant retained focus" 警告
         // 来源：https://forum.bootstrapstudio.io/t/avoid-accessibility-warnings-in-bootstrap-modals/12333#p-42261-the-problem-2
         document.addEventListener('DOMContentLoaded', function () {
+            detectAndSetTimezone();
             // 恢复上次选择的语言
             restoreLanguage();
             var langBtn = document.getElementById('langSwitchBtn');
@@ -362,7 +392,24 @@
             const minutes = String(date.getMinutes()).padStart(2, '0');
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         }
-
+        
+        // 将 UTC 时间字符串转换为本地时间字符串
+        function formatLocalTime(utcString) {
+            if (!utcString) return '-';
+            try {
+                const date = new Date(utcString);
+                if (isNaN(date.getTime())) return utcString;
+                // 格式化为 YYYY-MM-DD HH:MM
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day} ${hours}:${minutes}`;
+            } catch(e) {
+                return utcString;
+            }
+        }
         // 全局函数：将页面上所有带有 class="local-time" 且 data-utc 属性的元素转换为本地时区显示
         // 转换页面上所有带 data-utc 属性的元素（用于静态显示）
         function convertAllTimesToLocal() {

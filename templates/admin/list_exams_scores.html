@@ -56,21 +56,21 @@
                     <thead class="table-light">
                         <tr>
                             <th><input type="checkbox" id="selectAll"></th>
-                            <th><span data-i18n="sequence">序号</span></th>
-                            <th><span data-i18n="country">国家</span></th>
-                            <th><span data-i18n="name_en">姓名</span></th>
-                            <th><span data-i18n="email">邮箱</span></th>
-                            <th><span data-i18n="status">状态</span></th>
-                            <th><span data-i18n="exam_time_start">考试开始时间</span></th>
-                            <th><span data-i18n="submit_at">提交时间</span></th>
-                            <th><span data-i18n="submit_method">提交方式</span></th>
-                            <th><span data-i18n="time_s">用时(秒)</span>(秒)</th>
-                            <th><span data-i18n="candidate_score">得分</span></th>
-                            <th><span data-i18n="reviewer">阅卷人</span></th>
-                            <th><span data-i18n="actions">操作</span></th>
+                            <th data-i18n="sequence">序号</th>
+                            <th data-i18n="country">国家</th>
+                            <th data-i18n="name_en">姓名</th>
+                            <th data-i18n="email">邮箱</th>
+                            <th data-i18n="status">状态</th>
+                            <th data-i18n="exam_time_start">考试开始时间</th>
+                            <th data-i18n="submit_at">提交时间</th>
+                            <th data-i18n="submit_method">提交方式</th>
+                            <th data-i18n="time_s">用时(秒)</th>
+                            <th data-i18n="candidate_score">得分</th>
+                            <th data-i18n="reviewer">阅卷人</th>
+                            <th data-i18n="actions">操作</th>
                         </tr>
                     </thead>
-                    <tbody id="scoresTbody">
+                    <tbody id="scoresTbody" style="font-size: 0.875rem";>
                         <tr><td colspan="13" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
@@ -200,8 +200,8 @@
                 <td>${escapeHtml(s.name)}</td>
                 <td>${escapeHtml(s.email)}</td>
                 <td>${s.status}</td>
-                <td>${formatDate(s.started_at)}</td>
-                <td>${formatDate(s.submitted_at)}</td>
+                <td>${formatLocalTime(s.started_at)}</td>
+                <td>${formatLocalTime(s.submitted_at)}</td>
                 <td>${s.submit_method === 'manual' ? t('t_manual_submit') : t('t_auto_submit')}</td>
                 <td>${s.time_used ?? '-'}</td>
                 <td>${s.score}</td>

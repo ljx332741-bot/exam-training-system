@@ -187,8 +187,9 @@
                     <small class="text-muted" style="margin-top: 4px;">
                         <!-- ✅ 显示多个国家标签 -->
                         <span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
-                        <span class="local-time" data-utc="{{ ex.start_time or '' }}"></span>
-                        - <span class="local-time" data-utc="{{ ex.end_time or '' }}"></span>
+                          {{ (ex.start_time | format_datetime_local) or '' }}
+                          - 
+                          {{ (ex.end_time | format_datetime_local) or '' }}
                         | {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
                         | <span data-i18n="att_reg">应考|实考</span>: 
                         {{ ex.submitted_count }}/{{ ex.assigned_count }}
@@ -492,8 +493,8 @@
           const res = await fetch(`/api/admin/exam/${examId}`);
           if (res.ok) {
               const data = await res.json();
-              document.getElementById('settingStartTime').value = utcToLocalDatetimeLocal(data.start_time);
-              document.getElementById('settingEndTime').value = utcToLocalDatetimeLocal(data.end_time);
+              document.getElementById('settingStartTime').value = formatLocalTime(data.start_time);
+              document.getElementById('settingEndTime').value = formatLocalTime(data.end_time);
               document.getElementById('settingDuration').value = data.duration || 60;
               document.getElementById('settingReviewer').value = data.reviewer || '';  // ✅ 新增
           } else {
@@ -773,7 +774,7 @@
           }
           const partnerText = u.is_partner ? t('t_yes') : t('t_no');
           const detailLink = u.result_id
-              ? `<a href="/admin/result/${u.result_id}" class="btn btn-sm btn-outline-info" target="_blank">📋 ${t('details')}</a>`
+              ? `<a href="/admin/result/${u.result_id}" class="btn btn-sm btn-outline-info">📋 ${t('details')}</a>`
               : '';
           const pdfLink = (submitted && u.result_id)
               ? `<a href="/admin/export_pdf_by_result/${u.result_id}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>`
