@@ -190,282 +190,487 @@
       return `${typeInfo.zh} / ${typeInfo.en}`;
   }
 
-// 后端传递的重置标志（必须在全局作用域声明）
-const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
-const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
+  // 后端传递的重置标志（必须在全局作用域声明）
+  const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
+  const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
 
-document.addEventListener('DOMContentLoaded', function() {
-  // ==================== 常量与变量 ====================
-  const TOTAL = {{ questions|length }};
-  const DURATION = {{ duration_minutes | default(60) }} * 60;
-  const USER_ID = {{ user_id | tojson }};
-  const EXAM_ID = {{ exam_id }};
-  const STORAGE_PREFIX = `exam_${USER_ID}_${EXAM_ID}`;
-  const SERVER_REMAINING = {{ server_remaining_seconds | default(DURATION)  | int }};
-  const STORAGE_TIME = `${STORAGE_PREFIX}_time_left`;
-  const STORAGE_ANS = `${STORAGE_PREFIX}_ans`;
-  const STORAGE_FLAG = `${STORAGE_PREFIX}_flag`;
-  const STORAGE_CURR = `${STORAGE_PREFIX}_curr`;
-  const RESET_HANDLED_KEY = `${STORAGE_PREFIX}_reset_handled`;
+  document.addEventListener('DOMContentLoaded', function() {
+    // ==================== 常量与变量 ====================
+    const TOTAL = {{ questions|length }};
+    const DURATION = {{ duration_minutes | default(60) }} * 60;
+    const USER_ID = {{ user_id | tojson }};
+    const EXAM_ID = {{ exam_id }};
+    const STORAGE_PREFIX = `exam_${USER_ID}_${EXAM_ID}`;
+    const SERVER_REMAINING = {{ server_remaining_seconds | default(DURATION)  | int }};
+    const STORAGE_TIME = `${STORAGE_PREFIX}_time_left`;
+    const STORAGE_ANS = `${STORAGE_PREFIX}_ans`;
+    const STORAGE_FLAG = `${STORAGE_PREFIX}_flag`;
+    const STORAGE_CURR = `${STORAGE_PREFIX}_curr`;
+    const RESET_HANDLED_KEY = `${STORAGE_PREFIX}_reset_handled`;
 
-  // 在页面加载时检查 sessionStorage 中存储的上次用户 ID，如果不匹配则清空所有相关 localStorage
-  const LAST_USER_KEY = `exam_last_user`;
-  const lastUserId = sessionStorage.getItem(LAST_USER_KEY);
-  if (lastUserId && lastUserId !== USER_ID) {
-      // 用户已切换，清除所有考试相关的 localStorage（可选）
+    // 在页面加载时检查 sessionStorage 中存储的上次用户 ID，如果不匹配则清空所有相关 localStorage
+    const LAST_USER_KEY = `exam_last_user`;
+    const lastUserId = sessionStorage.getItem(LAST_USER_KEY);
+    if (lastUserId && lastUserId !== USER_ID) {
+        // 用户已切换，清除所有考试相关的 localStorage（可选）
+        Object.keys(localStorage).forEach(key => {
+            if (key.startsWith('exam_')) {
+                localStorage.removeItem(key);
+            }
+        });
+    }
+    sessionStorage.setItem(LAST_USER_KEY, USER_ID);
+
+    // 获取上次存储的重置标识
+    const lastResetToken = sessionStorage.getItem(`${STORAGE_PREFIX}_reset_token`);
+    // ==================== 重置处理（仅重置后首次进入时执行） ====================
+    // const resetHandled = localStorage.getItem(RESET_HANDLED_KEY);  // 用于标记重置清除是否已执行（防止刷新时重复清除）
+    if (RESET_TIMER || (RESET_TOKEN && RESET_TOKEN !== lastResetToken)) {
+      console.log(safeT('t_detected_exam_reset_clear_cache'));
+      // 删除所有以 exam_{EXAM_ID}_ 开头的 localStorage 键
       Object.keys(localStorage).forEach(key => {
-          if (key.startsWith('exam_')) {
+          if (key.startsWith(`${STORAGE_PREFIX}_`)) {
               localStorage.removeItem(key);
           }
       });
-  }
-  sessionStorage.setItem(LAST_USER_KEY, USER_ID);
+      const keysToRemove = [
+        STORAGE_TIME,
+        STORAGE_ANS,
+        STORAGE_FLAG,
+        STORAGE_CURR,
+        RESET_HANDLED_KEY
+      ];
+      keysToRemove.forEach(k => localStorage.removeItem(k));
 
-  // 获取上次存储的重置标识
-  const lastResetToken = sessionStorage.getItem(`${STORAGE_PREFIX}_reset_token`);
-  // ==================== 重置处理（仅重置后首次进入时执行） ====================
-  // const resetHandled = localStorage.getItem(RESET_HANDLED_KEY);  // 用于标记重置清除是否已执行（防止刷新时重复清除）
-  if (RESET_TIMER || (RESET_TOKEN && RESET_TOKEN !== lastResetToken)) {
-    console.log(safeT('t_detected_exam_reset_clear_cache'));
-    // 删除所有以 exam_{EXAM_ID}_ 开头的 localStorage 键
-    Object.keys(localStorage).forEach(key => {
-        if (key.startsWith(`${STORAGE_PREFIX}_`)) {
-            localStorage.removeItem(key);
+      // 存储本次重置标识，防止重复清除
+      if (RESET_TOKEN) {
+          sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, RESET_TOKEN);
+      } else {
+          sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, Date.now().toString());
+      }
+    } else if (!RESET_TIMER) {
+        // 正常进入，清除可能残留的会话标记（不影响重置后的首次进入）
+        sessionStorage.removeItem(`${STORAGE_PREFIX}_reset_token`);
+    }
+
+    // ====================恢复本地状态（防刷新丢失） 状态变量声明 ====================
+    let current = 0;
+    let answered = new Set();
+    let flagged = new Set();
+    let timeLeft;  // 只声明，不赋值，稍后根据条件赋值
+    // 恢复当前题号
+    const savedIdx = localStorage.getItem(STORAGE_CURR);
+    if (savedIdx !== null) {
+      current = parseInt(savedIdx);
+      if (current >= TOTAL) current = 0;
+    }
+
+    // 恢复标记
+    const savedFlag = localStorage.getItem(STORAGE_FLAG);
+    if (savedFlag) {
+      try {
+        JSON.parse(savedFlag).forEach(i => flagged.add(i));
+      } catch(e) {}
+    }
+
+    // 恢复答案
+    const savedAns = localStorage.getItem(STORAGE_ANS);
+    if (savedAns) {
+      try {
+        const ansObj = JSON.parse(savedAns);
+        for (const [qid, val] of Object.entries(ansObj)) {
+          answered.add(qid);
+          const inputs = document.querySelectorAll(`input[name="${qid}"]`);
+          inputs.forEach(inp => {
+            if (inp.type === 'checkbox') inp.checked = val.includes(inp.value);
+            else if (inp.type === 'radio') inp.checked = (inp.value === val);
+            else inp.value = val;
+          });
         }
-    });
-    const keysToRemove = [
-      STORAGE_TIME,
-      STORAGE_ANS,
-      STORAGE_FLAG,
-      STORAGE_CURR,
-      RESET_HANDLED_KEY
-    ];
-    keysToRemove.forEach(k => localStorage.removeItem(k));
+      } catch(e) {
+        console.warn(safeT('t_recover_answer_failed'), e);
+      }
+    }
 
-    // 存储本次重置标识，防止重复清除
-    if (RESET_TOKEN) {
-        sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, RESET_TOKEN);
+    // ==================== 倒计时恢复与启动（整合服务器时间） ====================
+    const savedTime = localStorage.getItem(STORAGE_TIME);
+    const serverRemaining = SERVER_REMAINING;  // 服务器计算的剩余秒数
+
+    // 根据重置标志和本地存储决定初始剩余时间
+    if (RESET_TIMER) {
+      // 重置场景：强制使用服务器剩余时间，忽略本地缓存
+      timeLeft = serverRemaining;
+      localStorage.setItem(STORAGE_TIME, timeLeft);
     } else {
-        sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, Date.now().toString());
+      // 正常进入或刷新：直接使用服务器权威剩余时间
+      timeLeft = serverRemaining;
+      localStorage.setItem(STORAGE_TIME, timeLeft);
     }
-  } else if (!RESET_TIMER) {
-      // 正常进入，清除可能残留的会话标记（不影响重置后的首次进入）
-      sessionStorage.removeItem(`${STORAGE_PREFIX}_reset_token`);
-  }
 
-  // ====================恢复本地状态（防刷新丢失） 状态变量声明 ====================
-  let current = 0;
-  let answered = new Set();
-  let flagged = new Set();
-  let timeLeft;  // 只声明，不赋值，稍后根据条件赋值
-  // 恢复当前题号
-  const savedIdx = localStorage.getItem(STORAGE_CURR);
-  if (savedIdx !== null) {
-    current = parseInt(savedIdx);
-    if (current >= TOTAL) current = 0;
-  }
-
-  // 恢复标记
-  const savedFlag = localStorage.getItem(STORAGE_FLAG);
-  if (savedFlag) {
-    try {
-      JSON.parse(savedFlag).forEach(i => flagged.add(i));
-    } catch(e) {}
-  }
-
-  // 恢复答案
-  const savedAns = localStorage.getItem(STORAGE_ANS);
-  if (savedAns) {
-    try {
-      const ansObj = JSON.parse(savedAns);
-      for (const [qid, val] of Object.entries(ansObj)) {
-        answered.add(qid);
-        const inputs = document.querySelectorAll(`input[name="${qid}"]`);
-        inputs.forEach(inp => {
-          if (inp.type === 'checkbox') inp.checked = val.includes(inp.value);
-          else if (inp.type === 'radio') inp.checked = (inp.value === val);
-          else inp.value = val;
-        });
-      }
-    } catch(e) {
-      console.warn(safeT('t_recover_answer_failed'), e);
+    const timerEl = document.getElementById('timer');
+    function updateTimerDisplay() {
+      const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+      const s = (timeLeft % 60).toString().padStart(2, '0');
+      timerEl.textContent = `${safeT('t_remaining')}：${m}:${s}`;
     }
-  }
-
-  // ==================== 倒计时恢复与启动（整合服务器时间） ====================
-  const savedTime = localStorage.getItem(STORAGE_TIME);
-  const serverRemaining = SERVER_REMAINING;  // 服务器计算的剩余秒数
-
-  // 根据重置标志和本地存储决定初始剩余时间
-  if (RESET_TIMER) {
-    // 重置场景：强制使用服务器剩余时间，忽略本地缓存
-    timeLeft = serverRemaining;
-    localStorage.setItem(STORAGE_TIME, timeLeft);
-  } else {
-    // 正常进入或刷新：直接使用服务器权威剩余时间
-    timeLeft = serverRemaining;
-    localStorage.setItem(STORAGE_TIME, timeLeft);
-  }
-
-  const timerEl = document.getElementById('timer');
-  function updateTimerDisplay() {
-    const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-    const s = (timeLeft % 60).toString().padStart(2, '0');
-    timerEl.textContent = `${safeT('t_remaining')}：${m}:${s}`;
-  }
-  updateTimerDisplay();
-
-  const tick = setInterval(() => {
-    timeLeft--;
-    localStorage.setItem(STORAGE_TIME, timeLeft);
     updateTimerDisplay();
-    if (timeLeft <= 300) timerEl.classList.add('timer-warning');
-    if (timeLeft <= 0) {
-      clearInterval(tick);
-      alert(safeT('t_time_is_up_auto_submit'));
-      document.getElementById('exam-form').submit();
-    }
-  }, 1000);
 
-  // ==================== UI 渲染与状态同步 ====================
-  function updateUI() {
-    document.querySelectorAll('.question-card').forEach((c, i) => c.classList.toggle('d-none', i !== current));
+    const tick = setInterval(() => {
+      timeLeft--;
+      localStorage.setItem(STORAGE_TIME, timeLeft);
+      updateTimerDisplay();
+      if (timeLeft <= 300) timerEl.classList.add('timer-warning');
+      if (timeLeft <= 0) {
+        clearInterval(tick);
+        alert(safeT('t_time_is_up_auto_submit'));
+        document.getElementById('exam-form').submit();
+      }
+    }, 1000);
 
-    document.querySelectorAll('.nav-btn').forEach((b, i) => {
-      b.classList.remove('nav-current', 'nav-answered', 'nav-flagged', 'nav-unanswered');
-      const qid = b.dataset.qid;
-      if (i === current) b.classList.add('nav-current');
-      else if (flagged.has(i)) b.classList.add('nav-flagged');
-      else if (answered.has(qid)) b.classList.add('nav-answered');
-      else b.classList.add('nav-unanswered');
-    });
+    // ==================== UI 渲染与状态同步 ====================
+    function updateUI() {
+      document.querySelectorAll('.question-card').forEach((c, i) => c.classList.toggle('d-none', i !== current));
 
-    document.getElementById('prev-btn').disabled = current === 0;
-    document.getElementById('next-btn').disabled = current === TOTAL - 1;
-    document.getElementById('answered-count').textContent = answered.size;
-    document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('t_unflag') : safeT('t_flag');
-  }
-
-  // 刷新题型文本（根据当前语言）
-  function refreshQuestionTypes() {
-      document.querySelectorAll('.question-type-badge').forEach(el => {
-          const type = el.dataset.type;
-          // 根据题型映射到翻译键
-          const typeKeyMap = {
-              'single': 't_single',
-              'multi': 't_multi',
-              'judge': 't_judge'
-          };
-          const key = typeKeyMap[type] || 't_single';
-          el.textContent = safeT(key);
+      document.querySelectorAll('.nav-btn').forEach((b, i) => {
+        b.classList.remove('nav-current', 'nav-answered', 'nav-flagged', 'nav-unanswered');
+        const qid = b.dataset.qid;
+        if (i === current) b.classList.add('nav-current');
+        else if (flagged.has(i)) b.classList.add('nav-flagged');
+        else if (answered.has(qid)) b.classList.add('nav-answered');
+        else b.classList.add('nav-unanswered');
       });
-  }
 
-  // 💾 保存状态
-  function saveState() {
-    localStorage.setItem(STORAGE_CURR, current);
-    localStorage.setItem(STORAGE_FLAG, JSON.stringify([...flagged]));
-
-    const fd = new FormData(document.getElementById('exam-form'));
-    const ans = {};
-    for (let [k, v] of fd.entries()) {
-      if (k.startsWith('q_')) {
-        if (ans[k]) {
-          ans[k] += v;
-        } else {
-          ans[k] = v;
-        }
-      }
+      document.getElementById('prev-btn').disabled = current === 0;
+      document.getElementById('next-btn').disabled = current === TOTAL - 1;
+      document.getElementById('answered-count').textContent = answered.size;
+      document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('t_unflag') : safeT('t_flag');
     }
-    localStorage.setItem(STORAGE_ANS, JSON.stringify(ans));
-    
-    // 上传到服务器草稿
-    fetch('/api/exam/draft', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
-    }).catch(e => console.warn(safeT('t_upload_draft_failed'), e));
-  }
 
-  // 刷新已回答状态
-  function refreshAnsweredStatus() {
-    answered.clear();
-    document.querySelectorAll('.question-card').forEach(card => {
-      const qid = card.dataset.qid;
-      const inputs = card.querySelectorAll('input');
-      let hasAnswer = false;
-      if (inputs.length > 0) {
-        const firstInput = inputs[0];
-        if (firstInput.type === 'radio') {
-          hasAnswer = card.querySelector('input[type="radio"]:checked') !== null;
-        } else if (firstInput.type === 'checkbox') {
-          hasAnswer = card.querySelectorAll('input[type="checkbox"]:checked').length > 0;
-        } else {
-          hasAnswer = firstInput.value.trim() !== '';
+    // 刷新题型文本（根据当前语言）
+    function refreshQuestionTypes() {
+        document.querySelectorAll('.question-type-badge').forEach(el => {
+            const type = el.dataset.type;
+            // 根据题型映射到翻译键
+            const typeKeyMap = {
+                'single': 't_single',
+                'multi': 't_multi',
+                'judge': 't_judge'
+            };
+            const key = typeKeyMap[type] || 't_single';
+            el.textContent = safeT(key);
+        });
+    }
+
+    // 💾 保存状态
+    function saveState() {
+      localStorage.setItem(STORAGE_CURR, current);
+      localStorage.setItem(STORAGE_FLAG, JSON.stringify([...flagged]));
+
+      const fd = new FormData(document.getElementById('exam-form'));
+      const ans = {};
+      for (let [k, v] of fd.entries()) {
+        if (k.startsWith('q_')) {
+          if (ans[k]) {
+            ans[k] += v;
+          } else {
+            ans[k] = v;
+          }
         }
       }
-      if (hasAnswer) answered.add(qid);
-    });
-    document.getElementById('answered-count').textContent = answered.size;
-  }
+      localStorage.setItem(STORAGE_ANS, JSON.stringify(ans));
+      
+      // 上传到服务器草稿
+      fetch('/api/exam/draft', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
+      }).catch(e => console.warn(safeT('t_upload_draft_failed'), e));
+    }
 
-  // ==================== 事件绑定 ====================
-  document.getElementById('prev-btn').onclick = () => { if (current > 0) { current--; updateUI(); saveState(); } };
-  document.getElementById('next-btn').onclick = () => { if (current < TOTAL - 1) { current++; updateUI(); saveState(); } };
-  document.getElementById('toggle-nav').onclick = () => {
-    const p = document.getElementById('nav-panel');
-    p.style.display = p.style.display === 'none' ? 'block' : 'none';
-  };
-  document.querySelectorAll('.nav-btn').forEach(b => {
-    b.onclick = () => {
-      current = parseInt(b.dataset.index);
+    // 刷新已回答状态
+    function refreshAnsweredStatus() {
+      answered.clear();
+      document.querySelectorAll('.question-card').forEach(card => {
+        const qid = card.dataset.qid;
+        const inputs = card.querySelectorAll('input');
+        let hasAnswer = false;
+        if (inputs.length > 0) {
+          const firstInput = inputs[0];
+          if (firstInput.type === 'radio') {
+            hasAnswer = card.querySelector('input[type="radio"]:checked') !== null;
+          } else if (firstInput.type === 'checkbox') {
+            hasAnswer = card.querySelectorAll('input[type="checkbox"]:checked').length > 0;
+          } else {
+            hasAnswer = firstInput.value.trim() !== '';
+          }
+        }
+        if (hasAnswer) answered.add(qid);
+      });
+      document.getElementById('answered-count').textContent = answered.size;
+    }
+
+    // ==================== 事件绑定 ====================
+    document.getElementById('prev-btn').onclick = () => { if (current > 0) { current--; updateUI(); saveState(); } };
+    document.getElementById('next-btn').onclick = () => { if (current < TOTAL - 1) { current++; updateUI(); saveState(); } };
+    document.getElementById('toggle-nav').onclick = () => {
+      const p = document.getElementById('nav-panel');
+      p.style.display = p.style.display === 'none' ? 'block' : 'none';
+    };
+    document.querySelectorAll('.nav-btn').forEach(b => {
+      b.onclick = () => {
+        current = parseInt(b.dataset.index);
+        updateUI();
+        saveState();
+      };
+    });
+    document.getElementById('flag-btn').onclick = () => {
+      flagged.has(current) ? flagged.delete(current) : flagged.add(current);
       updateUI();
       saveState();
     };
-  });
-  document.getElementById('flag-btn').onclick = () => {
-    flagged.has(current) ? flagged.delete(current) : flagged.add(current);
-    updateUI();
-    saveState();
-  };
 
-  document.querySelectorAll('input').forEach(i => {
-    i.addEventListener('change', () => {
+    document.querySelectorAll('input').forEach(i => {
+      i.addEventListener('change', () => {
+        refreshAnsweredStatus();
+        saveState();
+        updateUI();
+      });
+    });
+
+    // ==================== 提交控制 ====================
+    const submitModal = new bootstrap.Modal(document.getElementById('submitModal'));
+    document.getElementById('submit-btn').onclick = () => {
       refreshAnsweredStatus();
-      saveState();
-      updateUI();
-    });
+      submitModal.show();
+    };
+    document.getElementById('confirm-submit').onclick = () => {
+      [STORAGE_CURR, STORAGE_FLAG, STORAGE_ANS, STORAGE_TIME, RESET_HANDLED_KEY].forEach(k => localStorage.removeItem(k));
+      clearInterval(tick);
+      document.getElementById('exam-form').submit();
+    };
+
+    // 防误关页
+    window.onbeforeunload = () => safeT('t_exam_active_leave_page_lost_answer');
+
+    // 定期自动保存
+    setInterval(saveState, 15000);
+
+    // 初始化界面
+    refreshAnsweredStatus();
+    updateUI();
+    refreshQuestionTypes()
+    if (window.i18n) {
+      window.i18n.subscribe(() => {
+        updateUI();
+        refreshQuestionTypes()
+      });
+    }
   });
 
-  // ==================== 提交控制 ====================
-  const submitModal = new bootstrap.Modal(document.getElementById('submitModal'));
-  document.getElementById('submit-btn').onclick = () => {
-    refreshAnsweredStatus();
-    submitModal.show();
-  };
-  document.getElementById('confirm-submit').onclick = () => {
-    [STORAGE_CURR, STORAGE_FLAG, STORAGE_ANS, STORAGE_TIME, RESET_HANDLED_KEY].forEach(k => localStorage.removeItem(k));
-    clearInterval(tick);
-    document.getElementById('exam-form').submit();
-  };
+  // ========== 新增：从服务器加载保存的答案 ==========
+  const savedAnswers = {{ saved_answers | safe }};
 
-  // 防误关页
-  window.onbeforeunload = () => safeT('t_exam_active_leave_page_lost_answer');
+  // 页面加载时恢复答案（仅当有保存的答案时）
+  document.addEventListener('DOMContentLoaded', function() {
+      // ✅ 不影响现有逻辑，只是额外的恢复功能
+      if (savedAnswers && Object.keys(savedAnswers).length > 0) {
+          console.log('恢复草稿答案:', Object.keys(savedAnswers).length);
+          restoreSavedAnswers(savedAnswers);
+      }
+      
+      // ✅ 新增：启动自动保存（不影响手动保存）
+      startAutoSave();
+  });
 
-  // 定期自动保存
-  setInterval(saveState, 15000);
-
-  // 初始化界面
-  refreshAnsweredStatus();
-  updateUI();
-  refreshQuestionTypes()
-  if (window.i18n) {
-    window.i18n.subscribe(() => {
-      updateUI();
-      refreshQuestionTypes()
-    });
+  // 恢复保存的答案（新增函数）
+  function restoreSavedAnswers(answers) {
+      for (const [questionId, answer] of Object.entries(answers)) {
+          // 尝试恢复答案，如果元素不存在则跳过
+          try {
+              // 处理单选/判断
+              const radioInputs = document.querySelectorAll(`input[name="${questionId}"]`);
+              if (radioInputs.length > 0) {
+                  radioInputs.forEach(input => {
+                      if (input.value == answer) {
+                          input.checked = true;
+                      }
+                  });
+                  continue;
+              }
+              
+              // 处理多选
+              const checkboxes = document.querySelectorAll(`input[name="${questionId}[]"]`);
+              if (checkboxes.length > 0) {
+                  const selectedValues = Array.isArray(answer) ? answer : answer.split('');
+                  checkboxes.forEach(checkbox => {
+                      if (selectedValues.includes(checkbox.value)) {
+                          checkbox.checked = true;
+                      }
+                  });
+                  continue;
+              }
+              
+              // 处理文本
+              const textarea = document.querySelector(`textarea[name="${questionId}"]`);
+              if (textarea) {
+                  textarea.value = answer;
+              }
+          } catch(e) {
+              console.warn(`恢复答案 ${questionId} 失败:`, e);
+          }
+      }
   }
-});
 
+  // ========== 新增：自动保存功能 ==========
+  let autoSaveTimer = null;
+  let isSaving = false;
+  async function saveDraftWithRetry(retryCount = 0) {
+      const maxRetries = 3;
+      const answers = collectAnswers();
+      
+      if (Object.keys(answers).length === 0) return;
+      
+      pendingAnswers = answers;
+      
+      try {
+          const response = await fetch('/api/exam/draft', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  exam_id: {{ exam_id }},
+                  answers: answers
+              })
+          });
+          
+          const result = await response.json();
+          if (result.success) {
+              lastSaveTime = Date.now();
+              pendingAnswers = null;
+              console.log('草稿保存成功');
+          } else if (retryCount < maxRetries) {
+              setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
+          }
+      } catch (err) {
+          console.error('保存草稿失败:', err);
+          if (retryCount < maxRetries) {
+              setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
+          }
+      }
+  }
+
+  function startAutoSave() {
+      if (autoSaveTimer) clearInterval(autoSaveTimer);
+      
+      // 每30秒自动保存
+      autoSaveTimer = setInterval(() => {
+          saveDraftWithRetry();
+      }, 30000);
+      
+      // 页面关闭前强制保存
+      window.addEventListener('beforeunload', () => {
+          saveDraftSync();
+      });
+      
+      // 每5分钟检查一次是否还有未保存的答案
+      setInterval(() => {
+          checkPendingSave();
+      }, 300000);
+  }
+  // 同步保存（用于页面关闭）
+  function saveDraftSync() {
+      const answers = collectAnswers();
+      if (Object.keys(answers).length === 0) return;
+      
+      // 使用 sendBeacon 确保页面关闭时也能发送
+      const blob = new Blob([JSON.stringify({
+          exam_id: {{ exam_id }},
+          answers: answers
+      })], { type: 'application/json' });
+      
+      navigator.sendBeacon('/api/exam/draft', blob);
+  }
+  
+  async function autoSaveDraft() {
+      // 避免重复保存
+      if (isSaving) return;
+      
+      isSaving = true;
+      try {
+          const answers = collectAnswers();
+          
+          // 只在有答案时才保存
+          if (Object.keys(answers).length === 0) {
+              return;
+          }
+          
+          const response = await fetch('/api/exam/draft', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                  exam_id: {{ exam_id }},
+                  answers: answers
+              })
+          });
+          
+          const result = await response.json();
+          if (result.success) {
+              console.log('✅ 草稿已自动保存');
+              showSaveIndicator();
+          }
+      } catch (err) {
+          console.error('自动保存失败:', err);
+      } finally {
+          isSaving = false;
+      }
+  }
+
+  // ========== 新增：显示保存提示 ==========
+  function showSaveIndicator() {
+      let indicator = document.getElementById('saveIndicator');
+      if (!indicator) {
+          indicator = document.createElement('div');
+          indicator.id = 'saveIndicator';
+          indicator.style.cssText = `
+              position: fixed;
+              bottom: 20px;
+              right: 20px;
+              background: #28a745;
+              color: white;
+              padding: 8px 16px;
+              border-radius: 4px;
+              opacity: 0;
+              transition: opacity 0.3s;
+              z-index: 9999;
+          `;
+          indicator.innerHTML = '<i class="bi bi-check-circle"></i> 草稿已保存';
+          document.body.appendChild(indicator);
+      }
+      
+      indicator.style.opacity = '1';
+      setTimeout(() => {
+          indicator.style.opacity = '0';
+      }, 2000);
+  }
+
+  // 页面关闭前保存
+  window.addEventListener('beforeunload', () => {
+      // 异步保存，不阻塞页面关闭
+      autoSaveDraft();
+  });
+
+  // 停止自动保存（页面卸载时）
+  window.addEventListener('beforeunload', () => {
+      if (autoSaveTimer) {
+          clearInterval(autoSaveTimer);
+      }
+  });
 </script>
+
+<!-- 添加保存提示 -->
+<div id="saveIndicator" style="position: fixed; bottom: 20px; right: 20px; 
+     background: #28a745; color: white; padding: 8px 16px; border-radius: 4px; 
+     opacity: 0; transition: opacity 0.3s; z-index: 9999;">
+    <i class="bi bi-check-circle"></i> 草稿已保存
+</div>
+
 {% endblock %}

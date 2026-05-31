@@ -3,6 +3,7 @@ import httpx
 import os
 from supabase import create_client, Client
 from config import Config
+from datetime import datetime, timezone
 
 supabase = None
 
@@ -22,3 +23,16 @@ def get_supabase_admin():
     supabase_url = Config.SUPABASE_URL
     supabase_service_key = os.environ.get('SUPABASE_SERVICE_KEY', Config.SUPABASE_KEY)
     return create_client(supabase_url, supabase_service_key)
+
+
+def get_current_utc():
+    """获取当前 UTC 时间"""
+    return datetime.now(timezone.utc).isoformat()
+
+# 在所有插入/更新操作中使用
+def create_exam(data):
+    db.table("exams").insert({
+        "start_time": data.get('start_time'),  # 前端传入的 UTC 字符串
+        "end_time": data.get('end_time'),
+        "created_at": get_current_utc()
+    }).execute()

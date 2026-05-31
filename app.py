@@ -14,16 +14,16 @@ from services.db import get_supabase
 from services import auth, exam, export
 from services.auth import hash_password
 from config import Config
-from routes.helpers import login_required
+from routes.helpers import login_required, admin_required
 from services.scheduler import init_scheduler
 from utils.permissions import is_developer
 from utils.common import utc_to_local, format_datetime_local
 from utils.i18n_messages import I18nMessages
-from utils.timezone_utils import get_user_timezone, format_datetime, utc_string_to_local, format_datetime_24h, format_datetime_24h_short
+from utils.timezone_utils import get_user_timezone, format_datetime, utc_string_to_local, format_datetime_24h, format_datetime_24h_short, set_user_timezone
+
 
 # 1. 日志配置
 logging.basicConfig(level=logging.DEBUG, format='[%(asctime)s] %(levelname)s in %(module)s: %(message)s', handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')])
-DEFAULT_LOCAL_TIMEZONE = os.environ.get('LOCAL_TIMEZONE', 'Asia/Kathmandu')
 logger = logging.getLogger(__name__)
 logger.info("🚀 Flask 应用启动，日志级别: DEBUG")
 
@@ -73,18 +73,46 @@ def utility_processor():
         'has_permission': has_permission,
     }
 
+# app.py
+
 @app.before_request
 def detect_user_timezone():
-    """在每个请求前检测并存储用户时区"""
-    # 从 Cookie 或请求头获取用户时区
+    """
+    在每个请求前检测并存储用户时区
+    """
+    # 从 Cookie 获取用户时区
     user_tz = request.cookies.get('user_timezone')
+    
+    # 也可以从请求头获取
+    if not user_tz:
+        user_tz = request.headers.get('X-Timezone')
+    
     if user_tz:
         from utils.timezone_utils import set_user_timezone
         set_user_timezone(user_tz)
     
-    # 如果还没有时区，从请求信息推断
-    if not session.get('user_timezone'):
-        get_user_timezone()
+    # ✅ 不在 before_request 中主动调用 get_user_timezone()
+    # 让各个函数按需获取
+
+
+@app.route('/api/user/timezone', methods=['GET', 'POST'])
+@login_required
+def user_timezone():
+    """获取或设置用户时区"""
+    from utils.timezone_utils import get_user_timezone, set_user_timezone
+    
+    if request.method == 'POST':
+        timezone_str = request.json.get('timezone')
+        if set_user_timezone(timezone_str):
+            # 同时设置 Cookie
+            resp = jsonify({"success": True, "timezone": timezone_str})
+            resp.set_cookie('user_timezone', timezone_str, max_age=365*24*60*60)
+            return resp
+        return jsonify({"success": False, "message": "无效的时区"}), 400
+    else:
+        # GET 请求：返回当前时区
+        current_tz = get_user_timezone()
+        return jsonify({"timezone": current_tz})
 
 @app.template_filter('local_time')
 def local_time_filter(utc_string, format_str='%Y-%m-%d %H:%M:%S'):
@@ -104,8 +132,6 @@ def local_datetime_filter(utc_string):
 @app.context_processor
 def utility_processor():
     """向模板注入时区相关函数"""
-    from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
-    
     def tz_now():
         """获取当前用户本地时间"""
         from datetime import datetime
@@ -118,30 +144,17 @@ def utility_processor():
         'tz_now': tz_now,
     }
 
-# 4. 注册蓝图
-@app.route('/api/user/timezone', methods=['GET', 'POST'])
-@login_required
-def user_timezone():
-    """获取或设置用户时区"""
-    if request.method == 'POST':
-        timezone_str = request.json.get('timezone')
-        from utils.timezone_utils import set_user_timezone
-        if set_user_timezone(timezone_str):
-            return jsonify({"success": True, "timezone": timezone_str})
-        return jsonify({"success": False, "message": "无效的时区"}), 400
-    else:
-        from utils.timezone_utils import get_user_timezone
-        return jsonify({"timezone": get_user_timezone()})
-
 @app.route('/debug/routes')
+@login_required
+@admin_required
 def debug_routes():
-    """查看所有已注册的路由（仅用于调试）"""
+    """查看所有注册的路由"""
     routes = []
     for rule in app.url_map.iter_rules():
         routes.append({
-            'endpoint': rule.endpoint,
-            'methods': list(rule.methods),
-            'path': str(rule)
+            "endpoint": rule.endpoint,
+            "methods": list(rule.methods),
+            "path": str(rule)
         })
     return jsonify(routes)
 
@@ -258,6 +271,13 @@ def static_proxy(filename):
         # 文件不存在时返回 404，但不抛异常
         from werkzeug.exceptions import NotFound
         raise NotFound()
+
+@app.route('/.well-known/<path:filename>')
+def well_known_files(filename):
+    """处理 .well-known 目录下的请求，避免404日志"""
+    # 这些是浏览器/工具的探测请求，返回空响应即可
+    logger.debug(f"Well-known request: {filename}")
+    return '', 204  # No Content
 
 # 6. 注册路由 & 启动调度器 & 初始化
 with app.app_context():

@@ -264,6 +264,7 @@
                   <input type="text" 
                       id="countrySearchInput" 
                       class="form-control" 
+                      data-i18n-placeholder="placeholder_coutry_search"
                       placeholder="🔍 输入国家名称或代码搜索..." 
                       autocomplete="off">
               </div>
@@ -533,9 +534,9 @@
     
     if (selectedCountryList.length === 0) {
       container.innerHTML = `
-        <div class="empty-tip">⚡ 点击搜索框选择目标国家<br>
+        <div class="empty-tip">⚡ ${t('t_target_country_hint')}<br>
           <small class="text-muted">
-              <i class="bi bi-info-circle"></i> 支持模糊搜索，点击选择，可添加多个国家
+              <i class="bi bi-info-circle"></i> ${t('t_supports_fuzzy_search')}
           </small>
         </div>`;
       return;

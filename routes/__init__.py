@@ -1,5 +1,15 @@
 # routes/__init__.py
 from flask import Blueprint, url_for
+from .admin_stats import (
+    get_user_stats,
+    get_exam_stats,
+    get_training_stats,
+    get_interview_stats,
+    get_questions_stats,
+    get_exams_for_display,
+    get_sign_in_status
+)
+
 
 # ========== 1. 定义所有蓝图 ==========
 auth_bp = Blueprint('auth', __name__)

@@ -17,6 +17,14 @@
             <p class="mb-0">
                 <strong><span data-i18n="submitted_at">提交时间</span>：</strong>
                 {{ result.created_at | local_time('%Y-%m-%d %H:%M') }}
+                <strong> <span data-i18n="time_used">考试用时</span>：</strong>
+                {% if result.time_used %}
+                    {% set minutes = result.time_used // 60 %}
+                    {% set seconds = result.time_used % 60 %}
+                    {{ minutes }} <span data-i18n="minutes">分钟</span> {{ seconds }} <span data-i18n="seconds">秒</span>
+                {% else %}
+                    -
+                {% endif %}
             </p>
         </div>
     </div>

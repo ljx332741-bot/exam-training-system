@@ -1,7 +1,9 @@
 <!-- templates/base.html -->
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
+<head>   
+    <!-- 时区管理脚本（放在 head 最前面） -->
+    <script src="{{ url_for('static', filename='js/timezone.js') }}"></script>
     <!-- i18n 管理器 -->
     <script src="{{ url_for('static', filename='i18n/i18n.js') }}"></script>
 
@@ -267,22 +269,22 @@
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
             console.log('检测到用户时区:', timezone);
             
-            // 检查是否已设置
-            const savedTimezone = localStorage.getItem('user_timezone');
-            if (savedTimezone !== timezone) {
-                localStorage.setItem('user_timezone', timezone);
-                
-                // 发送到服务器
-                try {
-                    await fetch('/api/user/timezone', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ timezone: timezone })
-                    });
-                    console.log('时区已同步到服务器:', timezone);
-                } catch(e) {
-                    console.error('同步时区失败:', e);
-                }
+            // 保存到 localStorage
+            localStorage.setItem('user_timezone', timezone);
+            
+            // 设置 Cookie（有效期1年）
+            document.cookie = `user_timezone=${timezone}; path=/; max-age=31536000`;
+            
+            // 发送到服务器
+            try {
+                await fetch('/api/user/timezone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timezone: timezone })
+                });
+                console.log('时区已同步到服务器:', timezone);
+            } catch(e) {
+                console.error('同步时区失败:', e);
             }
         }
 

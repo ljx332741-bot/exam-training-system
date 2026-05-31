@@ -824,6 +824,13 @@
       try {
           // 1. 获取考试状态（包含 user_id, name, email, score, result_id 等）
           const statusRes = await fetch(`/admin/exam_status/${examId}`);
+        
+          // ✅ 处理权限不足的情况
+          if (statusRes.status === 403) {
+              container.innerHTML = `<div class="alert alert-warning">${t('no_permission_to_view_exam')}</div>`;
+              return;
+          }
+          
           if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
           let statusData = await statusRes.json();
 

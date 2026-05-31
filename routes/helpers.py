@@ -163,23 +163,18 @@ def local_to_utc(local_time_str, local_tz=None):
     utc_dt = local_dt_aware.astimezone(timezone.utc)
     return utc_dt.isoformat()
 
-def safe_parse_datetime(time_str):
-    """兼容 datetime.fromisoformat 的安全版本，自动处理格式异常"""
-    if not time_str:
+def safe_parse_datetime(dt_str):
+    """安全解析时间字符串"""
+    if not dt_str:
         return None
     try:
-        # 优先使用标准方法（性能更好）
-        return datetime.fromisoformat(time_str)
-    except (ValueError, TypeError):
-        try:
-            # 降级使用 dateutil（更宽容）
-            dt = parser.isoparse(str(time_str))
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt
-        except Exception as e:
-            logger.error(f"解析时间失败: {time_str}, {e}")
-            return None
+        # 统一处理 Z 结尾
+        if dt_str.endswith('Z'):
+            dt_str = dt_str.replace('Z', '+00:00')
+        from datetime import datetime
+        return datetime.fromisoformat(dt_str)
+    except:
+        return None
             
 # ================= 考试国家辅助函数 =================
 def parse_exam_countries(exam):
@@ -219,3 +214,130 @@ def get_exam_countries_display(exam, allowed_countries=None):
         filtered_countries = exam_countries
     
     return ', '.join(filtered_countries) if filtered_countries else '-'
+
+# routes/helpers.py - 添加权限检查装饰器
+
+from functools import wraps
+from flask import session, jsonify
+
+def check_country_permission(country_code=None, country_list=None):
+    """
+    检查当前用户是否有权管理指定的国家
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated_function(*args, **kwargs):
+            if is_developer():
+                return f(*args, **kwargs)
+            
+            allowed = get_admin_allowed_countries()
+            current_role = session.get('role')
+            
+            # 确定要检查的国家列表
+            check_countries = []
+            if country_code:
+                check_countries = [country_code]
+            elif country_list:
+                check_countries = country_list
+            elif 'exam_id' in kwargs:
+                # 从数据库获取考试的国家
+                db = get_supabase()
+                exam_res = db.table("exams").select("countries, country").eq("id", kwargs['exam_id']).maybe_single().execute()
+                if exam_res.data:
+                    check_countries = parse_exam_countries(exam_res.data)
+            
+            if current_role == 'super_admin':
+                if allowed is not None:
+                    if not any(c in allowed for c in check_countries):
+                        return jsonify({"error": "权限不足"}), 403
+            elif current_role == 'admin':
+                if allowed:
+                    if not any(c in allowed for c in check_countries):
+                        return jsonify({"error": "权限不足"}), 403
+                else:
+                    user_country = session.get('user_country')
+                    if user_country not in check_countries:
+                        return jsonify({"error": "权限不足"}), 403
+            
+            return f(*args, **kwargs)
+        return decorated_function
+    return decorator
+
+# 使用示例
+'''
+@admin_exam_bp.route('/admin/exam_status/<int:exam_id>')
+@login_required
+@admin_required
+@check_country_permission()  # 自动从 exam_id 获取国家
+def admin_exam_status(exam_id):
+    # ...
+'''
+
+# routes/helpers.py - 添加权限检查装饰器
+
+def exam_permission_required(f):
+    """
+    装饰器：检查当前用户是否有权访问指定考试
+    需要在 URL 中包含 exam_id 参数
+    """
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        exam_id = kwargs.get('exam_id')
+        if not exam_id:
+            # 尝试从 request 参数获取
+            exam_id = request.view_args.get('exam_id') or request.args.get('exam_id')
+        
+        if exam_id:
+            db = get_supabase()
+            exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+            if exam_res.data and not can_access_exam(exam_res.data):
+                return jsonify({"error": "无权访问此考试"}), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+# 使用示例
+'''
+@admin_exam_bp.route('/api/admin/exam/<int:exam_id>/assignments')
+@login_required
+@admin_required
+@exam_permission_required  # 添加权限检查
+def api_admin_exam_assignments(exam_id):
+    # ...
+'''
+
+# routes/helpers.py - 添加便捷函数
+
+def can_access_exam(exam, allowed_countries=None):
+    """
+    检查当前用户是否有权访问考试
+    
+    Args:
+        exam: 考试数据字典
+        allowed_countries: 可选，直接传入允许的国家列表
+    
+    Returns:
+        bool: True 表示有权访问
+    """
+    if is_developer():
+        return True
+    
+    if allowed_countries is None:
+        allowed_countries = get_allowed_countries()
+    
+    if allowed_countries is None:
+        return True  # 无限制
+    
+    exam_countries = parse_exam_countries(exam)
+    
+    if not exam_countries:
+        # 考试没有指定国家，按权限范围处理
+        user_country = session.get('user_country')
+        return user_country in allowed_countries if user_country else False
+    
+    return any(c in allowed_countries for c in exam_countries)
+
+
+def filter_exams_by_permission(exams, allowed_countries=None):
+    """根据权限过滤考试列表"""
+    return [exam for exam in exams if can_access_exam(exam, allowed_countries)]
