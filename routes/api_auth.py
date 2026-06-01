@@ -78,7 +78,7 @@ def profile():
             if not user_res.data or not auth.check_password(old_pwd, user_res.data[0]['password_hash']):
                 #flash('原密码错误', 'danger')
                 flash({'msg': 'wrong_password', 'params': []}, 'danger')
-                return redirect(url_for('profile'))
+                return redirect(url_for('auth.profile'))
             
             # 更新密码
             new_hash = auth.hash_password(new_pwd)
@@ -86,9 +86,9 @@ def profile():
             #flash('密码修改成功，请重新登录', 'success')
             flash({'msg': 'password_changed', 'params': []}, 'success')
             session.clear()
-            return redirect(url_for('login'))
+            return redirect(url_for('auth.login'))
         
-        return redirect(url_for('profile'))
+        return redirect(url_for('auth.profile'))
 
     if request.method == 'GET':
         user_res = db.table('users').select('*').eq('id', user_id).single().execute()
@@ -253,7 +253,12 @@ def api_register():
         "role": target.get('role', 'user'),
         "admin_countries": target.get('admin_countries', '')  # ✅ 新增
     })
-    return jsonify({"success": True, "redirect": url_for('index')})
+    return jsonify({
+        "success": True, 
+        "redirect": url_for('exam.dashboard'),
+        "message": "register_success"  # 添加成功消息键
+    })
+
 
 @auth_bp.route('/api/reset-password', methods=['POST'])
 def api_reset_password():
@@ -267,6 +272,7 @@ def api_reset_password():
     }).eq("email", d['email']).execute()
     return jsonify({"success": True})
 
+'''
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -292,6 +298,45 @@ def login():
             return redirect(url_for('exam.dashboard'))
         else:
             flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
+    return render_template('auth/login.html')
+'''
+
+@auth_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email, pwd = request.form['email'], request.form['password']
+        db = get_supabase()
+        user = None
+        try:
+            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").maybe_single().execute()
+            if res and hasattr(res, 'data'): user = res.data
+            elif isinstance(res, dict): user = res
+        except: pass
+        
+        if user and auth.check_password(pwd, user.get('password_hash', '')):
+            admin_countries = user.get('admin_countries', '')
+            try:
+                if isinstance(admin_countries, str): json.loads(admin_countries)
+            except: admin_countries = json.dumps([])
+            session.update({
+                "user_id": user['id'], "user_email": email, "role": user.get('role', 'user'),
+                "admin_countries": admin_countries, "is_protected": user.get('is_protected', False),
+                "user_country": user.get('country')
+            })
+            
+            # ✅ 检查是否是 AJAX 请求
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
+            
+            flash({'msg': 'login_success', 'params': []}, 'success')
+            return redirect(url_for('exam.dashboard'))
+        else:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"success": False, "message": "invalid_email_or_password"}), 401
+            
+            flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
+            return render_template('auth/login.html')
+    
     return render_template('auth/login.html')
 
 @auth_bp.route('/logout')

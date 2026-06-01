@@ -65,6 +65,7 @@
 </div>
 {% endblock %}
 
+<!-- templates/auth/login.html -->
 {% block extra_js %}
 <script>
   // 表单验证
@@ -72,24 +73,79 @@
     form.addEventListener('submit', e => { if (!form.checkValidity()) { e.preventDefault(); e.stopPropagation(); } form.classList.add('was-validated'); });
   });
 
+  // ✅ 改为 AJAX 提交登录表单
+  const loginForm = document.querySelector('form[action*="login"]');
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      if (!loginForm.checkValidity()) {
+        loginForm.classList.add('was-validated');
+        return;
+      }
+      
+      const submitBtn = loginForm.querySelector('button[type="submit"]');
+      const originalText = submitBtn.innerHTML;
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> ' + (window.i18n.t('logging_in') || '登录中...');
+      
+      const formData = new FormData(loginForm);
+      
+      try {
+        // ✅ 添加 X-Requested-With 头，标识 AJAX 请求
+        const res = await fetch(loginForm.action, {
+          method: 'POST',
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+          },
+          body: formData
+        });
+        
+        const data = await res.json();
+        
+        if (data.success) {
+          showToast(t('login_success') || '登录成功！正在跳转...', t('success'), 'success');
+          setTimeout(() => {
+            window.location.href = data.redirect || '/dashboard';
+          }, 1500);
+        } else {
+          showToast(t(data.message) || t('invalid_email_or_password') || '邮箱或密码错误', t('error'), 'error');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = originalText;
+        }
+      } catch (err) {
+        showToast('网络错误：' + err.message, t('error'), 'error');
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalText;
+      }
+    });
+  }
+
   // OTP 发送倒计时
   const sendBtn = document.getElementById('sendOtpBtn');
   let timer = null;
   sendBtn.addEventListener('click', async () => {
     const email = document.getElementById('reset_email').value;
-    if (!email.includes('@')) return alert(window.i18n.t('js_enter_correct_email'));
+    if (!email.includes('@')) {
+      showToast(window.i18n.t('js_enter_correct_email'), t('t_prompt'), 'warning');
+      return;
+    }
     sendBtn.disabled = true;
     let sec = 60;
     timer = setInterval(() => {
-      // sendBtn.textContent = `${sec}s 后重发`;
       sendBtn.textContent = window.i18n.t('js_otp_resend', `${sec}s`);
       if (--sec < 0) { clearInterval(timer); sendBtn.disabled = false; sendBtn.textContent = window.i18n.t('js_send_code'); }
     }, 1000);
     try {
       const res = await fetch('/api/send-otp', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email}) });
       if (!res.ok) throw new Error(window.i18n.t('js_sent_failed'));
-      alert(window.i18n.t('js_sent_success_tip'));
-    } catch(e) { alert(e.message); clearInterval(timer); sendBtn.disabled = false; sendBtn.textContent = window.i18n.t('js_send_code'); }
+      showToast(window.i18n.t('js_sent_success_tip'), t('t_success'), 'success');
+    } catch(e) { 
+      showToast(e.message, t('t_error'), 'error');
+      clearInterval(timer); 
+      sendBtn.disabled = false; 
+      sendBtn.textContent = window.i18n.t('js_send_code'); 
+    }
   });
 
   // 重置密码提交
@@ -100,11 +156,31 @@
       otp: document.getElementById('reset_otp').value,
       password: document.getElementById('reset_pwd').value
     };
-    const res = await fetch('/api/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
-    const json = await res.json();
-    if (json.success) { alert(window.i18n.t('js_reset_successful_tip')); location.reload(); }
-    // else alert(json.message || window.i18n.t('js_reset_failed'));
-    else apiAlert(json);   // 使用全局翻译函数
+    
+    // 禁用提交按钮
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    if (submitBtn.disabled) return;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> ' + (window.i18n.t('js_resetting') || '重置中...');
+    
+    try {
+      const res = await fetch('/api/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data) });
+      const json = await res.json();
+      if (json.success) {
+        showToast(window.i18n.t('js_reset_successful_tip'), t('t_success'), 'success');
+        setTimeout(() => {
+          location.reload();
+        }, 2000);
+      } else {
+        apiAlert(json);
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = window.i18n.t('confirm_reset');
+      }
+    } catch(err) {
+      showToast(err.message, t('t_error'), 'error');
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = window.i18n.t('confirm_reset');
+    }
   });
 </script>
 {% endblock %}

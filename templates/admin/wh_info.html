@@ -400,7 +400,6 @@
         const data = {
             wh_id: whId,
             wh_type: document.getElementById('whType').value,
-            wh_name_cn: document.getElementById('whNameCn').value,
             wh_name_en: document.getElementById('whNameEn').value,
             country_code: document.getElementById('countryCode').value,
             remark: document.getElementById('remark').value,
@@ -434,7 +433,7 @@
             const res = await fetch(`/api/admin/wh/${whId}?permanent=${permanent}`, { method: 'DELETE' });
             const result = await res.json();
             if (result.success) {
-                alert(permanent ? js('js_delete_success') : t('t_soft_delete_success'));
+                alert(permanent ? t('js_delete_success') : t('t_soft_delete_success'));
                 loadWhList();
             } else {
                 alert(t('delete_failed') + (result.message || ''));

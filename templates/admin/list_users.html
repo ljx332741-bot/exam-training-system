@@ -55,6 +55,13 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
         <div>
+            <!-- ✅ 新增：导出按钮 -->
+            {% if session.get('role') in ['super_admin', 'developer'] %}
+            <button class="btn btn-outline-success me-2" id="exportUsersBtn">
+                <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
+            </button>
+            {% endif %}
+            
             {% if has_permission('batch_delete') %}
             <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
@@ -2579,6 +2586,25 @@
             }
         });
     }
+
+    // ✅ 添加导出按钮事件
+    document.getElementById('exportUsersBtn')?.addEventListener('click', function() {
+        // 获取当前筛选条件
+        const searchInput = document.getElementById('searchInput');
+        const countryInput = document.getElementById('filterCountry');
+        const whIdInput = document.getElementById('filterWhId');
+        const statusSelect = document.querySelector('#user_status'); // 如果有状态筛选
+        
+        // 构建导出URL参数
+        const params = new URLSearchParams();
+        if (searchInput && searchInput.value) params.append('search', searchInput.value);
+        if (countryInput && countryInput.value) params.append('country', countryInput.value);
+        if (whIdInput && whIdInput.value) params.append('wh_id', whIdInput.value);
+        if (statusSelect && statusSelect.value) params.append('status', statusSelect.value);
+        
+        // 下载文件
+        window.location.href = `/api/admin/users/export?${params.toString()}`;
+    });
 
     // 初始化国家列表
     document.addEventListener('DOMContentLoaded', async () => {
