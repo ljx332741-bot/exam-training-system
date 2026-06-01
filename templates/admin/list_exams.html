@@ -121,10 +121,12 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
+                {% if session.get('role') in ['super_admin', 'developer'] %}
                 <div class="alert alert-warning">
                     <i class="bi bi-info-circle-fill"></i>
-                    <span data-i18n="reopen_exam_warning">此操作仅用于测试，将重置所有考生的考试状态。</span>
+                    <span data-i18n="reopen_exam_warning">重新打开操作将重置所有考生的考试状态。</span>
                 </div>
+                {% endif %}
                 <div class="mb-3">
                     <label class="form-label" for="reopenStartTime">
                         <span data-i18n="new_start_time">新开始时间</span> <span class="text-danger">*</span>
