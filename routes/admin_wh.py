@@ -81,17 +81,48 @@ def get_wh_list():
 @login_required
 @admin_required
 def create_wh():
-    """创建库房"""
+    """创建库房（带权限控制）"""
     data = request.json
     wh_id = data.get('wh_id', '').strip().upper()  # ✅ 自动转大写
     
     if not wh_id:
         return jsonify({"success": False, "message": "库房编码不能为空"}), 400
     
+    # ✅ 获取当前用户权限范围
+    from utils.permissions import get_allowed_countries, is_developer
+    
+    current_role = session.get('role')
+    is_dev = is_developer()
+    allowed_countries = get_allowed_countries()
+    
+    # ✅ 从库房ID提取国家代码（使用现有函数）
+    extracted_country = extract_country_from_wh_id(wh_id)
+    
+    logger.info(f"创建库房: wh_id={wh_id}, 提取国家={extracted_country}, 用户角色={current_role}, 权限范围={allowed_countries}")
+    
+    # ✅ 权限校验（非开发者）
+    if not is_dev:
+        if current_role in ('admin', 'super_admin'):
+            # 检查是否有权限范围限制
+            if allowed_countries is not None and len(allowed_countries) > 0:
+                # 必须能提取到国家代码
+                if not extracted_country:
+                    return jsonify({
+                        "success": False, 
+                        "message": f"库房编码 {wh_id} 格式无效，前2-3位应为国家代码（如 NP、LK、CN）"
+                    }), 400
+                
+                # 检查提取的国家是否在权限范围内
+                if extracted_country not in allowed_countries:
+                    return jsonify({
+                        "success": False, 
+                        "message": f"无权创建国家代码为 {extracted_country} 的库房。您的权限范围仅限: {', '.join(allowed_countries)}"
+                    }), 403
+    
     # ✅ 使用管理员客户端绕过 RLS
     db = get_supabase_admin()
     
-    # 检查唯一性
+    # 检查未删除的库房
     existing = db.table("wh_info").select("id").eq("wh_id", wh_id).is_("deleted_at", "null").execute()
     if existing.data:
         return jsonify({"success": False, "message": f"库房编码 {wh_id} 已存在"}), 400
@@ -106,7 +137,8 @@ def create_wh():
             "deleted_id": existing_deleted.data[0]['id']
         }), 400
     
-    country_code = data.get('country_code') or extract_country_from_wh_id(wh_id)
+    # 确定国家代码（优先使用手动填写，否则从 wh_id 提取）
+    country_code = data.get('country_code') or extracted_country
     
     insert_data = {
         "wh_id": wh_id,
@@ -127,25 +159,72 @@ def create_wh():
 @login_required
 @admin_required
 def update_wh(wh_id):
-    """更新库房信息"""
+    """更新库房信息（带权限控制）"""
     data = request.json
-    # db = get_supabase()
     db = get_supabase_admin()
     
-    # 检查是否存在
-    existing = db.table("wh_info").select("id").eq("id", wh_id).is_("deleted_at", "null").execute()
+    # 检查库房是否存在
+    existing = db.table("wh_info").select("id, wh_id, country_code").eq("id", wh_id).is_("deleted_at", "null").execute()
     if not existing.data:
         return jsonify({"success": False, "message": "库房不存在"}), 404
+    
+    existing_wh = existing.data[0]
+    new_wh_id = data.get('wh_id', '').strip().upper()
+    
+    # ✅ 获取当前用户权限范围
+    from utils.permissions import get_allowed_countries, is_developer
+    
+    current_role = session.get('role')
+    is_dev = is_developer()
+    allowed_countries = get_allowed_countries()
+    
+    # ✅ 如果修改了 wh_id，需要检查新 wh_id 的国家权限
+    if new_wh_id and new_wh_id != existing_wh.get('wh_id'):
+        # 从库房ID提取国家代码
+        extracted_country = extract_country_from_wh_id(new_wh_id)
+        
+        if not is_dev:
+            if allowed_countries is not None and len(allowed_countries) > 0:
+                if not extracted_country:
+                    return jsonify({
+                        "success": False, 
+                        "message": f"库房编码 {new_wh_id} 格式无效，前2-3位应为国家代码"
+                    }), 400
+                
+                if extracted_country not in allowed_countries:
+                    return jsonify({
+                        "success": False, 
+                        "message": f"无权将库房国家改为 {extracted_country}。您的权限范围仅限: {', '.join(allowed_countries)}"
+                    }), 403
+        
+        # 检查新 wh_id 是否已存在
+        existing_new = db.table("wh_info").select("id").eq("wh_id", new_wh_id).is_("deleted_at", "null").neq("id", wh_id).execute()
+        if existing_new.data:
+            return jsonify({"success": False, "message": f"库房编码 {new_wh_id} 已存在"}), 400
+    
+    # ✅ 如果修改了国家代码，也需要检查权限
+    new_country_code = data.get('country_code')
+    if new_country_code and new_country_code != existing_wh.get('country_code'):
+        if not is_dev and allowed_countries is not None and len(allowed_countries) > 0:
+            if new_country_code not in allowed_countries:
+                return jsonify({
+                    "success": False, 
+                    "message": f"无权将库房国家改为 {new_country_code}。您的权限范围仅限: {', '.join(allowed_countries)}"
+                }), 403
     
     update_data = {
         "wh_name_cn": data.get('wh_name_cn', ''),
         "wh_name_en": data.get('wh_name_en', ''),
         "wh_type": data.get('wh_type', ''),
-        "country_code": data.get('country_code', ''),
+        "country_code": new_country_code or existing_wh.get('country_code', ''),
         "is_active": data.get('is_active', True),
         "remark": data.get('remark', ''),
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
+    
+    # 如果修改了 wh_id，也要更新
+    if new_wh_id and new_wh_id != existing_wh.get('wh_id'):
+        update_data["wh_id"] = new_wh_id
     
     result = db.table("wh_info").update(update_data).eq("id", wh_id).execute()
     return jsonify({"success": True})
