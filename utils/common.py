@@ -271,31 +271,32 @@ def format_single_country_display(country_code, lang='zh'):
     except Exception:
         return country_code
 
-def utc_to_local(utc_string, timezone_str='Asia/Shanghai'):
+def utc_to_local(utc_string, timezone_str=None):
     """
     将 UTC 时间字符串转换为本地时间字符串
-    参数:
-        utc_string: UTC 时间字符串，如 "2026-05-29T18:34:04.997391+00:00"
-        timezone_str: 目标时区，默认 'Asia/Shanghai'
-    返回:
-        格式化后的本地时间字符串，如 "2026-05-30T02:34"
+    如果不指定时区，使用用户 session 中的时区
     """
     if not utc_string:
         return ''
+    
+    # 如果没有指定时区，从 session 获取
+    if timezone_str is None:
+        from flask import session
+        timezone_str = session.get('user_timezone', 'UTC')
+    
     try:
-        # 处理 Z 结尾的 UTC 时间
         if utc_string.endswith('Z'):
             s = utc_string.replace('Z', '+00:00')
         else:
             s = utc_string
         dt = datetime.fromisoformat(s)
+        
         if dt.tzinfo is None:
             dt = pytz.UTC.localize(dt)
+        
         local_tz = pytz.timezone(timezone_str)
-        # ✅ 改为空格分隔，去掉 T
         return dt.astimezone(local_tz).strftime('%Y-%m-%d %H:%M')
     except Exception as e:
-        print(f"时间转换错误: {utc_string}, {e}")
         return utc_string
 
 def format_datetime_local(utc_string, timezone_str='Asia/Shanghai'):

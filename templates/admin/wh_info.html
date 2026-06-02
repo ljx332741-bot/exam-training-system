@@ -389,7 +389,7 @@
     async function saveWh() {
         const whId = document.getElementById('whId').value.trim().toUpperCase();
         if (!whId) {
-            alert(t('t_wh_id_cannot_empty'));
+            showToast(t('t_wh_id_cannot_empty'), t('t_prompt'), 'warning');
             return;
         }
 
@@ -397,10 +397,15 @@
         const url = editId ? `/api/admin/wh/${editId}` : '/api/admin/wh';
         const method = editId ? 'PUT' : 'POST';
         
+        // 禁用保存按钮，防止重复提交
+        const saveBtn = document.getElementById('saveWhBtn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> ' + (t('saving') || '保存中...');
+        
         const data = {
             wh_id: whId,
             wh_type: document.getElementById('whType').value,
-            wh_name_cn: document.getElementById('whNameCn').value,
             wh_name_en: document.getElementById('whNameEn').value,
             country_code: document.getElementById('countryCode').value,
             remark: document.getElementById('remark').value,
@@ -414,18 +419,77 @@
                 body: JSON.stringify(data)
             });
             const result = await res.json();
+            
             if (result.success) {
-                alert(editId ? t('t_update_successful') : t('t_added_successfully'));
+                showToast(editId ? t('t_update_successful') : t('t_added_successfully'), t('t_success'), 'success');
                 const modal = bootstrap.Modal.getInstance(document.getElementById('addWhModal'));
                 if (modal) modal.hide();
                 resetWhForm();
                 await loadWhList();
             } else {
-                alert(t('t_operation_failure') + (result.message || ''));
+                // ✅ 特殊处理：已删除库房存在的情况
+                if (result.deleted_exists && result.deleted_id) {
+                    const userConfirmed = confirm(
+                        `库房编码 ${whId} 在已删除清单中存在。\n\n` +
+                        `是否要恢复该库房并更新信息？\n` +
+                        `（恢复后将以当前填写的信息更新库房）`
+                    );
+                    if (userConfirmed) {
+                        // 恢复并更新库房
+                        await restoreAndUpdateWh(result.deleted_id, data);
+                    }
+                } else {
+                    showToast(result.message || t('t_operation_failure'), t('t_error'), 'error');
+                }
             }
         } catch (err) {
             console.error(t('t_save_failed'), err);
-            alert(t('t_operation_failure') + err.message);
+            showToast(t('t_operation_failure') + err.message, t('t_error'), 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
+        }
+    }
+
+    // 恢复并更新已删除的库房
+    async function restoreAndUpdateWh(deletedId, data) {
+        const saveBtn = document.getElementById('saveWhBtn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 恢复中...';
+        
+        try {
+            // 先恢复库房
+            const restoreRes = await fetch(`/api/admin/wh/${deletedId}/restore`, { method: 'POST' });
+            const restoreResult = await restoreRes.json();
+            
+            if (restoreResult.success) {
+                // 再更新库房信息
+                const updateRes = await fetch(`/api/admin/wh/${deletedId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const updateResult = await updateRes.json();
+                
+                if (updateResult.success) {
+                    showToast(t('wh_restore_and_update_success') || '库房恢复并更新成功', t('t_success'), 'success');
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('addWhModal'));
+                    if (modal) modal.hide();
+                    resetWhForm();
+                    await loadWhList();
+                } else {
+                    showToast(updateResult.message || t('wh_update_failed'), t('t_error'), 'error');
+                }
+            } else {
+                showToast(restoreResult.message || t('wh_restore_failed'), t('t_error'), 'error');
+            }
+        } catch (err) {
+            console.error('恢复更新失败:', err);
+            showToast(t('wh_restore_update_failed') + err.message, t('t_error'), 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
         }
     }
 
@@ -434,7 +498,7 @@
             const res = await fetch(`/api/admin/wh/${whId}?permanent=${permanent}`, { method: 'DELETE' });
             const result = await res.json();
             if (result.success) {
-                alert(permanent ? js('js_delete_success') : t('t_soft_delete_success'));
+                alert(permanent ? t('js_delete_success') : t('t_soft_delete_success'));
                 loadWhList();
             } else {
                 alert(t('delete_failed') + (result.message || ''));
@@ -469,7 +533,7 @@
             const res = await fetch(`/api/admin/wh/${whId}?permanent=true`, { method: 'DELETE' });
             const result = await res.json();
             if (result.success) {
-                alert(js('js_delete_success'));
+                alert(t('js_delete_success'));
                 loadDeletedWhList();
                 loadWhList();
             } else {

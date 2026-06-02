@@ -64,7 +64,7 @@
                             <th data-i18n="exam_time_start">考试开始时间</th>
                             <th data-i18n="submit_at">提交时间</th>
                             <th data-i18n="submit_method">提交方式</th>
-                            <th data-i18n="time_s">用时(秒)</th>
+                            <th data-i18n="time_used">耗时</th>
                             <th data-i18n="candidate_score">得分</th>
                             <th data-i18n="reviewer">阅卷人</th>
                             <th data-i18n="actions">操作</th>
@@ -203,7 +203,7 @@
                 <td>${formatLocalTime(s.started_at)}</td>
                 <td>${formatLocalTime(s.submitted_at)}</td>
                 <td>${s.submit_method === 'manual' ? t('t_manual_submit') : t('t_auto_submit')}</td>
-                <td>${s.time_used ?? '-'}</td>
+                <td>${formatTimeUsed(s.time_used)}</td>  <!-- 用时列 -->
                 <td>${s.score}</td>
                 <td>${s.reviewer || '-'}</td>
                 <td>
@@ -242,6 +242,17 @@
         });
         
         updateSelected();
+    }
+
+    // 添加用时格式化函数
+    function formatTimeUsed(seconds) {
+        if (!seconds && seconds !== 0) return '-';
+        const minutes = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        if (minutes > 0) {
+            return `${minutes}${t('mins')}${secs}${t('secs')}`;
+        }
+        return `${secs}${t('secs')}`;
     }
 
     function updateSelected() {

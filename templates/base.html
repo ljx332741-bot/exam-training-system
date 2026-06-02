@@ -1,7 +1,9 @@
 <!-- templates/base.html -->
 <!DOCTYPE html>
 <html lang="zh-CN">
-<head>
+<head>   
+    <!-- 时区管理脚本（放在 head 最前面） -->
+    <script src="{{ url_for('static', filename='js/timezone.js') }}"></script>
     <!-- i18n 管理器 -->
     <script src="{{ url_for('static', filename='i18n/i18n.js') }}"></script>
 
@@ -153,6 +155,7 @@
     </nav>
 
     <!-- 📢 全局提示消息区 -->
+    <!--
     <div class="container mt-3">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
@@ -170,7 +173,11 @@
             {% endif %}
         {% endwith %}
     </div>
-
+    -->
+    <!-- 📢 全局 Toast 提示容器（用于 flash 消息） -->
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1100; max-width: 350px;">
+        <div id="flashToastContainer"></div>
+    </div>
     <!-- 📄 主体内容区 -->
     <main class="flex-grow-1 py-4">
         <div class="container">
@@ -267,22 +274,22 @@
             const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
             console.log('检测到用户时区:', timezone);
             
-            // 检查是否已设置
-            const savedTimezone = localStorage.getItem('user_timezone');
-            if (savedTimezone !== timezone) {
-                localStorage.setItem('user_timezone', timezone);
-                
-                // 发送到服务器
-                try {
-                    await fetch('/api/user/timezone', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ timezone: timezone })
-                    });
-                    console.log('时区已同步到服务器:', timezone);
-                } catch(e) {
-                    console.error('同步时区失败:', e);
-                }
+            // 保存到 localStorage
+            localStorage.setItem('user_timezone', timezone);
+            
+            // 设置 Cookie（有效期1年）
+            document.cookie = `user_timezone=${timezone}; path=/; max-age=31536000`;
+            
+            // 发送到服务器
+            try {
+                await fetch('/api/user/timezone', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ timezone: timezone })
+                });
+                console.log('时区已同步到服务器:', timezone);
+            } catch(e) {
+                console.error('同步时区失败:', e);
             }
         }
 
@@ -804,7 +811,106 @@
                 }, 10000);
             };
         })();
+        
+        // 全局 Toast 函数
+        function showToast(message, title = '提示', type = 'info') {
+            const toastEl = document.getElementById('globalToast');
+            const toastTitle = document.getElementById('toastTitle');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastHeader = toastEl.querySelector('.toast-header');
+            
+            // 设置图标和样式
+            let icon = 'bi-info-circle-fill';
+            let headerClass = '';
+            if (type === 'success') {
+                icon = 'bi-check-circle-fill';
+                headerClass = 'text-success';
+            } else if (type === 'error') {
+                icon = 'bi-exclamation-triangle-fill';
+                headerClass = 'text-danger';
+            } else if (type === 'warning') {
+                icon = 'bi-exclamation-circle-fill';
+                headerClass = 'text-warning';
+            }
+            
+            toastTitle.innerHTML = `<i class="bi ${icon} me-1 ${headerClass}"></i> ${title}`;
+            toastMessage.innerText = message;
+            
+            const toast = new bootstrap.Toast(toastEl, {
+                autohide: true,
+                delay: 3000
+            });
+            toast.show();
+        }
 
+        // 显示 flash 消息的 Toast
+        function showFlashToast(message, category = 'info') {
+            const container = document.getElementById('flashToastContainer');
+            if (!container) return;
+            
+            let bgClass = 'bg-primary';
+            let icon = 'bi-info-circle-fill';
+            
+            if (category === 'success') {
+                bgClass = 'bg-success';
+                icon = 'bi-check-circle-fill';
+            } else if (category === 'danger' || category === 'error') {
+                bgClass = 'bg-danger';
+                icon = 'bi-exclamation-triangle-fill';
+            } else if (category === 'warning') {
+                bgClass = 'bg-warning';
+                icon = 'bi-exclamation-circle-fill';
+            }
+            
+            const toastId = 'toast_' + Date.now();
+            const toastHtml = `
+                <div id="${toastId}" class="toast align-items-center text-white ${bgClass} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="3000">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="bi ${icon} me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+            
+            container.insertAdjacentHTML('beforeend', toastHtml);
+            const toastEl = document.getElementById(toastId);
+            const toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 3000 });
+            toast.show();
+            
+            // 自动移除 DOM 元素
+            toastEl.addEventListener('hidden.bs.toast', () => {
+                toastEl.remove();
+            });
+        }
+        // 获取 flash 消息元素
+        const flashMessages = document.querySelectorAll('.alert');
+        flashMessages.forEach(alert => {
+            let message = '';
+            let category = 'info';
+            
+            // 获取消息内容
+            const flashText = alert.querySelector('.flash-text');
+            if (flashText) {
+                const key = flashText.getAttribute('data-i18n-key');
+                message = window.i18n?.t(key) || key;
+            } else {
+                message = alert.innerText.trim();
+            }
+            
+            // 获取分类
+            if (alert.classList.contains('alert-success')) category = 'success';
+            else if (alert.classList.contains('alert-danger')) category = 'danger';
+            else if (alert.classList.contains('alert-warning')) category = 'warning';
+            
+            // 隐藏原始 alert
+            alert.style.display = 'none';
+            
+            // 显示 Toast
+            showFlashToast(message, category);
+        });
     </script>
 
     <!-- 引入全局删除模态框 -->
@@ -813,5 +919,18 @@
     <!-- 🔧 页面级自定义脚本插槽 -->
     {% block extra_js %}{% endblock %}
 
+    <!-- 全局 Toast 提示 -->
+    <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+        <div id="globalToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="3000">
+            <div class="toast-header">
+                <i class="bi bi-info-circle-fill me-2"></i>
+                <strong class="me-auto" id="toastTitle">提示</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toastMessage">
+                操作成功
+            </div>
+        </div>
+    </div>
 </body>
 </html>

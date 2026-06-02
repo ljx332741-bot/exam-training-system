@@ -1,4 +1,5 @@
-# utils/timezone_utils.py
+# utils/timezone_utils.py - 完整修复版
+
 """
 统一时区处理工具
 - 所有时间存储使用 UTC
@@ -7,30 +8,39 @@
 
 import pytz
 from datetime import datetime, timezone
-from flask import session, request
+from flask import session, request, g
 import logging
 
 logger = logging.getLogger(__name__)
 
-# 默认时区（当无法获取用户时区时使用）
-DEFAULT_TIMEZONE = 'Asia/Shanghai'
+# ✅ 删除任何硬编码时区常量
+# 不再定义 DEFAULT_TIMEZONE
 
 
 def get_user_timezone():
     """
     获取当前用户的时区
     优先级：
-    1. session 中存储的用户时区
-    2. 请求头中的 Timezone
-    3. 浏览器 accept-language 推断（简化）
-    4. 默认时区
+    1. g 对象中的时区（当前请求）
+    2. session 中存储的用户时区
+    3. 请求头中的 X-Timezone
+    4. Cookie 中的 user_timezone
+    5. 返回 None（表示使用 UTC，不做转换）
     """
-    # 1. 从 session 获取
+    # 1. 从 g 对象获取（当前请求）
+    if hasattr(g, 'user_timezone') and g.user_timezone:
+        return g.user_timezone
+    
+    # 2. 从 session 获取
     user_tz = session.get('user_timezone')
     if user_tz:
-        return user_tz
+        try:
+            pytz.timezone(user_tz)
+            return user_tz
+        except:
+            pass
     
-    # 2. 从请求头获取
+    # 3. 从请求头获取
     user_tz = request.headers.get('X-Timezone')
     if user_tz:
         try:
@@ -40,17 +50,19 @@ def get_user_timezone():
         except:
             pass
     
-    # 3. 从浏览器语言推断（简化版）
-    accept_language = request.headers.get('Accept-Language', '')
-    if 'zh-CN' in accept_language or 'zh' in accept_language:
-        # 中国用户默认北京时间
-        return 'Asia/Shanghai'
-    elif 'en-US' in accept_language or 'en' in accept_language:
-        # 美国用户默认纽约时间
-        return 'America/New_York'
+    # 4. 从 Cookie 获取
+    user_tz = request.cookies.get('user_timezone')
+    if user_tz:
+        try:
+            pytz.timezone(user_tz)
+            session['user_timezone'] = user_tz
+            return user_tz
+        except:
+            pass
     
-    # 4. 返回默认时区
-    return DEFAULT_TIMEZONE
+    # 5. 没有任何时区信息时，返回 'UTC'
+    # 这样所有时间会以 UTC 显示，前端再转换为浏览器时区
+    return 'UTC'
 
 
 def set_user_timezone(timezone_str):
@@ -58,6 +70,8 @@ def set_user_timezone(timezone_str):
     try:
         pytz.timezone(timezone_str)
         session['user_timezone'] = timezone_str
+        g.user_timezone = timezone_str  # 同时设置 g 对象
+        logger.info(f"用户时区已设置: {timezone_str}")
         return True
     except Exception as e:
         logger.error(f"设置时区失败: {e}")
@@ -67,13 +81,6 @@ def set_user_timezone(timezone_str):
 def utc_to_local(dt, user_timezone=None):
     """
     将 UTC datetime 对象转换为用户本地时间
-    
-    Args:
-        dt: datetime 对象（UTC 时区）
-        user_timezone: 用户时区，不传则自动获取
-    
-    Returns:
-        带用户时区的 datetime 对象
     """
     if dt is None:
         return None
@@ -84,6 +91,11 @@ def utc_to_local(dt, user_timezone=None):
     
     # 获取用户时区
     tz_str = user_timezone or get_user_timezone()
+    
+    # 如果是 UTC，不需要转换
+    if tz_str == 'UTC':
+        return dt
+    
     try:
         local_tz = pytz.timezone(tz_str)
         return dt.astimezone(local_tz)
@@ -93,17 +105,7 @@ def utc_to_local(dt, user_timezone=None):
 
 
 def utc_string_to_local(utc_string, user_timezone=None, format_str='%Y-%m-%d %H:%M:%S'):
-    """
-    将 UTC 时间字符串转换为用户本地时间字符串
-    
-    Args:
-        utc_string: UTC 时间字符串，如 "2026-05-29T18:34:04.997391+00:00"
-        user_timezone: 用户时区
-        format_str: 输出格式，默认 '%Y-%m-%d %H:%M:%S'
-    
-    Returns:
-        格式化后的本地时间字符串
-    """
+    """将 UTC 时间字符串转换为用户本地时间字符串"""
     if not utc_string:
         return ''
     
@@ -145,11 +147,12 @@ def get_current_local_time(user_timezone=None):
     now_utc = datetime.now(timezone.utc)
     return utc_to_local(now_utc, user_timezone)
 
+
 def format_datetime_24h(utc_string, user_timezone=None):
     """格式化时间为24小时制：YYYY-MM-DD HH:MM:SS"""
     return utc_string_to_local(utc_string, user_timezone, '%Y-%m-%d %H:%M:%S')
 
+
 def format_datetime_24h_short(utc_string, user_timezone=None):
     """格式化时间为24小时制（简洁版）：YYYY-MM-DD HH:MM"""
     return utc_string_to_local(utc_string, user_timezone, '%Y-%m-%d %H:%M')
-    

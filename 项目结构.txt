@@ -9,10 +9,13 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 ├── reviewers.json                          # 阅卷人static
 ├── static/
 │   ├── i18n/ 
-│   │   ├── en.json                         # 词典英文
-│   │   ├── zh.json                         # 词典中文
-│   │   └── i18n.js                         # 
+│   │   ├── en.json                       # 词典英文
+│   │   ├── zh.json                       # 词典中文
+│   │   └── i18n.js                       # 翻译文件
 │   │
+│   ├── js/                          
+│   │   │                             
+│   │   └── timezone.js                    # 前端时区检测增强
 │   └── images/
 │
 ├── utils/
@@ -74,41 +77,11 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   ├── api_auth.py                 # [新增] 认证模块
 │   ├── api_exam.py                 # [新增] 学员考试模块
 │   ├── api_training.py             # [新增] 学员培训模块 
+│   ├── admin_stats.py              # [新增] 统计专用函数
 │   ├── admin_wh.py.py              # [新增] 库房管理API模块
 │   ├── admin_exam.py               # [新增] 管理员：考试 & 仪表盘
 │   ├── admin_user.py               # [新增] 管理员：用户管理
 │   ├── admin_training.py           # [新增] 管理员：培训管理
 │   ├── admin_inspection.py         # [新增] 管理员：访谈管理
 │   └── admin_export.py             # [新增] 管理员：导出模块 ,需重新拷贝代码+++
-
-
-==============================================================================
-
-utils/
-├── permissions.py          # 所有权限相关功能（统一入口）
-│   ├── is_developer()
-│   ├── get_allowed_countries()
-│   ├── get_admin_allowed_countries()
-│   ├── can_view_user()
-│   ├── can_modify_user()
-│   ├── can_manage_role()
-│   ├── filter_users_by_permission()  # 包含创建人姓名
-│   ├── apply_country_filter()
-│   ├── parse_countries_input()
-│   └── 装饰器 (developer_required, super_admin_required)
-
-routes/
-├── helpers.py              # 业务辅助函数（装饰器 + 业务逻辑）
-│   ├── login_required()
-│   ├── admin_required()
-│   ├── random_pick_questions()
-│   ├── get_default_reviewer_by_country()
-│   ├── robust_parse_json()
-│   ├── get_training_status()
-│   ├── upload_signature()
-│   ├── get_attendance_data()
-│   ├── local_to_utc()
-│   ├── parse_exam_countries()
-│   ├── exam_countries_intersection()
-│   └── get_exam_countries_display()
 

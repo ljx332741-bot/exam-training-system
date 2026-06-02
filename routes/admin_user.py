@@ -1,10 +1,14 @@
 # routes/admin_user.py
 import os, json, logging, uuid, secrets, string, sys, openpyxl, re
+from io import BytesIO
 from datetime import datetime, timezone, timedelta, date
 from flask import  (
     Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file, make_response
 )
+# ✅ 添加 openpyxl 样式导入
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from . import admin_user_bp
 from services import auth, exam, export
 from services.db import get_supabase
@@ -953,3 +957,222 @@ def refresh_permissions():
             "country": user.get('country')
         })
     return jsonify({"success": False, "message": "用户不存在"}), 404
+
+# routes/admin_user.py - 简化版导出
+'''
+@admin_user_bp.route('/api/admin/users/export', methods=['GET'])
+@login_required
+@admin_required
+def export_users_to_excel():
+    """导出用户清单到Excel（简化版）"""
+    try:
+        import pandas as pd
+        from io import BytesIO
+        
+        db = get_supabase()
+        
+        # 获取筛选参数
+        search = request.args.get('search', '').strip()
+        country = request.args.get('country', '').strip()
+        wh_id = request.args.get('wh_id', '').strip()
+        
+        # 查询用户（复用现有逻辑）
+        # 这里简化处理，直接获取所有用户
+        all_res = db.table("users").select("*").is_("deleted_at", "null").execute()
+        users = all_res.data or []
+        
+        # 过滤（根据筛选条件）
+        if search:
+            search_lower = search.lower()
+            users = [u for u in users if 
+                     search_lower in (u.get('name_en') or '').lower() or
+                     search_lower in (u.get('email') or '').lower()]
+        
+        if country:
+            users = [u for u in users if (u.get('country') or '').lower() == country.lower()]
+        
+        if wh_id:
+            wh_lower = wh_id.lower()
+            users = [u for u in users if 
+                     wh_lower in (u.get('wh_id') or '').lower() or
+                     wh_lower in (u.get('wh_name_en') or '').lower()]
+        
+        # 转换为DataFrame
+        data = []
+        for user in users:
+            data.append({
+                '姓名': user.get('name_en', ''),
+                '邮箱': user.get('email', ''),
+                '国家': user.get('country', ''),
+                '角色': user.get('role', 'user'),
+                '状态': user.get('user_status', ''),
+                '服务商': '是' if user.get('is_partner') else '否',
+                '库房编码': user.get('wh_id', ''),
+                '库房名称': user.get('wh_name_en', ''),
+                '公司': user.get('company', ''),
+                '部门': user.get('department', ''),
+                '工号': user.get('employee_id', ''),
+                '手机号': user.get('phone', ''),
+                '生日': user.get('birthday', ''),
+            })
+        
+        df = pd.DataFrame(data)
+        
+        # 导出Excel
+        buffer = BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='用户清单', index=False)
+        
+        buffer.seek(0)
+        
+        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"导出失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@admin_user_bp.route('/api/admin/users/export', methods=['GET'])
+@login_required
+@admin_required
+def export_users_to_excel():
+    """导出用户清单到Excel（调试版）"""
+    try:
+        from io import BytesIO
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+        from datetime import datetime
+        
+        db = get_supabase()
+        
+        # 获取用户数据
+        all_res = db.table("users").select("*").is_("deleted_at", "null").range(0, 10000).execute()
+        users = all_res.data or []
+        
+        logger.info(f"===== 导出调试 =====")
+        logger.info(f"查询到用户数量: {len(users)}")
+        
+        # 打印前3个用户信息
+        for i, u in enumerate(users[:3]):
+            logger.info(f"用户 {i+1}: id={u.get('id')}, name={u.get('name_en')}")
+        
+        # 创建工作簿
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "用户清单"
+        
+        # 简单表头
+        headers = ['序号', '姓名', '邮箱', '国家', '角色', '状态']
+        
+        # 写入表头
+        for col, header in enumerate(headers, 1):
+            ws.cell(row=1, column=col, value=header)
+        
+        # ✅ 关键：检查循环是否执行
+        logger.info(f"开始写入数据，共 {len(users)} 条")
+        
+        written_count = 0
+        for row_idx, user in enumerate(users, 2):
+            # 写入数据
+            ws.cell(row=row_idx, column=1, value=row_idx - 1)
+            ws.cell(row=row_idx, column=2, value=user.get('name_en', ''))
+            ws.cell(row=row_idx, column=3, value=user.get('email', ''))
+            ws.cell(row=row_idx, column=4, value=user.get('country', ''))
+            ws.cell(row=row_idx, column=5, value=user.get('role', ''))
+            ws.cell(row=row_idx, column=6, value=user.get('user_status', ''))
+            written_count += 1
+        
+        logger.info(f"实际写入 {written_count} 条数据")
+        
+        # 保存文件
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        
+        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{written_count}人.xlsx"
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"导出失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+'''
+# routes/admin_user.py - 简化版导出函数
+
+@admin_user_bp.route('/api/admin/users/export', methods=['GET'])
+@login_required
+@admin_required
+def export_users_to_excel():
+    """导出用户清单到Excel（简化版）"""
+    try:
+        from io import BytesIO
+        import openpyxl
+        from datetime import datetime
+        
+        # ✅ 权限检查：只有超管或开发者可以导出
+        if not is_developer() and session.get('role') != 'super_admin':
+            logger.warning(f"用户 {session.get('user_id')} 尝试导出用户清单但权限不足")
+            return jsonify({"success": False, "message": "权限不足，仅超级管理员可导出"}), 403
+        
+        db = get_supabase()
+        
+        # 获取用户数据
+        all_res = db.table("users").select("*").is_("deleted_at", "null").range(0, 10000).execute()
+        users = all_res.data or []
+        
+        logger.info(f"查询到用户数量: {len(users)}")
+        
+        # 创建工作簿
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "用户清单"
+        
+        # ✅ 表头（添加用户ID字段）
+        headers = ['序号', '用户ID', '姓名', '邮箱', '国家', '角色', '状态']
+        
+        # 写入表头
+        for col, header in enumerate(headers, 1):
+            ws.cell(row=1, column=col, value=header)
+        
+        # 写入数据
+        for row_idx, user in enumerate(users, 2):
+            ws.cell(row=row_idx, column=1, value=row_idx - 1)                    # 序号
+            ws.cell(row=row_idx, column=2, value=user.get('id', ''))             # ✅ 用户ID
+            ws.cell(row=row_idx, column=3, value=user.get('name_en', ''))        # 姓名
+            ws.cell(row=row_idx, column=4, value=user.get('email', ''))          # 邮箱
+            ws.cell(row=row_idx, column=5, value=user.get('country', ''))        # 国家
+            ws.cell(row=row_idx, column=6, value=user.get('role', ''))           # 角色
+            ws.cell(row=row_idx, column=7, value=user.get('user_status', ''))    # 状态
+        
+        logger.info(f"实际写入 {len(users)} 条数据")
+        
+        # 保存文件
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        
+        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(users)}人.xlsx"
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"导出失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500

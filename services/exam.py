@@ -1,8 +1,9 @@
 # services/exam.py - 双语智能解析增强版
 import re, json, zhon.hanzi
-from datetime import datetime
+from datetime import datetime, timezone
 from docx import Document
 from config import Config
+from pytz import UTC
 from services.db import get_supabase
 import logging
 logger = logging.getLogger(__name__)
@@ -344,46 +345,98 @@ def auto_grade(answers: dict, exam_id: int) -> dict:
     
     return {"total": total, "details": details}
 
-def save_result(user_id: str, exam_id: int, answers: dict, score: int, details: dict, customs: dict):
-    """保存成绩记录（确保 details 中包含每个题的得分）"""
-    logger = logging.getLogger(__name__)
-
+def save_result(user_id, exam_id, answers, total_score, details, customs=None, submit_method='manual', time_used=None):
+    """
+    保存考试成绩
+    """
     db = get_supabase()
-    # 确保 details 中每个条目都有 score 字段
-    for qid, detail in details.items():
-        if 'score' not in detail:
-            detail['score'] = 0
-    # 确保是字典
-    if isinstance(answers, str):
+    
+    # 验证 submit_method
+    if submit_method not in ['manual', 'auto']:
+        logger.warning(f"无效的 submit_method: {submit_method}, 使用默认值 'manual'")
+        submit_method = 'manual'
+    
+    # 验证 time_used
+    if time_used is not None:
         try:
-            answers = json.loads(answers)
-        except:
-            answers = {}
-    if isinstance(details, str):
+            time_used = int(time_used)
+            if time_used < 0:
+                time_used = 0
+        except (TypeError, ValueError):
+            logger.warning(f"无效的 time_used: {time_used}, 设为 None")
+            time_used = None
+
+    print(f"[DEBUG] save_result 被调用")
+    print(f"  user_id: {user_id}")
+    print(f"  exam_id: {exam_id}")
+    print(f"  submit_method: {submit_method}")
+    print(f"  传入的 time_used: {time_used}")
+    
+    # 如果没有传入 time_used，尝试从 user_exam_status 计算
+    if time_used is None:
+        print(f"[DEBUG] time_used 为 None，尝试从数据库计算")
         try:
-            details = json.loads(details)
-        except:
-            details = {}
-    # 记录日志
-    logger.info(f"保存成绩: user={user_id}, exam={exam_id}, score={score}, answers keys={list(answers.keys())[:5]}")
-    payload = {
+            # 获取开始时间和提交时间
+            status_res = db.table("user_exam_status") \
+                .select("started_at, submitted_at") \
+                .eq("user_id", user_id) \
+                .eq("exam_id", exam_id) \
+                .maybe_single() \
+                .execute()
+            
+            if status_res and status_res.data:
+                started_at = status_res.data.get('started_at')
+                submitted_at = status_res.data.get('submitted_at')
+                print(f"[DEBUG] started_at: {started_at}")
+                print(f"[DEBUG] submitted_at: {submitted_at}")
+                
+                # 如果没有 submitted_at，使用当前时间
+                if not submitted_at:
+                    submitted_at = datetime.now(timezone.utc).isoformat()
+                
+                if started_at and submitted_at:
+                    # 解析时间
+                    start_str = started_at.replace('Z', '+00:00') if started_at.endswith('Z') else started_at
+                    submit_str = submitted_at.replace('Z', '+00:00') if submitted_at.endswith('Z') else submitted_at
+                    
+                    start_dt = datetime.fromisoformat(start_str)
+                    submit_dt = datetime.fromisoformat(submit_str)
+                    
+                    # 确保有时区信息
+                    if start_dt.tzinfo is None:
+                        start_dt = UTC.localize(start_dt)
+                    if submit_dt.tzinfo is None:
+                        submit_dt = UTC.localize(submit_dt)
+                    
+                    time_used = int((submit_dt - start_dt).total_seconds())
+                    print(f"[DEBUG] 从数据库计算用时: {time_used} 秒")
+                    print(f"[save_result] 计算用时: {time_used} 秒 (start={started_at}, submit={submitted_at})")
+        except Exception as e:
+            print(f"[save_result] 计算用时失败: {e}")
+    else:
+        print(f"[DEBUG] 使用传入的 time_used: {time_used}")
+    
+    # 准备插入数据
+    result_data = {
         "user_id": user_id,
         "exam_id": exam_id,
-        "answers": json.dumps(answers),
-        "details": json.dumps(details),
-        "total_score": score,
-        "custom1": customs.get("c1", ""),
-        "custom2": customs.get("c2", ""),
-        "custom3": customs.get("c3", ""),
-        "custom4": customs.get("c4", ""),
-        "custom5": customs.get("c5", ""),
-        "created_at": datetime.utcnow().isoformat()
+        "answers": json.dumps(answers, ensure_ascii=False) if isinstance(answers, dict) else answers,
+        "details": json.dumps(details, ensure_ascii=False) if isinstance(details, dict) else details,
+        "total_score": total_score,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "submit_method": submit_method,
+        "time_used": time_used,
     }
-    try:
-        result = db.table("exam_results").insert(payload).execute()
-        logger.info(f"✅ 成绩保存成功: {result.data}")
-    except Exception as e:
-        logger.error(f"❌ 成绩保存失败: {e}", exc_info=True)
 
-
-
+    print(f"[DEBUG] 准备插入的数据: submit_method={submit_method}, time_used={time_used}")
+    
+    # 添加自定义字段
+    for key, value in customs.items():
+        if value:
+            result_data[key] = value
+    
+    # 插入数据库
+    result = db.table("exam_results").insert(result_data).execute()
+    
+    print(f"[save_result] 成绩保存成功: user={user_id}, exam={exam_id}, score={total_score}, method={submit_method}, time_used={time_used}")
+    return result
