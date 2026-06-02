@@ -96,6 +96,16 @@ def create_wh():
     if existing.data:
         return jsonify({"success": False, "message": f"库房编码 {wh_id} 已存在"}), 400
     
+    # ✅ 检查已删除的库房
+    existing_deleted = db.table("wh_info").select("id, deleted_at").eq("wh_id", wh_id).not_.is_("deleted_at", "null").execute()
+    if existing_deleted.data:
+        return jsonify({
+            "success": False, 
+            "message": f"库房编码 {wh_id} 在已删除清单中存在，请先恢复后再操作",
+            "deleted_exists": True,
+            "deleted_id": existing_deleted.data[0]['id']
+        }), 400
+    
     country_code = data.get('country_code') or extract_country_from_wh_id(wh_id)
     
     insert_data = {
