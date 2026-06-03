@@ -186,17 +186,26 @@
               {% for ex in exams_table | default([]) %}
               <tr>
                 <td class="fw-medium" style="display: flex; flex-direction: column;">
-                    {{ ex.title }}
-                    <small class="text-muted" style="margin-top: 4px;">
-                        <!-- ✅ 显示多个国家标签 -->
-                        <span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
-                          {{ (ex.start_time | format_datetime_local) or '' }}
-                          - 
-                          {{ (ex.end_time | format_datetime_local) or '' }}
-                        | {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
-                        | <span data-i18n="att_reg">应考|实考</span>: 
-                        {{ ex.submitted_count }}/{{ ex.assigned_count }}
-                    </small>
+                  {# ✅ 进行中的考试名称显示为可点击链接 #}
+                  {% if ex.status == 'active' %}
+                      <a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" 
+                        target="_blank" 
+                        class="text-decoration-none fw-semibold">
+                          {{ ex.title }}
+                      </a>
+                  {% else %}
+                      <span class="fw-semibold">{{ ex.title }}</span>
+                  {% endif %}
+                  <small class="text-muted" style="margin-top: 4px;">
+                    <!-- ✅ 显示多个国家标签 -->
+                    <span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
+                      {{ (ex.start_time | format_datetime_local) or '' }}
+                      - 
+                      {{ (ex.end_time | format_datetime_local) or '' }}
+                    | {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
+                    | <span data-i18n="att_reg">应考|实考</span>: 
+                    {{ ex.submitted_count }}/{{ ex.assigned_count }}
+                  </small>
                 </td>
                 <td>
                   {% if ex.status == 'draft' %}

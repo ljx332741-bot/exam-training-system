@@ -745,5 +745,8 @@
 "t_please_set_valid_time": "Set valid start & end times",
 "edit_user": "Edit User",
 "country_auto_hint": "Country is auto-identified by WH code and is read-only",
-"other": "Other"
+"other": "Other",
+    "confirm_remove_selected": "Are you sure to remove {count} selected candidates from this exam?",
+    "confirm_remove_single": "Are you sure to remove this candidate from this exam?",
+    "remove": "Remove"
 }

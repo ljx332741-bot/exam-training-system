@@ -743,5 +743,8 @@
 "t_please_set_valid_time": "请设置有效的开始和结束时间",
 "edit_user": "编辑用户",
 "country_auto_hint": "国家由库房编码自动识别，不可手动修改",
-"other": "其它"
+"other": "其它",
+    "confirm_remove_selected": "确定要移除选中的 {count} 名考生的考试分配吗？",
+    "confirm_remove_single": "确定要移除该考生的考试分配吗？",
+    "remove": "移除"
 }

@@ -2004,9 +2004,166 @@ def admin_questions_stats():
         logger.error(f"题库统计失败: {e}")
         return jsonify({"total_questions": 0}), 500
 
-# routes/admin_exam.py - 添加调试模式切换接口
+@admin_exam_bp.route('/admin/exam/<int:exam_id>/candidate_status')
+@login_required
+@admin_required
+def admin_candidate_exam_status(exam_id):
+    """考生考试状态页面（独立页面）"""
+    db = get_supabase()
+    
+    # 获取考试标题
+    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+    exam_title = exam_res.data.get('title', f'考试 #{exam_id}') if exam_res.data else f'考试 #{exam_id}'
+    
+    return render_template(
+        'admin/candidate_exam_status.html',
+        exam_id=exam_id,
+        exam_title=exam_title
+    )
 
-# routes/admin_exam.py - 添加调试模式切换接口
+# routes/admin_exam.py - 添加快速分配接口
+
+@admin_exam_bp.route('/api/admin/exam/<int:exam_id>/quick_assign', methods=['POST'])
+@login_required
+@admin_required
+def admin_quick_assign_exam(exam_id):
+    """快速分配考生（直接通知，无需重新设置有效期）"""
+    try:
+        data = request.json
+        user_ids = data.get('user_ids', [])
+        
+        if not user_ids:
+            return jsonify({"success": False, "message": "请选择要分配的考生"}), 400
+        
+        db = get_supabase()
+        
+        # 1. 获取考试信息（检查是否已配置）
+        exam_res = db.table("exams").select("start_time, end_time, duration, title, reviewer, countries").eq("id", exam_id).maybe_single().execute()
+        if not exam_res.data:
+            return jsonify({"success": False, "message": "考试不存在"}), 404
+        
+        exam = exam_res.data
+        
+        # 2. 检查考试是否已配置有效期
+        if not exam.get('start_time') or not exam.get('end_time'):
+            return jsonify({"success": False, "message": "考试尚未配置有效期，请先完成推送设置"}), 400
+        
+        # 3. 权限检查
+        if not can_access_exam(exam):
+            return jsonify({"success": False, "message": "无权操作此考试"}), 403
+        
+        # 4. 获取现有分配
+        existing_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
+        existing_ids = {row['user_id'] for row in (existing_res.data or [])}
+        
+        # 5. 只添加未分配的考生
+        to_add = [uid for uid in user_ids if uid not in existing_ids]
+        
+        if not to_add:
+            return jsonify({"success": False, "message": "所选考生已全部分配"}), 400
+        
+        # 6. 添加分配记录
+        for uid in to_add:
+            db.table("exam_assignments").insert({"exam_id": exam_id, "user_id": uid}).execute()
+        
+        # 7. 发送邮件通知
+        exam_title = exam.get('title', '考试')
+        start_time = exam.get('start_time')
+        end_time = exam.get('end_time')
+        duration = exam.get('duration', 60)
+        reviewer = exam.get('reviewer', '管理员')
+        
+        for uid in to_add:
+            user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
+            if user_res.data:
+                email = user_res.data[0]['email']
+                name = user_res.data[0].get('name_en', '用户')
+                try:
+                    send_bilingual_notification(
+                        email=email,
+                        scenario=EmailScenario.EXAM_ASSIGNMENT,
+                        params={
+                            "name": name,
+                            "exam_title": exam_title,
+                            "start_display": _format_time(start_time),
+                            "end_display": _format_time(end_time),
+                            "duration": str(duration),
+                            "reviewer": reviewer,
+                            "host_url": request.host_url,
+                        },
+                        host_url=request.host_url,
+                        auth_module=auth
+                    )
+                except Exception as e:
+                    logger.warning(f"发送邮件失败: {e}")
+        
+        logger.info(f"快速分配: 考试 {exam_id}, 新增 {len(to_add)} 名考生")
+        
+        return jsonify({
+            "success": True,
+            "message": f"成功分配 {len(to_add)} 名考生",
+            "added_count": len(to_add)
+        })
+        
+    except Exception as e:
+        logger.error(f"快速分配失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exam/<int:exam_id>/batch_remove', methods=['POST'])
+@login_required
+@admin_required
+def admin_batch_remove_exam_assignment(exam_id):
+    """批量移除考生分配（删除分配关系，不删除成绩）"""
+    try:
+        data = request.json
+        user_ids = data.get('user_ids', [])
+        
+        if not user_ids:
+            return jsonify({"success": False, "message": "请选择要移除的考生"}), 400
+        
+        db = get_supabase()
+        
+        # 1. 获取考试信息（权限检查）
+        exam_res = db.table("exams").select("countries, title").eq("id", exam_id).maybe_single().execute()
+        if not exam_res.data:
+            return jsonify({"success": False, "message": "考试不存在"}), 404
+        
+        exam = exam_res.data
+        
+        # 2. 权限检查
+        if not can_access_exam(exam):
+            return jsonify({"success": False, "message": "无权操作此考试"}), 403
+        
+        # 3. 只移除已分配的考生（保留未分配的，避免误删）
+        existing_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
+        existing_ids = {row['user_id'] for row in (existing_res.data or [])}
+        
+        # 只删除确实存在的分配关系
+        to_remove = [uid for uid in user_ids if uid in existing_ids]
+        
+        if not to_remove:
+            return jsonify({"success": False, "message": "所选考生未分配或已移除"}), 400
+        
+        # 4. 删除分配关系
+        for uid in to_remove:
+            db.table("exam_assignments").delete().eq("exam_id", exam_id).eq("user_id", uid).execute()
+        
+        # 5. 可选：同时清除用户的考试状态（让考生可以重新开始）
+        for uid in to_remove:
+            db.table("user_exam_status").delete().eq("exam_id", exam_id).eq("user_id", uid).execute()
+            db.table("user_exam_drafts").delete().eq("exam_id", exam_id).eq("user_id", uid).execute()
+        
+        logger.info(f"批量移除: 考试 {exam_id}, 移除 {len(to_remove)} 名考生")
+        
+        return jsonify({
+            "success": True,
+            "message": f"成功移除 {len(to_remove)} 名考生的分配",
+            "removed_count": len(to_remove)
+        })
+        
+    except Exception as e:
+        logger.error(f"批量移除失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_exam_bp.route('/api/admin/exam/debug_mode', methods=['GET', 'POST'])
 @login_required
