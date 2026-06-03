@@ -26,7 +26,7 @@ def login_required(f):
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if session.get('role') not in ('admin', 'super_admin'):
+        if session.get('role') not in ('admin', 'super_admin', 'developer'):
             flash({'msg': 'permission_denied_admin', 'params': []}, 'danger')
             return redirect('/dashboard')
         return f(*args, **kwargs)

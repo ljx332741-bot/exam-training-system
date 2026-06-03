@@ -7,7 +7,7 @@ from . import admin_inspection_bp
 from services.db import get_supabase
 from utils.common import get_reviewer_by_country
 from routes.helpers import login_required, admin_required, random_pick_questions, get_allowed_countries
-from utils.permissions import get_admin_allowed_countries
+from utils.permissions import get_admin_allowed_countries, is_developer
 
 logger = logging.getLogger(__name__)
 
@@ -641,16 +641,42 @@ def api_admin_delete_interview_user_result(interview_id, user_id):
     interview = interview_res.data[0]
     exam_id = interview.get('exam_id')
     
-    # 获取考试国家（用于权限检查）
-    exam_country = None
+    # ✅ 修复：检查考试的国家权限（支持多国家）
+    from routes.helpers import parse_exam_countries
+    
+    exam_data = None
     if exam_id:
-        exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
-        exam_country = exam_res.data.get('country') if exam_res.data else None
+        exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_data = exam_res.data
     
     # 权限检查
-    allowed = get_admin_allowed_countries()
-    if allowed is not None and exam_country not in allowed:
-        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+    is_dev = is_developer()
+    current_role = session.get('role')
+    
+    if not is_dev:
+        if exam_data:
+            exam_countries = parse_exam_countries(exam_data)
+            allowed = get_admin_allowed_countries()
+            
+            if current_role == 'super_admin':
+                if allowed is not None:
+                    if not any(c in allowed for c in exam_countries):
+                        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+            elif current_role == 'admin':
+                if allowed:
+                    if not any(c in allowed for c in exam_countries):
+                        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+                else:
+                    user_country = session.get('user_country')
+                    if user_country not in exam_countries:
+                        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+            else:
+                return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+        else:
+            allowed = get_admin_allowed_countries()
+            if allowed is not None and not allowed:
+                return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
     
     try:
         # 软删除该用户的所有访谈答题记录
@@ -663,60 +689,6 @@ def api_admin_delete_interview_user_result(interview_id, user_id):
         return jsonify({"success": True, "message": "访谈记录已删除"})
     except Exception as e:
         logger.error(f"删除访谈记录失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/user/<user_id>/resample', methods=['POST'])
-@login_required
-@admin_required
-def api_admin_resample_interview(interview_id, user_id):
-    """重新为指定用户抽题（先删除旧记录，再插入新记录）"""
-    db = get_supabase()
-    
-    # 获取访谈信息
-    interview_res = db.table("interviews").select("exam_id, question_count").eq("id", interview_id).execute()
-    if not interview_res.data:
-        return jsonify({"success": False, "message": "访谈不存在"}), 404
-    
-    interview = interview_res.data[0]
-    exam_id = interview['exam_id']
-    question_count = interview['question_count']
-    
-    # 检查题库
-    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
-    if not q_check.data:
-        return jsonify({"success": False, "message": "题库无题目，无法重新抽题"}), 400
-    
-    try:
-        # ✅ 1. 先删除该用户在该访谈下的所有旧记录（硬删除）
-        delete_result = db.table("interview_results").delete() \
-            .eq("interview_id", interview_id) \
-            .eq("user_id", user_id) \
-            .execute()
-        
-        deleted_count = len(delete_result.data) if delete_result.data else 0
-        logger.info(f"已删除用户 {user_id} 的 {deleted_count} 条旧访谈记录")
-        
-        # 2. 重新抽题
-        questions = random_pick_questions(exam_id, question_count)
-        inserted_count = 0
-        for q in questions:
-            result = db.table("interview_results").insert({
-                "interview_id": interview_id,
-                "user_id": user_id,
-                "question_id": q['id'],
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "answer": None,
-                "is_correct": None,
-                "submitted_at": None
-            }).execute()
-            if result.data:
-                inserted_count += 1
-        
-        logger.info(f"已为用户 {user_id} 插入 {inserted_count} 条新访谈题目")
-        
-        return jsonify({"success": True, "message": f"重新抽题成功，已删除 {deleted_count} 条旧记录，新增 {inserted_count} 道题目"})
-    except Exception as e:
-        logger.error(f"重新抽题失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/batch_delete', methods=['POST'])
@@ -745,15 +717,48 @@ def api_admin_batch_delete_interview_results(interview_id):
     interview = interview_res.data[0]
     exam_id = interview.get('exam_id')
     
-    exam_country = None
+    # ✅ 修复：检查考试的国家权限（支持多国家）
+    from routes.helpers import parse_exam_countries, can_access_exam
+    
+    # 先获取考试信息
+    exam_data = None
     if exam_id:
-        exam_res = db.table("exams").select("country").eq("id", exam_id).maybe_single().execute()
-        exam_country = exam_res.data.get('country') if exam_res.data else None
+        exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_data = exam_res.data
     
-    allowed = get_admin_allowed_countries()
-    if allowed is not None and exam_country not in allowed:
-        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+    # 权限检查
+    is_dev = is_developer()
+    current_role = session.get('role')
     
+    # 开发者可以删除任何记录
+    if not is_dev:
+        # 检查是否有权访问该考试
+        if exam_data:
+            exam_countries = parse_exam_countries(exam_data)
+            allowed = get_admin_allowed_countries()
+            
+            if current_role == 'super_admin':
+                if allowed is not None:
+                    if not any(c in allowed for c in exam_countries):
+                        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+            elif current_role == 'admin':
+                if allowed:
+                    if not any(c in allowed for c in exam_countries):
+                        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+                else:
+                    user_country = session.get('user_country')
+                    if user_country not in exam_countries:
+                        return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+            else:
+                return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+        else:
+            # 没有关联考试，需要检查其他权限逻辑
+            allowed = get_admin_allowed_countries()
+            if allowed is not None and not allowed:
+                return jsonify({"success": False, "message": "无权删除此访谈记录"}), 403
+    
+    # 执行删除
     for user_id in user_ids:
         try:
             if delete_type == 'hard':
@@ -817,6 +822,60 @@ def api_admin_delete_interview_by_id(interview_id):
         return jsonify({"success": True, "message": "访谈已删除"})
     except Exception as e:
         logger.error(f"删除访谈失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/user/<user_id>/resample', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_resample_interview(interview_id, user_id):
+    """重新为指定用户抽题（先删除旧记录，再插入新记录）"""
+    db = get_supabase()
+    
+    # 获取访谈信息
+    interview_res = db.table("interviews").select("exam_id, question_count").eq("id", interview_id).execute()
+    if not interview_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    
+    interview = interview_res.data[0]
+    exam_id = interview['exam_id']
+    question_count = interview['question_count']
+    
+    # 检查题库
+    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
+    if not q_check.data:
+        return jsonify({"success": False, "message": "题库无题目，无法重新抽题"}), 400
+    
+    try:
+        # ✅ 1. 先删除该用户在该访谈下的所有旧记录（硬删除）
+        delete_result = db.table("interview_results").delete() \
+            .eq("interview_id", interview_id) \
+            .eq("user_id", user_id) \
+            .execute()
+        
+        deleted_count = len(delete_result.data) if delete_result.data else 0
+        logger.info(f"已删除用户 {user_id} 的 {deleted_count} 条旧访谈记录")
+        
+        # 2. 重新抽题
+        questions = random_pick_questions(exam_id, question_count)
+        inserted_count = 0
+        for q in questions:
+            result = db.table("interview_results").insert({
+                "interview_id": interview_id,
+                "user_id": user_id,
+                "question_id": q['id'],
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "answer": None,
+                "is_correct": None,
+                "submitted_at": None
+            }).execute()
+            if result.data:
+                inserted_count += 1
+        
+        logger.info(f"已为用户 {user_id} 插入 {inserted_count} 条新访谈题目")
+        
+        return jsonify({"success": True, "message": f"重新抽题成功，已删除 {deleted_count} 条旧记录，新增 {inserted_count} 道题目"})
+    except Exception as e:
+        logger.error(f"重新抽题失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_inspection_bp.route('/api/admin/interviewee/stats')

@@ -66,6 +66,9 @@
               <span class="mx-1">|</span>
               <span class="fw-bold fs-6">{{ stats.exam_active }}</span>
               <small class="opacity-75 ms-2"><span data-i18n="ongoing">进行中</span></small>
+              <span class="mx-1">|</span>
+              <span class="fw-bold fs-6">{{ stats.exam_draft + stats.exam_created|default(0) }}</span>
+              <small class="opacity-75 ms-1"><span data-i18n="other">其它</span></small>
             </div>
           </div>
         </div>
@@ -906,83 +909,6 @@
       }
   }
 
-  // 初始化事件监听
-  document.addEventListener('DOMContentLoaded', () => {
-      const examSelector = document.getElementById('exam-selector');
-      if (examSelector) {
-          examSelector.addEventListener('change', (e) => {
-              loadExamStatusData(e.target.value);
-          });
-          // 如果有默认选中值，加载一次
-          if (examSelector.value) {
-              loadExamStatusData(examSelector.value);
-          }
-      }      
-      convertAllTimesToLocal();
-      // 语言切换时，只重新渲染表格（不重新请求数据）
-      if (window.i18n) {
-          window.i18n.subscribe(() => {
-              if (currentExamId && currentExamUsers.length) {
-                  renderExamStatusTable(); // 直接基于缓存数据重绘
-              }
-              // 同时确保下拉框的 placeholder 也被刷新（已有 data-i18n 自动处理）
-          });
-      }
-      // 初始化国家列表和失焦校验（仅执行一次）
-      setupCountryAutocomplete('exportCountryInput', 'countryDatalist', 'exportCountryCode');
-      // 还可以初始化考生筛选国家框（无隐藏字段）
-      setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
-      // 2. 初始化导出筛选模态框中的国家输入框（需要标准化）
-      const exportCountryInput = document.getElementById('exportCountryInput');
-      if (exportCountryInput) {
-          exportCountryInput.addEventListener('blur', () => validateCountryInput('exportCountryInput', 'exportCountryCode'));
-          if (exportCountryInput.value) {
-              validateCountryInput('exportCountryInput', 'exportCountryCode');
-          }
-      }
-      // 库房模糊搜索（动态填充 whDatalist）
-      const whFilterInput = document.getElementById('pushWhFilter');
-      if (whFilterInput) {
-          whFilterInput.addEventListener('input', async function () {
-              const q = this.value.trim();
-              const datalist = document.getElementById('whDatalist');
-              if (q.length === 0) {
-                  datalist.innerHTML = '';
-                  return;
-              }
-              try {
-                  const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
-                  const items = await res.json();
-                  datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
-              } catch (e) {
-                  console.error('搜索库房失败', e);
-              }
-          });
-      }
-      // 绑定考生状态筛选事件
-      const filterInputs = ['statusFilterName', 'statusFilterWh', 'statusFilterIsPartner', 'statusFilterCountry'];
-      filterInputs.forEach(id => {
-          const el = document.getElementById(id);
-          if (el) {
-              el.addEventListener('input', () => renderExamStatusTable());
-              if (el.tagName === 'SELECT') {
-                  el.addEventListener('change', () => renderExamStatusTable());
-              }
-          }
-      });
-      // 重置按钮
-      const resetBtn = document.getElementById('statusResetFilterBtn');
-      if (resetBtn) {
-          resetBtn.addEventListener('click', () => {
-              document.getElementById('statusFilterName').value = '';
-              document.getElementById('statusFilterWh').value = '';
-              document.getElementById('statusFilterIsPartner').value = '';
-              document.getElementById('statusFilterCountry').value = '';
-              renderExamStatusTable();
-          });
-      }
-  });
-
   // Excel培训测评导出按钮事件
   document.getElementById('confirmExportBtn').addEventListener('click', async () => {
       // 强制校验国家输入框
@@ -1126,5 +1052,81 @@
       // 如果有其他动态表格函数，也在这里调用
   });
 
+  // 初始化事件监听
+  document.addEventListener('DOMContentLoaded', () => {
+      const examSelector = document.getElementById('exam-selector');
+      if (examSelector) {
+          examSelector.addEventListener('change', (e) => {
+              loadExamStatusData(e.target.value);
+          });
+          // 如果有默认选中值，加载一次
+          if (examSelector.value) {
+              loadExamStatusData(examSelector.value);
+          }
+      }      
+      convertAllTimesToLocal();
+      // 语言切换时，只重新渲染表格（不重新请求数据）
+      if (window.i18n) {
+          window.i18n.subscribe(() => {
+              if (currentExamId && currentExamUsers.length) {
+                  renderExamStatusTable(); // 直接基于缓存数据重绘
+              }
+              // 同时确保下拉框的 placeholder 也被刷新（已有 data-i18n 自动处理）
+          });
+      }
+      // 初始化国家列表和失焦校验（仅执行一次）
+      setupCountryAutocomplete('exportCountryInput', 'countryDatalist', 'exportCountryCode');
+      // 还可以初始化考生筛选国家框（无隐藏字段）
+      setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
+      // 2. 初始化导出筛选模态框中的国家输入框（需要标准化）
+      const exportCountryInput = document.getElementById('exportCountryInput');
+      if (exportCountryInput) {
+          exportCountryInput.addEventListener('blur', () => validateCountryInput('exportCountryInput', 'exportCountryCode'));
+          if (exportCountryInput.value) {
+              validateCountryInput('exportCountryInput', 'exportCountryCode');
+          }
+      }
+      // 库房模糊搜索（动态填充 whDatalist）
+      const whFilterInput = document.getElementById('pushWhFilter');
+      if (whFilterInput) {
+          whFilterInput.addEventListener('input', async function () {
+              const q = this.value.trim();
+              const datalist = document.getElementById('whDatalist');
+              if (q.length === 0) {
+                  datalist.innerHTML = '';
+                  return;
+              }
+              try {
+                  const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
+                  const items = await res.json();
+                  datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
+              } catch (e) {
+                  console.error('搜索库房失败', e);
+              }
+          });
+      }
+      // 绑定考生状态筛选事件
+      const filterInputs = ['statusFilterName', 'statusFilterWh', 'statusFilterIsPartner', 'statusFilterCountry'];
+      filterInputs.forEach(id => {
+          const el = document.getElementById(id);
+          if (el) {
+              el.addEventListener('input', () => renderExamStatusTable());
+              if (el.tagName === 'SELECT') {
+                  el.addEventListener('change', () => renderExamStatusTable());
+              }
+          }
+      });
+      // 重置按钮
+      const resetBtn = document.getElementById('statusResetFilterBtn');
+      if (resetBtn) {
+          resetBtn.addEventListener('click', () => {
+              document.getElementById('statusFilterName').value = '';
+              document.getElementById('statusFilterWh').value = '';
+              document.getElementById('statusFilterIsPartner').value = '';
+              document.getElementById('statusFilterCountry').value = '';
+              renderExamStatusTable();
+          });
+      }
+  });
 </script>
 {% endblock %}

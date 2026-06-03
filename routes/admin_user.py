@@ -221,7 +221,7 @@ def api_admin_add_user():
     # ========== 检查用户是否已存在 ==========
     existing_users = db.table("users").select("*").eq("name_en", name_en).execute()
     existing_users_list = existing_users.data or []
-    
+
     # 分离活跃用户和已删除用户
     active_users = [u for u in existing_users_list if u.get('deleted_at') is None]
     deleted_users = [u for u in existing_users_list if u.get('deleted_at') is not None]
@@ -313,6 +313,21 @@ def api_admin_add_user():
         if exist.data:
             return jsonify({"success": False, "message": "email_already_registered", "params": []}), 400
 
+    # ✅ 新增：检查国家权限（如果国家被修改）
+    if 'country' in data:
+        new_country = data.get('country', '')
+        if new_country:
+            allowed_countries = get_admin_allowed_countries()
+            current_role = session.get('role')
+            
+            # 非开发者需要检查权限
+            if current_role != 'developer' and allowed_countries is not None:
+                if allowed_countries and new_country not in allowed_countries:
+                    return jsonify({
+                        "success": False, 
+                        "message": f"无权将用户国家修改为 {new_country}，请联系开发者"
+                    }), 403
+    
     # 生成用户ID和密码
     user_id = str(uuid.uuid4())
     temp_password = ''
@@ -958,160 +973,6 @@ def refresh_permissions():
         })
     return jsonify({"success": False, "message": "用户不存在"}), 404
 
-# routes/admin_user.py - 简化版导出
-'''
-@admin_user_bp.route('/api/admin/users/export', methods=['GET'])
-@login_required
-@admin_required
-def export_users_to_excel():
-    """导出用户清单到Excel（简化版）"""
-    try:
-        import pandas as pd
-        from io import BytesIO
-        
-        db = get_supabase()
-        
-        # 获取筛选参数
-        search = request.args.get('search', '').strip()
-        country = request.args.get('country', '').strip()
-        wh_id = request.args.get('wh_id', '').strip()
-        
-        # 查询用户（复用现有逻辑）
-        # 这里简化处理，直接获取所有用户
-        all_res = db.table("users").select("*").is_("deleted_at", "null").execute()
-        users = all_res.data or []
-        
-        # 过滤（根据筛选条件）
-        if search:
-            search_lower = search.lower()
-            users = [u for u in users if 
-                     search_lower in (u.get('name_en') or '').lower() or
-                     search_lower in (u.get('email') or '').lower()]
-        
-        if country:
-            users = [u for u in users if (u.get('country') or '').lower() == country.lower()]
-        
-        if wh_id:
-            wh_lower = wh_id.lower()
-            users = [u for u in users if 
-                     wh_lower in (u.get('wh_id') or '').lower() or
-                     wh_lower in (u.get('wh_name_en') or '').lower()]
-        
-        # 转换为DataFrame
-        data = []
-        for user in users:
-            data.append({
-                '姓名': user.get('name_en', ''),
-                '邮箱': user.get('email', ''),
-                '国家': user.get('country', ''),
-                '角色': user.get('role', 'user'),
-                '状态': user.get('user_status', ''),
-                '服务商': '是' if user.get('is_partner') else '否',
-                '库房编码': user.get('wh_id', ''),
-                '库房名称': user.get('wh_name_en', ''),
-                '公司': user.get('company', ''),
-                '部门': user.get('department', ''),
-                '工号': user.get('employee_id', ''),
-                '手机号': user.get('phone', ''),
-                '生日': user.get('birthday', ''),
-            })
-        
-        df = pd.DataFrame(data)
-        
-        # 导出Excel
-        buffer = BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='用户清单', index=False)
-        
-        buffer.seek(0)
-        
-        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-        
-        return send_file(
-            buffer,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename
-        )
-        
-    except Exception as e:
-        logger.error(f"导出失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@admin_user_bp.route('/api/admin/users/export', methods=['GET'])
-@login_required
-@admin_required
-def export_users_to_excel():
-    """导出用户清单到Excel（调试版）"""
-    try:
-        from io import BytesIO
-        import openpyxl
-        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-        from openpyxl.utils import get_column_letter
-        from datetime import datetime
-        
-        db = get_supabase()
-        
-        # 获取用户数据
-        all_res = db.table("users").select("*").is_("deleted_at", "null").range(0, 10000).execute()
-        users = all_res.data or []
-        
-        logger.info(f"===== 导出调试 =====")
-        logger.info(f"查询到用户数量: {len(users)}")
-        
-        # 打印前3个用户信息
-        for i, u in enumerate(users[:3]):
-            logger.info(f"用户 {i+1}: id={u.get('id')}, name={u.get('name_en')}")
-        
-        # 创建工作簿
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "用户清单"
-        
-        # 简单表头
-        headers = ['序号', '姓名', '邮箱', '国家', '角色', '状态']
-        
-        # 写入表头
-        for col, header in enumerate(headers, 1):
-            ws.cell(row=1, column=col, value=header)
-        
-        # ✅ 关键：检查循环是否执行
-        logger.info(f"开始写入数据，共 {len(users)} 条")
-        
-        written_count = 0
-        for row_idx, user in enumerate(users, 2):
-            # 写入数据
-            ws.cell(row=row_idx, column=1, value=row_idx - 1)
-            ws.cell(row=row_idx, column=2, value=user.get('name_en', ''))
-            ws.cell(row=row_idx, column=3, value=user.get('email', ''))
-            ws.cell(row=row_idx, column=4, value=user.get('country', ''))
-            ws.cell(row=row_idx, column=5, value=user.get('role', ''))
-            ws.cell(row=row_idx, column=6, value=user.get('user_status', ''))
-            written_count += 1
-        
-        logger.info(f"实际写入 {written_count} 条数据")
-        
-        # 保存文件
-        buffer = BytesIO()
-        wb.save(buffer)
-        buffer.seek(0)
-        
-        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{written_count}人.xlsx"
-        
-        return send_file(
-            buffer,
-            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            as_attachment=True,
-            download_name=filename
-        )
-        
-    except Exception as e:
-        logger.error(f"导出失败: {e}", exc_info=True)
-        return jsonify({"success": False, "message": str(e)}), 500
-'''
-# routes/admin_user.py - 简化版导出函数
-
 @admin_user_bp.route('/api/admin/users/export', methods=['GET'])
 @login_required
 @admin_required
@@ -1175,4 +1036,141 @@ def export_users_to_excel():
         
     except Exception as e:
         logger.error(f"导出失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_user_bp.route('/api/admin/users/stats', methods=['GET'])
+@login_required
+@admin_required
+def api_admin_users_stats():
+    """获取用户统计数据（复用列表逻辑）"""
+    try:
+        db = get_supabase()
+        current_role = session.get('role')
+        is_dev = is_developer()
+        allowed_countries = get_admin_allowed_countries()
+        
+        # ========== 与用户列表完全相同的查询逻辑 ==========
+        query = db.table("users").select("*").is_("deleted_at", "null")
+        
+        if not is_dev:
+            query = query.eq("is_protected", False)
+        
+        if current_role != 'super_admin' and not is_dev:
+            query = query.neq("role", "super_admin").neq("role", "developer")
+        
+        # 执行查询
+        all_res = query.execute()
+        all_users = all_res.data or []
+        
+        # 手动过滤（与列表保持一致）
+        filtered_users = []
+        
+        # 获取创建人信息（包括国家）
+        creator_info = {}
+        creator_ids = list(set([u.get('created_by') for u in all_users if u.get('created_by')]))
+        if creator_ids:
+            creator_res = db.table("users").select("id, country").in_("id", creator_ids).execute()
+            creator_info = {c['id']: c.get('country', '') for c in (creator_res.data or [])}
+        
+        for user in all_users:
+            user_country = user.get('country') or ''
+            user_status = user.get('user_status', '')
+            user_role = user.get('role', '')
+            created_by = user.get('created_by')
+            
+            # 排除开发者
+            if user_role == 'developer':
+                continue
+            
+            # ========== 超管逻辑 ==========
+            if current_role == 'super_admin':
+                # 无权限范围限制，所有用户都可见
+                if allowed_countries is None:
+                    filtered_users.append(user)
+                    continue
+                
+                # 有权限范围限制
+                if allowed_countries:
+                    # ✅ 已导入用户：根据创建者的国家判断
+                    if user_status == 'imported':
+                        creator_country = creator_info.get(created_by, '')
+                        if creator_country and creator_country in allowed_countries:
+                            filtered_users.append(user)
+                        continue
+                    
+                    # 已注册用户：需要国家在权限范围内
+                    if user_country and user_country in allowed_countries:
+                        filtered_users.append(user)
+                        continue
+                    
+                    # 无国家已注册用户：检查创建者国家
+                    if not user_country:
+                        creator_country = creator_info.get(created_by, '')
+                        if creator_country and creator_country in allowed_countries:
+                            filtered_users.append(user)
+                            continue
+                continue
+            
+            # ========== 管理员逻辑 ==========
+            if current_role == 'admin':
+                # 已注册用户：需要国家权限
+                if user_status == 'registered':
+                    if allowed_countries is not None and allowed_countries:
+                        if user_country and user_country in allowed_countries:
+                            filtered_users.append(user)
+                    else:
+                        user_session_country = session.get('user_country')
+                        if user_country == user_session_country:
+                            filtered_users.append(user)
+                
+                # 已导入用户：自己创建 或 创建者同国家
+                elif user_status == 'imported':
+                    if created_by == session.get('user_id'):
+                        filtered_users.append(user)
+                    else:
+                        creator_country = creator_info.get(created_by, '')
+                        if allowed_countries is not None and allowed_countries:
+                            if creator_country in allowed_countries:
+                                filtered_users.append(user)
+                        else:
+                            user_session_country = session.get('user_country')
+                            if creator_country == user_session_country:
+                                filtered_users.append(user)
+                
+                # 其他状态
+                else:
+                    if allowed_countries is not None and allowed_countries:
+                        if user_country and user_country in allowed_countries:
+                            filtered_users.append(user)
+                    else:
+                        user_session_country = session.get('user_country')
+                        if user_country == user_session_country:
+                            filtered_users.append(user)
+                continue
+            
+            # 其他角色
+            filtered_users.append(user)
+        
+        # 统计
+        registered_count = 0
+        imported_count = 0
+        
+        for user in filtered_users:
+            user_status = user.get('user_status')
+            if user_status == 'registered':
+                registered_count += 1
+            elif user_status == 'imported':
+                imported_count += 1
+        
+        logger.info(f"用户统计API: 已注册={registered_count}, 已导入={imported_count}, 总计={len(filtered_users)}")
+        
+        return jsonify({
+            "success": True,
+            "registered_count": registered_count,
+            "imported_count": imported_count,
+            "total_count": len(filtered_users)
+        })
+        
+    except Exception as e:
+        logger.error(f"获取用户统计失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500

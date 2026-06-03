@@ -730,7 +730,7 @@
   "placeholder_coutry_search": "Search by country name or code...",
   "mins": "mins",
   "secs": "secs",
-  "debug_mode": "Debug Mode",
+  "advanced_mode": "Advanced mode",
   "debug_push": "Debug Push",
   "reopen_exam_for_test": "Reopen Exam (Test Mode)",
   "reopen_exam_warning": "This operation is for testing submission method and time tracking logic on closed exams. It will reset all candidates' exam status.",
@@ -738,5 +738,12 @@
   "new_end_time": "New End Time",
   "confirm_reopen": "Confirm Reopen",
   "confirm_reopen_exam": "Are you sure you want to reopen exam [{title}]? This will reset all candidates' exam status.",
-  "please_set_valid_time": "Please set valid start and end time"
+  "please_set_valid_time": "Please set valid start and end time",
+  "t_repush": "Repush",
+  "title_advanced_mode_allow_repush": "Advanced mode allows repushing closed exams",
+"t_confirm_reopen_exam": "Reopen exam? All candidate statuses will be reset",
+"t_please_set_valid_time": "Set valid start & end times",
+"edit_user": "Edit User",
+"country_auto_hint": "Country is auto-identified by WH code and is read-only",
+"other": "Other"
 }

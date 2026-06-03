@@ -113,7 +113,7 @@
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('index') }}"><i class="bi bi-house-door me-1"></i><span data-i18n="home">首页</span></a></li>
                     {% if session.get('user_id') %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="bi bi-list-task me-1"></i><span data-i18n="my_exams">我的考试</span></a></li>
-                        {% if session.get('role') in ('admin', 'super_admin') %}
+                        {% if session.get('role') in ('admin', 'super_admin', 'developer') %}
                             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}"><i class="bi bi-gear me-1"></i><span data-i18n="admin_panel">管理后台</span></a></li>
                         {% endif %}
                     {% endif %}
@@ -154,26 +154,6 @@
         </div>
     </nav>
 
-    <!-- 📢 全局提示消息区 -->
-    <!--
-    <div class="container mt-3">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show shadow-sm" role="alert">
-                        {% if message is mapping and message.msg %}
-                            <i class="bi bi-info-circle-fill me-2"></i>
-                            <span class="flash-text" data-i18n-key="{{ message.msg }}" data-i18n-params='{{ message.params | tojson | safe }}'></span>
-                        {% else %}
-                            <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
-                        {% endif %}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-    -->
     <!-- 📢 全局 Toast 提示容器（用于 flash 消息） -->
     <div class="position-fixed top-0 end-0 p-3" style="z-index: 1100; max-width: 350px;">
         <div id="flashToastContainer"></div>

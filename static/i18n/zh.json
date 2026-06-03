@@ -728,7 +728,7 @@
   "placeholder_coutry_search": "输入国家名称或代码搜索...",
   "mins": "分",
   "secs": "秒",
-  "debug_mode": "调试模式",
+  "advanced_mode": "高级模式",
   "debug_push": "调试推送",
   "reopen_exam_for_test": "重新打开考试（测试模式）",
   "reopen_exam_warning": "此操作用于测试已关闭考试的提交方式和耗时逻辑。将重置所有考生的考试状态，允许重新考试。",
@@ -736,5 +736,12 @@
   "new_end_time": "新结束时间",
   "confirm_reopen": "确认重新打开",
   "confirm_reopen_exam": "确定要重新打开考试【{title}】吗？这将重置所有考生的考试状态。",
-"please_set_valid_time": "请设置有效的开始和结束时间"
+"please_set_valid_time": "请设置有效的开始和结束时间",
+"t_repush": "再次推送",
+"title_advanced_mode_allow_repush": "启用高级模式后，可以重新推送已关闭的考试",
+"t_confirm_reopen_exam": "确定要重新打开此考试吗？这将重置所有考生的考试状态。",
+"t_please_set_valid_time": "请设置有效的开始和结束时间",
+"edit_user": "编辑用户",
+"country_auto_hint": "国家由库房编码自动识别，不可手动修改",
+"other": "其它"
 }

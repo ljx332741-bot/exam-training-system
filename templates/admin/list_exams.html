@@ -12,9 +12,13 @@
             <div class="form-check form-switch d-inline-block me-3" id="debugModeContainer" style="display: none;">
                 <input class="form-check-input" type="checkbox" id="debugModeSwitch" 
                        style="width: 2.5rem; height: 1.3rem;">
-                <label class="form-check-label" for="debugModeSwitch">
+                <label class="form-check-label" for="debugModeSwitch"
+                    data-bs-toggle="tooltip" 
+                    data-bs-placement="bottom"
+                    data-i18n-title="title_advanced_mode_allow_repush"
+                    title="启用高级模式后，可以重新推送已关闭的考试">
                     <i class="bi bi-bug"></i> 
-                    <span data-i18n="debug_mode">调试模式</span>
+                    <span data-i18n="advanced_mode">高级模式</span>
                 </label>
             </div>
             {% endif %}
@@ -121,12 +125,6 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                {% if session.get('role') in ['super_admin', 'developer'] %}
-                <div class="alert alert-warning">
-                    <i class="bi bi-info-circle-fill"></i>
-                    <span data-i18n="reopen_exam_warning">重新打开操作将重置所有考生的考试状态。</span>
-                </div>
-                {% endif %}
                 <div class="mb-3">
                     <label class="form-label" for="reopenStartTime">
                         <span data-i18n="new_start_time">新开始时间</span> <span class="text-danger">*</span>
@@ -467,7 +465,7 @@
                 actionButtons = `
                     ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${t('t_details')}</button>` : ''}
                     ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
-                    ${showDebugPush ? `<button class="btn btn-sm btn-outline-warning debug-push-btn" data-id="${ex.id}" data-title="${escapeHtml(ex.title)}">🐛 ${t('t_debug_push') || '调试推送'}</button>` : ''}
+                    ${showDebugPush ? `<button class="btn btn-sm btn-outline-warning debug-push-btn" data-id="${ex.id}" data-title="${escapeHtml(ex.title)}">🐛 ${t('t_repush') || '再次推送'}</button>` : ''}
                     <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
                     ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
                     ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}

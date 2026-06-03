@@ -3,7 +3,10 @@ import os
 import json
 import logging
 from datetime import datetime, timezone, timedelta, date
-from flask import Flask, request, jsonify, redirect, url_for, render_template, session, flash, send_file, make_response
+from flask import (
+    current_app as app, 
+    Flask, request, jsonify, redirect, url_for, render_template, session, flash, send_file, make_response
+)
 from . import admin_exam_bp
 from services.db import get_supabase
 from routes.helpers import login_required, admin_required, parse_exam_countries, get_exam_countries_display, can_access_exam
@@ -48,19 +51,41 @@ def api_admin_current_user_permissions():
 @admin_required
 def admin_dashboard():
     """管理员仪表盘 - 重构版"""
-    
     # ========== 1. 获取基础信息 ==========
     allowed_countries = get_admin_allowed_countries()
     is_dev = is_developer()
-    
-    logger.info(f"admin_dashboard: role={session.get('role')}, allowed_countries={allowed_countries}")
-    
+    db = get_supabase()
     # ========== 2. 用户统计 ==========
     registered_count, imported_count = get_user_stats(allowed_countries)
     
     # ========== 3. 考试统计 ==========
-    (exams_total, exams_completed, exam_stats, 
-     filtered_exams, allowed_user_ids, allowed_exam_ids) = get_exam_stats(allowed_countries)
+    # ✅ 正确获取 get_exam_stats 返回的各个值
+    (exams_total_from_stats, exams_completed_from_stats, exam_stats_from_stats, 
+    filtered_exams, allowed_user_ids, allowed_exam_ids) = get_exam_stats(allowed_countries)
+    
+    logger.info(f"filtered_exams 数量: {len(filtered_exams)}")
+    for exam in filtered_exams:
+        logger.info(f"  - id={exam.get('id')}, title={exam.get('title')}, countries={exam.get('countries')}")
+    
+    # 注意：filtered_exams 已经是权限过滤后的考试列表
+    exam_stats = {'draft': 0, 'created': 0, 'active': 0, 'closed': 0}
+    
+    for exam in filtered_exams:
+        status = get_exam_status(exam)
+        if status in exam_stats:
+            exam_stats[status] += 1
+        logger.debug(f"考试 {exam.get('id')}: 状态={status}")
+    
+    exams_total = len(filtered_exams)
+    # ✅ 已完成 = 已关闭的考试数量（考试状态为 closed）
+    exams_completed = exam_stats.get('closed', 0)
+    exams_active = exam_stats.get('active', 0)
+    exams_other = exam_stats.get('draft', 0) + exam_stats.get('created', 0)
+    
+    logger.info(f"考试统计(基于考试状态): 总数={exams_total}, "
+                f"已完成(closed)={exams_completed}, "
+                f"进行中(active)={exams_active}, "
+                f"其它(draft+created)={exams_other}")
     
     # ========== 4. 培训统计 ==========
     trainings_count, total_attendances, signins_today = get_training_stats(

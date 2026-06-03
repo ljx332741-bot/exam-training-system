@@ -47,6 +47,13 @@
     datalist option:hover {
         background-color: #f0f0f0;
     }
+    
+    /* 模态框标题中的小号文本样式 */
+    .modal-title small {
+        font-size: 0.75rem;
+        opacity: 0.85;
+        font-weight: normal;
+    }
 </style>
 {% endblock %}
 
@@ -54,14 +61,7 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
-        <div>
-            <!-- ✅ 新增：导出按钮 -->
-            {% if session.get('role') in ['super_admin', 'developer'] %}
-            <button class="btn btn-outline-success me-2" id="exportUsersBtn">
-                <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
-            </button>
-            {% endif %}
-            
+        <div>            
             {% if has_permission('batch_delete') %}
             <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
@@ -72,6 +72,7 @@
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
             {% endif %}
+            <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
         </div>
     </div>
 
@@ -129,10 +130,13 @@
                         </button>
                         
                         <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
-                        
-                        <button class="btn btn-outline-secondary" onclick="history.back();">
-                            ✖ <span data-i18n="close">关闭</span>
+
+                        <!-- ✅ 新增：导出按钮 -->
+                        {% if session.get('role') in ['super_admin', 'developer'] %}
+                        <button class="btn btn-outline-success me-2" id="exportUsersBtn">
+                            <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
                         </button>
+                        {% endif %}
                     </div>
                 </div>
             </div>
@@ -189,7 +193,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title"><span data-i18n="add_user">添加用户</span></h5>
+                <h5 class="modal-title" id="userModalTitle"><span data-i18n="add_user">添加用户</span></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -202,12 +206,20 @@
                             <input type="email" class="form-control" id="email" autocomplete="email" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label" for="userCountrySelect"><span data-i18n="country">国家</span></label>
-                            <input type="text" id="userCountrySelect" name="country" class="form-control" list="countryDatalist" 
-                            data-i18n-placeholder="placeholder_select_or_input" placeholder="请输入或选择国家"
-                            data-code-input="countryCode" autocomplete="off">
+                            <label class="form-label" for="userCountrySelect">
+                                <span data-i18n="country">国家</span>
+                                <span class="text-danger" id="countryRequired" style="display:none;">*</span>
+                            </label>
+                            <input type="text" id="userCountrySelect" name="country" class="form-control" 
+                                data-i18n-placeholder="placeholder_select_or_input" placeholder="请输入或选择国家"
+                                data-code-input="countryCode" autocomplete="off"
+                                readonly disabled
+                                style="background-color: #e9ecef; cursor: not-allowed;">
                             <datalist id="countryDatalist"></datalist>
                             <input type="hidden" id="countryCode">
+                            <small class="text-muted">
+                                <span data-i18n="country_auto_hint">国家由库房编码自动识别，不可手动修改</span>
+                            </small>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="name_en"><span data-i18n="name_en">姓名</span></label>
@@ -263,7 +275,9 @@
                                 <option value="user" data-i18n="ordinary_user">普通用户</option>
                                 <option value="admin" data-i18n="administrator">管理员</option>
                                 <option value="super_admin" data-i18n="t_super_admin">超级管理员</option>
-                                <option value="t_developer" data-i18n="developer">开发者</option>
+                                {% if is_developer %}
+                                <option value="developer" data-i18n="developer">开发者</option>
+                                {% endif %}
                             </select>
                         </div>
                         <div class="col-md-6" id="adminCountriesGroup" style="display:none;">
@@ -1277,9 +1291,11 @@
         try {
             const res = await fetch(`/api/admin/users/${userId}`);
             if (!res.ok) throw new Error(t('t_failed_obtain_information'));
+            
+            // ✅ 修复：正确获取 user 变量
             const user = await res.json();
             
-            // ✅ 保存数据到全局变量，供 shown.bs.modal 使用
+            // 保存数据到全局变量
             window._editingUserData = user;
             
             // 保存已有的权限范围到隐藏字段
@@ -1291,6 +1307,9 @@
             
             // 设置编辑用户ID隐藏字段
             document.getElementById('editUserId').value = userId;
+            
+            // ✅ 填充表单（需要在显示模态框之前）
+            await fillEditForm(user);
             
             // 显示模态框
             new bootstrap.Modal(document.getElementById('addUserModal')).show();
@@ -1308,7 +1327,7 @@
             whIdInput.readOnly = false;
         }
         
-        // 确保库房名称可编辑（新库房可能需要）
+        // 确保库房名称可编辑
         const whNameEn = document.getElementById('wh_name_en');
         if (whNameEn) {
             whNameEn.readOnly = false;
@@ -1473,6 +1492,38 @@
     document.getElementById('addUserModal').addEventListener('show.bs.modal', async () => {
         const editUserIdHidden = document.getElementById('editUserId');
         const isNewMode = !editUserIdHidden || !editUserIdHidden.value;
+
+        // 获取当前用户的权限范围
+        let scopeText = '';
+        try {
+            const res = await fetch('/api/admin/refresh_permissions');
+            const data = await res.json();
+            const adminCountries = data.admin_countries || [];
+            
+            if (adminCountries.length > 0) {
+                // 获取国家列表并转换为显示名称
+                const countries = await loadCountryList();
+                const countryNames = adminCountries.map(code => {
+                    const country = countries.find(c => c.code === code);
+                    const lang = window.i18n?.currentLang || 'zh';
+                    return country ? (lang === 'zh' ? country.name_zh : country.name_en) : code;
+                });
+                scopeText = ` ${countryNames.join(', ')}`;
+            } else {
+                scopeText = ` ${t('t_unrestricted')}`;
+            }
+        } catch (e) {
+            console.error('获取权限范围失败:', e);
+            scopeText = '';
+        }
+        
+        // 设置模态框标题
+        const modalTitle = document.getElementById('userModalTitle');
+        if (modalTitle) {
+            modalTitle.innerHTML = isNewMode 
+                ? `<span data-i18n="add_user">${t('add_user')}</span> <small class="text-muted">[${t("power_scope")}: ${scopeText}]</small>`
+                : `<span data-i18n="edit_user">${t('edit_user')}</span> <small class="text-muted">[${t("power_scope")}: ${scopeText}]</small>`;
+        }
         
         // 同步更新 currentEditUserId
         if (isNewMode) {
@@ -1657,13 +1708,33 @@
         // 处理国家字段
         const countryInput = document.getElementById('userCountrySelect');
         const countryCodeHidden = document.getElementById('countryCode');
-        if (countryInput && countryCodeHidden && user.country) {
+    
+        if (user.country) {
+            // 有国家信息，尝试获取显示名称
             const countries = await loadCountryList();
             const matched = countries.find(c => c.code === user.country);
             if (matched) {
                 const currentLang = window.i18n?.currentLang || 'zh';
                 countryInput.value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
                 countryCodeHidden.value = matched.code;
+            } else {
+                countryInput.value = user.country;
+                countryCodeHidden.value = user.country;
+            }
+        } else if (user.wh_id) {
+            // 没有国家信息但有库房编码，尝试从库房编码提取
+            const extractedCountry = extractCountryFromWhId(user.wh_id);
+            if (extractedCountry) {
+                const countries = await loadCountryList();
+                const matched = countries.find(c => c.code === extractedCountry);
+                if (matched) {
+                    const currentLang = window.i18n?.currentLang || 'zh';
+                    countryInput.value = currentLang === 'zh' ? matched.name_zh : matched.name_en;
+                    countryCodeHidden.value = extractedCountry;
+                } else {
+                    countryInput.value = extractedCountry;
+                    countryCodeHidden.value = extractedCountry;
+                }
             }
         }
         
@@ -1688,6 +1759,13 @@
         // 渲染角色选择器
         renderRoleSelect(targetUserRole);
     }
+
+// 辅助函数：从库房ID提取国家代码
+function extractCountryFromWhId(whId) {
+    if (!whId) return '';
+    const match = whId.match(/^([A-Z]{2})/);
+    return match ? match[1] : '';
+}
 
     // 监听模态框关闭事件，确保清理状态
     document.getElementById('addUserModal').addEventListener('hidden.bs.modal', function() {
@@ -2217,25 +2295,104 @@
     document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
     document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
     
-    // 初始化库房搜索
-    // 初始化库房搜索（带国家校验和自动转大写）
+    // 初始化库房搜索（带国家校验和自动转大写） 增强库房搜索和自动识别国家
     async function initWarehouseSearch() {
         const whInput = document.getElementById('wh_id');
         const whDatalist = document.getElementById('whDatalist');
         const whNameEnInput = document.getElementById('wh_name_en');
         const whTypeInput = document.getElementById('wh_type');
-        const countryCodeInput = document.getElementById('countryCode'); // 用户选择的国家
+        const countryInput = document.getElementById('userCountrySelect');
+        const countryCodeHidden = document.getElementById('countryCode');
+        const currentRole = "{{ session.get('role') }}";
+        const isDeveloper = currentRole === 'developer';
         
         if (!whInput) {
             console.error('库房输入框 wh_id 不存在');
             return;
         }
-        if (!whDatalist) {
-            console.error('datalist whDatalist 不存在');
-            return;
+        
+        // 从库房ID提取国家代码
+        function extractCountryFromWhId(whId) {
+            if (!whId) return '';
+            const match = whId.match(/^([A-Z]{2})/);
+            return match ? match[1] : '';
         }
         
-        console.log('库房搜索初始化成功');
+        // ✅ 检查国家是否在权限范围内
+        async function checkCountryPermission(countryCode) {
+            if (!countryCode) return true;
+            
+            try {
+                const res = await fetch('/api/admin/refresh_permissions');
+                const data = await res.json();
+                const allowedCountries = data.admin_countries || [];
+                const role = data.role;
+                
+                // 开发者无限制
+                if (role === 'developer') return true;
+                // 超管或管理员：检查权限范围
+                if (allowedCountries.length > 0) {
+                    return allowedCountries.includes(countryCode);
+                }
+                // 无权限范围（超管）返回 true
+                return true;
+            } catch (e) {
+                console.error('检查权限失败:', e);
+                return true;
+            }
+        }
+        
+        // ✅ 自动设置国家（从库房ID提取）
+        async function autoSetCountry(whId) {
+            if (!whId) {
+                if (!isDeveloper) return;
+                countryInput.value = '';
+                countryCodeHidden.value = '';
+                return;
+            }
+            
+            const extractedCountry = extractCountryFromWhId(whId);
+            if (extractedCountry) {
+                // 获取国家显示名称
+                const countries = await loadCountryList();
+                const matched = countries.find(c => c.code === extractedCountry);
+                
+                if (matched) {
+                    const lang = window.i18n?.currentLang || 'zh';
+                    const displayName = lang === 'zh' ? matched.name_zh : matched.name_en;
+                    countryInput.value = displayName;
+                    countryCodeHidden.value = extractedCountry;
+                    
+                    // ✅ 检查权限
+                    const hasPermission = await checkCountryPermission(extractedCountry);
+                    if (!hasPermission) {
+                        const errorMsg = `无权创建/编辑 ${displayName} (${extractedCountry}) 国家的用户，请联系开发者`;
+                        alert(errorMsg);
+                        whInput.value = '';
+                        whNameEnInput.value = '';
+                        whTypeInput.value = '';
+                        countryInput.value = '';
+                        countryCodeHidden.value = '';
+                        return false;
+                    }
+                    return true;
+                } else {
+                    countryInput.value = extractedCountry;
+                    countryCodeHidden.value = extractedCountry;
+                    return true;
+                }
+            } else if (!isDeveloper) {
+                // 非开发者：库房ID无效时清空并提示
+                alert('库房编码格式错误，前两位应为国家代码（如：NP001、LK002）');
+                whInput.value = '';
+                whNameEnInput.value = '';
+                whTypeInput.value = '';
+                countryInput.value = '';
+                countryCodeHidden.value = '';
+                return false;
+            }
+            return true;
+        }
         
         // 防抖函数
         const debounce = (fn, delay) => {
@@ -2246,20 +2403,18 @@
             };
         };
         
-        // 从库房ID提取国家代码
-        function extractCountryFromWhId(whId) {
-            if (!whId) return '';
-            const match = whId.match(/^([A-Z]{2})/);
-            return match ? match[1] : '';
-        }
-        
         // 输入时模糊搜索（实时下拉提示）
         whInput.addEventListener('input', debounce(async function(e) {
             const q = this.value.trim().toUpperCase();
-            console.log('搜索库房:', q);
             
             if (!q) {
                 whDatalist.innerHTML = '';
+                if (!isDeveloper) {
+                    whNameEnInput.value = '';
+                    whTypeInput.value = '';
+                    countryInput.value = '';
+                    countryCodeHidden.value = '';
+                }
                 return;
             }
             
@@ -2268,14 +2423,24 @@
                 const data = await res.json();
                 
                 if (data.data && data.data.length > 0) {
-                    // 生成下拉选项
                     whDatalist.innerHTML = data.data.map(wh => 
                         `<option value="${escapeHtml(wh.wh_id)}">${escapeHtml(wh.wh_id)} - ${escapeHtml(wh.wh_name_en || wh.wh_name_cn || '')}</option>`
                     ).join('');
-                    console.log(`找到 ${data.data.length} 个匹配库房`);
                 } else {
                     whDatalist.innerHTML = '';
-                    console.log('未找到匹配库房');
+                    // 非开发者：新库房需要提示
+                    if (!isDeveloper) {
+                        // 尝试从输入中提取国家
+                        const extractedCountry = extractCountryFromWhId(q);
+                        if (extractedCountry) {
+                            const hasPermission = await checkCountryPermission(extractedCountry);
+                            if (!hasPermission) {
+                                alert(`无权创建国家 ${extractedCountry} 的库房`);
+                                this.value = '';
+                                return;
+                            }
+                        }
+                    }
                 }
             } catch(e) {
                 console.error('搜索库房失败', e);
@@ -2283,32 +2448,22 @@
             }
         }, 300));
         
-        // 选择时自动填充（从下拉列表选择或手动输入后失焦）
+        // 选择时自动填充并设置国家
         whInput.addEventListener('change', async function() {
             let whId = this.value.trim().toUpperCase();
-            console.log('库房选择/输入:', whId);
             
             if (!whId) {
-                if (whNameEnInput) whNameEnInput.value = '';
-                if (whTypeInput) whTypeInput.value = '';
+                if (!isDeveloper) {
+                    whNameEnInput.value = '';
+                    whTypeInput.value = '';
+                    countryInput.value = '';
+                    countryCodeHidden.value = '';
+                }
                 return;
             }
             
             // 自动转大写
             this.value = whId;
-            
-            // 获取用户选择的国家
-            const userCountry = countryCodeInput ? countryCodeInput.value : '';
-            const extractedCountry = extractCountryFromWhId(whId);
-            
-            // ✅ 国家一致性校验
-            if (userCountry && extractedCountry && userCountry !== extractedCountry) {
-                alert(`库房ID "${whId}" 的国家代码 "${extractedCountry}" 与用户国家 "${userCountry}" 不一致，请修正！`);
-                this.value = '';
-                if (whNameEnInput) whNameEnInput.value = '';
-                if (whTypeInput) whTypeInput.value = '';
-                return;
-            }
             
             try {
                 const res = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(whId)}`);
@@ -2319,28 +2474,33 @@
                     const wh = data.data[0];
                     if (whNameEnInput) whNameEnInput.value = wh.wh_name_en || '';
                     if (whTypeInput) whTypeInput.value = wh.wh_type || '';
-                    console.log('自动填充成功:', wh.wh_id, wh.wh_name_en);
+                    
+                    // ✅ 自动设置国家
+                    await autoSetCountry(wh.wh_id);
                 } else {
-                    // 没有匹配到现有库房，允许手动输入新库房
-                    console.log('新库房，将自动创建');
-                    if (whNameEnInput) whNameEnInput.value = '';
+                    // 新库房
+                    if (whNameEnInput) {
+                        whNameEnInput.value = '';
+                        whNameEnInput.placeholder = '请输入库房名称（新库房）';
+                        whNameEnInput.readOnly = false;
+                        whNameEnInput.style.backgroundColor = '#ffffff';
+                    }
                     if (whTypeInput) whTypeInput.value = '';
-                    // 提示用户可以手动填写库房名称
-                    if (whNameEnInput) whNameEnInput.placeholder = '请输入库房名称（新库房）';
-                    if (whNameEnInput) whNameEnInput.readOnly = false;
-                    if (whNameEnInput) whNameEnInput.style.backgroundColor = '#ffffff';
+                    
+                    // ✅ 尝试从新库房ID提取国家
+                    await autoSetCountry(whId);
                 }
             } catch(e) {
                 console.error('获取库房信息失败', e);
+                await autoSetCountry(whId);
             }
         });
         
-        // 手动输入库房名称时（如果库房ID是新的，允许手动填写）
-        if (whNameEnInput) {
+        // 手动输入库房名称时
+        if (whNameEnInput && !isDeveloper) {
             whNameEnInput.addEventListener('focus', function() {
                 const whId = whInput.value.trim().toUpperCase();
                 if (whId && !whNameEnInput.value) {
-                    // 提示用户填写
                     console.log('新库房，请填写库房名称');
                 }
             });
