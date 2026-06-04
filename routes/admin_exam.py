@@ -2142,7 +2142,7 @@ def admin_batch_remove_exam_assignment(exam_id):
         to_remove = [uid for uid in user_ids if uid in existing_ids]
         
         if not to_remove:
-            return jsonify({"success": False, "message": "所选考生未分配或已移除"}), 400
+            return jsonify({"success": False, "message": "jsonify_selected_candidate_unassigned_removed", "params": []}), 400
         
         # 4. 删除分配关系
         for uid in to_remove:

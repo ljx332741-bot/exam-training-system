@@ -71,6 +71,24 @@
             background-color: #f8f9fa;
             opacity: 0.7;
         }
+        /* Toast 动画优化 */
+        .toast {
+            opacity: 1 !important;
+            min-width: 280px;
+        }
+
+        /* Loading 遮罩动画 */
+        #globalLoading {
+            transition: all 0.3s ease;
+        }
+
+        /* 批量计数徽章 */
+        .batch-count-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
     </style>
 
     <!-- 🔧 页面级自定义样式插槽 -->
@@ -899,16 +917,28 @@
     <!-- 🔧 页面级自定义脚本插槽 -->
     {% block extra_js %}{% endblock %}
 
-    <!-- 全局 Toast 提示 -->
+    <!-- 全局 Toast 提示组件 -->
     <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
         <div id="globalToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="3000">
             <div class="toast-header">
-                <i class="bi bi-info-circle-fill me-2"></i>
+                <i class="bi bi-info-circle-fill me-2" id="toastIcon"></i>
                 <strong class="me-auto" id="toastTitle">提示</strong>
-                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="toast-body" id="toastMessage">
                 操作成功
+            </div>
+        </div>
+    </div>
+
+    <!-- 全局 Loading 遮罩 -->
+    <div id="globalLoading" class="position-fixed top-0 start-0 w-100 h-100" style="background: rgba(0,0,0,0.5); z-index: 9999; display: none;">
+        <div class="d-flex justify-content-center align-items-center h-100">
+            <div class="bg-white rounded-3 p-4 shadow-lg text-center">
+                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h6 class="mb-0" id="loadingText">正在处理...</h6>
             </div>
         </div>
     </div>

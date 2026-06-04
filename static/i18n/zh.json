@@ -746,5 +746,12 @@
 "other": "其它",
     "confirm_remove_selected": "确定要移除选中的 {count} 名考生的考试分配吗？",
     "confirm_remove_single": "确定要移除该考生的考试分配吗？",
-    "remove": "移除"
+    "remove": "移除",
+    "assigning": "正在分配",
+"removing": "正在移除",
+"resetting": "正在重置",
+"confirm_assign_selected": "确认分配考试给选中的人员吗？",
+"batch_assign": "批量分配",
+"batch_remove": "批量删除",
+"selected": "已选"
 }

@@ -748,5 +748,12 @@
 "other": "Other",
     "confirm_remove_selected": "Are you sure to remove {count} selected candidates from this exam?",
     "confirm_remove_single": "Are you sure to remove this candidate from this exam?",
-    "remove": "Remove"
+    "remove": "Remove",
+    "assigning": "Assigning",
+"removing": "Removing",
+"resetting": "Resetting",
+"confirm_assign_selected": "confirm to assign exam to select people?",
+"batch_assign": "Batch assign",
+"batch_remove": "Batch remove",
+"selected": "Selected"
 }

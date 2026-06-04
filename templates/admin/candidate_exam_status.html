@@ -44,8 +44,10 @@
                     </button>
                 </div>
                 <div class="col-md-4">
-                    <!-- 批量操作按钮放在这里 -->
-                    <div class="d-flex gap-2 justify-content-end">
+                    <div class="d-flex gap-2 justify-content-end align-items-center">
+                        <span id="selectedCountBadge" class="badge bg-primary batch-count-badge" style="display: none;">
+                            <span data-i18n="selected">已选</span> <span id="selectedCount">0</span>
+                        </span>
                         <button id="batchAssignBtn" class="btn btn-success btn-sm">
                             <i class="bi bi-plus-circle"></i> <span data-i18n="batch_assign">批量分配</span>
                         </button>
@@ -74,11 +76,11 @@
                             <th data-i18n="status">状态</th>
                             <th data-i18n="candidate_score">得分</th>
                             <th data-i18n="submitted_at">提交时间</th>
-                            <th colspan="2" data-i18n="actions">操作</th>
+                            <th colspan="3" data-i18n="actions">操作</th>
                         </tr>
                     </thead>
                     <tbody id="statusTableBody">
-                        <tr><td colspan="11" class="text-center"><span data-i18n="loading">加载中...</span><\/td><\/tr>
+                        <tr><td colspan="12" class="text-center"><span data-i18n="loading">加载中...</span><\/td><\/tr>
                     </tbody>
                 </table>
             </div>
@@ -103,18 +105,98 @@
         country: ''
     };
 
-    // 批量分配
+    // ==================== Toast 提示函数 ====================
+    function showToast(message, type = 'success') {
+        const toastEl = document.getElementById('globalToast');
+        const toastIcon = document.getElementById('toastIcon');
+        const toastTitle = document.getElementById('toastTitle');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        // ✅ 检查元素是否存在，如果不存在则使用 alert 作为降级方案
+        if (!toastEl || !toastIcon || !toastTitle || !toastMessage) {
+            console.warn('Toast 元素不存在，使用 alert 代替');
+            alert(message);
+            return;
+        }
+        
+        // 根据类型设置样式
+        if (type === 'success') {
+            toastIcon.className = 'bi bi-check-circle-fill me-2 text-success';
+            toastTitle.textContent = t('success') || '成功';
+        } else if (type === 'error') {
+            toastIcon.className = 'bi bi-x-circle-fill me-2 text-danger';
+            toastTitle.textContent = t('error') || '错误';
+        } else if (type === 'warning') {
+            toastIcon.className = 'bi bi-exclamation-triangle-fill me-2 text-warning';
+            toastTitle.textContent = t('warning') || '警告';
+        } else {
+            toastIcon.className = 'bi bi-info-circle-fill me-2 text-info';
+            toastTitle.textContent = t('info') || '提示';
+        }
+        
+        toastMessage.textContent = message;
+        
+        // 创建新的 Toast 实例并显示
+        const toast = new bootstrap.Toast(toastEl, {
+            autohide: true,
+            delay: 3000
+        });
+        toast.show();
+    }
+
+    // ==================== Loading 遮罩函数 ====================
+    function showLoading(text = '正在处理...') {
+        const loadingEl = document.getElementById('globalLoading');
+        const loadingText = document.getElementById('loadingText');
+        
+        // ✅ 检查元素是否存在
+        if (!loadingEl) {
+            console.warn('Loading 元素不存在');
+            return;
+        }
+        
+        if (loadingText) loadingText.textContent = text;
+        loadingEl.style.display = 'flex';
+    }
+
+    function hideLoading() {
+        const loadingEl = document.getElementById('globalLoading');
+        if (loadingEl) {
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    // ==================== 更新批量选中计数 ====================
+    function updateSelectedCount() {
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+        const count = selectedCheckboxes.length;
+        const badge = document.getElementById('selectedCountBadge');
+        const countSpan = document.getElementById('selectedCount');
+        
+        if (countSpan) countSpan.textContent = count;
+        
+        if (badge) {
+            if (count > 0) {
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    // ==================== 批量分配 ====================
     document.getElementById('batchAssignBtn')?.addEventListener('click', async () => {
-        // ✅ 确保复选框有 value 属性（已在 renderTable 中设置 value="${u.user_id}"）
         const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
         const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.value);
         
         if (selectedUserIds.length === 0) {
-            alert(t('select_at_least_one'));
+            showToast(t('select_at_least_one'), 'warning');
             return;
         }
         
-        if (!confirm(t('confirm_assign_selected'))) return;
+        if (!confirm(t('confirm_assign_selected', selectedUserIds.length))) return;
+        
+        showLoading(t('assigning') + '...');
         
         try {
             const response = await fetch(`/api/admin/exam/${examId}/quick_assign`, {
@@ -124,29 +206,34 @@
             });
             
             const result = await response.json();
+            hideLoading();
+            
             if (result.success) {
-                alert(result.message);
+                showToast(result.message, 'success');
                 loadExamStatusData();
             } else {
-                alert(result.message || t('operation_failed'));
+                showToast(result.message || t('operation_failed'), 'error');
             }
         } catch (err) {
+            hideLoading();
             console.error('分配失败:', err);
-            alert(t('operation_failed'));
+            showToast(t('operation_failed'), 'error');
         }
     });
 
-    // 批量移除分配
+    // ==================== 批量移除 ====================
     document.getElementById('batchDeleteAssignBtn')?.addEventListener('click', async () => {
         const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
         const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.value);
         
         if (selectedUserIds.length === 0) {
-            alert(t('select_at_least_one'));
+            showToast(t('select_at_least_one'), 'warning');
             return;
         }
         
         if (!confirm(t('confirm_remove_selected', selectedUserIds.length))) return;
+        
+        showLoading(t('removing') + '...');
         
         try {
             const response = await fetch(`/api/admin/exam/${examId}/batch_remove`, {
@@ -156,59 +243,40 @@
             });
             
             const result = await response.json();
-            if (result.success) {
-                alert(result.message);
-                loadExamStatusData(); // 刷新列表
-            } else {
-                alert(result.message || t('operation_failed'));
-            }
-        } catch (err) {
-            console.error('移除失败:', err);
-            alert(t('operation_failed'));
-        }
-    });
-
-    // 绑定单个移除事件
-    document.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.remove-single-btn');
-        if (!btn) return;
-        
-        const userId = btn.dataset.userId;
-        if (!confirm(t('confirm_remove_single'))) return;
-        
-        try {
-            const response = await fetch(`/api/admin/exam/${examId}/batch_remove`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_ids: [userId] })
-            });
+            hideLoading();
             
-            const result = await response.json();
             if (result.success) {
-                alert(result.message);
+                showToast(result.message, 'success');
                 loadExamStatusData();
             } else {
-                alert(result.message || t('operation_failed'));
+                showToast(result.message || t('operation_failed'), 'error');
             }
         } catch (err) {
+            hideLoading();
             console.error('移除失败:', err);
-            alert(t('operation_failed'));
+            showToast(t('operation_failed'), 'error');
         }
     });
 
-    // ✅ 等待 DOM 加载完成后再执行
-    document.addEventListener('DOMContentLoaded', function() {
-        // 检查必要元素是否存在
-        const statusTableBody = document.getElementById('statusTableBody');
-        if (!statusTableBody) {
-            console.error('statusTableBody 元素不存在');
-            return;
-        }
-        loadExamStatusData();
-        bindFilterEvents();
-    });
+    // ==================== 全选功能 ====================
+    function bindSelectAll() {
+        const selectAllCheckbox = document.getElementById('selectAll');
+        if (!selectAllCheckbox) return;
+        
+        // 移除旧监听器
+        const newSelectAll = selectAllCheckbox.cloneNode(true);
+        selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
+        
+        newSelectAll.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.user-checkbox').forEach(cb => {
+                cb.checked = isChecked;
+            });
+            updateSelectedCount();
+        });
+    }
 
-    // 绑定筛选事件
+    // ==================== 绑定筛选事件 ====================
     function bindFilterEvents() {
         const nameInput = document.getElementById('statusFilterName');
         const whInput = document.getElementById('statusFilterWh');
@@ -216,34 +284,30 @@
         const countryInput = document.getElementById('statusFilterCountry');
         const resetBtn = document.getElementById('resetFiltersBtn');
 
-        if (nameInput) {
-            nameInput.addEventListener('input', (e) => {
-                currentFilters.name = e.target.value;
-                currentPage = 1;
-                applyFiltersAndRender();
-            });
-        }
-        if (whInput) {
-            whInput.addEventListener('input', (e) => {
-                currentFilters.wh_id = e.target.value;
-                currentPage = 1;
-                applyFiltersAndRender();
-            });
-        }
-        if (partnerSelect) {
-            partnerSelect.addEventListener('change', (e) => {
-                currentFilters.is_partner = e.target.value;
-                currentPage = 1;
-                applyFiltersAndRender();
-            });
-        }
-        if (countryInput) {
-            countryInput.addEventListener('input', (e) => {
-                currentFilters.country = e.target.value;
-                currentPage = 1;
-                applyFiltersAndRender();
-            });
-        }
+        const debounce = (fn, delay) => {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
+
+        const applyFilters = () => {
+            currentFilters.name = nameInput?.value || '';
+            currentFilters.wh_id = whInput?.value || '';
+            currentFilters.is_partner = partnerSelect?.value || '';
+            currentFilters.country = countryInput?.value || '';
+            currentPage = 1;
+            applyFiltersAndRender();
+        };
+
+        const debouncedApply = debounce(applyFilters, 300);
+
+        if (nameInput) nameInput.addEventListener('input', debouncedApply);
+        if (whInput) whInput.addEventListener('input', debouncedApply);
+        if (partnerSelect) partnerSelect.addEventListener('change', applyFilters);
+        if (countryInput) countryInput.addEventListener('input', debouncedApply);
+        
         if (resetBtn) {
             resetBtn.addEventListener('click', () => {
                 if (nameInput) nameInput.value = '';
@@ -257,21 +321,18 @@
         }
     }
 
-    // 加载考生状态数据
+    // ==================== 加载考生状态数据 ====================
     async function loadExamStatusData() {
         const container = document.getElementById('statusTableBody');
-        if (!container) {
-            console.error('statusTableBody 元素不存在');
-            return;
-        }
+        if (!container) return;
         
-        container.innerHTML = `<tr><td colspan="10" class="text-center">${t('loading')}<\/td><\/tr>`;
+        container.innerHTML = `<tr><td colspan="12" class="text-center"><div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}<\/td><\/tr>`;
 
         try {
             const statusRes = await fetch(`/admin/exam_status/${examId}`);
             
             if (statusRes.status === 403) {
-                container.innerHTML = `<tr><td colspan="10" class="text-center text-warning">${t('no_permission_to_view_exam')}<\/td><\/tr>`;
+                container.innerHTML = `<tr><td colspan="12" class="text-center text-warning">${t('no_permission_to_view_exam')}<\/td><\/tr>`;
                 return;
             }
             
@@ -279,14 +340,13 @@
             let statusData = await statusRes.json();
 
             if (!statusData.length) {
-                container.innerHTML = `<tr><td colspan="10" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
+                container.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
                 return;
             }
 
-            // 获取用户详细信息
             const userIds = statusData.map(item => item.user_id).filter(id => id);
             if (userIds.length === 0) {
-                container.innerHTML = `<tr><td colspan="10" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
+                container.innerHTML = `<td><td colspan="12" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
                 return;
             }
 
@@ -297,7 +357,6 @@
                 usersMap[u.id] = u;
             });
 
-            // 合并数据
             const merged = [];
             for (const item of statusData) {
                 const userInfo = usersMap[item.user_id];
@@ -319,13 +378,11 @@
             applyFiltersAndRender();
         } catch (err) {
             console.error('加载失败:', err);
-            if (container) {
-                container.innerHTML = `<tr><td colspan="10" class="text-center text-danger">${t('load_failed')}<\/td><\/tr>`;
-            }
+            container.innerHTML = `<tr><td colspan="12" class="text-center text-danger">${t('load_failed')}<\/td><\/tr>`;
         }
     }
 
-    // 应用筛选并渲染
+    // ==================== 应用筛选并渲染 ====================
     function applyFiltersAndRender() {
         let filtered = [...currentExamUsers];
 
@@ -358,19 +415,19 @@
         renderTable(filtered);
     }
 
-    // 渲染表格
+    // ==================== 渲染表格 ====================
     function renderTable(users) {
         const tbody = document.getElementById('statusTableBody');
         if (!tbody) return;
         
         if (!users.length) {
-            tbody.innerHTML = `<tr><td colspan="11" class="text-center">${t('t_no_matching_find')}<\/td><\/tr>`;
+            tbody.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_matching_find')}<\/td><\/tr>`;
             const totalCountSpan = document.getElementById('totalCount');
             if (totalCountSpan) totalCountSpan.innerText = '0';
+            updateSelectedCount();
             return;
         }
 
-        // 分页处理
         const total = users.length;
         const perPage = 20;
         const totalPages = Math.ceil(total / perPage);
@@ -382,7 +439,6 @@
         if (totalCountSpan) totalCountSpan.innerText = total;
         renderPagination(currentPage, totalPages);
 
-        // ✅ 在 map 内部构建每一行，包含分配按钮
         tbody.innerHTML = pageUsers.map(u => {
             const submitted = u.is_submitted;
             const scoreDisplay = (u.score !== null && u.score !== undefined) ? u.score : '-';
@@ -417,22 +473,21 @@
                 ? `<button class="btn btn-sm btn-outline-warning reset-btn" data-exam-id="${examId}" data-user-id="${u.user_id}">🔄 ${t('reset')}</button>`
                 : '';
             
-            // ✅ 分配按钮：只在未分配状态时显示
             const assignBtn = (u.exam_status === 'not_assigned')
                 ? `<button class="btn btn-sm btn-outline-success assign-single-btn" data-user-id="${u.user_id}">
                     <i class="bi bi-plus-circle"></i> ${t('assign')}
-                </button>`
+                   </button>`
                 : '';
-
-            const removeBtn = (u.exam_status !== 'not_assigned' && u.exam_status !== 'submitted')
+            
+            const removeBtn = (u.exam_status !== 'not_assigned')
                 ? `<button class="btn btn-sm btn-outline-danger remove-single-btn" data-user-id="${u.user_id}">
                     <i class="bi bi-trash"></i> ${t('remove')}
-                </button>`
+                   </button>`
                 : '';
 
             return `
                 <tr>
-                    <td><input type="checkbox" class="user-checkbox" value="${u.user_id}"><\/td>
+                    <td><input type="checkbox" class="user-checkbox" value="${u.user_id}" onchange="updateSelectedCount()"><\/td>
                     <td>${escapeHtml(u.name)}<\/td>
                     <td>${escapeHtml(u.email)}<\/td>
                     <td>${escapeHtml(u.wh_id || '-')}<\/td>
@@ -452,46 +507,104 @@
             btn.removeEventListener('click', handleReset);
             btn.addEventListener('click', handleReset);
         });
-
-        // ✅ 每次渲染后重新绑定全选功能
-        bindSelectAll();
-    }
-
-    // 绑定全选功能
-    function bindSelectAll() {
-        const selectAllCheckbox = document.getElementById('selectAll');
-        if (!selectAllCheckbox) return;
         
-        selectAllCheckbox.addEventListener('change', (e) => {
-            const isChecked = e.target.checked;
-            const allCheckboxes = document.querySelectorAll('.user-checkbox');
-            allCheckboxes.forEach(cb => {
-                cb.checked = isChecked;
-            });
-        });
+        // 绑定全选和更新计数
+        bindSelectAll();
+        updateSelectedCount();
     }
 
-    // 重置按钮处理
+    // ==================== 单个分配事件 ====================
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.assign-single-btn');
+        if (!btn) return;
+        
+        const userId = btn.dataset.userId;
+        if (!confirm(t('confirm_assign_single'))) return;
+        
+        showLoading(t('assigning') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/quick_assign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadExamStatusData();
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('分配失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    });
+
+    // ==================== 单个移除事件 ====================
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.remove-single-btn');
+        if (!btn) return;
+        
+        const userId = btn.dataset.userId;
+        if (!confirm(t('confirm_remove_single'))) return;
+        
+        showLoading(t('removing') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/batch_remove`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadExamStatusData();
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('移除失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    });
+    
+    // ==================== 重置按钮处理 ====================
     async function handleReset(e) {
         const btn = e.currentTarget;
         if (!confirm(t('js_candidate_status_reset_tip'))) return;
+        
+        showLoading(t('resetting') + '...');
+        
         const examIdVal = btn.dataset.examId;
         const userId = btn.dataset.userId;
         try {
             const res = await fetch(`/admin/reset_exam/${examIdVal}/${userId}`, { method: 'POST' });
+            hideLoading();
             if (res.ok) {
-                alert(t('js_reset_successful'));
+                showToast(t('js_reset_successful'), 'success');
                 loadExamStatusData();
             } else {
-                alert(t('js_reset_failed'));
+                showToast(t('js_reset_failed'), 'error');
             }
         } catch (err) {
+            hideLoading();
             console.error(err);
-            alert(t('js_reset_failed'));
+            showToast(t('js_reset_failed'), 'error');
         }
     }
 
-    // 分页
+    // ==================== 分页 ====================
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
         if (!pagination) return;
@@ -514,6 +627,7 @@
         });
     }
 
+    // ==================== 关闭按钮 ====================
     const closePageBtn = document.getElementById('closePageBtn');
     if (closePageBtn) {
         closePageBtn.addEventListener('click', () => {
@@ -525,49 +639,7 @@
         });
     }
 
-    // 绑定单个分配事件（调试版）
-    document.addEventListener('click', async (e) => {
-        const btn = e.target.closest('.assign-single-btn');
-        if (!btn) return;
-        
-        const userId = btn.dataset.userId;
-        if (!confirm(t('confirm_assign_single'))) return;
-        
-        try {
-            const response = await fetch(`/api/admin/exam/${examId}/quick_assign`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_ids: [userId] })
-            });
-            
-            // ✅ 调试：先查看响应文本
-            const responseText = await response.text();
-            console.log('响应状态:', response.status);
-            console.log('响应内容:', responseText);
-            
-            // 尝试解析 JSON
-            let result;
-            try {
-                result = JSON.parse(responseText);
-            } catch (e) {
-                console.error('JSON 解析失败，响应不是有效 JSON:', responseText);
-                alert('服务器返回错误，请检查控制台');
-                return;
-            }
-            
-            if (result.success) {
-                alert(result.message);
-                loadExamStatusData();
-            } else {
-                alert(result.message || t('operation_failed'));
-            }
-        } catch (err) {
-            console.error('分配失败:', err);
-            alert(t('operation_failed'));
-        }
-    });
-
-    // 辅助函数
+    // ==================== 辅助函数 ====================
     function escapeHtml(str) {
         if (!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -577,5 +649,41 @@
             return m;
         });
     }
+
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // ==================== 页面初始化 ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        bindFilterEvents();
+
+        // 等待 i18n 就绪后加载列表
+        waitForI18n();
+        window.i18n.applyTranslations();  // 处理静态文本
+        loadExamStatusData();
+        
+        // ✅ 语言切换时重新加载列表
+        if (window.i18n && window.i18n.subscribe) {
+            window.i18n.subscribe(() => {
+            loadExamStatusData();  // 重新加载列表，会触发使用新的翻译
+            });
+        }
+        window.addEventListener('app:languageChanged', function() {
+            loadWhList();
+        });
+    });
 </script>
 {% endblock %}
