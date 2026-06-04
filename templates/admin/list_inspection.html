@@ -299,6 +299,7 @@
         tbody.innerHTML = interviews.map(inv => {
         const status = inv.status; // draft, created, active, closed
         const isSuperAdmin = CURRENT_USER_ROLE === 'super_admin';
+        const isDeveloper = CURRENT_USER_ROLE === 'developer';
         let actionButtons = '';
 
         if (status === 'draft' || status === 'created') {
@@ -313,7 +314,7 @@
         } else if (status === 'closed') {
             // 已关闭：仅详情；超管额外显示删除
             actionButtons = `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>`;
-            if (isSuperAdmin) {
+            if (isSuperAdmin || isDeveloper) {
                 actionButtons += `
                 <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
                 <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
