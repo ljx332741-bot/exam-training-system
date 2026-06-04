@@ -9,11 +9,11 @@ from services import auth
 from datetime import datetime, timezone, timedelta
 from services.export import find_wkhtmltopdf
 from utils.training_helpers import get_training_country_templates_status, _save_country_template
-from routes.helpers import login_required, admin_required, get_attendance_data, get_training_status, upload_signature
+from routes.helpers import login_required, admin_required, get_attendance_data, get_training_status, upload_signature, parse_exam_countries
 from flask import render_template, request, redirect, send_file, url_for, session, flash, jsonify, make_response
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
-from utils.permissions import get_admin_allowed_countries
+from utils.permissions import get_admin_allowed_countries, get_allowed_countries
 logger = logging.getLogger(__name__)
 
 @admin_training_bp.route('/admin/trainings')
@@ -1043,4 +1043,113 @@ def export_training_attendance_status():
         as_attachment=True,
         download_name=filename
     )
+
+# routes/admin_training_bp - 修复后的搜索接口
+
+@admin_training_bp.route('/api/search/trainings')
+@login_required
+@admin_required
+def search_trainings():
+    """模糊搜索培训名称（带权限过滤）"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    
+    db = get_supabase()
+    allowed_countries = get_allowed_countries()
+    
+    # 基础查询
+    query = db.table("trainings").select("name").is_("deleted_at", "null").ilike("name", f"%{q}%")
+    
+    # ✅ 权限过滤：只返回权限范围内的培训
+    if allowed_countries is not None and allowed_countries:
+        query = query.in_("country", allowed_countries)
+    
+    res = query.limit(10).execute()
+    names = [row['name'] for row in (res.data or [])]
+    return jsonify(names)
+
+
+@admin_training_bp.route('/api/search/exams')
+@login_required
+@admin_required
+def search_exams():
+    """模糊搜索考试名称（带权限过滤）"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    
+    db = get_supabase()
+    allowed_countries = get_allowed_countries()
+    from routes.helpers import parse_exam_countries
+    
+    # 获取所有匹配的考试
+    res = db.table("exams").select("title, countries, country").is_("deleted_at", "null").ilike("title", f"%{q}%").execute()
+    all_exams = res.data or []
+    
+    # ✅ 权限过滤：只返回权限范围内的考试
+    filtered_names = []
+    for exam in all_exams:
+        exam_countries = parse_exam_countries(exam)
+        
+        # 无权限限制
+        if allowed_countries is None:
+            filtered_names.append(exam['title'])
+            continue
+        
+        # 有权限限制：检查是否有交集
+        if allowed_countries:
+            if any(c in allowed_countries for c in exam_countries):
+                filtered_names.append(exam['title'])
+    
+    # 去重并限制数量
+    unique_names = list(set(filtered_names))[:10]
+    return jsonify(unique_names)
+
+@admin_training_bp.route('/api/search/warehouses')
+@login_required
+@admin_required
+def search_warehouses():
+    """模糊搜索库房编码/名称（从 users 表，带权限过滤）"""
+    q = request.args.get('q', '').strip()
+    if not q:
+        return jsonify([])
+    
+    db = get_supabase()
+    allowed_countries = get_allowed_countries()
+    
+    # 基础查询 - 从 users 表查询
+    query = db.table("users").select("wh_id, wh_name_en, country").is_("deleted_at", "null")
+    
+    # ✅ 权限过滤：只返回权限范围内的用户对应的库房
+    if allowed_countries is not None and allowed_countries:
+        query = query.in_("country", allowed_countries)
+    
+    # 模糊查询 wh_id 或 wh_name_en
+    # 注意：Supabase 不支持 OR 条件的 ilike，需要分别查询后合并
+    r1 = query.ilike("wh_id", f"%{q}%").limit(20).execute()
+    r2 = query.ilike("wh_name_en", f"%{q}%").limit(20).execute()
+    
+    # 合并去重
+    seen = set()
+    suggestions = []
+    
+    for row in (r1.data or []) + (r2.data or []):
+        wh_id = row.get('wh_id', '')
+        wh_name = row.get('wh_name_en', '')
+        
+        if not wh_id:
+            continue
+        
+        # 生成显示标签
+        if wh_name:
+            label = f"{wh_id} ({wh_name})"
+        else:
+            label = wh_id
+        
+        if label and label not in seen:
+            seen.add(label)
+            suggestions.append(label)
+    
+    return jsonify(suggestions[:10])
 

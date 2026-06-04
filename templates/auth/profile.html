@@ -11,6 +11,19 @@
                     <h4 class="mb-0"><span data-i18n="basic_info">基本信息</span></h4>
                 </div>
                 <div class="card-body">
+
+                    <!-- ✅ 新增：用户ID显示（调试用） -->
+                    <div class="row mb-3">
+                        <div class="col-sm-4 fw-bold">
+                            <span data-i18n="user_id">用户ID</span>:
+                        </div>
+                        <div class="col-sm-8">
+                            <code id="userIdDisplay" style="font-size: 12px; word-break: break-all;">{{ session.get('user_id', 'N/A') }}</code>
+                            <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyUserId()" title="复制ID">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                        </div>
+                    </div>
                     <form method="POST" action="{{ url_for('profile') }}">
                         <input type="hidden" name="action" value="update_info">
                         
@@ -169,6 +182,22 @@
         window.i18n.subscribe(async () => {
             await updateDisplayFields();
             window.i18n.applyTranslations();
+        });
+    }
+
+    function copyUserId() {
+        const userId = document.getElementById('userIdDisplay').innerText;
+        navigator.clipboard.writeText(userId).then(() => {
+            // 显示提示
+            const btn = event.target.closest('button');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="bi bi-check"></i>';
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+            }, 1500);
+        }).catch(err => {
+            console.error('复制失败:', err);
+            alert('复制失败，请手动复制');
         });
     }
 </script>

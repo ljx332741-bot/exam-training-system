@@ -952,95 +952,6 @@ def exam_export_pdf(result_id):
     )
 
 '''
-@exam_bp.route('/api/my/interviews')
-@login_required
-def my_interviews():
-    """获取学员的访谈列表（检查考试完成状态）"""
-    user_id = session['user_id']
-    db = get_supabase()
-    now = datetime.now(timezone.utc).isoformat()
-
-    print(f"=== 调试 my_interviews ===")
-    print(f"用户ID: {user_id}")
-    
-    # 获取用户所有访谈记录
-    res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
-    interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
-    
-
-    print(f"访谈ID列表: {interview_ids}")
-
-    if not interview_ids:
-        return jsonify([])
-    
-    # 获取访谈信息（同时关联考试信息）
-    inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
-    
-    result = []
-    for inv in (inv_res.data or []):
-        start_time = inv.get('start_time')
-        end_time = inv.get('end_time')
-        exam_id = inv.get('exam_id')
-
-        print(f"\n--- 处理访谈: {inv.get('title')} (ID: {inv.get('id')}) ---")
-        print(f"  关联考试ID: {exam_id}")
-        print(f"  有效期: {start_time} -> {end_time}")
-        
-        if not start_time or not end_time:
-            print(f"  跳过: 没有有效期")
-            continue
-        
-        is_future = now < start_time
-        is_active = start_time <= now <= end_time
-        is_expired = now > end_time
-        
-        print(f"  状态: future={is_future}, active={is_active}, expired={is_expired}")
-
-        if is_expired:
-            print(f"  跳过: 已过期")
-            continue
-        
-        # ✅ 1. 检查是否已完成访谈
-        answers = db.table("interview_results").select("answer").eq("interview_id", inv['id']).eq("user_id", user_id).is_("deleted_at", "null").execute()
-        is_completed = all(row.get('answer') for row in (answers.data or []))
-        
-        print(f"  访谈完成: {is_completed}, 答题数量: {len(answers.data or [])}")
-        
-        # ✅ 2. 检查关联考试是否已完成
-        exam_completed = False
-        exam_total_score = 0
-        if exam_id:
-            print(f"  查询考试结果: exam_id={exam_id}, user_id={user_id}")
-            exam_result = db.table("exam_results").select("total_score").eq("exam_id", exam_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
-            print(f"  考试结果数量: {len(exam_result.data or [])}")
-            if exam_result.data:
-                for r in exam_result.data:
-                    print(f"    记录: total_score={r.get('total_score')}, deleted_at={r.get('deleted_at')}")
-                    if r.get('deleted_at') is None:
-                        exam_completed = True
-                        exam_total_score = r.get('total_score', 0)
-                        print(f"    有效考试结果: score={exam_total_score}")
-                        break
-            else:
-                print(f"  未找到考试结果")
-        
-        
-        result.append({
-            "id": inv['id'],
-            "title": inv.get('title', ''),
-            "start_time": start_time,
-            "end_time": end_time,
-            "question_count": inv.get('question_count', 0),
-            "is_future": is_future,
-            "is_active": is_active,
-            "is_completed": is_completed,
-            "exam_completed": exam_completed,      # ✅ 新增：考试是否完成
-            "exam_total_score": exam_total_score   # ✅ 新增：考试成绩
-        })
-    
-    return jsonify(result)
-'''
-
 # routes/api_exam.py - 修改 my_interviews 函数
 
 @exam_bp.route('/api/my/interviews')
@@ -1155,6 +1066,133 @@ def my_interviews():
         })
     
     return jsonify(result)
+'''
+
+# routes/api_exam.py - 修改 my_interviews 函数
+
+@exam_bp.route('/api/my/interviews')
+@login_required
+def my_interviews():
+    """获取学员的访谈列表（合并普通访谈和强制访谈，优先使用普通访谈）"""
+    user_id = session['user_id']
+    db = get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+
+    # 使用字典按 interview_id 去重
+    result_map = {}
+    
+    # ========== 1. 优先处理普通访谈 ==========
+    res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
+    interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
+    
+    if interview_ids:
+        inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
+        
+        for inv in (inv_res.data or []):
+            interview_id = inv['id']
+            start_time = inv.get('start_time')
+            end_time = inv.get('end_time')
+            exam_id = inv.get('exam_id')
+            
+            if not start_time or not end_time:
+                continue
+            
+            # 只显示有效期内或已开始的访谈
+            if now > end_time:
+                continue
+            
+            is_future = now < start_time
+            is_active = start_time <= now <= end_time
+            
+            # 检查是否已完成
+            answers = db.table("interview_results").select("answer").eq("interview_id", interview_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+            is_completed = all(row.get('answer') for row in (answers.data or []))
+            
+            # 检查考试是否已完成
+            exam_completed = False
+            exam_total_score = 0
+            if exam_id:
+                exam_result = db.table("exam_results").select("total_score").eq("exam_id", exam_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+                if exam_result.data:
+                    exam_completed = True
+                    exam_total_score = exam_result.data[0].get('total_score', 0)
+            
+            result_map[interview_id] = {
+                "id": interview_id,
+                "title": inv.get('title', ''),
+                "start_time": start_time,
+                "end_time": end_time,
+                "question_count": inv.get('question_count', 0),
+                "is_future": is_future,
+                "is_active": is_active,
+                "is_completed": is_completed,
+                "exam_completed": exam_completed,
+                "exam_total_score": exam_total_score,
+                "is_force": False
+            }
+    
+    # ========== 2. 处理强制访谈（只添加普通访谈中不存在的）==========
+    force_res = db.table("user_interview_force_records").select("*").eq("user_id", user_id).is_("deleted_at", "null").execute()
+    
+    for force in (force_res.data or []):
+        original_id = force.get('original_interview_id')
+        
+        # ✅ 如果普通访谈已经存在，删除强制访谈记录并跳过
+        if original_id in result_map:
+            logger.info(f"访谈 {original_id} 已存在普通访谈，删除强制访谈记录")
+            db.table("user_interview_force_records").update({
+                "deleted_at": now,
+                "deleted_by": user_id
+            }).eq("id", force['id']).execute()
+            continue
+            
+        start_time = force.get('start_time')
+        end_time = force.get('end_time')
+        
+        if not start_time or not end_time:
+            continue
+        
+        # 过期则删除
+        if now > end_time:
+            db.table("user_interview_force_records").update({
+                "deleted_at": now,
+                "deleted_by": user_id
+            }).eq("id", force['id']).execute()
+            continue
+        
+        is_future = now < start_time
+        is_active = start_time <= now <= end_time
+        
+        # 检查是否已完成
+        answers = db.table("interview_results").select("answer").eq("interview_id", original_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+        is_completed = all(row.get('answer') for row in (answers.data or []))
+        
+        # 检查考试是否已完成
+        exam_completed = False
+        exam_total_score = 0
+        exam_id = force.get('exam_id')
+        if exam_id:
+            exam_result = db.table("exam_results").select("total_score").eq("exam_id", exam_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+            if exam_result.data:
+                exam_completed = True
+                exam_total_score = exam_result.data[0].get('total_score', 0)
+        
+        result_map[original_id] = {
+            "id": original_id,
+            "title": force.get('title', '强制访谈'),
+            "start_time": start_time,
+            "end_time": end_time,
+            "question_count": force.get('question_count', 0),
+            "is_future": is_future,
+            "is_active": is_active,
+            "is_completed": is_completed,
+            "exam_completed": exam_completed,
+            "exam_total_score": exam_total_score,
+            "is_force": True,
+            "force_record_id": force['id']
+        }
+    
+    return jsonify(list(result_map.values()))
 
 @exam_bp.route('/api/exam/draft', methods=['POST'])
 @login_required

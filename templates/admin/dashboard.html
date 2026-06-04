@@ -189,7 +189,6 @@
                   {# ✅ 进行中的考试名称显示为可点击链接 #}
                   {% if ex.status == 'active' %}
                       <a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" 
-                        target="_blank" 
                         class="text-decoration-none fw-semibold">
                           {{ ex.title }}
                       </a>
@@ -1014,6 +1013,7 @@
           console.error('搜索库房失败', e);
       }
   });
+  
   // 对当前考试批量导出PDF考试接口 0426
   async function batchExport(examId) {
       // 需要先获取该考试下的所有考生ID，然后调用批量导出接口
@@ -1136,6 +1136,194 @@
               renderExamStatusTable();
           });
       }
+ 
+      // ✅ 修改：只加载权限范围内的国家
+      setupCountryAutocompleteWithPermission('exportCountryInput', 'countryDatalist', 'exportCountryCode');
+      setupCountryAutocompleteWithPermission('countryInput', 'countryDatalist', 'countryCodeForSetting');
   });
+
+  // ✅ 新增：带权限过滤的国家自动完成函数
+  async function setupCountryAutocompleteWithPermission(inputId, datalistId, hiddenId = null) {
+      const input = document.getElementById(inputId);
+      const datalist = document.getElementById(datalistId);
+      if (!input || !datalist) return;
+      
+      // 隐藏原生 datalist
+      datalist.style.display = 'none';
+      
+      // 加载权限范围内的国家列表
+      let allowedCountries = [];
+      try {
+          const res = await fetch('/api/admin/refresh_permissions');
+          const data = await res.json();
+          allowedCountries = data.admin_countries || [];
+          const role = data.role;
+          
+          // 开发者或超管无权限范围时，加载所有国家
+          if (role === 'developer' || (role === 'super_admin' && allowedCountries.length === 0)) {
+              allowedCountries = null; // 表示全部
+          }
+      } catch(e) {
+          console.error('获取权限失败:', e);
+      }
+      
+      // 加载国家列表
+      const allCountries = await loadCountryList();
+      
+      // 根据权限过滤国家
+      let countries = allCountries;
+      if (allowedCountries && allowedCountries.length > 0) {
+          countries = allCountries.filter(c => allowedCountries.includes(c.code));
+      }
+      
+      // 存储过滤后的国家列表到全局
+      window.filteredCountryList = countries;
+      
+      // 创建自定义下拉面板
+      const wrapper = input.parentElement;
+      if (wrapper && !wrapper.classList.contains('country-autocomplete-wrapper')) {
+          wrapper.classList.add('country-autocomplete-wrapper');
+      }
+      
+      let suggestionList = document.getElementById(inputId + '_suggestions');
+      if (!suggestionList) {
+          suggestionList = document.createElement('ul');
+          suggestionList.className = 'country-suggestions';
+          suggestionList.id = inputId + '_suggestions';
+          wrapper.appendChild(suggestionList);
+      }
+      
+      // 输入事件
+      input.addEventListener('input', function() {
+          const q = this.value.trim().toLowerCase();
+          if (!q) {
+              suggestionList.style.display = 'none';
+              suggestionList.innerHTML = '';
+              return;
+          }
+          
+          const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
+          const matched = countries.filter(c => 
+              c.name_zh.toLowerCase().includes(q) || 
+              c.name_en.toLowerCase().includes(q) || 
+              c.code.toLowerCase().includes(q)
+          ).slice(0, 10);
+          
+          if (matched.length === 0) {
+              suggestionList.style.display = 'none';
+              return;
+          }
+          
+          suggestionList.innerHTML = matched.map(c => {
+              const display = lang === 'zh' ? c.name_zh : c.name_en;
+              return `<li data-code="${c.code}" data-name="${display}" class="list-group-item list-group-item-action">${display} (${c.code})</li>`;
+          }).join('');
+          suggestionList.style.display = 'block';
+          
+          // 定位
+          const rect = input.getBoundingClientRect();
+          suggestionList.style.top = `${rect.bottom + window.scrollY}px`;
+          suggestionList.style.left = `${rect.left + window.scrollX}px`;
+          suggestionList.style.width = `${rect.width}px`;
+      });
+      
+      // 选择建议项
+      suggestionList.addEventListener('click', (e) => {
+          const li = e.target.closest('li');
+          if (!li) return;
+          const code = li.dataset.code;
+          const name = li.dataset.name;
+          input.value = name;
+          if (hiddenId) {
+              document.getElementById(hiddenId).value = code;
+          }
+          suggestionList.style.display = 'none';
+          input.dispatchEvent(new Event('change'));
+      });
+      
+      // 点击其他地方关闭
+      document.addEventListener('click', (e) => {
+          if (!wrapper.contains(e.target)) {
+              suggestionList.style.display = 'none';
+          }
+      });
+      
+      // 失焦时标准化
+      input.addEventListener('blur', () => {
+          setTimeout(async () => {
+              const val = input.value.trim();
+              if (!val) {
+                  if (hiddenId) document.getElementById(hiddenId).value = '';
+                  return;
+              }
+              const matched = countries.find(c => 
+                  c.name_zh === val || c.name_en === val || c.code === val.toUpperCase()
+              );
+              if (matched) {
+                  const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
+                  input.value = lang === 'zh' ? matched.name_zh : matched.name_en;
+                  if (hiddenId) document.getElementById(hiddenId).value = matched.code;
+              } else {
+                  if (hiddenId) document.getElementById(hiddenId).value = '';
+              }
+              suggestionList.style.display = 'none';
+          }, 150);
+      });
+  }
+  // templates/admin/dashboard.html - 在 script 标签末尾添加
+
+  // 计算当前季度的起止日期
+  function getCurrentQuarterDates() {
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      
+      // 计算当前季度 (0-3)
+      const quarter = Math.floor(month / 3);
+      
+      // 季度开始月份
+      const startMonth = quarter * 3;
+      // 季度结束月份
+      const endMonth = startMonth + 2;
+      
+      // 季度第一天
+      const startDate = new Date(year, startMonth, 1);
+      
+      // 季度最后一天
+      const lastDayOfMonth = new Date(year, endMonth + 1, 0).getDate();
+      const endDate = new Date(year, endMonth, lastDayOfMonth);
+      
+      // 格式化为 YYYY-MM-DD
+      const formatDate = (date) => {
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, '0');
+          const d = String(date.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+      };
+      
+      return {
+          start: formatDate(startDate),
+          end: formatDate(endDate)
+      };
+  }
+
+  // 监听导出模态框打开事件（放在 DOMContentLoaded 外部，确保模态框存在）
+  const exportModal = document.getElementById('exportFilterModal');
+  if (exportModal) {
+      exportModal.addEventListener('show.bs.modal', function() {
+          const quarters = getCurrentQuarterDates();
+          
+          const startDateInput = document.getElementById('filterStartDate');
+          const endDateInput = document.getElementById('filterEndDate');
+          
+          // 只在输入框为空时自动填充
+          if (startDateInput && !startDateInput.value) {
+              startDateInput.value = quarters.start;
+          }
+          if (endDateInput && !endDateInput.value) {
+              endDateInput.value = quarters.end;
+          }
+      });
+  }
 </script>
 {% endblock %}

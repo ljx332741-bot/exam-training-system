@@ -150,7 +150,7 @@
   "answered": "已作答",
   "flagged": "已标记",
   "current": "当前",
-  "pending": "未作答",
+  "pending": "待开始",
   "confirm_to_submit_examination": "确认提交试卷？",
   "completed": "已完成",
   "answers_will_lock_after_submission": "提交后将锁定答案，无法再次修改。",
@@ -753,5 +753,9 @@
 "confirm_assign_selected": "确认分配考试给选中的人员吗？",
 "batch_assign": "批量分配",
 "batch_remove": "批量删除",
-"selected": "已选"
+"selected": "已选",
+"jsonify_selected_candidate_unassigned_removed": "所选考生未分配或已移除",
+"batch_force_interview": "批量强制访谈",
+"unfinished_expired": "已逾期",
+"interview_status": "访谈状态"
 }
