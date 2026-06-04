@@ -1,0 +1,689 @@
+﻿<!-- templates/admin/candidate_exam_status.html -->
+{% extends "base.html" %}
+{% block title %}考生考试状态{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2>
+            <i class="bi bi-people me-2"></i>
+            <span data-i18n="candidate_exam_status">考生考试状态</span>
+            - <span id="examTitle">{{ exam_title }}</span>
+        </h2>
+        <button class="btn btn-outline-secondary" id="closePageBtn">✖ <span data-i18n="close">关闭</span></button>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-md-2">
+                    <input type="text" id="statusFilterName" class="form-control form-control-sm" 
+                        placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="statusFilterWh" class="form-control form-control-sm" list="whDatalist" 
+                        data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
+                    <datalist id="whDatalist"></datalist>
+                </div>
+                <div class="col-md-1">
+                    <select id="statusFilterIsPartner" class="form-select form-select-sm">
+                        <option value="" data-i18n="supplier_all">服务商(全部)</option>
+                        <option value="Y" data-i18n="partner_yes">是</option>
+                        <option value="N" data-i18n="partner_no">否</option>
+                    </select>
+                </div>
+                <div class="col-md-1">
+                    <input type="text" id="statusFilterCountry" class="form-control form-control-sm" list="countryDatalist" 
+                        placeholder="国家" data-i18n-placeholder="placeholder_country">
+                    <datalist id="countryDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <button id="resetFiltersBtn" class="btn btn-sm btn-secondary w-100">
+                        <span data-i18n="reset">重置</span>
+                    </button>
+                </div>
+                <div class="col-md-4">
+                    <div class="d-flex gap-2 justify-content-end align-items-center">
+                        <span id="selectedCountBadge" class="badge bg-primary batch-count-badge" style="display: none;">
+                            <span data-i18n="selected">已选</span> <span id="selectedCount">0</span>
+                        </span>
+                        <button id="batchAssignBtn" class="btn btn-success btn-sm">
+                            <i class="bi bi-plus-circle"></i> <span data-i18n="batch_assign">批量分配</span>
+                        </button>
+                        <button id="batchDeleteAssignBtn" class="btn btn-danger btn-sm">
+                            <i class="bi bi-trash"></i> <span data-i18n="batch_remove">批量移除</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 考生状态表格 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="min-width: 1200px;">
+                    <thead class="table-light">
+                        <tr>
+                            <th><input type="checkbox" id="selectAll"></th>
+                            <th data-i18n="candidate">考生</th>
+                            <th data-i18n="email">邮箱</th>
+                            <th data-i18n="t_wh_id">库房编码</th>
+                            <th data-i18n="t_is_partner">服务商</th>
+                            <th data-i18n="t_country">国家</th>
+                            <th data-i18n="status">状态</th>
+                            <th data-i18n="candidate_score">得分</th>
+                            <th data-i18n="submitted_at">提交时间</th>
+                            <th colspan="3" data-i18n="actions">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statusTableBody">
+                        <tr><td colspan="12" class="text-center"><span data-i18n="loading">加载中...</span><\/td><\/tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div><span data-i18n="total_questions">共</span> <span id="totalCount">0</span> <span data-i18n="record">条记录</span></div>
+            <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const examId = {{ exam_id }};
+    let currentPage = 1;
+    let currentExamUsers = [];
+    let currentFilters = {
+        name: '',
+        wh_id: '',
+        is_partner: '',
+        country: ''
+    };
+
+    // ==================== Toast 提示函数 ====================
+    function showToast(message, type = 'success') {
+        const toastEl = document.getElementById('globalToast');
+        const toastIcon = document.getElementById('toastIcon');
+        const toastTitle = document.getElementById('toastTitle');
+        const toastMessage = document.getElementById('toastMessage');
+        
+        // ✅ 检查元素是否存在，如果不存在则使用 alert 作为降级方案
+        if (!toastEl || !toastIcon || !toastTitle || !toastMessage) {
+            console.warn('Toast 元素不存在，使用 alert 代替');
+            alert(message);
+            return;
+        }
+        
+        // 根据类型设置样式
+        if (type === 'success') {
+            toastIcon.className = 'bi bi-check-circle-fill me-2 text-success';
+            toastTitle.textContent = t('success') || '成功';
+        } else if (type === 'error') {
+            toastIcon.className = 'bi bi-x-circle-fill me-2 text-danger';
+            toastTitle.textContent = t('error') || '错误';
+        } else if (type === 'warning') {
+            toastIcon.className = 'bi bi-exclamation-triangle-fill me-2 text-warning';
+            toastTitle.textContent = t('warning') || '警告';
+        } else {
+            toastIcon.className = 'bi bi-info-circle-fill me-2 text-info';
+            toastTitle.textContent = t('info') || '提示';
+        }
+        
+        toastMessage.textContent = message;
+        
+        // 创建新的 Toast 实例并显示
+        const toast = new bootstrap.Toast(toastEl, {
+            autohide: true,
+            delay: 3000
+        });
+        toast.show();
+    }
+
+    // ==================== Loading 遮罩函数 ====================
+    function showLoading(text = '正在处理...') {
+        const loadingEl = document.getElementById('globalLoading');
+        const loadingText = document.getElementById('loadingText');
+        
+        // ✅ 检查元素是否存在
+        if (!loadingEl) {
+            console.warn('Loading 元素不存在');
+            return;
+        }
+        
+        if (loadingText) loadingText.textContent = text;
+        loadingEl.style.display = 'flex';
+    }
+
+    function hideLoading() {
+        const loadingEl = document.getElementById('globalLoading');
+        if (loadingEl) {
+            loadingEl.style.display = 'none';
+        }
+    }
+
+    // ==================== 更新批量选中计数 ====================
+    function updateSelectedCount() {
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+        const count = selectedCheckboxes.length;
+        const badge = document.getElementById('selectedCountBadge');
+        const countSpan = document.getElementById('selectedCount');
+        
+        if (countSpan) countSpan.textContent = count;
+        
+        if (badge) {
+            if (count > 0) {
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    // ==================== 批量分配 ====================
+    document.getElementById('batchAssignBtn')?.addEventListener('click', async () => {
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+        const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+        
+        if (selectedUserIds.length === 0) {
+            showToast(t('select_at_least_one'), 'warning');
+            return;
+        }
+        
+        if (!confirm(t('confirm_assign_selected', selectedUserIds.length))) return;
+        
+        showLoading(t('assigning') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/quick_assign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: selectedUserIds })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadExamStatusData();
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('分配失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    });
+
+    // ==================== 批量移除 ====================
+    document.getElementById('batchDeleteAssignBtn')?.addEventListener('click', async () => {
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+        const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+        
+        if (selectedUserIds.length === 0) {
+            showToast(t('select_at_least_one'), 'warning');
+            return;
+        }
+        
+        if (!confirm(t('confirm_remove_selected', selectedUserIds.length))) return;
+        
+        showLoading(t('removing') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/batch_remove`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: selectedUserIds })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadExamStatusData();
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('移除失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    });
+
+    // ==================== 全选功能 ====================
+    function bindSelectAll() {
+        const selectAllCheckbox = document.getElementById('selectAll');
+        if (!selectAllCheckbox) return;
+        
+        // 移除旧监听器
+        const newSelectAll = selectAllCheckbox.cloneNode(true);
+        selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
+        
+        newSelectAll.addEventListener('change', (e) => {
+            const isChecked = e.target.checked;
+            document.querySelectorAll('.user-checkbox').forEach(cb => {
+                cb.checked = isChecked;
+            });
+            updateSelectedCount();
+        });
+    }
+
+    // ==================== 绑定筛选事件 ====================
+    function bindFilterEvents() {
+        const nameInput = document.getElementById('statusFilterName');
+        const whInput = document.getElementById('statusFilterWh');
+        const partnerSelect = document.getElementById('statusFilterIsPartner');
+        const countryInput = document.getElementById('statusFilterCountry');
+        const resetBtn = document.getElementById('resetFiltersBtn');
+
+        const debounce = (fn, delay) => {
+            let timer;
+            return function(...args) {
+                clearTimeout(timer);
+                timer = setTimeout(() => fn.apply(this, args), delay);
+            };
+        };
+
+        const applyFilters = () => {
+            currentFilters.name = nameInput?.value || '';
+            currentFilters.wh_id = whInput?.value || '';
+            currentFilters.is_partner = partnerSelect?.value || '';
+            currentFilters.country = countryInput?.value || '';
+            currentPage = 1;
+            applyFiltersAndRender();
+        };
+
+        const debouncedApply = debounce(applyFilters, 300);
+
+        if (nameInput) nameInput.addEventListener('input', debouncedApply);
+        if (whInput) whInput.addEventListener('input', debouncedApply);
+        if (partnerSelect) partnerSelect.addEventListener('change', applyFilters);
+        if (countryInput) countryInput.addEventListener('input', debouncedApply);
+        
+        if (resetBtn) {
+            resetBtn.addEventListener('click', () => {
+                if (nameInput) nameInput.value = '';
+                if (whInput) whInput.value = '';
+                if (partnerSelect) partnerSelect.value = '';
+                if (countryInput) countryInput.value = '';
+                currentFilters = { name: '', wh_id: '', is_partner: '', country: '' };
+                currentPage = 1;
+                applyFiltersAndRender();
+            });
+        }
+    }
+
+    // ==================== 加载考生状态数据 ====================
+    async function loadExamStatusData() {
+        const container = document.getElementById('statusTableBody');
+        if (!container) return;
+        
+        container.innerHTML = `<tr><td colspan="12" class="text-center"><div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}<\/td><\/tr>`;
+
+        try {
+            const statusRes = await fetch(`/admin/exam_status/${examId}`);
+            
+            if (statusRes.status === 403) {
+                container.innerHTML = `<tr><td colspan="12" class="text-center text-warning">${t('no_permission_to_view_exam')}<\/td><\/tr>`;
+                return;
+            }
+            
+            if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
+            let statusData = await statusRes.json();
+
+            if (!statusData.length) {
+                container.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
+                return;
+            }
+
+            const userIds = statusData.map(item => item.user_id).filter(id => id);
+            if (userIds.length === 0) {
+                container.innerHTML = `<td><td colspan="12" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
+                return;
+            }
+
+            const usersRes = await fetch(`/api/admin/users?ids=${userIds.join(',')}&status=registered&page=1&per_page=100`);
+            const usersData = await usersRes.json();
+            const usersMap = {};
+            (usersData.data || []).forEach(u => {
+                usersMap[u.id] = u;
+            });
+
+            const merged = [];
+            for (const item of statusData) {
+                const userInfo = usersMap[item.user_id];
+                if (!userInfo || userInfo.user_status !== 'registered') {
+                    continue;
+                }
+                merged.push({
+                    ...item,
+                    wh_id: userInfo.wh_id || '',
+                    wh_name_en: userInfo.wh_name_en || '',
+                    is_partner: userInfo.is_partner || false,
+                    country: userInfo.country || '',
+                    name: userInfo.name_cn || userInfo.name_en || item.name || '',
+                    email: userInfo.email || item.email || ''
+                });
+            }
+
+            currentExamUsers = merged;
+            applyFiltersAndRender();
+        } catch (err) {
+            console.error('加载失败:', err);
+            container.innerHTML = `<tr><td colspan="12" class="text-center text-danger">${t('load_failed')}<\/td><\/tr>`;
+        }
+    }
+
+    // ==================== 应用筛选并渲染 ====================
+    function applyFiltersAndRender() {
+        let filtered = [...currentExamUsers];
+
+        if (currentFilters.name) {
+            const nameLower = currentFilters.name.toLowerCase();
+            filtered = filtered.filter(u => 
+                u.name.toLowerCase().includes(nameLower) || 
+                u.email.toLowerCase().includes(nameLower)
+            );
+        }
+
+        if (currentFilters.wh_id) {
+            const whLower = currentFilters.wh_id.toLowerCase();
+            filtered = filtered.filter(u => 
+                (u.wh_id && u.wh_id.toLowerCase().includes(whLower)) ||
+                (u.wh_name_en && u.wh_name_en.toLowerCase().includes(whLower))
+            );
+        }
+
+        if (currentFilters.is_partner) {
+            const isPartnerBool = currentFilters.is_partner === 'Y';
+            filtered = filtered.filter(u => u.is_partner === isPartnerBool);
+        }
+
+        if (currentFilters.country) {
+            const countryLower = currentFilters.country.toLowerCase();
+            filtered = filtered.filter(u => u.country && u.country.toLowerCase().includes(countryLower));
+        }
+
+        renderTable(filtered);
+    }
+
+    // ==================== 渲染表格 ====================
+    function renderTable(users) {
+        const tbody = document.getElementById('statusTableBody');
+        if (!tbody) return;
+        
+        if (!users.length) {
+            tbody.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_matching_find')}<\/td><\/tr>`;
+            const totalCountSpan = document.getElementById('totalCount');
+            if (totalCountSpan) totalCountSpan.innerText = '0';
+            updateSelectedCount();
+            return;
+        }
+
+        const total = users.length;
+        const perPage = 20;
+        const totalPages = Math.ceil(total / perPage);
+        const start = (currentPage - 1) * perPage;
+        const end = start + perPage;
+        const pageUsers = users.slice(start, end);
+
+        const totalCountSpan = document.getElementById('totalCount');
+        if (totalCountSpan) totalCountSpan.innerText = total;
+        renderPagination(currentPage, totalPages);
+
+        tbody.innerHTML = pageUsers.map(u => {
+            const submitted = u.is_submitted;
+            const scoreDisplay = (u.score !== null && u.score !== undefined) ? u.score : '-';
+            const submitTime = u.submitted_at ? u.submitted_at.slice(0, 16).replace('T', ' ') : '-';
+            
+            let statusBadge = '';
+            switch (u.exam_status) {
+                case 'not_assigned':
+                    statusBadge = `<span class="badge bg-secondary">${t('t_not_assigned')}</span>`;
+                    break;
+                case 'pending':
+                    statusBadge = `<span class="badge bg-info">${t('t_pending_exam')}</span>`;
+                    break;
+                case 'in_progress':
+                    statusBadge = `<span class="badge bg-warning text-dark">${t('t_in_progress')}</span>`;
+                    break;
+                case 'submitted':
+                    statusBadge = `<span class="badge bg-success">${t('t_submitted')}</span>`;
+                    break;
+                default:
+                    statusBadge = `<span class="badge bg-secondary">-</span>`;
+            }
+            
+            const partnerText = u.is_partner ? t('t_yes') : t('t_no');
+            const detailLink = u.result_id
+                ? `<a href="/admin/result/${u.result_id}" class="btn btn-sm btn-outline-info">📋 ${t('details')}</a>`
+                : '';
+            const pdfLink = (submitted && u.result_id)
+                ? `<a href="/admin/export_pdf_by_result/${u.result_id}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>`
+                : '';
+            const resetBtn = submitted
+                ? `<button class="btn btn-sm btn-outline-warning reset-btn" data-exam-id="${examId}" data-user-id="${u.user_id}">🔄 ${t('reset')}</button>`
+                : '';
+            
+            const assignBtn = (u.exam_status === 'not_assigned')
+                ? `<button class="btn btn-sm btn-outline-success assign-single-btn" data-user-id="${u.user_id}">
+                    <i class="bi bi-plus-circle"></i> ${t('assign')}
+                   </button>`
+                : '';
+            
+            const removeBtn = (u.exam_status !== 'not_assigned')
+                ? `<button class="btn btn-sm btn-outline-danger remove-single-btn" data-user-id="${u.user_id}">
+                    <i class="bi bi-trash"></i> ${t('remove')}
+                   </button>`
+                : '';
+
+            return `
+                <tr>
+                    <td><input type="checkbox" class="user-checkbox" value="${u.user_id}" onchange="updateSelectedCount()"><\/td>
+                    <td>${escapeHtml(u.name)}<\/td>
+                    <td>${escapeHtml(u.email)}<\/td>
+                    <td>${escapeHtml(u.wh_id || '-')}<\/td>
+                    <td>${partnerText}<\/td>
+                    <td>${escapeHtml(u.country || '-')}<\/td>
+                    <td>${statusBadge}<\/td>
+                    <td>${scoreDisplay}<\/td>
+                    <td>${submitTime}<\/td>
+                    <td>${detailLink}<\/td>
+                    <td>${pdfLink} ${resetBtn} ${assignBtn} ${removeBtn}<\/td>
+                <\/tr>
+            `;
+        }).join('');
+
+        // 绑定重置按钮事件
+        document.querySelectorAll('.reset-btn').forEach(btn => {
+            btn.removeEventListener('click', handleReset);
+            btn.addEventListener('click', handleReset);
+        });
+        
+        // 绑定全选和更新计数
+        bindSelectAll();
+        updateSelectedCount();
+    }
+
+    // ==================== 单个分配事件 ====================
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.assign-single-btn');
+        if (!btn) return;
+        
+        const userId = btn.dataset.userId;
+        if (!confirm(t('confirm_assign_single'))) return;
+        
+        showLoading(t('assigning') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/quick_assign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadExamStatusData();
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('分配失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    });
+
+    // ==================== 单个移除事件 ====================
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.remove-single-btn');
+        if (!btn) return;
+        
+        const userId = btn.dataset.userId;
+        if (!confirm(t('confirm_remove_single'))) return;
+        
+        showLoading(t('removing') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/batch_remove`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message, 'success');
+                loadExamStatusData();
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('移除失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    });
+    
+    // ==================== 重置按钮处理 ====================
+    async function handleReset(e) {
+        const btn = e.currentTarget;
+        if (!confirm(t('js_candidate_status_reset_tip'))) return;
+        
+        showLoading(t('resetting') + '...');
+        
+        const examIdVal = btn.dataset.examId;
+        const userId = btn.dataset.userId;
+        try {
+            const res = await fetch(`/admin/reset_exam/${examIdVal}/${userId}`, { method: 'POST' });
+            hideLoading();
+            if (res.ok) {
+                showToast(t('js_reset_successful'), 'success');
+                loadExamStatusData();
+            } else {
+                showToast(t('js_reset_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error(err);
+            showToast(t('js_reset_failed'), 'error');
+        }
+    }
+
+    // ==================== 分页 ====================
+    function renderPagination(current, totalPages) {
+        const pagination = document.getElementById('pagination');
+        if (!pagination) return;
+        
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                applyFiltersAndRender();
+            });
+        });
+    }
+
+    // ==================== 关闭按钮 ====================
+    const closePageBtn = document.getElementById('closePageBtn');
+    if (closePageBtn) {
+        closePageBtn.addEventListener('click', () => {
+            if (window.history.length > 1) {
+                window.history.back();
+            } else {
+                window.close();
+            }
+        });
+    }
+
+    // ==================== 辅助函数 ====================
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // ==================== 页面初始化 ====================
+    document.addEventListener('DOMContentLoaded', function() {
+        bindFilterEvents();
+
+        // 等待 i18n 就绪后加载列表
+        waitForI18n();
+        window.i18n.applyTranslations();  // 处理静态文本
+        loadExamStatusData();
+        
+        // ✅ 语言切换时重新加载列表
+        if (window.i18n && window.i18n.subscribe) {
+            window.i18n.subscribe(() => {
+            loadExamStatusData();  // 重新加载列表，会触发使用新的翻译
+            });
+        }
+        window.addEventListener('app:languageChanged', function() {
+            loadWhList();
+        });
+    });
+</script>
+{% endblock %}

@@ -116,6 +116,7 @@ def set_admin_allowed_countries(user_id, countries):
 
 
 # ==================== 用户权限检查 ====================
+'''
 def can_view_user(target_user):
     """检查当前用户是否可以查看目标用户"""
     current_role = session.get('role')
@@ -153,7 +154,119 @@ def can_view_user(target_user):
                     return False
     
     return True
+'''
 
+# utils/permissions.py - 修复 can_view_user
+
+def can_view_user(target_user):
+    """检查当前用户是否可以查看目标用户"""
+    current_role = session.get('role')
+    current_user_id = session.get('user_id')
+    dev_id = os.environ.get('DEVELOPER_USER_ID')
+    
+    # 开发者可以查看所有用户
+    if dev_id and current_user_id == dev_id:
+        return True
+    
+    # 不能查看受保护账号（除非是本人）
+    if target_user.get('is_protected') and target_user.get('id') != current_user_id:
+        return False
+    
+    # 非超管不能查看超管和开发者
+    if current_role != 'super_admin':
+        if target_user.get('role') in ('super_admin', 'developer'):
+            return False
+    
+    # 如果是自己，总是可以查看
+    if target_user.get('id') == current_user_id:
+        return True
+    
+    # ========== 超管逻辑 ==========
+    if current_role == 'super_admin':
+        allowed_countries = get_allowed_countries()
+        
+        # 无权限范围限制，可以查看所有
+        if allowed_countries is None:
+            return True
+        
+        # 有权限范围限制
+        if allowed_countries:
+            user_country = target_user.get('country')
+            user_status = target_user.get('user_status')
+            created_by = target_user.get('created_by')
+            
+            # ✅ 已导入用户：根据创建者的国家判断
+            if user_status == 'imported':
+                # 查询创建者的国家
+                creator_country = _get_user_country(created_by)
+                if creator_country and creator_country in allowed_countries:
+                    return True
+                # 创建者国家不在权限范围内，不可见
+                return False
+            
+            # 已注册用户：需要国家在权限范围内
+            if user_country and user_country in allowed_countries:
+                return True
+            
+            # 无国家用户：只有创建者可以查看
+            if not user_country:
+                if target_user.get('created_by') == current_user_id:
+                    return True
+            
+            return False
+        
+        return True
+    
+    # ========== 管理员逻辑 ==========
+    if current_role == 'admin':
+        allowed_countries = get_allowed_countries()
+        
+        if allowed_countries:
+            user_country = target_user.get('country')
+            if user_country:
+                if user_country in allowed_countries:
+                    return True
+            else:
+                # 无国家用户：只有创建者可以查看
+                if target_user.get('created_by') == current_user_id:
+                    return True
+        else:
+            # 无权限范围，使用用户注册国家
+            user_session_country = session.get('user_country')
+            user_country = target_user.get('country')
+            if user_country and user_country == user_session_country:
+                return True
+        
+        return False
+    
+    return True
+
+
+def _get_user_country(user_id):
+    """辅助函数：获取指定用户的国家（带缓存）"""
+    if not user_id:
+        return None
+    
+    # 尝试从缓存获取
+    if hasattr(_get_user_country, 'cache') and user_id in _get_user_country.cache:
+        return _get_user_country.cache[user_id]
+    
+    # 从数据库查询
+    try:
+        from services.db import get_supabase
+        db = get_supabase()
+        res = db.table("users").select("country").eq("id", user_id).maybe_single().execute()
+        country = res.data.get('country') if res.data else None
+        
+        # 缓存结果
+        if not hasattr(_get_user_country, 'cache'):
+            _get_user_country.cache = {}
+        _get_user_country.cache[user_id] = country
+        
+        return country
+    except Exception as e:
+        logging.error(f"获取用户 {user_id} 国家失败: {e}")
+        return None
 
 def can_modify_user(target_user, current_user, action='edit'):
     """检查当前用户是否有权限修改目标用户"""
@@ -317,5 +430,16 @@ def super_admin_required(f):
             return f(*args, **kwargs)
         if session.get('role') != 'super_admin':
             return jsonify({"success": False, "message": "super_admin_only"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+def admin_required_for_api(f):
+    """API 管理员权限装饰器（开发者也可以访问）"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        role = session.get('role')
+        if role not in ('admin', 'super_admin', 'developer'):
+            return jsonify({"success": False, "message": "permission_denied"}), 403
         return f(*args, **kwargs)
     return decorated

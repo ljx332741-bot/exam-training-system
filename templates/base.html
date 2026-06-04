@@ -71,6 +71,24 @@
             background-color: #f8f9fa;
             opacity: 0.7;
         }
+        /* Toast 动画优化 */
+        .toast {
+            opacity: 1 !important;
+            min-width: 280px;
+        }
+
+        /* Loading 遮罩动画 */
+        #globalLoading {
+            transition: all 0.3s ease;
+        }
+
+        /* 批量计数徽章 */
+        .batch-count-badge {
+            font-size: 0.7rem;
+            padding: 0.2rem 0.5rem;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
     </style>
 
     <!-- 🔧 页面级自定义样式插槽 -->
@@ -113,7 +131,7 @@
                     <li class="nav-item"><a class="nav-link" href="{{ url_for('index') }}"><i class="bi bi-house-door me-1"></i><span data-i18n="home">首页</span></a></li>
                     {% if session.get('user_id') %}
                         <li class="nav-item"><a class="nav-link" href="{{ url_for('dashboard') }}"><i class="bi bi-list-task me-1"></i><span data-i18n="my_exams">我的考试</span></a></li>
-                        {% if session.get('role') in ('admin', 'super_admin') %}
+                        {% if session.get('role') in ('admin', 'super_admin', 'developer') %}
                             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin_dashboard') }}"><i class="bi bi-gear me-1"></i><span data-i18n="admin_panel">管理后台</span></a></li>
                         {% endif %}
                     {% endif %}
@@ -154,26 +172,6 @@
         </div>
     </nav>
 
-    <!-- 📢 全局提示消息区 -->
-    <!--
-    <div class="container mt-3">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ category if category != 'message' else 'info' }} alert-dismissible fade show shadow-sm" role="alert">
-                        {% if message is mapping and message.msg %}
-                            <i class="bi bi-info-circle-fill me-2"></i>
-                            <span class="flash-text" data-i18n-key="{{ message.msg }}" data-i18n-params='{{ message.params | tojson | safe }}'></span>
-                        {% else %}
-                            <i class="bi bi-info-circle-fill me-2"></i>{{ message }}
-                        {% endif %}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-    </div>
-    -->
     <!-- 📢 全局 Toast 提示容器（用于 flash 消息） -->
     <div class="position-fixed top-0 end-0 p-3" style="z-index: 1100; max-width: 350px;">
         <div id="flashToastContainer"></div>
@@ -919,16 +917,28 @@
     <!-- 🔧 页面级自定义脚本插槽 -->
     {% block extra_js %}{% endblock %}
 
-    <!-- 全局 Toast 提示 -->
+    <!-- 全局 Toast 提示组件 -->
     <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
         <div id="globalToast" class="toast" role="alert" aria-live="assertive" aria-atomic="true" data-bs-autohide="true" data-bs-delay="3000">
             <div class="toast-header">
-                <i class="bi bi-info-circle-fill me-2"></i>
+                <i class="bi bi-info-circle-fill me-2" id="toastIcon"></i>
                 <strong class="me-auto" id="toastTitle">提示</strong>
-                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="toast-body" id="toastMessage">
                 操作成功
+            </div>
+        </div>
+    </div>
+
+    <!-- 全局 Loading 遮罩 -->
+    <div id="globalLoading" class="position-fixed top-0 start-0 w-100 h-100" style="background: rgba(0,0,0,0.5); z-index: 9999; display: none;">
+        <div class="d-flex justify-content-center align-items-center h-100">
+            <div class="bg-white rounded-3 p-4 shadow-lg text-center">
+                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h6 class="mb-0" id="loadingText">正在处理...</h6>
             </div>
         </div>
     </div>

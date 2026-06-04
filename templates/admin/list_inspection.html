@@ -3,8 +3,10 @@
 {% block title %}访谈管理{% endblock %}
 {% block content %}
 <div class="container-fluid">
-    <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_statistics_management">访谈统计与管理</span></h2>
-
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_statistics_management">访谈统计与管理</span></h2>
+        <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+    </div>
     <!-- 筛选栏 -->
     <div class="card mb-3">
         <div class="card-body">
@@ -29,7 +31,6 @@
                 </div>
                 <div class="col-md-5 d-flex justify-content-end">
                     <button class="btn btn-success me-2" id="newInterviewBtn">➕ <span data-i18n="add_new_interviewee">新增访谈</span></button>
-                    <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                 </div>
             </div>
         </div>
@@ -298,6 +299,7 @@
         tbody.innerHTML = interviews.map(inv => {
         const status = inv.status; // draft, created, active, closed
         const isSuperAdmin = CURRENT_USER_ROLE === 'super_admin';
+        const isDeveloper = CURRENT_USER_ROLE === 'developer';
         let actionButtons = '';
 
         if (status === 'draft' || status === 'created') {
@@ -312,7 +314,7 @@
         } else if (status === 'closed') {
             // 已关闭：仅详情；超管额外显示删除
             actionButtons = `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>`;
-            if (isSuperAdmin) {
+            if (isSuperAdmin || isDeveloper) {
                 actionButtons += `
                 <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
                 <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
