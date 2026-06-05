@@ -755,5 +755,9 @@
 "confirm_assign_selected": "confirm to assign exam to select people?",
 "batch_assign": "Batch assign",
 "batch_remove": "Batch remove",
-"selected": "Selected"
+"selected": "Selected",
+"jsonify_selected_candidate_unassigned_removed": "Selected candidate is unassigned or removed",
+"batch_force_interview": "Batch force recheck",
+"unfinished_expired": "Expired",
+"interview_status": "status"
 }

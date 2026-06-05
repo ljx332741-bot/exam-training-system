@@ -193,10 +193,10 @@
         // 辅助函数：状态翻译
         function formatStatus(status) {
             const map = {
-                'completed': t('t_completed') || '已完成',
-                'unfinished': t('t_unfinished_expired') || '未完成(已过期)',
-                'ongoing': t('t_ongoing') || '进行中',
-                'pending': t('t_pending') || '待开始'
+                'completed': t('completed') || '已完成',
+                'unfinished': t('unfinished_expired') || '未完成(已过期)',
+                'ongoing': t('ongoing') || '进行中',
+                'pending': t('pending') || '待开始'
             };
             return map[status] || status;
         }

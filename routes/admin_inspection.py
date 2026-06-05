@@ -553,20 +553,35 @@ def take_interview(interview_id):
                     return redirect(url_for('dashboard'))
             except:
                 pass
-        
+
         if end_time:
             try:
-                end_dt = datetime.fromisoformat(end_time)
-                if now > end_dt:
-                    # 强制访谈已过期，软删除记录
+                # ✅ 统一解析为 aware datetime
+                if isinstance(end_time, str):
+                    end_str = end_time.replace('Z', '+00:00')
+                    end_dt = datetime.fromisoformat(end_str)
+                else:
+                    end_dt = end_time
+                
+                now_utc = datetime.now(timezone.utc)
+                
+                # 确保有时区信息
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+                
+                logger.info(f"强制访谈时间检查: now={now_utc.isoformat()}, end={end_dt.isoformat()}, diff={now_utc - end_dt}")
+                
+                # ✅ 只有真正过期才删除
+                if now_utc > end_dt:
+                    logger.warning(f"强制访谈已过期，删除记录 {force_data['id']}")
                     db.table("user_interview_force_records").update({
-                        "deleted_at": now.isoformat(),
+                        "deleted_at": now_utc.isoformat(),
                         "deleted_by": user_id
                     }).eq("id", force_data['id']).execute()
                     flash("强制访谈已过期", "warning")
                     return redirect(url_for('dashboard'))
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"解析时间失败: {e}")
         
         # 获取原访谈信息
         inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
@@ -680,7 +695,7 @@ def take_interview(interview_id):
             q['options'] = {}
     
     # 为模板添加额外信息
-    interview_data = inv.data if inv else inv
+    interview_data = inv if inv else {}
     if is_force:
         # 强制访谈：覆盖标题和有效期显示
         interview_data = interview_data.copy() if interview_data else {}
@@ -1225,8 +1240,6 @@ def admin_interview_details_page(interview_id):
     """访谈详情页面（渲染HTML）"""
     return render_template('admin/list_inspection_details.html', interview_id=interview_id)
 
-# routes/admin_inspection.py - 修改 force_resample 接口
-
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/force_resample', methods=['POST'])
 @login_required
 @admin_required
@@ -1236,7 +1249,7 @@ def force_resample_interview(interview_id):
     """
     data = request.json
     user_ids = data.get('user_ids', [])
-
+    
     if not user_ids:
         return jsonify({"success": False, "message": "请选择要强制访谈的学员"}), 400
     
@@ -1255,6 +1268,15 @@ def force_resample_interview(interview_id):
     feedback = original_interview.get('feedback', '')
     title = original_interview.get('title', '访谈')
     
+    # 检查 exam_id 是否存在
+    if not exam_id:
+        return jsonify({"success": False, "message": "访谈未关联考试，无法强制访谈"}), 400
+    
+    # 检查题目是否存在
+    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
+    if not q_check.data:
+        return jsonify({"success": False, "message": "该考试没有题目，无法强制访谈"}), 400
+    
     # 权限检查
     from utils.permissions import get_admin_allowed_countries
     allowed = get_admin_allowed_countries()
@@ -1271,31 +1293,58 @@ def force_resample_interview(interview_id):
     skipped_count = 0
     errors = []
     
-    # ✅ 设置强制访谈有效期：当前时间 + 2小时
+    # 设置强制访谈有效期：当前时间 + 2小时
     now = datetime.now(timezone.utc)
     force_start_time = now.isoformat()
     force_end_time = (now + timedelta(hours=2)).isoformat()
-
+    
     for user_id in user_ids:
         try:
-            # 1. 检查用户是否已有答题记录（已完成）
+            logger.info(f"处理用户 {user_id}")
+            
+            # 1. 检查用户是否存在
+            user_check = db.table("users").select("id, name_en").eq("id", user_id).maybe_single().execute()
+            if not user_check.data:
+                logger.error(f"用户 {user_id} 不存在")
+                failed_count += 1
+                errors.append(f"用户 {user_id}: 用户不存在")
+                continue
+            
+            # 2. 检查用户是否已有答题记录（已完成）
             existing_results = db.table("interview_results").select("id, answer").eq("interview_id", interview_id).eq("user_id", user_id).execute()
             
             # 检查是否已完成答题
-            has_completed = False
             if existing_results.data:
                 all_answered = all(r.get('answer') for r in existing_results.data)
                 if all_answered:
                     skipped_count += 1
                     errors.append(f"用户 {user_id} 已完成访谈，跳过")
+                    logger.info(f"用户 {user_id} 已完成，跳过")
                     continue
             
-            # 2. 删除该用户的旧访谈记录
-            db.table("interview_results").delete().eq("interview_id", interview_id).eq("user_id", user_id).execute()
+            # 3. ✅ 先删除该用户的所有旧强制访谈记录（包括已软删除的）
+            # 彻底清理，避免新旧记录冲突
+            delete_result = db.table("user_interview_force_records").delete() \
+                .eq("user_id", user_id) \
+                .eq("original_interview_id", interview_id) \
+                .execute()
+            logger.info(f"用户 {user_id} 删除旧强制访谈记录，删除数量: {len(delete_result.data or []) if delete_result.data else 0}")
             
-            # 3. 重新抽题
+            # 4. 删除该用户的旧访谈结果记录
+            db.table("interview_results").delete().eq("interview_id", interview_id).eq("user_id", user_id).execute()
+            logger.info(f"用户 {user_id} 删除旧访谈结果记录")
+            
+            # 5. 重新抽题
             from routes.helpers import random_pick_questions
             questions = random_pick_questions(exam_id, question_count)
+            logger.info(f"用户 {user_id} 抽取到 {len(questions)} 道题目")
+            
+            if not questions:
+                logger.error(f"用户 {user_id} 抽题失败，没有题目")
+                failed_count += 1
+                errors.append(f"用户 {user_id}: 抽题失败，没有题目")
+                continue
+            
             for q in questions:
                 db.table("interview_results").insert({
                     "interview_id": interview_id,
@@ -1303,41 +1352,33 @@ def force_resample_interview(interview_id):
                     "question_id": q['id'],
                     "created_at": now.isoformat()
                 }).execute()
+                logger.debug(f"插入题目 {q['id']} 成功")
             
-            # ✅ 4. 创建或更新用户专属的访谈记录（用于学员端显示）
-            # 检查是否已有用户专属的强制访谈记录
-            existing_force = db.table("user_interview_force_records").select("id").eq("original_interview_id", interview_id).eq("user_id", user_id).execute()
-            
-            if existing_force.data:
-                # 更新有效期
-                db.table("user_interview_force_records").update({
-                    "start_time": force_start_time,
-                    "end_time": force_end_time,
-                    "updated_at": now.isoformat()
-                }).eq("id", existing_force.data[0]['id']).execute()
-            else:
-                # 创建新记录
-                db.table("user_interview_force_records").insert({
-                    "user_id": user_id,
-                    "original_interview_id": interview_id,
-                    "exam_id": exam_id,
-                    "title": f"{title} (强制访谈)",
-                    "question_count": question_count,
-                    "reviewer": reviewer,
-                    "feedback": feedback,
-                    "start_time": force_start_time,
-                    "end_time": force_end_time,
-                    "created_at": now.isoformat(),
-                    "created_by": operator_id
-                }).execute()
+            # 6. ✅ 创建全新的强制访谈记录
+            db.table("user_interview_force_records").insert({
+                "user_id": user_id,
+                "original_interview_id": interview_id,
+                "exam_id": exam_id,
+                "title": f"{title} (强制访谈)",
+                "question_count": question_count,
+                "reviewer": reviewer,
+                "feedback": feedback,
+                "start_time": force_start_time,
+                "end_time": force_end_time,
+                "created_at": now.isoformat(),
+                "created_by": operator_id
+            }).execute()
+            logger.info(f"用户 {user_id} 创建新的强制访谈记录")
             
             success_count += 1
             
         except Exception as e:
             failed_count += 1
-            errors.append(f"用户 {user_id}: {str(e)}")
+            error_msg = str(e)
+            errors.append(f"用户 {user_id}: {error_msg}")
+            logger.error(f"用户 {user_id} 强制访谈失败: {error_msg}", exc_info=True)
     
-    logger.info(f"强制访谈: interview={interview_id}, 成功={success_count}, 跳过={skipped_count}, 失败={failed_count}")
+    logger.info(f"强制访谈完成: interview={interview_id}, 成功={success_count}, 跳过={skipped_count}, 失败={failed_count}")
     
     return jsonify({
         "success": True,
