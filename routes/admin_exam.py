@@ -1771,16 +1771,22 @@ def api_admin_exam_scores(exam_id):
         user = users_dict.get(r['user_id'], {})
         user_country = user.get('country', '')
         
-        # ✅ 使用权限函数判断是否有删除权限
+        # 使用权限函数判断是否有删除权限
         can_delete = is_super_admin  # 超管和开发者都可以删除
         
         # 获取考试信息以获取阅卷人
         exam_res = db.table("exams").select("reviewer").eq("id", exam_id).maybe_single().execute()
-        reviewer = exam_res.data.get('reviewer', '-') if exam_res.data else '-'
+        if exam_res is not None and hasattr(exam_res, 'data') and exam_res.data:
+            reviewer = exam_res.data.get('reviewer', '-')
+        else:
+            reviewer = '-'
         
         # 获取开始时间（从 user_exam_status 表）
         status_res = db.table("user_exam_status").select("started_at").eq("user_id", r['user_id']).eq("exam_id", exam_id).maybe_single().execute()
-        started_at = status_res.data.get('started_at') if status_res.data else None
+        if status_res is not None and hasattr(status_res, 'data') and status_res.data:
+            started_at = status_res.data.get('started_at')
+        else:
+            started_at = None
         
         scores.append({
             "user_id": r['user_id'],
