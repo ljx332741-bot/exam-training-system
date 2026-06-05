@@ -7,8 +7,12 @@
         <!-- 基本信息编辑 -->
         <div class="col-md-8">
             <div class="card shadow-sm">
-                <div class="card-header bg-primary text-white">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <h4 class="mb-0"><span data-i18n="basic_info">基本信息</span></h4>
+                    <div class="d-flex gap-2">
+                        <button type="submit" form="profileForm" class="btn btn-light btn-sm"><span data-i18n="save">保存修改</span></button>
+                        <button type="button" id="closeBtn" class="btn btn-sm btn-outline-light" onclick="window.location.href = '{{ url_for('exam.dashboard') }}';">✖ <span data-i18n="close">关闭</span></button>
+                    </div>
                 </div>
                 <div class="card-body">
 
@@ -19,12 +23,12 @@
                         </div>
                         <div class="col-sm-8">
                             <code id="userIdDisplay" style="font-size: 12px; word-break: break-all;">{{ session.get('user_id', 'N/A') }}</code>
-                            <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyUserId()" title="复制ID">
+                            <button class="btn btn-sm btn-outline-secondary ms-2" id="copyUserIdBtn" title="复制ID">
                                 <i class="bi bi-clipboard"></i>
                             </button>
                         </div>
                     </div>
-                    <form method="POST" action="{{ url_for('profile') }}">
+                    <form id="profileForm"  method="POST" action="{{ url_for('profile') }}">
                         <input type="hidden" name="action" value="update_info">
                         
                         <!-- 第一行：姓名，生日 -->
@@ -95,9 +99,6 @@
                                 <input type="text" name="phone" id="phone" class="form-control" value="{{ user.phone or '' }}" autocomplete="tel">
                             </div>
                         </div>
-
-                        <button type="submit" class="btn btn-primary"><span data-i18n="save">保存修改</span></button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
                     </form>
                 </div>
             </div>
@@ -185,20 +186,22 @@
         });
     }
 
-    function copyUserId() {
+    document.getElementById('copyUserIdBtn').addEventListener('click', async function() {
         const userId = document.getElementById('userIdDisplay').innerText;
-        navigator.clipboard.writeText(userId).then(() => {
-            // 显示提示
-            const btn = event.target.closest('button');
+        const btn = this;
+        
+        try {
+            await navigator.clipboard.writeText(userId);
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i class="bi bi-check"></i>';
             setTimeout(() => {
                 btn.innerHTML = originalText;
             }, 1500);
-        }).catch(err => {
+        } catch (err) {
             console.error('复制失败:', err);
             alert('复制失败，请手动复制');
-        });
-    }
+        }
+        
+    });
 </script>
 {% endblock %}
