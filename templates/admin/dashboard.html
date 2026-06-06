@@ -16,6 +16,15 @@
                     <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
                 </a>
             </li>
+            <!-- ✅ 新增：离职人员管理（仅超管/开发者可见） -->
+            {% if session.get('role') in ['super_admin', 'developer'] %}
+            <li><hr class="dropdown-divider"></li>
+            <li>
+                <a class="dropdown-item" href="{{ url_for('admin_user.resigned_users_page') }}">
+                    <i class="bi bi-person-x me-2"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
+                </a>
+            </li>
+            {% endif %}
             <!-- 后续可扩展其他功能 -->
             <!-- <li><hr class="dropdown-divider"></li>
             <li><a class="dropdown-item" href="#">其他功能</a></li> -->
@@ -539,10 +548,12 @@
                 assignedUsers = assignData.user_ids || [];
             }
         }
-        // 注意：status=registered 确保只获取已注册用户
-        const res = await fetch(`/api/admin/users?search=${encodeURIComponent(search)}&country=${country}&status=registered&page=1&per_page=100`);
+
+        // ✅ 添加 exclude_resigned=true 参数，排除离职人员
+        const res = await fetch(`/api/admin/users?search=${encodeURIComponent(search)}&country=${country}&status=registered&page=1&per_page=100&exclude_resigned=true`);
         const data = await res.json();
         let users = data.data || [];
+      
         // 前端额外过滤（加强）
         users = users.filter(u => u.user_status === 'registered');   // 确保状态为 registered
         // 前端过滤：库房编码/名称
@@ -570,6 +581,8 @@
         document.getElementById('selectAllUsers').onclick = (e) => {
             document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
         };
+      // 添加调试日志
+      console.log('请求 URL:', `/api/admin/users?search=${encodeURIComponent(search)}&country=${country}&status=registered&page=1&per_page=100&exclude_resigned=true`);
     }
 
     // 3.3 刷新用户列表按钮

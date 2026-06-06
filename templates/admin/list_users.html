@@ -72,7 +72,8 @@
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
             {% endif %}
-            <button class="btn btn-outline-secondary" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+            <button class="btn btn-outline-secondary" onclick="history.back();">
+                <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span></button>
         </div>
     </div>
 
@@ -154,8 +155,9 @@
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="name_en" id="fieldName" checked><label class="form-check-label" for="fieldName"><span data-i18n="name_en">姓名</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="email" id="fieldEmail" checked><label class="form-check-label" for="fieldEmail"><span data-i18n="email">邮箱</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_id" id="fieldWhId" checked><label class="form-check-label" for="fieldWhId"><span data-i18n="wh_id">库房编码</span></label></div></li>
-                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_name_en" id="fieldWhName" checked><label class="form-check-label" for="fieldWhName"><span data-i18n="wh_name_en">库房名称(EN)</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_name_en" id="fieldWhName" checked><label class="form-check-label" for="fieldWhName"><span data-i18n="wh_name_en">库房名称</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="user_status" id="fieldStatus" checked><label class="form-check-label" for="fieldStatus"><span data-i18n="user_status">用户状态</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="employment_status" id="fieldEmploymentStatus" checked><label class="form-check-label" for="fieldEmploymentStatus"><span data-i18n="employment_status">在职状态</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="role" id="fieldRole" checked><label class="form-check-label" for="fieldRole"><span data-i18n="role">角色</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="is_partner" id="fieldPartner" checked><label class="form-check-label" for="fieldPartner"><span data-i18n="is_partner">合作方?</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="employee_id" id="fieldEmpId"><label class="form-check-label" for="fieldEmpId"><span data-i18n="employee_id">工号</span></label></div></li>
@@ -977,13 +979,28 @@
         }
 
         // ==================== 动态构建表头 ====================
-        const fieldOrder = ['country', 'name_en', 'email', 'wh_id', 'wh_name_en', 'role', 'is_partner', 'user_status', 
-                            'employee_id', 'company', 'department', 'wh_type', 'birthday', 'created_by', 'id'];
+        const fieldOrder = [
+            'country', 'name_en', 'email', 'wh_id', 'wh_name_en', 'role', 
+            'is_partner', 'user_status', 'employment_status', 'employee_id', 
+            'company', 'department', 'wh_type', 'birthday', 'created_by', 'id'
+        ];
         const labels = {
-            country: t('country'), name_en: t('name_en'), email: t('mail'), wh_id: t('wh_id'),
-            wh_name_en: t('wh_name_en'), role: t('role'), is_partner: t('t_is_partner'), user_status: t('user_status'),
-            employee_id: t('employee_id'), company: t('company'), department: t('department'), wh_type: t('wh_type'),
-            birthday: t('birthday'), created_by: t('created_by'), id: 'ID'
+            country: t('country'), 
+            name_en: t('name_en'), 
+            email: t('mail'), 
+            wh_id: t('wh_id'),
+            wh_name_en: t('wh_name_en'), 
+            role: t('role'), 
+            is_partner: t('t_is_partner'), 
+            user_status: t('user_status'),
+            employment_status: t('employment_status'),
+            employee_id: t('employee_id'), 
+            company: t('company'), 
+            department: t('department'), 
+            wh_type: t('wh_type'),
+            birthday: t('birthday'), 
+            created_by: t('created_by'), 
+            id: 'ID'
         };
         
         // 构建表头HTML
@@ -1035,6 +1052,20 @@
                         case 'is_partner':
                             cellValue = u.is_partner ? t('t_yes') : t('t_no');
                             break;
+                        case 'employment_status':
+                            // 已导入但未注册的用户，显示为"未激活"
+                            if (u.user_status === 'imported') {
+                                cellValue = `<span class="badge bg-secondary">${t('not_activated') || '未激活'}</span>`;
+                            } else if (u.is_resign) {
+                                if (u.is_rehire) {
+                                    cellValue = `<span class="badge bg-info" title="复职日期: ${u.rehire_at || '-'}">${t('rehired') || '已复职'}</span>`;
+                                } else {
+                                    cellValue = `<span class="badge bg-danger" title="离职日期: ${u.resigned_at || '-'}">${t('resigned') || '已离职'}</span>`;
+                                }
+                            } else {
+                                cellValue = `<span class="badge bg-success">${t('active_employee') || '在职'}</span>`;
+                            }
+                            break;
                         case 'employee_id':
                             cellValue = escapeHtml(u.employee_id || '-');
                             break;
@@ -1062,7 +1093,25 @@
                     bodyHtml += `<td>${cellValue}</td>`;
                 }
             }
-            
+
+            // 在操作列中，根据用户状态显示不同按钮
+            const isActive = !u.is_resign && u.user_status === 'registered';
+            const isResigned = u.is_resign && !u.is_rehire && u.user_status === 'registered';
+            const isRehired = u.is_resign && u.is_rehire && u.user_status === 'registered';
+            const isImported = u.user_status === 'imported';
+
+            let resignBtn = '';
+            let rehireBtn = '';
+
+            if (isActive) {
+                resignBtn = `<button class="btn btn-sm btn-outline-warning resign-btn" data-id="${u.id}" data-name="${escapeHtml(u.name_en)}" title="标记为离职">
+                                <i class="bi bi-person-x"></i> ${t('resign')}
+                            </button>`;
+            } else if (isResigned) {
+                rehireBtn = `<button class="btn btn-sm btn-outline-success rehire-btn" data-id="${u.id}" data-name="${escapeHtml(u.name_en)}" title="恢复在职状态">
+                                <i class="bi bi-person-check"></i> ${t('rehire')}
+                            </button>`;
+            }
             // 权限范围列（仅超管显示）
             if (CURRENT_USER_ROLE === 'super_admin' && visibleFields && visibleFields.power_scope !== false) {
                 let scopeDisplay = '';
@@ -1084,6 +1133,8 @@
                 ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
                 ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
                 ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
+                ${resignBtn}
+                ${rehireBtn}
             </td></tr>`;
         }
         bodyHtml += '</tbody>';
@@ -2764,6 +2815,64 @@ function extractCountryFromWhId(whId) {
         
         // 下载文件
         window.location.href = `/api/admin/users/export?${params.toString()}`;
+    });
+    
+    // 离职按钮事件
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.resign-btn');
+        if (!btn) return;
+        
+        const userId = btn.dataset.id;
+        const userName = btn.dataset.name;
+        
+        if (confirm(`确定要将用户 "${userName}" 标记为离职吗？`)) {
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/resign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    loadUsers();
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (err) {
+                console.error('离职操作失败:', err);
+                showToast('网络错误，请重试', 'error');
+            }
+        }
+    });
+
+    // 复职按钮事件
+    document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.rehire-btn');
+        if (!btn) return;
+        
+        const userId = btn.dataset.id;
+        const userName = btn.dataset.name;
+        
+        if (confirm(`确定要将用户 "${userName}" 恢复为在职状态吗？\n复职后用户可正常登录系统。`)) {
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/rehire`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    loadUsers(); // 刷新列表
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (err) {
+                console.error('复职操作失败:', err);
+                showToast('网络错误，请重试', 'error');
+            }
+        }
     });
 
     // 初始化国家列表

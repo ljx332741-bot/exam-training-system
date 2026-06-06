@@ -57,6 +57,7 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   └── admin/
 │        ├── import.html                    # Word导入界面
 │        ├── import_preview.html            # Word导入，拷贝，编辑预览
+│        ├── resigned_users.html            # 离职人员管理
 │        ├── result_detail.html             # 考试试题答题详情
 │        ├── list_users.html                # 用户注册统计卡片详情页
 │        ├── import.html                    # Word导入界面

@@ -608,7 +608,7 @@
   "partner_yes": "Yes",
   "wh_type": "WH Type",
   "wh_id": "WH ID",
-  "wh_name_en": "WH Name(EN)",
+  "wh_name_en": "WH Name",
   "user_status": "User Status",
   "is_partner": "Supplier?",
   "imported": "Added",
@@ -759,5 +759,15 @@
 "jsonify_selected_candidate_unassigned_removed": "Selected candidate is unassigned or removed",
 "batch_force_interview": "Batch force recheck",
 "unfinished_expired": "Expired",
-"interview_status": "status"
+"interview_status": "status",
+"training_attendance_status": "Training sign in status",
+    "not_activated": "Unactivated",
+    "active_employee": "Jobing",
+    "resigned": "Resigned",
+    "rehired": "Rehired",
+    "employment_status": "Job Status",
+        "resign": "Resign",
+    "rehire": "Rehire",
+    "confirm_resign": "Confirm to let  \"{name}\" seting resign？",
+    "confirm_rehire": "Cofirm to let \"{name}\" seting rehire？"
 }

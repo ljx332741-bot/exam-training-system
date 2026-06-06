@@ -9,7 +9,7 @@ from flask import (
 )
 from . import admin_exam_bp
 from services.db import get_supabase
-from routes.helpers import login_required, admin_required, parse_exam_countries, get_exam_countries_display, can_access_exam
+from routes.helpers import login_required, admin_required, parse_exam_countries, get_exam_countries_display, can_access_exam, is_user_resigned
 from services import auth, exam, export
 from config import Config
 from utils.status import get_exam_status
@@ -1085,7 +1085,18 @@ def admin_push_exam_with_settings(exam_id):
     
     if not can_access_exam(exam):
         return jsonify({"success": False, "message": "无权操作此考试"}), 403
-    
+
+    # 获取用户列表时排除离职人员
+    def get_active_users_for_exam(allowed_countries=None):
+        """获取活跃用户（未离职）用于考试推送"""
+        db = get_supabase()
+        query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
+        
+        if allowed_countries is not None and allowed_countries:
+            query = query.in_("country", allowed_countries)
+        
+        return query.execute().data or []
+
     # ✅ 2. 获取请求数据
     data = request.json
     user_ids = data.get('user_ids', [])
@@ -1276,261 +1287,6 @@ def admin_push_exam(exam_id):
 
     return jsonify({"success": True})
 
-'''
-@admin_exam_bp.route('/api/admin/exams/list')
-@login_required
-@admin_required
-def api_admin_exams_list():
-    db = get_supabase()
-    include_deleted = request.args.get('include_deleted', 'false').lower() == 'true'
-    allowed_countries = get_admin_allowed_countries()
-    # 获取过滤参数
-    country_input = request.args.get('country', '')
-    name = request.args.get('name', '')
-    target_status = request.args.get('status', '')
-    quarter = request.args.get('quarter', '')
-    creator = request.args.get('creator', '')
-    reviewer = request.args.get('reviewer', '')
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-
-    # 管理员权限范围
-    allowed = get_allowed_countries()
-    filter_country_code = match_country_code(country_input) if country_input else None
-    q_start, q_end = quarter_to_date_range(quarter) if quarter else (None, None)
-    
-    # ✅ 获取当前用户角色
-    current_role = session.get('role')
-    is_dev = is_developer()
-    is_super_admin = current_role == 'super_admin' or is_dev
-    
-    # ✅ 获取调试模式状态（优先从请求参数，其次从 session）
-    debug_mode_param = request.args.get('debug_mode', '')
-    if debug_mode_param:
-        debug_mode = debug_mode_param.lower() == 'true'
-        session['exam_list_debug_mode'] = debug_mode
-    else:
-        debug_mode = session.get('exam_list_debug_mode', False)
-    
-    logger.info(f"调试模式状态: {debug_mode}, 用户角色: {current_role}, is_super_admin: {is_super_admin}")
-    try:
-        # 1. 基础查询
-        query = db.table("exams").select("*", count="exact")
-        if not include_deleted:
-            query = query.is_("deleted_at", "null")
-        if name:
-            query = query.ilike("title", f"%{name}%")
-        if creator:
-            users_res = db.table("users").select("id").ilike("name_en", f"%{creator}%").execute()
-            creator_ids = [u['id'] for u in (users_res.data or [])]
-            if creator_ids:
-                query = query.in_("created_by", creator_ids)
-            else:
-                return jsonify({"data": [], "total": 0})
-        if reviewer:
-            query = query.ilike("reviewer", f"%{reviewer}%")
-
-        res = query.execute()
-        all_exams = res.data or []
-
-        # 2. 管理员权限过滤（如果 allowed 不为 None）
-        if allowed is not None:
-            if not allowed:
-                return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
-            
-            # 获取允许国家的所有用户ID
-            users_in_allowed = db.table("users").select("id").in_("country", allowed).execute()
-            allowed_user_ids = [u['id'] for u in (users_in_allowed.data or [])] if users_in_allowed.data else []
-            
-            # 查询分配了至少一个允许国家考生的考试ID
-            allowed_exam_ids = set()
-            if allowed_user_ids:
-                assign_res = db.table("exam_assignments").select("exam_id").in_("user_id", allowed_user_ids).execute()
-                allowed_exam_ids = {a['exam_id'] for a in (assign_res.data or [])}
-            
-            filtered = []
-            for exam in all_exams:
-                # 解析考试国家列表
-                exam_countries = []
-                
-                # 处理 countries 字段（可能是 JSON 字符串、列表或空）
-                countries_val = exam.get('countries')
-                if countries_val:
-                    if isinstance(countries_val, str) and countries_val:
-                        try:
-                            parsed = json.loads(countries_val)
-                            if isinstance(parsed, list):
-                                exam_countries = parsed
-                            elif parsed:
-                                exam_countries = [parsed]
-                        except:
-                            pass
-                    elif isinstance(countries_val, list):
-                        exam_countries = countries_val
-                
-                # 如果没有 countries，使用旧的 country 字段
-                if not exam_countries and exam.get('country'):
-                    exam_countries = [exam.get('country')]
-                
-                # ✅ 关键：检查是否有交集
-                # 将 allowed 转换为列表（如果已经是列表则直接用）
-                allowed_list = allowed if isinstance(allowed, list) else [allowed] if allowed else []
-                
-                # 检查考试国家是否在管理员权限范围内
-                matches_country = False
-                for ec in exam_countries:
-                    if ec in allowed_list:
-                        matches_country = True
-                        break
-                
-                # 通过国家匹配或考试分配
-                if matches_country or exam['id'] in allowed_exam_ids:
-                    filtered.append(exam)
-                    logger.info(f"✅ 考试 {exam['id']} 通过: 国家匹配={matches_country}, 分配匹配={exam['id'] in allowed_exam_ids}")
-                else:
-                    logger.info(f"❌ 考试 {exam['id']} 被过滤: 国家列表={exam_countries}, 允许范围={allowed_list}")
-            
-            all_exams = filtered
-            logger.info(f"权限过滤后剩余 {len(all_exams)} 条考试记录")
-
-        # 3. 前端选择的额外国家筛选
-        if filter_country_code:
-            users_in_filter = db.table("users").select("id").eq("country", filter_country_code).execute()
-            filter_user_ids = [u['id'] for u in (users_in_filter.data or [])] if users_in_filter.data else []
-            filter_exam_ids = set()
-            if filter_user_ids:
-                assign_filter = db.table("exam_assignments").select("exam_id").in_("user_id", filter_user_ids).execute()
-                filter_exam_ids = {a['exam_id'] for a in (assign_filter.data or [])}
-            all_exams = [exam for exam in all_exams 
-                        if exam.get('country') == filter_country_code or exam['id'] in filter_exam_ids]
-
-        # 4. 季度过滤
-        if quarter and q_start and q_end:
-            q_start_dt = datetime.fromisoformat(q_start)
-            q_end_dt = datetime.fromisoformat(q_end)
-            filtered = []
-            for exam in all_exams:
-                start, end = exam.get('start_time'), exam.get('end_time')
-                if start and end:
-                    try:
-                        start_dt = datetime.fromisoformat(start)
-                        end_dt = datetime.fromisoformat(end)
-                        if start_dt <= q_end_dt and end_dt >= q_start_dt:
-                            filtered.append(exam)
-                    except:
-                        pass
-            all_exams = filtered
-
-        # 5. 构建返回数据
-        now = datetime.now(timezone.utc)
-        exams_with_status = []
-        
-        for exam in all_exams:
-            try:
-                exam_id = exam['id']
-                dynamic_status = get_exam_status(exam)
-                if target_status and dynamic_status != target_status:
-                    continue
-                
-                # 统计题目数
-                q_count = db.table("questions").select("id", count="exact").eq("exam_id", exam_id).execute().count or 0
-                assigned_count = db.table("exam_assignments").select("user_id", count="exact").eq("exam_id", exam_id).execute().count or 0
-                submitted_res = db.table("exam_results").select("user_id", count="exact").eq("exam_id", exam_id).execute()
-                submitted_count = submitted_res.count or 0
-                
-                # 最高分/最低分
-                max_res = db.table("exam_results").select("total_score").eq("exam_id", exam_id).order("total_score", desc=True).limit(1).execute()
-                max_score = max_res.data[0]['total_score'] if max_res.data else None
-                min_res = db.table("exam_results").select("total_score").eq("exam_id", exam_id).order("total_score", desc=False).limit(1).execute()
-                min_score = min_res.data[0]['total_score'] if min_res.data else None
-                
-                # 创建人
-                creator_name = ''
-                if exam.get('created_by'):
-                    creator_res = db.table("users").select("name_en").eq("id", exam['created_by']).maybe_single().execute()
-                    creator_name = creator_res.data.get('name_en', '') if creator_res.data else ''
-
-                # ✅ 修复：初始化 exam_countries 变量
-                exam_countries = []
-                
-                # 优先使用 countries 字段
-                countries_data = exam.get('countries')
-                if countries_data:
-                    if isinstance(countries_data, str) and countries_data:
-                        try:
-                            parsed = json.loads(countries_data)
-                            exam_countries = parsed if isinstance(parsed, list) else [parsed]
-                        except:
-                            exam_countries = []
-                    elif isinstance(countries_data, list):
-                        exam_countries = countries_data
-                
-                # 如果没有 countries，使用旧的 country 字段
-                if not exam_countries:
-                    old_country = exam.get('country')
-                    if old_country:
-                        exam_countries = [old_country]
-                
-                # 根据管理员权限过滤国家（只保留有权管理的国家）
-                if allowed is not None:
-                    filtered_countries = [c for c in exam_countries if c in allowed]
-                else:
-                    filtered_countries = exam_countries
-                
-                countries_display = ', '.join(filtered_countries) if filtered_countries else '-'
-        
-                # ✅ 添加权限字段
-                exam['is_super_admin'] = is_super_admin
-                exam['debug_mode'] = debug_mode
-                
-                # 判断是否显示推送设置按钮
-                # 条件1: 超管或开发者
-                # 条件2: 调试模式开启
-                # 条件3: 考试状态为 closed
-                can_show_debug_push = is_super_admin and debug_mode and dynamic_status == 'closed'
-                logger.info(f"考试 {exam.get('id')} 状态={dynamic_status}, can_show_debug_push={can_show_debug_push}")
-
-                exams_with_status.append({
-                    "id": exam_id,
-                    "title": exam['title'],
-                    "status": dynamic_status,
-                    "countries_display": countries_display,
-                    "countries": filtered_countries,
-                    "country_count": len(filtered_countries),
-                    "start_time": exam.get('start_time'),
-                    "end_time": exam.get('end_time'),
-                    "duration": exam.get('duration', 60),
-                    "question_count": q_count,
-                    "assigned_count": assigned_count,
-                    "submitted_count": submitted_count,
-                    "max_score": max_score,
-                    "min_score": min_score,
-                    "retake_count": 0,
-                    "reviewer": exam.get('reviewer', ''),
-                    "created_by_name": creator_name,
-                    "quarter": exam.get('quarter', ''),
-                    "deleted_at": exam.get('deleted_at'),
-                    "country": exam.get('country', ''),
-                    "can_show_debug_push": can_show_debug_push,
-                    "is_super_admin": is_super_admin,
-                    "debug_mode": debug_mode
-                })
-            except Exception as e:
-                logger.error(f"处理考试 {exam.get('id')} 的统计数据时出错: {e}")
-                continue
-
-        total = len(exams_with_status)
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        paginated = exams_with_status[start_idx:end_idx]
-        
-        return jsonify({"data": paginated, "total": total, "page": page, "per_page": per_page})
-        
-    except Exception as e:
-        logger.error(f"api_admin_exams_list 执行失败: {e}", exc_info=True)
-        return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page, "error": str(e)}), 500
-'''
-
 @admin_exam_bp.route('/api/admin/exams/list')
 @login_required
 @admin_required
@@ -1633,11 +1389,34 @@ def api_admin_exams_list():
         exams_with_status = []
         for exam in all_exams:
             exam_id = exam['id']
+    
+            # ✅ 获取该考试分配的考生（只统计在职人员）
+            assign_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
+            assign_user_ids = [a['user_id'] for a in (assign_res.data or [])]
             
+            # 过滤离职人员
+            if assign_user_ids:
+                active_users = db.table("users").select("id").in_("id", assign_user_ids).eq("is_resign", False).execute()
+                assigned_count = len(active_users.data or [])
+            else:
+                assigned_count = 0
+            
+            # ✅ 获取已提交的考生（只统计在职人员）
+            submitted_res = db.table("exam_results").select("user_id").eq("exam_id", exam_id).execute()
+            submitted_user_ids = [r['user_id'] for r in (submitted_res.data or [])]
+            
+            # 过滤离职人员
+            if submitted_user_ids:
+                active_submitted = db.table("users").select("id").in_("id", submitted_user_ids).eq("is_resign", False).execute()
+                submitted_count = len(active_submitted.data or [])
+            else:
+                submitted_count = 0
+            
+            exam['assigned_count'] = assigned_count
+            exam['submitted_count'] = submitted_count
+
             # 从缓存中获取统计数据
             q_count = questions_counts.get(exam_id, 0)
-            assigned_count = assigned_counts.get(exam_id, 0)
-            submitted_count = submitted_counts.get(exam_id, 0)
             
             # 解析国家
             exam_countries = parse_exam_countries(exam)
@@ -1723,6 +1502,17 @@ def api_admin_exam_scores(exam_id):
     if submit_method:
         query = query.eq("submit_method", submit_method)
     results_all = query.execute().data or []
+
+    if not results_all:
+        return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
+
+    # ✅ 过滤掉离职人员的成绩记录
+    user_ids = list(set(r['user_id'] for r in results_all))
+    if user_ids:
+        active_users = db.table("users").select("id").in_("id", user_ids).eq("is_resign", False).execute()
+        active_user_ids = [u['id'] for u in (active_users.data or [])]
+        # 只保留在职人员的成绩
+        results_all = [r for r in results_all if r['user_id'] in active_user_ids]
 
     if not results_all:
         return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
@@ -2063,6 +1853,9 @@ def admin_quick_assign_exam(exam_id):
         existing_ids = {row['user_id'] for row in (existing_res.data or [])}
         
         # 5. 只添加未分配的考生
+        # ✅ 过滤掉离职人员
+        user_ids = [uid for uid in user_ids if not is_user_resigned(uid)]
+        
         to_add = [uid for uid in user_ids if uid not in existing_ids]
         
         if not to_add:
