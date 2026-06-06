@@ -1,0 +1,835 @@
+<!-- templates/admin/resigned_users.html -->
+{% extends "base.html" %}
+{% block title %}离职人员管理{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-person-x"></i> 离职人员管理</h2>
+        <button class="btn btn-outline-secondary" onclick="history.back();">✖ 关闭</button>
+    </div>
+
+    <!-- 筛选栏 -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <input type="text" id="searchInput" class="form-control" 
+                           placeholder="姓名/邮箱" autocomplete="off">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
+                           placeholder="国家">
+                    <datalist id="countryDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <select id="filterStatus" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="resigned">已离职</option>
+                        <option value="rehired">已复职</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button id="searchBtn" class="btn btn-primary w-100">搜索</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 离职人员列表 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>序号</th>
+                            <th>姓名</th>
+                            <th>邮箱</th>
+                            <th>国家</th>
+                            <th>角色</th>
+                            <th>离职日期</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resignedTableBody">
+                        <tr><td colspan="8" class="text-center">加载中...</td></tr>
+                    </tbody><!-- 在表格前添加 -->
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <span>总计：<strong id="totalCount">0</strong> 人</span>
+            </div>
+            <nav><ul class="pagination mb-0 justify-content-center" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<!-- 离职人员详情模态框 -->
+<div class="modal fade" id="userDetailModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">离职人员详情 - <span id="detailUserName"></span></h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Tab 切换 -->
+                <ul class="nav nav-tabs mb-3" id="detailTab" role="tablist">
+                    <li class="nav-item">
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#basicInfo">基本信息</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#examHistory">考试记录</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#trainingHistory">培训签到</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#interviewHistory">访谈记录</button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="basicInfo">
+                        <div class="row" id="basicInfoContent"></div>
+                    </div>
+                    <div class="tab-pane fade" id="examHistory">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <th>考试名称</th>
+                                    <th>得分</th>
+                                    <th>提交时间</th>
+                                    <th>提交方式</th>
+                                    <th>操作</th>
+                                </thead>
+                                <tbody id="examHistoryBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="trainingHistory">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <th>培训名称</th>
+                                    <th>签到时间</th>
+                                    <th>签名</th>
+                                    <th>操作</th>
+                                </thead>
+                                <tbody id="trainingHistoryBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="interviewHistory">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <th>访谈名称</th>
+                                    <th>答题数量</th>
+                                    <th>正确数量</th>
+                                    <th>提交时间</th>
+                                    <th>操作</th>
+                                </thead>
+                                <tbody id="interviewHistoryBody"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 签名图片查看模态框 -->
+<div class="modal fade" id="signatureModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">签名图片</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img id="signatureImage" src="" alt="签名" style="max-width: 100%; border: 1px solid #ddd;">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 访谈答题详情模态框 -->
+<div class="modal fade" id="interviewAnswersModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">访谈答题详情 - <span id="interviewAnswersUserName"></span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="interviewAnswersContent">
+                <!-- 动态填充 -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let currentPage = 1;
+    let currentUserId = null;
+    
+    // 加载离职人员列表
+    async function loadResignedUsers() {
+        const search = document.getElementById('searchInput').value;
+        const country = document.getElementById('filterCountry').value;
+        const status = document.getElementById('filterStatus').value;
+        
+        const params = new URLSearchParams({
+            page: currentPage,
+            per_page: 20,
+            search: search,
+            country: country,
+            status: status
+        });
+        
+        const res = await fetch(`/api/admin/users/resigned?${params}`);
+        const data = await res.json();
+        renderTable(data.data);
+        document.getElementById('totalCount').innerText = data.total;
+        renderPagination(data.page, Math.ceil(data.total / data.per_page));
+    }
+    
+    function renderTable(users) {
+        const tbody = document.getElementById('resignedTableBody');
+        if (!users.length) {
+            tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据<\/td><\/tr>';
+            return;
+        }
+        
+        tbody.innerHTML = users.map((u, idx) => {
+            const statusBadge = u.is_rehire ? 
+                '<span class="badge bg-info">已复职</span>' : 
+                '<span class="badge bg-danger">已离职</span>';
+            
+            return `
+                <tr>
+                    <td>${(currentPage-1)*20 + idx + 1}<\/td>
+                    <td>${escapeHtml(u.name_en || '-')}<\/td>
+                    <td>${escapeHtml(u.email || '-')}<\/td>
+                    <td>${escapeHtml(u.country || '-')}<\/td>
+                    <td>${escapeHtml(u.role)}<\/td>
+                    <td>${formatDate(u.resigned_at)}<\/td>
+                    <td>${statusBadge}<\/td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-info view-detail-btn" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name_en)}">查看详情</button>
+                        ${!u.is_rehire ? `<button class="btn btn-sm btn-outline-success rehire-from-resigned-btn" data-user-id="${u.id}">复职</button>` : ''}
+                    <\/td>
+                </tr>
+            `;
+        }).join('');
+        
+        // 绑定查看详情事件
+        document.querySelectorAll('.view-detail-btn').forEach(btn => {
+            btn.addEventListener('click', () => showUserDetail(btn.dataset.userId, btn.dataset.userName));
+        });
+        
+        // 绑定复职事件
+        document.querySelectorAll('.rehire-from-resigned-btn').forEach(btn => {
+            btn.addEventListener('click', () => rehireUser(btn.dataset.userId));
+        });
+    }
+    
+    // 查看离职人员详情
+    async function showUserDetail(userId, userName) {
+        currentUserId = userId;
+        document.getElementById('detailUserName').innerText = userName;
+        
+        // 加载基本信息
+        await loadBasicInfo(userId);
+        await loadExamHistory(userId);
+        await loadTrainingHistory(userId);
+        await loadInterviewHistory(userId);
+        
+        new bootstrap.Modal(document.getElementById('userDetailModal')).show();
+    }
+    
+    // 加载基本信息
+    async function loadBasicInfo(userId) {
+        const res = await fetch(`/api/admin/users/${userId}/resigned_detail`);
+        const data = await res.json();
+        
+        const container = document.getElementById('basicInfoContent');
+        container.innerHTML = `
+            <div class="col-md-6">
+                <table class="table table-bordered">
+                    <tr><th width="120">用户ID</th><td><code>${data.id}</code></td></tr>
+                    <tr><th>姓名</th><td>${data.name_en || '-'}</td></tr>
+                    <tr><th>邮箱</th><td>${data.email || '-'}</td></tr>
+                    <tr><th>国家</th><td>${data.country || '-'}</td></tr>
+                    <tr><th>角色</th><td>${data.role}</td></tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-bordered">
+                    <tr><th width="120">离职日期</th><td>${formatDate(data.resigned_at)}</td></tr>
+                    <tr><th>复职日期</th><td>${formatDate(data.rehire_at)}</td></tr>
+                    <tr><th>创建时间</th><td>${formatDate(data.created_at)}</td></tr>
+                    <tr><th>创建人</th><td>${data.created_by_name || '-'}</td></tr>
+                    <tr><th>状态</th><td>${data.is_rehire ? '已复职' : '已离职'}</td></tr>
+                </table>
+            </div>
+        `;
+    }
+    
+    // 加载考试历史（增强版）
+    async function loadExamHistory(userId) {
+        const res = await fetch(`/api/admin/users/${userId}/exam_history`);
+        const data = await res.json();
+        const tbody = document.getElementById('examHistoryBody');
+        
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">无考试记录</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.map(r => `
+            <tr>
+                <td>${escapeHtml(r.exam_title)}</td>
+                <td><span class="badge ${r.total_score >= 60 ? 'bg-success' : 'bg-danger'}">${r.total_score || 0}</span></td>
+                <td>${formatDate(r.created_at)}</td>
+                <td>${r.submit_method === 'auto' ? '自动提交' : '手动提交'}</td>
+                <td>
+                    ${r.result_id ? `
+                        <button class="btn btn-sm btn-outline-info view-exam-detail-modal" 
+                            data-result-id="${r.result_id}" 
+                            data-exam-title="${escapeHtml(r.exam_title)}">
+                            <i class="bi bi-eye"></i> 查看详情
+                        </button>
+                        <a href="/admin/export_pdf_by_result/${r.result_id}" 
+                        class="btn btn-sm btn-outline-secondary" 
+                        target="_blank">
+                        <i class="bi bi-download"></i> 导出PDF
+                        </a>
+                    ` : ''}
+                </td>
+            </tr>
+        `).join('');
+        
+        // 绑定模态框查看详情事件
+        document.querySelectorAll('.view-exam-detail-modal').forEach(btn => {
+            // 移除旧的事件监听器，避免重复绑定
+            btn.removeEventListener('click', handleExamDetailClick);
+            btn.addEventListener('click', handleExamDetailClick);
+        });
+    }
+
+    // 独立的处理函数
+    async function handleExamDetailClick(event) {
+        const btn = event.currentTarget;
+        const resultId = btn.dataset.resultId;
+        const examTitle = btn.dataset.examTitle;
+        
+        // 显示加载状态
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> 加载中...';
+        
+        try {
+            await showExamDetailInModal(resultId, examTitle);
+        } catch (error) {
+            console.error('加载失败:', error);
+            showToast('加载考试详情失败', 'error');
+        } finally {
+            // 恢复按钮状态
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    }
+
+    // 在模态框中显示考试详情
+    async function showExamDetailInModal(resultId, examTitle) {
+        try {
+            // 检查是否已有模态框，如果有则先移除
+            let modal = document.getElementById('examDetailModal');
+            if (modal) {
+                const bsModal = bootstrap.Modal.getInstance(modal);
+                if (bsModal) {
+                    bsModal.hide();
+                }
+                modal.remove();
+            }
+            
+            // 创建新的模态框HTML
+            const modalHtml = `
+                <div class="modal fade" id="examDetailModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+                    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header bg-primary text-white">
+                                <h5 class="modal-title">
+                                    <i class="bi bi-file-text"></i> 考试详情 - ${escapeHtml(examTitle)}
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body" id="examDetailContent">
+                                <div class="text-center py-5">
+                                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                                        <span class="visually-hidden">加载中...</span>
+                                    </div>
+                                    <p class="mt-3 text-muted">正在加载考试详情，请稍候...</p>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                    <i class="bi bi-x-circle"></i> 关闭
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHtml);
+            modal = document.getElementById('examDetailModal');
+            const bsModal = new bootstrap.Modal(modal);
+            bsModal.show();
+            
+            // 调用新的 API 获取详情数据
+            const response = await fetch(`/api/admin/exam/result/${resultId}/detail`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.message || '获取详情失败');
+            }
+            
+            // 渲染详情内容
+            renderExamDetailContent(data);
+            
+        } catch (error) {
+            console.error('加载考试详情失败:', error);
+            const contentDiv = document.getElementById('examDetailContent');
+            if (contentDiv) {
+                contentDiv.innerHTML = `
+                    <div class="alert alert-danger m-3">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        加载考试详情失败: ${escapeHtml(error.message)}
+                        <hr class="my-2">
+                        <button class="btn btn-outline-danger btn-sm" onclick="location.reload()">
+                            <i class="bi bi-arrow-repeat"></i> 重试
+                        </button>
+                    </div>
+                `;
+            }
+            showToast('加载考试详情失败: ' + error.message, 'error');
+        }
+
+        const data = await response.json();
+        console.log('考试详情数据:', data);  // 查看返回的完整数据
+        console.log('题目详情:', data.questions);  // 查看每道题的得分
+    }
+
+    // 渲染考试详情内容
+    function renderExamDetailContent(data) {
+        const contentDiv = document.getElementById('examDetailContent');
+        if (!contentDiv) return;
+        
+        // 计算统计信息
+        const totalQuestions = data.questions.length;
+        const correctCount = data.questions.filter(q => q.is_correct).length;
+        const totalPossibleScore = data.questions.reduce((sum, q) => sum + (q.total_score || 0), 0);
+        const passStatus = data.total_score >= 60;
+        const scorePercentage = totalPossibleScore > 0 ? Math.round((data.total_score / totalPossibleScore) * 100) : 0;
+        
+        let html = `
+            <div class="container-fluid p-3">
+                <!-- 基本信息卡片 -->
+                <div class="card mb-3">
+                    <div class="card-header bg-info text-white">
+                        <strong><i class="bi bi-info-circle"></i> 基本信息</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr><th width="100">考生姓名：</th><td>${escapeHtml(data.user.name)}</td>
+                                    <tr><th>邮箱：</th><td>${escapeHtml(data.user.email)}</td>
+                                    <tr><th>考试名称：</th><td>${escapeHtml(data.exam.title)}</td>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr><th width="100">提交时间：</th><td>${formatDate(data.submitted_at)}</td>
+                                    <tr><th>总分：</th><td><span class="badge ${passStatus ? 'bg-success' : 'bg-danger'} fs-6">${data.total_score || 0}</span> / ${totalPossibleScore} 分</td>
+                                    <tr><th>提交方式：</th><td>${data.submit_method === 'auto' ? '自动提交' : '手动提交'}</td>
+                                    <tr><th>阅卷人：</th><td>${escapeHtml(data.exam.reviewer) || '-'}</td>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 统计摘要卡片 -->
+                <div class="row mb-4">
+                    <div class="col-md-3">
+                        <div class="card text-center bg-light border-0 shadow-sm">
+                            <div class="card-body">
+                                <h3 class="mb-0 text-primary">${totalQuestions}</h3>
+                                <small class="text-muted">总题数</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-success text-white border-0 shadow-sm">
+                            <div class="card-body">
+                                <h3 class="mb-0">${correctCount}</h3>
+                                <small>正确数量</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center bg-primary text-white border-0 shadow-sm">
+                            <div class="card-body">
+                                <h3 class="mb-0">${data.total_score || 0}</h3>
+                                <small>实际得分</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center ${passStatus ? 'bg-info' : 'bg-warning'} text-white border-0 shadow-sm">
+                            <div class="card-body">
+                                <h3 class="mb-0">${scorePercentage}%</h3>
+                                <small>得分率</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 答题详情 -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <strong><i class="bi bi-file-text"></i> 答题详情</strong>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="accordion" id="questionsAccordion">
+        `;
+        
+        // 渲染每道题（使用折叠面板）
+        data.questions.forEach((q, index) => {
+            const questionId = `question_${index}`;
+            const statusIcon = q.is_correct ? '✅' : '❌';
+            const statusColor = q.is_correct ? 'success' : 'danger';
+            const statusText = q.is_correct ? '正确' : '错误';
+            
+            const typeBadge = q.type === 'multi' ? 
+                '<span class="badge bg-warning ms-2">多选题</span>' : 
+                (q.type === 'judge' ? 
+                    '<span class="badge bg-info ms-2">判断题</span>' : 
+                    '<span class="badge bg-primary ms-2">单选题</span>');
+            
+            // 得分显示
+            const scoreDisplay = q.obtained_score === q.total_score ? 
+                `<span class="badge bg-success">得分: ${q.obtained_score}/${q.total_score}</span>` :
+                `<span class="badge ${q.obtained_score > 0 ? 'bg-warning' : 'bg-danger'}">得分: ${q.obtained_score}/${q.total_score}</span>`;
+            
+            // 渲染选项
+            let optionsHtml = '';
+            if (q.type !== 'judge' && q.options && Object.keys(q.options).length > 0) {
+                optionsHtml = '<div class="mt-2 mb-2"><strong>选项：</strong></div><ul class="list-unstyled ms-3">';
+                for (const [key, value] of Object.entries(q.options)) {
+                    if (value && value.toString().trim()) {
+                        // 高亮正确答案
+                        const isCorrectOption = q.correct_answer && q.correct_answer.includes(key);
+                        const optionClass = isCorrectOption ? 'text-success fw-bold' : '';
+                        optionsHtml += `<li class="${optionClass}">${key}. ${escapeHtml(value)}</li>`;
+                    }
+                }
+                optionsHtml += '</ul>';
+            } else if (q.type === 'judge') {
+                optionsHtml = '<div class="mt-2 mb-2 text-muted"><small>判断题选项：正确(True) / 错误(False)</small></div>';
+            }
+            
+            // 考生答案显示（带对错符号）
+            const userAnswerDisplay = q.user_answer === '未作答' ? 
+                `<span class="text-muted fst-italic">${escapeHtml(q.user_answer)}</span>` :
+                `<span class="fw-bold ${q.is_correct ? 'text-success' : 'text-danger'}">${escapeHtml(q.user_answer)}</span>`;
+            
+            html += `
+                <div class="accordion-item border-0 ${index !== 0 ? 'border-top' : ''}">
+                    <h2 class="accordion-header" id="heading_${questionId}">
+                        <button class="accordion-button ${index !== 0 ? 'collapsed' : ''}" type="button" 
+                                data-bs-toggle="collapse" data-bs-target="#collapse_${questionId}" 
+                                aria-expanded="${index === 0 ? 'true' : 'false'}" 
+                                aria-controls="collapse_${questionId}">
+                            <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                                <div>
+                                    <strong class="fs-6">第 ${q.num} 题</strong>
+                                    ${typeBadge}
+                                    <span class="ms-2 text-truncate" style="max-width: 400px;">${escapeHtml(q.content.substring(0, 60))}${q.content.length > 60 ? '...' : ''}</span>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    ${scoreDisplay}
+                                    <span class="badge bg-${statusColor}">${statusIcon} ${statusText}</span>
+                                </div>
+                            </div>
+                        </button>
+                    </h2>
+                    <div id="collapse_${questionId}" class="accordion-collapse collapse ${index === 0 ? 'show' : ''}" 
+                        data-bs-parent="#questionsAccordion">
+                        <div class="accordion-body bg-light">
+                            <!-- 题目内容 -->
+                            <div class="mb-3">
+                                <strong class="text-primary">📖 题目：</strong>
+                                <div class="mt-2 p-2 bg-white rounded border">${escapeHtml(q.content)}</div>
+                            </div>
+                            
+                            ${optionsHtml}
+                            
+                            <!-- 答案对比区域 -->
+                            <div class="row mt-3">
+                                <div class="col-md-6">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-header bg-light py-2">
+                                            <small><strong>📌 正确答案</strong></small>
+                                        </div>
+                                        <div class="card-body py-2">
+                                            <span class="text-success fw-bold">${escapeHtml(q.correct_answer)}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="card border-0 shadow-sm">
+                                        <div class="card-header bg-light py-2">
+                                            <small><strong>✏️ 考生答案 ${statusIcon}</strong></small>
+                                        </div>
+                                        <div class="card-body py-2">
+                                            ${userAnswerDisplay}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- 得分显示 -->
+                            <div class="mt-3 text-end">
+                                <small class="text-muted">
+                                    本题得分: ${q.obtained_score} / ${q.total_score} 分
+                                    ${q.obtained_score === q.total_score && q.total_score > 0 ? '🎉 满分' : (q.obtained_score > 0 ? '👍 部分得分' : '💪 继续加油')}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        contentDiv.innerHTML = html;
+    }
+
+    // 加载培训历史（增强版）
+    async function loadTrainingHistory(userId) {
+        const res = await fetch(`/api/admin/users/${userId}/training_history`);
+        const data = await res.json();
+        const tbody = document.getElementById('trainingHistoryBody');
+        
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center">无培训记录<\/td><\/tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.map(t => `
+            <tr>
+                <td>${escapeHtml(t.training_name)}<\/td>
+                <td>${formatDate(t.sign_time)}<\/td>
+                <td>
+                    ${t.signature_url ? 
+                        `<img src="${t.signature_url}" style="max-height: 40px; max-width: 100px; cursor: pointer;" class="view-signature" data-signature-url="${t.signature_url}" title="点击查看大图">` : 
+                        '<span class="text-muted">无签名</span>'}
+                <\/td>
+                <td>
+                    ${t.signature_url ? `<button class="btn btn-sm btn-outline-info view-signature-btn" data-signature-url="${t.signature_url}">查看签名</button>` : ''}
+                <\/td>
+            </tr>
+        `).join('');
+        
+        // 绑定签名查看事件
+        document.querySelectorAll('.view-signature-btn, .view-signature').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const url = btn.dataset.signatureUrl || btn.getAttribute('data-signature-url');
+                if (url) {
+                    document.getElementById('signatureImage').src = url;
+                    new bootstrap.Modal(document.getElementById('signatureModal')).show();
+                }
+            });
+        });
+    }
+    
+    // 加载访谈历史（增强版）
+    async function loadInterviewHistory(userId) {
+        const res = await fetch(`/api/admin/users/${userId}/interview_history`);
+        const data = await res.json();
+        const tbody = document.getElementById('interviewHistoryBody');
+        
+        if (!data.length) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center">无访谈记录<\/td><\/tr>';
+            return;
+        }
+        
+        tbody.innerHTML = data.map(i => `
+            <tr>
+                <td>${escapeHtml(i.interview_title)}<\/td>
+                <td>${i.total_questions}<\/td>
+                <td><span class="badge ${i.correct_count === i.total_questions ? 'bg-success' : 'bg-warning'}">${i.correct_count}<\/span><\/td>
+                <td>${formatDate(i.submitted_at)}<\/td>
+                <td>
+                    <button class="btn btn-sm btn-outline-info view-interview-answers" 
+                        data-interview-id="${i.interview_id}" 
+                        data-user-id="${userId}"
+                        data-user-name="${escapeHtml(i.interview_title)}">
+                        答题详情
+                    </button>
+                <\/td>
+            </tr>
+        `).join('');
+        
+        // 绑定访谈答题详情查看事件
+        document.querySelectorAll('.view-interview-answers').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const interviewId = btn.dataset.interviewId;
+                const userId = btn.dataset.userId;
+                const userName = btn.dataset.userName;
+                await showInterviewAnswers(interviewId, userId, userName);
+            });
+        });
+    }
+
+    // 查看访谈答题详情
+    async function showInterviewAnswers(interviewId, userId, userName) {
+        try {
+            const res = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/answers`);
+            const data = await res.json();
+            
+            if (!data.answers || data.answers.length === 0) {
+                showToast('暂无答题记录', 'warning');
+                return;
+            }
+            
+            document.getElementById('interviewAnswersUserName').innerText = userName;
+            
+            let html = '<div class="list-group">';
+            data.answers.forEach((item, index) => {
+                const questionNum = index + 1;
+                const statusIcon = item.is_correct ? '✅' : '❌';
+                const statusColor = item.is_correct ? 'text-success' : 'text-danger';
+                
+                let optionsHtml = '';
+                const typeBadge = item.question_type === 'multi' ? '<span class="badge bg-warning ms-2">多选</span>' :
+                                item.question_type === 'judge' ? '<span class="badge bg-info ms-2">判断</span>' :
+                                '<span class="badge bg-primary ms-2">单选</span>';
+                
+                if (item.question_type !== 'judge' && item.options && typeof item.options === 'object') {
+                    const opts = item.options;
+                    const sortedKeys = Object.keys(opts).filter(k => opts[k] && opts[k].toString().trim());
+                    if (sortedKeys.length) {
+                        optionsHtml = '<ul class="mt-2 mb-0">' + sortedKeys.map(k => `<li>${k}. ${opts[k]}</li>`).join('') + '</ul>';
+                    }
+                } else if (item.question_type === 'judge') {
+                    optionsHtml = '<span class="text-muted">正确 True | 错误 False</span>';
+                }
+                
+                html += `
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <strong>${questionNum}. ${item.question_content} ${typeBadge}</strong>
+                                ${optionsHtml}
+                                <div class="mt-2">
+                                    <span class="text-muted">考生答案：</span>
+                                    <strong>${item.user_answer || '未作答'}</strong>
+                                    <span class="ms-3 ${statusColor}">${statusIcon}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            document.getElementById('interviewAnswersContent').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('interviewAnswersModal')).show();
+            
+        } catch (e) {
+            console.error('加载访谈详情失败:', e);
+            showToast('加载失败', 'error');
+        }
+    }
+    // 复职操作
+    async function rehireUser(userId) {
+        if (!confirm('确定要将该用户恢复为在职状态吗？')) return;
+        
+        const res = await fetch(`/api/admin/users/${userId}/rehire`, { method: 'POST' });
+        const result = await res.json();
+        
+        if (result.success) {
+            showToast('复职成功', 'success');
+            loadResignedUsers();
+        } else {
+            showToast(result.message || '复职失败', 'error');
+        }
+    }
+    
+    function formatDate(iso) {
+        if (!iso) return '-';
+        return new Date(iso).toLocaleString();
+    }
+    
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]);
+    }
+    
+    function renderPagination(current, totalPages) {
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                loadResignedUsers();
+            });
+        });
+    }
+    
+    document.getElementById('searchBtn')?.addEventListener('click', () => {
+        currentPage = 1;
+        loadResignedUsers();
+    });
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        loadResignedUsers();
+    });
+</script>
+{% endblock %}

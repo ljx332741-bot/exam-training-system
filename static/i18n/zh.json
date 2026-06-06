@@ -606,7 +606,7 @@
   "partner_yes": "是",
   "wh_type": "库房类型",
   "wh_id": "库房编码",
-  "wh_name_en": "库房名称(EN)",
+  "wh_name_en": "库房名称",
   "user_status": "用户状态",
   "is_partner": "服务商?",
   "imported": "已添加",
@@ -757,5 +757,15 @@
 "jsonify_selected_candidate_unassigned_removed": "所选考生未分配或已移除",
 "batch_force_interview": "批量强制访谈",
 "unfinished_expired": "已逾期",
-"interview_status": "访谈状态"
+"interview_status": "访谈状态",
+"training_attendance_status": "培训签到状态",
+    "not_activated": "未激活",
+    "active_employee": "在职",
+    "resigned": "已离职",
+    "rehired": "已复职",
+    "employment_status": "工作状态",
+        "resign": "离职",
+    "rehire": "复职",
+    "confirm_resign": "确定要将用户 \"{name}\" 标记为离职吗？",
+    "confirm_rehire": "确定要将用户 \"{name}\" 恢复为在职状态吗？"
 }

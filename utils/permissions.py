@@ -116,47 +116,6 @@ def set_admin_allowed_countries(user_id, countries):
 
 
 # ==================== 用户权限检查 ====================
-'''
-def can_view_user(target_user):
-    """检查当前用户是否可以查看目标用户"""
-    current_role = session.get('role')
-    current_user_id = session.get('user_id')
-    dev_id = os.environ.get('DEVELOPER_USER_ID')
-    
-    # 开发者可以查看所有用户
-    if dev_id and current_user_id == dev_id:
-        return True
-    
-    # 不能查看受保护账号（除非是本人）
-    if target_user.get('is_protected') and target_user.get('id') != current_user_id:
-        return False
-    
-    # 非超管不能查看超管和开发者
-    if current_role != 'super_admin':
-        if target_user.get('role') in ('super_admin', 'developer'):
-            return False
-    
-    # 如果是自己，总是可以查看
-    if target_user.get('id') == current_user_id:
-        return True
-    
-    # 管理员权限范围检查
-    if current_role == 'admin':
-        allowed_countries = get_allowed_countries()
-        if allowed_countries:
-            user_country = target_user.get('country')
-            if user_country:
-                if user_country not in allowed_countries:
-                    return False
-            else:
-                # 无国家用户：只有创建者可以查看
-                if target_user.get('created_by') != current_user_id:
-                    return False
-    
-    return True
-'''
-
-# utils/permissions.py - 修复 can_view_user
 
 def can_view_user(target_user):
     """检查当前用户是否可以查看目标用户"""
@@ -337,6 +296,32 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
     
     return filtered_users
 
+def is_active_user(user):
+    """
+    判断用户是否处于活跃状态（未离职）
+    返回: True=活跃用户, False=已离职
+    """
+    if not user:
+        return False
+    # 检查 is_resign 字段
+    is_resign = user.get('is_resign', False)
+    if isinstance(is_resign, str):
+        is_resign = is_resign.upper() == 'Y' or is_resign.lower() == 'true'
+    return not is_resign
+
+
+def filter_active_users(users):
+    """过滤出活跃用户（未离职）"""
+    return [u for u in users if is_active_user(u)]
+
+
+def exclude_resigned_users(query, table_alias='users'):
+    """
+    为 Supabase 查询添加离职过滤条件
+    注意：由于 Supabase 查询限制，此函数主要用于提示，实际过滤建议在 Python 层进行
+    """
+    # Supabase 的布尔字段过滤
+    return query.eq('is_resign', False)
 
 # ==================== 国家过滤（Supabase 查询）====================
 def apply_country_filter(query, table_alias='country'):

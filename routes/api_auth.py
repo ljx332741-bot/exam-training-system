@@ -35,6 +35,7 @@ def api_countries():
     res = db.table("countries").select("code, name_zh, name_en").execute()
     return jsonify(res.data)
 
+'''
 @auth_bp.route('/profile', methods=['GET', 'POST'])
 @login_required
 def profile():
@@ -156,6 +157,154 @@ def profile():
             user['admin_countries_display_zh'] = '无限制'
             user['admin_countries_display_en'] = 'Unrestricted'
             user['admin_countries_display'] = '无限制'
+
+    return render_template('auth/profile.html', user=user)
+'''
+
+@auth_bp.route('/profile', methods=['GET', 'POST'])
+@login_required
+def profile():
+    db = get_supabase()
+    user_id = session['user_id']
+    
+    # ✅ 判断是否为 AJAX 请求
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+    
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'update_info':
+            # 更新基本信息
+            birthday = request.form.get('birthday', '')
+            update_data = {
+                'name_en': request.form.get('name_en', ''),
+                'company': request.form.get('company', ''),
+                'department': request.form.get('department', ''),
+                'employee_id': request.form.get('employee_id', ''),
+                'phone': request.form.get('phone', ''),
+                'birthday': birthday if birthday else None
+            }
+            
+            try:
+                db.table('users').update(update_data).eq('id', user_id).execute()
+                
+                if is_ajax:
+                    return jsonify({'success': True, 'message': '个人信息已更新'})
+                flash({'msg': 'profile_updated', 'params': []}, 'success')
+                return redirect(url_for('auth.profile'))
+            except Exception as e:
+                if is_ajax:
+                    return jsonify({'success': False, 'message': str(e)}), 500
+                flash({'msg': 'update_failed', 'params': []}, 'danger')
+                return redirect(url_for('auth.profile'))
+
+        elif action == 'change_password':
+            old_pwd = request.form.get('old_password')
+            new_pwd = request.form.get('new_password')
+            confirm_pwd = request.form.get('confirm_password')
+            
+            # 验证
+            if new_pwd != confirm_pwd:
+                if is_ajax:
+                    return jsonify({'success': False, 'message': '两次输入的新密码不一致'}), 400
+                flash({'msg': 'password_mismatch', 'params': []}, 'danger')
+                return redirect(url_for('auth.profile'))
+            
+            if len(new_pwd) < 6:
+                if is_ajax:
+                    return jsonify({'success': False, 'message': '密码长度至少6位'}), 400
+                flash({'msg': 'password_too_short', 'params': []}, 'danger')
+                return redirect(url_for('auth.profile'))
+            
+            # 验证原密码
+            user_res = db.table('users').select('password_hash').eq('id', user_id).execute()
+            if not user_res.data or not auth.check_password(old_pwd, user_res.data[0]['password_hash']):
+                if is_ajax:
+                    return jsonify({'success': False, 'message': '原密码错误'}), 400
+                flash({'msg': 'wrong_password', 'params': []}, 'danger')
+                return redirect(url_for('auth.profile'))
+            
+            # 更新密码
+            new_hash = auth.hash_password(new_pwd)
+            db.table('users').update({'password_hash': new_hash}).eq('id', user_id).execute()
+            
+            if is_ajax:
+                return jsonify({'success': True, 'message': '密码修改成功，请重新登录'})
+            flash({'msg': 'password_changed', 'params': []}, 'success')
+            session.clear()
+            return redirect(url_for('auth.login'))
+        
+        return redirect(url_for('auth.profile'))
+
+    # GET 请求 - 渲染页面
+    user_res = db.table('users').select('*').eq('id', user_id).single().execute()
+    if not user_res.data:
+        flash("用户不存在", "danger")
+        return redirect(url_for('dashboard'))
+    
+    user = user_res.data
+    
+    # ========== 处理国家显示（中英文） ==========
+    if user.get('country'):
+        try:
+            c_res = db.table("countries").select("name_zh, name_en").eq("code", user['country']).maybe_single().execute()
+            if c_res and c_res.data:
+                user['country_display_zh'] = c_res.data.get('name_zh')
+                user['country_display_en'] = c_res.data.get('name_en')
+                user['country_display'] = user['country_display_zh']
+            else:
+                user['country_display_zh'] = user['country']
+                user['country_display_en'] = user['country']
+                user['country_display'] = user['country']
+        except Exception as e:
+            logger.warning(f"获取国家名称失败: {e}")
+            user['country_display_zh'] = user['country']
+            user['country_display_en'] = user['country']
+            user['country_display'] = user['country']
+    else:
+        user['country_display_zh'] = '未设置'
+        user['country_display_en'] = 'Not Set'
+        user['country_display'] = '未设置'
+    
+    # ========== 处理权限范围显示（中英文） ==========
+    admin_countries = user.get('admin_countries')
+    if admin_countries:
+        try:
+            if isinstance(admin_countries, str):
+                country_codes = json.loads(admin_countries)
+            else:
+                country_codes = admin_countries
+            
+            if country_codes and len(country_codes) > 0:
+                # 获取国家名称映射
+                countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+                country_map = {c['code']: c for c in (countries_res.data or [])}
+                
+                names_zh = []
+                names_en = []
+                for code in country_codes:
+                    if code in country_map:
+                        names_zh.append(country_map[code].get('name_zh', code))
+                        names_en.append(country_map[code].get('name_en', code))
+                    else:
+                        names_zh.append(code)
+                        names_en.append(code)
+                
+                user['admin_countries_display_zh'] = ', '.join(names_zh) if names_zh else '无限制'
+                user['admin_countries_display_en'] = ', '.join(names_en) if names_en else 'Unrestricted'
+                user['admin_countries_display'] = user['admin_countries_display_zh']
+            else:
+                user['admin_countries_display_zh'] = '无限制'
+                user['admin_countries_display_en'] = 'Unrestricted'
+                user['admin_countries_display'] = '无限制'
+        except:
+            user['admin_countries_display_zh'] = '无限制'
+            user['admin_countries_display_en'] = 'Unrestricted'
+            user['admin_countries_display'] = '无限制'
+    else:
+        user['admin_countries_display_zh'] = '无限制'
+        user['admin_countries_display_en'] = 'Unrestricted'
+        user['admin_countries_display'] = '无限制'
 
     return render_template('auth/profile.html', user=user)
 

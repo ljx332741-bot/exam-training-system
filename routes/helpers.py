@@ -341,3 +341,9 @@ def can_access_exam(exam, allowed_countries=None):
 def filter_exams_by_permission(exams, allowed_countries=None):
     """根据权限过滤考试列表"""
     return [exam for exam in exams if can_access_exam(exam, allowed_countries)]
+
+def is_user_resigned(user_id):
+    """检查用户是否已离职"""
+    db = get_supabase()
+    res = db.table("users").select("is_resign").eq("id", user_id).maybe_single().execute()
+    return res.data and res.data.get('is_resign', False)

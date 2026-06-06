@@ -147,9 +147,22 @@ def api_admin_trainings():
 
         # 8. 补充签到人数和动态状态
         for t in paginated:
-            signed_count = db.table("training_attendances").select("id", count="exact").eq("training_id", t['id']).execute().count or 0
-            t['signed_count'] = signed_count
-            t['dynamic_status'] = get_training_status(t)
+            # ✅ 修改：只统计在职人员的签到
+            signed_count = db.table("training_attendances") \
+                .select("id, user_id", count="exact") \
+                .eq("training_id", t['id']) \
+                .execute()
+            
+            # 获取签到用户的ID列表
+            signed_user_ids = [s['user_id'] for s in (signed_count.data or [])]
+            
+            # ✅ 只统计在职人员的签到
+            if signed_user_ids:
+                active_users = db.table("users").select("id").in_("id", signed_user_ids).eq("is_resign", False).execute()
+                active_user_ids = [u['id'] for u in (active_users.data or [])]
+                t['signed_count'] = len(active_user_ids)
+            else:
+                t['signed_count'] = 0
             
             # 检查是否有多个国家的模板（用于前端禁用表头录入按钮）
             if not t.get('country'):
@@ -403,12 +416,15 @@ def api_training_attendance(training_id):
     
     # 签到记录查询
     att_res = db.table("training_attendances") \
-        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company)") \
+        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company, is_resign)") \
         .eq("training_id", training_id) \
         .execute()
 
     att_list = att_res.data or []
- 
+
+    # ✅ 过滤掉离职人员的签到记录
+    att_list = [rec for rec in att_list if not rec.get('users', {}).get('is_resign', False)]
+    
     # ✅ 按国家权限过滤签到记录（基于用户的国家）
     if allowed_countries is not None:
         if not allowed_countries:
@@ -798,7 +814,7 @@ def api_training_users_with_status():
     training_countries = list(set([t.get('country') for t in trainings if t.get('country')]))
     
     # 3. 只获取培训国家范围内的用户
-    users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered")
+    users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
     
     if training_countries:
         users_query = users_query.in_("country", training_countries)
@@ -838,18 +854,18 @@ def api_training_users_with_status():
             "signature_url": att.get('signature_url', '')
         }
     
-    # 5. 构建返回数据（✅ 关键：只显示培训国家对应的学员）
+    # 5. 构建返回数据（关键：只显示培训国家对应的学员）
     result = []
     for training in trainings:
         training_id = training['id']
         training_name = training.get('name', '')
         training_country = training.get('country', '')
         
-        # ✅ 只遍历与该培训国家匹配的用户
+        # 只遍历与该培训国家匹配的用户
         for user in users:
             user_country = user.get('country', '')
             
-            # ✅ 关键过滤：用户国家必须与培训国家一致
+            # 用户国家必须与培训国家一致
             if user_country != training_country:
                 continue
             

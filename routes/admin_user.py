@@ -43,7 +43,12 @@ def api_admin_user_detail(user_id):
         if not res or not hasattr(res, 'data') or not res.data:
             return jsonify({"error": "用户不存在"}), 404
         
-        return jsonify(res.data)
+        user_data = res.data
+        # ✅ 确保离职状态字段存在
+        user_data['is_resign'] = user_data.get('is_resign', False)
+        user_data['is_rehire'] = user_data.get('is_rehire', False)
+        
+        return jsonify(user_data)
     except Exception as e:
         # ✅ 捕获可能的 204 异常
         error_msg = str(e)
@@ -87,6 +92,9 @@ def api_admin_users():
     # 获取所有数据（后续内存过滤）
     all_res = query.execute()
     all_users = all_res.data or []
+
+    # ✅ 新增：是否排除离职人员（默认排除）
+    exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
     
     # ✅ 内存过滤（支持模糊匹配）
     filtered = []
@@ -99,7 +107,7 @@ def api_admin_users():
             emp_id = (user.get('employee_id') or '').lower()
             if search_lower not in name and search_lower not in email and search_lower not in emp_id:
                 continue
-        
+
         # 国家模糊匹配（支持中文、英文、代码）
         if country:
             country_lower = country.lower()
@@ -132,6 +140,11 @@ def api_admin_users():
                 continue
         
         filtered.append(user)
+
+    # ✅ 在循环结束后，统一进行离职过滤
+    if exclude_resigned:
+        filtered = [u for u in filtered if not u.get('is_resign', False)]
+        logger.info(f"排除离职人员后剩余 {len(filtered)} 人")
     
     # 权限过滤
     filtered_users = filter_users_by_permission(filtered)
@@ -144,7 +157,16 @@ def api_admin_users():
     start = (page - 1) * per_page
     end = start + per_page
     paginated = filtered_users[start:end]
-    
+
+    # ✅ 确保离职状态字段存在（可选，因为数据库已返回）
+    for user in paginated:
+        # 确保布尔值转换为 Python bool 类型
+        if 'is_resign' in user:
+            user['is_resign'] = user.get('is_resign', False)
+        if 'is_rehire' in user:
+            user['is_rehire'] = user.get('is_rehire', False)
+        # 日期字段保持原样
+
     return jsonify({
         "data": paginated,
         "total": total,
@@ -627,9 +649,29 @@ def api_admin_edit_user(user_id):
     update_data = {}
     
     # 基础字段（所有角色可修改自己）
-    allowed_fields = ['name_en', 'company', 'department', 'employee_id', 'birthday', 
-                      'country', 'phone', 'wh_type', 'wh_id', 'wh_name_en', 'user_status', 'is_partner']
-    
+    allowed_fields = [
+        'name_en', 'company', 'department', 
+        'employee_id', 'birthday', 'country', 
+        'phone', 'wh_type', 'wh_id', 
+        'wh_name_en', 'user_status', 'is_partner',
+        'is_resign', 'resigned_at', 'is_rehire', 'rehire_at'  # ✅ 新增
+        ]
+
+    # 处理离职状态的特殊逻辑
+    if 'is_resign' in data:
+        is_resign_val = data['is_resign']
+        if isinstance(is_resign_val, str):
+            update_data['is_resign'] = is_resign_val.upper() == 'Y' or is_resign_val.lower() == 'true'
+        else:
+            update_data['is_resign'] = bool(is_resign_val)
+        
+        # 如果设置为离职，自动设置离职时间
+        if update_data['is_resign'] and not data.get('resigned_at'):
+            update_data['resigned_at'] = datetime.now(timezone.utc).isoformat()
+        elif not update_data['is_resign']:
+            # 如果设置为在职，清除离职时间（可选）
+            update_data['resigned_at'] = None
+
     # 角色和权限范围字段（需要更高权限）
     if 'role' in data:
         new_role = data['role']
@@ -1174,3 +1216,405 @@ def api_admin_users_stats():
     except Exception as e:
         logger.error(f"获取用户统计失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_user_bp.route('/admin/users/resigned')
+@login_required
+@admin_required
+def resigned_users_page():
+    """离职人员管理页面（仅超管/开发者可见）"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        flash("权限不足", "danger")
+        return redirect(url_for('admin_dashboard'))
+    return render_template('admin/resigned_users.html')
+
+@admin_user_bp.route('/api/admin/users/<user_id>/resign', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_resign_user(user_id):
+    """标记用户为离职"""
+    db = get_supabase()
+    operator_id = session['user_id']
+    
+    # 检查用户是否存在
+    user_res = db.table("users").select("id, user_status").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+    
+    user = user_res.data
+    
+    # 只有已注册用户才能标记离职
+    if user.get('user_status') != 'registered':
+        return jsonify({"success": False, "message": "只有已注册用户才能标记离职"}), 400
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    db.table("users").update({
+        "is_resign": True,
+        "resigned_at": now,
+        "is_rehire": False,
+        "rehire_at": None
+    }).eq("id", user_id).execute()
+    
+    logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
+    return jsonify({"success": True, "message": "用户已标记为离职"})
+
+
+@admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_rehire_user(user_id):
+    """恢复用户为在职状态（复职）"""
+    db = get_supabase()
+    operator_id = session['user_id']
+    
+    # 检查用户是否存在
+    user_res = db.table("users").select("id, user_status").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+    
+    user = user_res.data
+    
+    # 只有已注册用户才能复职
+    if user.get('user_status') != 'registered':
+        return jsonify({"success": False, "message": "只有已注册用户才能复职"}), 400
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    db.table("users").update({
+        "is_resign": False,
+        "is_rehire": True,
+        "rehire_at": now
+        # 保留 resigned_at 用于审计
+    }).eq("id", user_id).execute()
+    
+    logger.info(f"用户 {user_id} 已复职，操作人: {operator_id}")
+    return jsonify({"success": True, "message": "用户已恢复在职状态"})
+
+# routes/admin_user.py - 添加离职人员管理接口
+
+@admin_user_bp.route('/api/admin/users/resigned')
+@login_required
+@admin_required
+def api_admin_resigned_users():
+    """获取离职人员列表（仅超管/开发者可见）"""
+    # 权限检查
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"data": [], "total": 0, "message": "权限不足"}), 403
+    
+    db = get_supabase()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '').strip()
+    country = request.args.get('country', '').strip()
+    status = request.args.get('status', '')  # resigned / rehired
+    
+    # 查询离职人员（包括已复职的）
+    query = db.table("users").select("*").is_("deleted_at", "null").eq("is_resign", True)
+    
+    if search:
+        query = query.or_(f"name_en.ilike.%{search}%,email.ilike.%{search}%")
+    if country:
+        query = query.eq("country", country)
+    if status == 'rehired':
+        query = query.eq("is_rehire", True)
+    elif status == 'resigned':
+        query = query.eq("is_rehire", False)
+    
+    # 分页
+    total_res = query.execute()
+    total = len(total_res.data or [])
+    
+    start = (page - 1) * per_page
+    end = start + per_page - 1
+    res = query.range(start, end).order("resigned_at", desc=True).execute()
+    
+    # 获取创建人姓名
+    users = res.data or []
+    creator_ids = [u.get('created_by') for u in users if u.get('created_by')]
+    creator_names = {}
+    if creator_ids:
+        creator_res = db.table("users").select("id, name_en").in_("id", creator_ids).execute()
+        for c in (creator_res.data or []):
+            creator_names[c['id']] = c.get('name_en', '')
+    
+    for u in users:
+        u['created_by_name'] = creator_names.get(u.get('created_by'), '')
+    
+    return jsonify({
+        "data": users,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
+
+
+@admin_user_bp.route('/api/admin/users/<user_id>/resigned_detail')
+@login_required
+@admin_required
+def api_admin_resigned_user_detail(user_id):
+    """获取离职人员详细信息（仅超管/开发者可见）"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"error": "权限不足"}), 403
+    
+    db = get_supabase()
+    res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    if not res.data:
+        return jsonify({"error": "用户不存在"}), 404
+    
+    user = res.data
+    
+    # 获取创建人姓名
+    if user.get('created_by'):
+        creator_res = db.table("users").select("name_en").eq("id", user['created_by']).maybe_single().execute()
+        if creator_res.data:
+            user['created_by_name'] = creator_res.data.get('name_en', '')
+    
+    return jsonify(user)
+
+@admin_user_bp.route('/api/admin/users/<user_id>/exam_history')
+@login_required
+@admin_required
+def api_admin_user_exam_history(user_id):
+    """获取用户的考试历史"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify([]), 403
+    
+    db = get_supabase()
+    
+    # ✅ 明确指定外键关系
+    results = db.table("exam_results")\
+        .select("*, exams!fk_exam_results_exam_id(title)")\
+        .eq("user_id", user_id)\
+        .order("created_at", desc=True)\
+        .execute()
+    
+    data = []
+    for r in (results.data or []):
+        exam_data = r.get('exams', {})
+        data.append({
+            "result_id": r.get('id'),  # ✅ 添加 result_id
+            "exam_title": exam_data.get('title', '未知考试'),
+            "total_score": r.get('total_score', 0),
+            "created_at": r.get('created_at'),
+            "submit_method": r.get('submit_method', 'manual')
+        })
+    
+    return jsonify(data)
+
+@admin_user_bp.route('/api/admin/users/<user_id>/training_history')
+@login_required
+@admin_required
+def api_admin_user_training_history(user_id):
+    """获取用户的培训签到历史"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify([]), 403
+    
+    db = get_supabase()
+    
+    # ✅ 修复：明确指定外键关系（使用 !fk_training_attendances_training_id）
+    attendances = db.table("training_attendances")\
+        .select("*, trainings!fk_training_attendances_training_id(name)")\
+        .eq("user_id", user_id)\
+        .order("sign_time", desc=True)\
+        .execute()
+    
+    data = []
+    for a in (attendances.data or []):
+        # 注意：关联的数据在 trainings 字段中
+        training_data = a.get('trainings', {})
+        data.append({
+            "training_name": training_data.get('name', '未知培训'),
+            "sign_time": a.get('sign_time'),
+            "signature_url": a.get('signature_url')
+        })
+    
+    return jsonify(data)
+
+# routes/admin_user.py - 修改 api_admin_user_interview_history
+
+@admin_user_bp.route('/api/admin/users/<user_id>/interview_history')
+@login_required
+@admin_required
+def api_admin_user_interview_history(user_id):
+    """获取用户的访谈历史"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify([]), 403
+    
+    db = get_supabase()
+    
+    # 获取访谈记录（按访谈分组聚合）
+    results = db.table("interview_results")\
+        .select("*, interviews!fk_interview_results_interview_id(id, title)")\
+        .eq("user_id", user_id)\
+        .execute()
+    
+    # 按访谈聚合
+    interview_map = {}
+    for r in (results.data or []):
+        inv_id = r.get('interview_id')
+        interview_data = r.get('interviews', {})
+        inv_title = interview_data.get('title', '未知访谈')
+        
+        if inv_id not in interview_map:
+            interview_map[inv_id] = {
+                "interview_id": inv_id,  # ✅ 确保返回 interview_id
+                "interview_title": inv_title,
+                "total_questions": 0,
+                "correct_count": 0,
+                "submitted_at": None
+            }
+        interview_map[inv_id]["total_questions"] += 1
+        if r.get('is_correct'):
+            interview_map[inv_id]["correct_count"] += 1
+        if r.get('submitted_at') and not interview_map[inv_id]["submitted_at"]:
+            interview_map[inv_id]["submitted_at"] = r.get('submitted_at')
+    
+    return jsonify(list(interview_map.values()))
+
+@admin_user_bp.route('/api/admin/exam/result/<int:result_id>/detail')
+@login_required
+@admin_required
+def api_admin_exam_result_detail(result_id):
+    """获取考试结果详情（JSON格式，用于模态框）"""
+    db = get_supabase()
+    
+    # 1. 获取成绩记录
+    result_res = db.table("exam_results").select("*").eq("id", result_id).maybe_single().execute()
+    if not result_res.data:
+        return jsonify({"success": False, "message": "成绩记录不存在"}), 404
+    
+    result = result_res.data
+    exam_id = result['exam_id']
+    user_id = result['user_id']
+    
+    # 2. 获取用户信息
+    user_res = db.table("users").select("email, name_en").eq("id", user_id).maybe_single().execute()
+    user_info = user_res.data if user_res.data else {"email": "未知", "name_en": "未知"}
+    
+    # 3. 获取考试信息
+    exam_res = db.table("exams").select("title, reviewer").eq("id", exam_id).maybe_single().execute()
+    exam_info = exam_res.data if exam_res.data else {"title": "未知考试", "reviewer": ""}
+    
+    # 4. 获取题目列表
+    questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
+    questions = questions_res.data or []
+    
+    # 5. 解析 JSON 字段
+    answers = result.get('answers', {})
+    if isinstance(answers, str):
+        try:
+            answers = json.loads(answers)
+        except:
+            answers = {}
+    
+    details = result.get('details', {})
+    if isinstance(details, str):
+        try:
+            details = json.loads(details)
+        except:
+            details = {}
+    
+    # 调试日志
+    logger.info(f"考试结果详情 - result_id: {result_id}")
+    logger.info(f"总分: {result.get('total_score', 0)}")
+    
+    # 6. 构建题目详情数组
+    question_details = []
+    total_obtained_score = 0
+    
+    for q in questions:
+        question_id = str(q.get('id'))  # 题目ID，如 "2085"
+        q_num = q.get('num', 0)        # 题目序号，如 1
+        
+        # 解析选项
+        options = q.get('options', {})
+        if isinstance(options, str):
+            try:
+                options = json.loads(options)
+            except:
+                options = {}
+        
+        # ✅ 获取考生答案 - 使用 q_ 前缀的 key
+        user_answer = '未作答'
+        answer_key = f"q_{question_id}"  # 格式如 "q_2085"
+        
+        if answer_key in answers:
+            user_answer = answers[answer_key]
+        # 兼容其他可能的格式
+        elif question_id in answers:
+            user_answer = answers[question_id]
+        elif str(q_num) in answers:
+            user_answer = answers[str(q_num)]
+        
+        # 处理答案格式
+        if user_answer is None or user_answer == '':
+            user_answer = '未作答'
+        
+        # 正确答案
+        correct_answer = q.get('answer', '')
+        
+        # 从 details 中获取得分（使用题目ID）
+        obtained_score = 0
+        total_score = q.get('score', 0)
+        is_correct_from_detail = False
+        
+        if details and question_id in details:
+            q_detail = details[question_id]
+            if isinstance(q_detail, dict):
+                obtained_score = q_detail.get('score', 0)
+                is_correct_from_detail = q_detail.get('correct', False)
+            elif isinstance(q_detail, (int, float)):
+                obtained_score = q_detail
+        
+        # 判断是否正确（用于显示）
+        is_correct = is_correct_from_detail
+        if not is_correct:
+            if q.get('type') == 'multi':
+                # 多选题：比较集合
+                user_set = set(str(user_answer).replace(' ', '').split(',')) if user_answer and user_answer != '未作答' else set()
+                correct_set = set(str(correct_answer).replace(' ', '').split(','))
+                is_correct = user_set == correct_set
+            else:
+                is_correct = str(user_answer).strip().upper() == str(correct_answer).strip().upper()
+        
+        total_obtained_score += obtained_score
+        
+        question_details.append({
+            "num": q_num,
+            "type": q.get('type', 'single'),
+            "content": q.get('content') or q.get('content_en') or q.get('content_cn') or '',
+            "options": options,
+            "correct_answer": correct_answer,
+            "user_answer": user_answer,
+            "is_correct": is_correct,
+            "obtained_score": obtained_score,
+            "total_score": total_score
+        })
+    
+    # 使用数据库中的总分
+    final_total_score = result.get('total_score', total_obtained_score)
+    
+    logger.info(f"计算总分: {total_obtained_score}, 数据库总分: {result.get('total_score', 0)}")
+    if questions:
+        first_q = questions[0]
+        first_answer = question_details[0]['user_answer'] if question_details else 'N/A'
+        logger.info(f"第一题示例: 题目ID={first_q.get('id')}, 序号={first_q.get('num')}, 答案key=q_{first_q.get('id')}, 答案值={first_answer}")
+    
+    # 7. 返回 JSON 数据
+    return jsonify({
+        "success": True,
+        "result_id": result_id,
+        "user": {
+            "name": user_info.get('name_en', '未知'),
+            "email": user_info.get('email', '未知')
+        },
+        "exam": {
+            "title": exam_info.get('title', '未知考试'),
+            "reviewer": exam_info.get('reviewer', '')
+        },
+        "submitted_at": result.get('submitted_at') or result.get('created_at'),
+        "submit_method": result.get('submit_method', 'manual'),
+        "total_score": final_total_score,
+        "questions": question_details
+    })
+

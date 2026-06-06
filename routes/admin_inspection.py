@@ -117,13 +117,22 @@ def api_admin_interviews():
                     inv['status'] = 'draft'
             
             # 统计去重人数（应用国家权限过滤）
+            # ✅ 只保留在职用户
             user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
             user_ids = [r['user_id'] for r in (user_res.data or [])]
+
+            # ✅ 先过滤离职人员
+            if user_ids:
+                active_users = db.table("users").select("id").in_("id", user_ids).eq("is_resign", False).execute()
+                active_user_ids = [u['id'] for u in (active_users.data or [])]
+            else:
+                active_user_ids = []
+
             if allowed is not None:
-                filtered_ids = [uid for uid in user_ids if user_country_map.get(uid) in allowed]
+                filtered_ids = [uid for uid in active_user_ids if user_country_map.get(uid) in allowed]
                 inv['interviewee_count'] = len(set(filtered_ids))
             else:
-                inv['interviewee_count'] = len(set(user_ids))
+                inv['interviewee_count'] = len(set(active_user_ids))
             
             # 附加考试信息
             if inv.get('exam_id'):
@@ -1131,9 +1140,12 @@ def api_interview_details(interview_id):
     user_ids = list(set(r['user_id'] for r in all_data))
     users_map = {}
     if user_ids:
-        users_res = db.table("users").select("id, name_cn, name_en, email, country, wh_id, department").in_("id", user_ids).execute()
+        users_res = db.table("users").select("id, name_cn, name_en, email, country, wh_id, department, is_resign").in_("id", user_ids).eq("is_resign", False).execute()
         for u in (users_res.data or []):
             users_map[u['id']] = u
+
+    # ✅ 过滤掉离职人员的记录
+    all_data = [r for r in all_data if r['user_id'] in users_map]
 
     # 按用户聚合
     user_results = {}
