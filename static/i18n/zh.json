@@ -759,7 +759,7 @@
 "unfinished_expired": "已逾期",
 "interview_status": "访谈状态",
 "training_attendance_status": "培训签到状态",
-    "not_activated": "未激活",
+    "not_activated": "待入职",
     "active_employee": "在职",
     "resigned": "已离职",
     "rehired": "已复职",
@@ -767,5 +767,16 @@
         "resign": "离职",
     "rehire": "复职",
     "confirm_resign": "确定要将用户 \"{name}\" 标记为离职吗？",
-    "confirm_rehire": "确定要将用户 \"{name}\" 恢复为在职状态吗？"
+    "confirm_rehire": "确定要将用户 \"{name}\" 恢复为在职状态吗？",
+"jsonify_resample_success": "重新抽题成功，已删除 {0} 条旧记录，新增 {1} 道题目",
+"jsonify_resample_failed": "重新抽题失败|{0}",
+"jsonify_no_questions_in_exam": "题库无题目，无法重新抽题",
+    "please_select_users_for_force_interview": "请选择要强制访谈的学员",
+    "interview_no_exam": "访谈未关联考试，无法强制访谈",
+    "exam_no_questions": "该考试没有题目，无法强制访谈",
+    "no_permission_for_interview": "无权操作此访谈",
+    "force_interview_complete": "强制访谈完成: 成功 {0} 人，跳过已完成 {1} 人，失败 {2} 人，有效期2小时",
+    "confirm_force_interview": "确定要对选中的 {0} 位学员进行强制访谈吗？\n强制访谈将重新抽题，并设置2小时有效期。",
+    "confirm_force_interview_single": "确定要对该学员进行强制访谈吗？\n强制访谈将重新抽题，并设置2小时有效期。",
+    "force_interviewing": "强制访谈中..."
 }

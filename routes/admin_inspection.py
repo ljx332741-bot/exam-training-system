@@ -1025,7 +1025,7 @@ def api_admin_resample_interview(interview_id, user_id):
     # 获取访谈信息
     interview_res = db.table("interviews").select("exam_id, question_count").eq("id", interview_id).execute()
     if not interview_res.data:
-        return jsonify({"success": False, "message": "访谈不存在"}), 404
+        return jsonify({"success": False, "message": "interview_not_found", "params": []}), 404
     
     interview = interview_res.data[0]
     exam_id = interview['exam_id']
@@ -1034,7 +1034,7 @@ def api_admin_resample_interview(interview_id, user_id):
     # 检查题库
     q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
     if not q_check.data:
-        return jsonify({"success": False, "message": "题库无题目，无法重新抽题"}), 400
+        return jsonify({"success": False, "message": "jsonify_no_questions_in_exam", "params": []}), 400
     
     try:
         # ✅ 1. 先删除该用户在该访谈下的所有旧记录（硬删除）
@@ -1064,10 +1064,19 @@ def api_admin_resample_interview(interview_id, user_id):
         
         logger.info(f"已为用户 {user_id} 插入 {inserted_count} 条新访谈题目")
         
-        return jsonify({"success": True, "message": f"重新抽题成功，已删除 {deleted_count} 条旧记录，新增 {inserted_count} 道题目"})
+        # ✅ 修改：使用翻译键名 + 参数 
+        # return jsonify({"success": True, "message": f"重新抽题成功，已删除 {deleted_count} 条旧记录，新增 {inserted_count} 道题目"})
+        return jsonify({
+            "success": True, 
+            "message": "jsonify_resample_success", "params": [deleted_count, inserted_count]
+        })
+
     except Exception as e:
         logger.error(f"重新抽题失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        return jsonify({
+            "success": False, 
+            "message": "jsonify_resample_failed", "params": [str(e)]
+        }), 500
 
 @admin_inspection_bp.route('/api/admin/interviewee/stats')
 @login_required
@@ -1263,7 +1272,7 @@ def force_resample_interview(interview_id):
     user_ids = data.get('user_ids', [])
     
     if not user_ids:
-        return jsonify({"success": False, "message": "请选择要强制访谈的学员"}), 400
+        return jsonify({"success": False, "message": "please_select_users_for_force_interview", "params": []}), 400
     
     db = get_supabase()
     operator_id = session['user_id']
@@ -1271,7 +1280,7 @@ def force_resample_interview(interview_id):
     # 获取原访谈信息
     interview_res = db.table("interviews").select("*").eq("id", interview_id).execute()
     if not interview_res.data:
-        return jsonify({"success": False, "message": "访谈不存在"}), 404
+        return jsonify({"success": False, "message": "interview_not_found", "params": []}), 404
     
     original_interview = interview_res.data[0]
     exam_id = original_interview.get('exam_id')
@@ -1282,12 +1291,12 @@ def force_resample_interview(interview_id):
     
     # 检查 exam_id 是否存在
     if not exam_id:
-        return jsonify({"success": False, "message": "访谈未关联考试，无法强制访谈"}), 400
+        return jsonify({"success": False, "message": "interview_no_have_related_exam", "params": []}), 400
     
     # 检查题目是否存在
     q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
     if not q_check.data:
-        return jsonify({"success": False, "message": "该考试没有题目，无法强制访谈"}), 400
+        return jsonify({"success": False, "message": "exam_no_have_questions", "params": []}), 400
     
     # 权限检查
     from utils.permissions import get_admin_allowed_countries
@@ -1298,7 +1307,7 @@ def force_resample_interview(interview_id):
             from routes.helpers import parse_exam_countries
             exam_countries = parse_exam_countries(exam_res.data)
             if not any(c in allowed for c in exam_countries):
-                return jsonify({"success": False, "message": "无权操作此访谈"}), 403
+                return jsonify({"success": False, "message": "no_permission_for_interview", "params": []}), 403
     
     success_count = 0
     failed_count = 0
@@ -1397,6 +1406,7 @@ def force_resample_interview(interview_id):
         "success_count": success_count,
         "skipped_count": skipped_count,
         "failed_count": failed_count,
-        "message": f"强制访谈完成: 成功 {success_count} 人，跳过已完成 {skipped_count} 人，失败 {failed_count} 人，有效期2小时",
+        # "message": f"强制访谈完成: 成功 {success_count} 人，跳过已完成 {skipped_count} 人，失败 {failed_count} 人，有效期2小时",
+        "message": "force_interview_complete", "params": [success_count, skipped_count, failed_count],
         "errors": errors[:10]
     })

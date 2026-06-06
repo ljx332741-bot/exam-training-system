@@ -457,7 +457,11 @@
         const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.userId);
         
         if (selectedUserIds.length === 0) {
-            alert(t('select_at_least_one'));
+            if (window.apiAlert) {
+                apiAlert({message: 'select_at_least_one', params: []});
+            } else {
+                alert(t('select_at_least_one'));
+            }
             return;
         }
         
@@ -476,10 +480,21 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message, 'success');
+                // ✅ 使用 apiAlert 显示翻译后的消息
+                if (window.apiAlert) {
+                    apiAlert(result, 'operation_success', 'operation_failed');
+                } else {
+                    // 备用方案：手动格式化翻译
+                    const translatedMsg = t(result.message, ...(result.params || []));
+                    showToast(translatedMsg, 'success');
+                }
                 loadDetails();  // 刷新列表
             } else {
-                showToast(result.message || t('operation_failed'), 'error');
+                if (window.apiAlert) {
+                    apiAlert(result, 'operation_failed');
+                } else {
+                    showToast(t(result.message || 'operation_failed'), 'error');
+                }
             }
         } catch (err) {
             hideLoading();
@@ -512,10 +527,20 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message, 'success');
+                // ✅ 使用 apiAlert 显示翻译后的消息
+                if (window.apiAlert) {
+                    apiAlert(result, 'operation_success', 'operation_failed');
+                } else {
+                    const translatedMsg = t(result.message, ...(result.params || []));
+                    showToast(translatedMsg, 'success');
+                }
                 loadDetails(); // 刷新列表
             } else {
-                showToast(result.message || t('operation_failed'), 'error');
+                if (window.apiAlert) {
+                    apiAlert(result, 'operation_failed');
+                } else {
+                    showToast(t(result.message || 'operation_failed'), 'error');
+                }
             }
         } catch (err) {
             hideLoading();

@@ -761,7 +761,7 @@
 "unfinished_expired": "Expired",
 "interview_status": "status",
 "training_attendance_status": "Training sign in status",
-    "not_activated": "Unactivated",
+    "not_activated": "Prepare",
     "active_employee": "Jobing",
     "resigned": "Resigned",
     "rehired": "Rehired",
@@ -769,5 +769,17 @@
         "resign": "Resign",
     "rehire": "Rehire",
     "confirm_resign": "Confirm to let  \"{name}\" seting resign？",
-    "confirm_rehire": "Cofirm to let \"{name}\" seting rehire？"
+    "confirm_rehire": "Cofirm to let \"{name}\" seting rehire？",
+    "jsonify_resample_success": "Resample successful, {0} old records deleted, {1} new questions added",
+"jsonify_resample_failed": "Resample failed|{0}",
+"jsonify_interview_not_found": "Interview not found",
+"jsonify_no_questions_in_exam": "No questions in the exam, unable to resample",
+"force_interviewing": "Force pushing...",
+    "please_select_users_for_force_interview": "Please select users for force interview",
+    "interview_no_exam": "Interview not associated with any exam, cannot force interview",
+    "exam_no_questions": "No questions in this exam, cannot force interview",
+    "no_permission_for_interview": "No permission to operate this interview",
+    "force_interview_complete": "Force interview completed: {0} success, {1} skipped (already completed), {2} failed, valid for 2 hours",
+    "confirm_force_interview": "Are you sure you want to force interview {0} selected user(s)?\nForce interview will resample questions and set a 2-hour validity period.",
+    "confirm_force_interview_single": "Are you sure you want to force interview this user?\nForce interview will resample questions and set a 2-hour validity period."
 }
