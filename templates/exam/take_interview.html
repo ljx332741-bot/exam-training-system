@@ -99,15 +99,23 @@
                 if (!answers[resultId]) answers[resultId] = input.value;
                 else answers[resultId] += input.value; // 多选拼接
             });
-            
+        
             const res = await fetch(`/api/interview/${interviewId}/submit`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ answers })
             });
             const data = await res.json();
-            
-            alert(data.message || t('t_submit_successfully'));
+ 
+            // ✅ 使用 base.html 中已有的 apiAlert 函数
+            // 它会自动翻译 json.message 和 json.params
+            if (window.apiAlert) {
+                apiAlert(data);  // ✅ 自动翻译并显示
+            } else {
+                // 备用方案
+                const msg = data.message;
+                alert(msg);
+            }
             
             if (data.success) {
                 // ✅ 关键修复：刷新父页面的访谈列表

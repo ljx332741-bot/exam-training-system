@@ -5,7 +5,7 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-person-x"></i> 离职人员管理</h2>
+        <h2><i class="bi bi-person-x"></i> <span data-i18n="resigned_users_management">离职人员管理</span></h2>
         <button class="btn btn-outline-secondary" onclick="history.back();">✖ 关闭</button>
     </div>
 
@@ -15,22 +15,22 @@
             <div class="row g-3">
                 <div class="col-md-3">
                     <input type="text" id="searchInput" class="form-control" 
-                           placeholder="姓名/邮箱" autocomplete="off">
+                        data-i18n-placeholder="placeholder_mail_name" placeholder="姓名/邮箱" autocomplete="off">
                 </div>
                 <div class="col-md-2">
                     <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
-                           placeholder="国家">
+                        data-i18n-placeholder="placeholder_country" placeholder="国家">
                     <datalist id="countryDatalist"></datalist>
                 </div>
                 <div class="col-md-2">
                     <select id="filterStatus" class="form-select">
-                        <option value="">全部状态</option>
-                        <option value="resigned">已离职</option>
-                        <option value="rehired">已复职</option>
+                        <option value="" data-i18n="all_status">全部状态</option>
+                        <option value="resigned" data-i18n="resigned">已离职</option>
+                        <option value="rehired" data-i18n="rehired">已复职</option>
                     </select>
                 </div>
                 <div class="col-md-2">
-                    <button id="searchBtn" class="btn btn-primary w-100">搜索</button>
+                    <button id="searchBtn" class="btn btn-primary w-100" data-i18n="search">搜索</button>
                 </div>
             </div>
         </div>
@@ -43,25 +43,25 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
-                            <th>序号</th>
-                            <th>姓名</th>
-                            <th>邮箱</th>
-                            <th>国家</th>
-                            <th>角色</th>
-                            <th>离职日期</th>
-                            <th>状态</th>
-                            <th>操作</th>
+                            <th><span data-i18n="sequence">序号</span></th>
+                            <th><span data-i18n="name_en">姓名</span></th>
+                            <th><span data-i18n="email">邮箱</span></th>
+                            <th><span data-i18n="country">国家</span></th>
+                            <th><span data-i18n="role">角色</span></th>
+                            <th><span data-i18n="resigned_date">离职日期</span></th>
+                            <th><span data-i18n="status">状态</span></th>
+                            <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="resignedTableBody">
-                        <tr><td colspan="8" class="text-center">加载中...</td></tr>
+                        <tr><td colspan="8" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody><!-- 在表格前添加 -->
                 </table>
             </div>
         </div>
         <div class="card-footer">
             <div class="d-flex justify-content-between align-items-center mb-2">
-                <span>总计：<strong id="totalCount">0</strong> 人</span>
+                <span><span data-i18n="total_question">共</span>：<strong id="totalCount">0</strong> 人</span>
             </div>
             <nav><ul class="pagination mb-0 justify-content-center" id="pagination"></ul></nav>
         </div>
@@ -73,23 +73,23 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">离职人员详情 - <span id="detailUserName"></span></h5>
+                <h5 class="modal-title"><span data-i18n="resigned_user_details">离职人员详情</span> - <span id="detailUserName"></span></h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <!-- Tab 切换 -->
                 <ul class="nav nav-tabs mb-3" id="detailTab" role="tablist">
                     <li class="nav-item">
-                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#basicInfo">基本信息</button>
+                        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#basicInfo"><span data-i18n="basic_info">基本信息</span></button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#examHistory">考试记录</button>
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#examHistory"><span data-i18n="exam_records">考试记录</span></button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#trainingHistory">培训签到</button>
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#trainingHistory"><span data-i18n="training_signin">培训签到</span></button>
                     </li>
                     <li class="nav-item">
-                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#interviewHistory">访谈记录</button>
+                        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#interviewHistory"><span data-i18n="interview_records">访谈记录</span></button>
                     </li>
                 </ul>
                 
@@ -101,11 +101,11 @@
                         <div class="table-responsive">
                             <table class="table table-sm">
                                 <thead>
-                                    <th>考试名称</th>
-                                    <th>得分</th>
-                                    <th>提交时间</th>
-                                    <th>提交方式</th>
-                                    <th>操作</th>
+                                    <th><span data-i18n="exam_name">考试名称</span></th>
+                                    <th><span data-i18n="candidate_score">得分</span></th>
+                                    <th><span data-i18n="submit_at">提交时间</span></th>
+                                    <th><span data-i18n="submit_method">提交方式</span></th>
+                                    <th><span data-i18n="actions">操作</span></th>
                                 </thead>
                                 <tbody id="examHistoryBody"></tbody>
                             </table>
