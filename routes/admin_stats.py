@@ -386,8 +386,6 @@ def get_questions_stats(allowed_countries, filtered_exams):
     logger.info(f"题库统计: 题目数={questions_count}")
     return questions_count
 
-# routes/admin_stats.py - 增强版 get_exams_for_display
-
 def get_exams_for_display(filtered_exams, allowed_countries, allowed_user_ids):
     """
     获取用于前端显示的考试列表（表格和下拉框）

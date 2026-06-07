@@ -701,7 +701,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                     meta.get("language", ""),
                     meta.get("lecturer", ""),
                     training_date,
-                    meta.get("duration", ""),
+                    meta.get("duration", "2"),
                     partner_str,
                     partner_count,
                     len(g['trainees']),
@@ -750,7 +750,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                     meta.get("language", ""),
                     meta.get("lecturer", ""),
                     training_date,
-                    meta.get("duration", ""),
+                    meta.get("duration", "2"),
                     partner_str,
                     partner_count,
                     len(grp['trainees']),
@@ -791,6 +791,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         ("考试语种\nLanguage", "Language"),
         ("成绩\nScore", "Score"),
         ("阅卷人(姓名+ID)\nGrading Personnel", "Grading Personnel"),
+        ("考试名称\nExam Name", "Exam Name"),  # ✅ 新增：考试名称列
     ]
     dynamic_col_count = max_questions
     remark_col = len(headers2_fixed) + dynamic_col_count + 1
@@ -912,7 +913,8 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 result.get('created_at', '')[:10],
                 exam.get('language', 'English'),
                 result.get('total_score', 0),
-                result.get('custom1', ''),
+                exam.get('reviewer', ''),
+                exam.get('title', ''),                 # ✅ 新增：考试名称（放在阅卷人后面）
             ] + answer_status + [result.get('custom5', '')]
 
             for col_idx, value in enumerate(row_data, 1):
@@ -936,6 +938,10 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         else:
             ws2.column_dimensions[get_column_letter(col)].width = 20
 
+    # ✅ 可选：为考试名称列设置更合适的宽度（第11列，索引11）
+    # 如果 headers2_fixed 现在是11列（原来10列+新增1列）
+    if len(headers2_fixed) == 11:
+        ws2.column_dimensions[get_column_letter(11)].width = 30
     # ========== 工作表3：访谈检查结果 ==========
     if exams:
         ws3 = wb.create_sheet(title=clean_title("访谈检查结果 Interview Results"))
@@ -955,8 +961,9 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 ("检查人员\nInspector", "Inspector"),
                 ("访谈问题数量\nTotal Questions", "Total Questions"),
                 ("答对问题数量\nCorrect Answers", "Correct Answers"),
-                ("备注\nRemark", "Remark"),
                 ("反馈人\nFeedback Person", "Feedback Person"),
+                ("访谈名称\nInterview Title", "Interview Title"),
+                ("备注\nRemark", "Remark"),
             ]
             for col, (cn_header, en_header) in enumerate(headers3, 1):
                 cell = ws3.cell(row=1, column=col, value=cn_header)
@@ -985,7 +992,13 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 for row in all_rows:
                     uid = row['user_id']
                     if uid not in user_stats:
-                        user_stats[uid] = {'total': 0, 'correct': 0, 'submitted_at': None, 'feedback': ''}
+                        user_stats[uid] = {
+                            'total': 0, 
+                            'correct': 0, 
+                            'submitted_at': None, 
+                            'feedback': '',
+                            'interview_title': interview.get('title', '')
+                        }
                     user_stats[uid]['total'] += 1
                     if row.get('is_correct'):
                         user_stats[uid]['correct'] += 1
@@ -1004,12 +1017,13 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                         user.get('wh_id', ''),
                         user.get('wh_name_en') or user.get('name_cn') or user.get('name_en', ''),
                         user.get('name_cn') or user.get('name_en', ''),
-                        stats['submitted_at'][:19] if stats['submitted_at'] else '',
+                        stats['submitted_at'][:10] if stats['submitted_at'] else '',
                         reviewer,
                         stats['total'],
                         stats['correct'],
-                        stats['feedback'],
-                        user.get('department', ''),
+                        stats.get('feedback', ''),
+                        stats.get('interview_title', ''),
+                        stats.get('department', ''),
                     ]
                     for col_idx, value in enumerate(row_data, 1):
                         cell = ws3.cell(row=row_idx3, column=col_idx, value=value)
@@ -1024,5 +1038,9 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
-    filename = f"培训考试综合报告_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    if lang == 'en':
+        filename = f"Training_Exam_Comprehensive_Report_{timestamp}.xlsx"
+    else:
+        filename = f"培训考试综合报告_{timestamp}.xlsx"
     return buffer, filename

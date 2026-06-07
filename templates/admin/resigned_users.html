@@ -115,10 +115,10 @@
                         <div class="table-responsive">
                             <table class="table table-sm">
                                 <thead>
-                                    <th>培训名称</th>
-                                    <th>签到时间</th>
-                                    <th>签名</th>
-                                    <th>操作</th>
+                                    <th><span data-i18n="training_name">培训名称</span></th>
+                                    <th><span data-i18n="sign_time">签到时间</span></th>
+                                    <th><span data-i18n="signature">签名</span></th>
+                                    <th><span data-i18n="actions">操作</span></th>
                                 </thead>
                                 <tbody id="trainingHistoryBody"></tbody>
                             </table>
@@ -128,11 +128,11 @@
                         <div class="table-responsive">
                             <table class="table table-sm">
                                 <thead>
-                                    <th>访谈名称</th>
-                                    <th>答题数量</th>
-                                    <th>正确数量</th>
-                                    <th>提交时间</th>
-                                    <th>操作</th>
+                                    <th><span data-i18n="interview_title">访谈名称</span></th>
+                                    <th><span data-i18n="question_qty">答题数量</span></th>
+                                    <th><span data-i18n="correct_qty">正确数量</span></th>
+                                    <th><span data-i18n="submitted_at">提交时间</span></th>
+                                    <th><span data-i18n="actions">操作</span></th>
                                 </thead>
                                 <tbody id="interviewHistoryBody"></tbody>
                             </table>
@@ -141,7 +141,7 @@
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">关闭</button>
             </div>
         </div>
     </div>
@@ -152,7 +152,7 @@
     <div class="modal-dialog modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">签名图片</h5>
+                <h5 class="modal-title"><span data-i18n="signed_img">签名图片</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center">
@@ -213,14 +213,14 @@
     function renderTable(users) {
         const tbody = document.getElementById('resignedTableBody');
         if (!users.length) {
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center">暂无数据<\/td><\/tr>';
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center">${t('t_no_data')}</td></tr>`;
             return;
         }
         
         tbody.innerHTML = users.map((u, idx) => {
             const statusBadge = u.is_rehire ? 
-                '<span class="badge bg-info">已复职</span>' : 
-                '<span class="badge bg-danger">已离职</span>';
+                `<span class="badge bg-info">${t('rehired')}</span>` : 
+                `<span class="badge bg-danger">${t('resigned')}</span>`;
             
             return `
                 <tr>
@@ -232,8 +232,8 @@
                     <td>${formatDate(u.resigned_at)}<\/td>
                     <td>${statusBadge}<\/td>
                     <td>
-                        <button class="btn btn-sm btn-outline-info view-detail-btn" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name_en)}">查看详情</button>
-                        ${!u.is_rehire ? `<button class="btn btn-sm btn-outline-success rehire-from-resigned-btn" data-user-id="${u.id}">复职</button>` : ''}
+                        <button class="btn btn-sm btn-outline-info view-detail-btn" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name_en)}">${t('details')}</button>
+                        ${!u.is_rehire ? `<button class="btn btn-sm btn-outline-success rehire-from-resigned-btn" data-user-id="${u.id}">${t('rehire')}</button>` : ''}
                     <\/td>
                 </tr>
             `;
@@ -274,19 +274,19 @@
             <div class="col-md-6">
                 <table class="table table-bordered">
                     <tr><th width="120">用户ID</th><td><code>${data.id}</code></td></tr>
-                    <tr><th>姓名</th><td>${data.name_en || '-'}</td></tr>
-                    <tr><th>邮箱</th><td>${data.email || '-'}</td></tr>
-                    <tr><th>国家</th><td>${data.country || '-'}</td></tr>
-                    <tr><th>角色</th><td>${data.role}</td></tr>
+                    <tr><th>${t('name_en')}</th><td>${data.name_en || '-'}</td></tr>
+                    <tr><th>${t('email')}</th><td>${data.email || '-'}</td></tr>
+                    <tr><th>${t('country')}</th><td>${data.country || '-'}</td></tr>
+                    <tr><th>${t('role')}</th><td>${data.role}</td></tr>
                 </table>
             </div>
             <div class="col-md-6">
                 <table class="table table-bordered">
-                    <tr><th width="120">离职日期</th><td>${formatDate(data.resigned_at)}</td></tr>
-                    <tr><th>复职日期</th><td>${formatDate(data.rehire_at)}</td></tr>
-                    <tr><th>创建时间</th><td>${formatDate(data.created_at)}</td></tr>
-                    <tr><th>创建人</th><td>${data.created_by_name || '-'}</td></tr>
-                    <tr><th>状态</th><td>${data.is_rehire ? '已复职' : '已离职'}</td></tr>
+                    <tr><th width="120">${t('resigned_date')}</th><td>${formatDate(data.resigned_at)}</td></tr>
+                    <tr><th>${t('rehired_date')}</th><td>${formatDate(data.rehire_at)}</td></tr>
+                    <tr><th>${t('created_at')}</th><td>${formatDate(data.created_at)}</td></tr>
+                    <tr><th>${t('created_by')}</th><td>${data.created_by_name || '-'}</td></tr>
+                    <tr><th>${t('status')}</th><td>${data.is_rehire ? t('rehired') : t('resigned')}</td></tr>
                 </table>
             </div>
         `;
@@ -299,7 +299,7 @@
         const tbody = document.getElementById('examHistoryBody');
         
         if (!data.length) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">无考试记录</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center">${t('no_records')}</td></tr>`;
             return;
         }
         
@@ -308,18 +308,18 @@
                 <td>${escapeHtml(r.exam_title)}</td>
                 <td><span class="badge ${r.total_score >= 60 ? 'bg-success' : 'bg-danger'}">${r.total_score || 0}</span></td>
                 <td>${formatDate(r.created_at)}</td>
-                <td>${r.submit_method === 'auto' ? '自动提交' : '手动提交'}</td>
+                <td>${r.submit_method === 'auto' ? t('submit_method_sys_auto') : t('submit_method_self')}</td>
                 <td>
                     ${r.result_id ? `
                         <button class="btn btn-sm btn-outline-info view-exam-detail-modal" 
                             data-result-id="${r.result_id}" 
                             data-exam-title="${escapeHtml(r.exam_title)}">
-                            <i class="bi bi-eye"></i> 查看详情
+                            <i class="bi bi-eye"></i> ${t('details')}
                         </button>
                         <a href="/admin/export_pdf_by_result/${r.result_id}" 
                         class="btn btn-sm btn-outline-secondary" 
                         target="_blank">
-                        <i class="bi bi-download"></i> 导出PDF
+                        <i class="bi bi-download"></i> PDF
                         </a>
                     ` : ''}
                 </td>
@@ -377,21 +377,21 @@
                         <div class="modal-content">
                             <div class="modal-header bg-primary text-white">
                                 <h5 class="modal-title">
-                                    <i class="bi bi-file-text"></i> 考试详情 - ${escapeHtml(examTitle)}
+                                    <i class="bi bi-file-text"></i> ${t('exam_details')} - ${escapeHtml(examTitle)}
                                 </h5>
                                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                             </div>
                             <div class="modal-body" id="examDetailContent">
                                 <div class="text-center py-5">
                                     <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
-                                        <span class="visually-hidden">加载中...</span>
+                                        <span class="visually-hidden">${t('loading')}</span>
                                     </div>
-                                    <p class="mt-3 text-muted">正在加载考试详情，请稍候...</p>
+                                    <p class="mt-3 text-muted">${t('loading_exam_details_please_wait_while')}</p>
                                 </div>
                             </div>
                             <div class="modal-footer">
                                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                                    <i class="bi bi-x-circle"></i> 关闭
+                                    <i class="bi bi-x-circle"></i> ${t('close')}
                                 </button>
                             </div>
                         </div>
@@ -458,23 +458,23 @@
                 <!-- 基本信息卡片 -->
                 <div class="card mb-3">
                     <div class="card-header bg-info text-white">
-                        <strong><i class="bi bi-info-circle"></i> 基本信息</strong>
+                        <strong><i class="bi bi-info-circle"></i> ${t('basic_info')}</strong>
                     </div>
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-6">
                                 <table class="table table-sm table-borderless">
-                                    <tr><th width="100">考生姓名：</th><td>${escapeHtml(data.user.name)}</td>
-                                    <tr><th>邮箱：</th><td>${escapeHtml(data.user.email)}</td>
-                                    <tr><th>考试名称：</th><td>${escapeHtml(data.exam.title)}</td>
+                                    <tr><th width="100">${t('name_en')}：</th><td>${escapeHtml(data.user.name)}</td>
+                                    <tr><th>${t('email')}：</th><td>${escapeHtml(data.user.email)}</td>
+                                    <tr><th>${t('exam_name')}：</th><td>${escapeHtml(data.exam.title)}</td>
                                 </table>
                             </div>
                             <div class="col-md-6">
                                 <table class="table table-sm table-borderless">
-                                    <tr><th width="100">提交时间：</th><td>${formatDate(data.submitted_at)}</td>
-                                    <tr><th>总分：</th><td><span class="badge ${passStatus ? 'bg-success' : 'bg-danger'} fs-6">${data.total_score || 0}</span> / ${totalPossibleScore} 分</td>
-                                    <tr><th>提交方式：</th><td>${data.submit_method === 'auto' ? '自动提交' : '手动提交'}</td>
-                                    <tr><th>阅卷人：</th><td>${escapeHtml(data.exam.reviewer) || '-'}</td>
+                                    <tr><th width="100">${t('submitted_at')}：</th><td>${formatDate(data.submitted_at)}</td>
+                                    <tr><th>${t('total_score')}</th><td><span class="badge ${passStatus ? 'bg-success' : 'bg-danger'} fs-6">${data.total_score || 0}</span> / ${totalPossibleScore} 分</td>
+                                    <tr><th>${t('submit_method')}：</th><td>${data.submit_method === 'auto' ? t('submit_method_sys_auto') : t('submit_method_self')}</td>
+                                    <tr><th>${t('reviewer')}：</th><td>${escapeHtml(data.exam.reviewer) || '-'}</td>
                                 </table>
                             </div>
                         </div>
@@ -487,7 +487,7 @@
                         <div class="card text-center bg-light border-0 shadow-sm">
                             <div class="card-body">
                                 <h3 class="mb-0 text-primary">${totalQuestions}</h3>
-                                <small class="text-muted">总题数</small>
+                                <small class="text-muted">${t('total_questions')}</small>
                             </div>
                         </div>
                     </div>
@@ -495,7 +495,7 @@
                         <div class="card text-center bg-success text-white border-0 shadow-sm">
                             <div class="card-body">
                                 <h3 class="mb-0">${correctCount}</h3>
-                                <small>正确数量</small>
+                                <small>${t('correct_qty')}</small>
                             </div>
                         </div>
                     </div>
@@ -503,7 +503,7 @@
                         <div class="card text-center bg-primary text-white border-0 shadow-sm">
                             <div class="card-body">
                                 <h3 class="mb-0">${data.total_score || 0}</h3>
-                                <small>实际得分</small>
+                                <small>${t('get_score')}</small>
                             </div>
                         </div>
                     </div>
@@ -511,7 +511,7 @@
                         <div class="card text-center ${passStatus ? 'bg-info' : 'bg-warning'} text-white border-0 shadow-sm">
                             <div class="card-body">
                                 <h3 class="mb-0">${scorePercentage}%</h3>
-                                <small>得分率</small>
+                                <small>${t('scoring_rate')}</small>
                             </div>
                         </div>
                     </div>
@@ -520,7 +520,7 @@
                 <!-- 答题详情 -->
                 <div class="card shadow-sm">
                     <div class="card-header bg-success text-white">
-                        <strong><i class="bi bi-file-text"></i> 答题详情</strong>
+                        <strong><i class="bi bi-file-text"></i> ${t('details')}</strong>
                     </div>
                     <div class="card-body p-0">
                         <div class="accordion" id="questionsAccordion">
@@ -531,23 +531,23 @@
             const questionId = `question_${index}`;
             const statusIcon = q.is_correct ? '✅' : '❌';
             const statusColor = q.is_correct ? 'success' : 'danger';
-            const statusText = q.is_correct ? '正确' : '错误';
+            const statusText = q.is_correct ? t('correct') : t('wrong');
             
             const typeBadge = q.type === 'multi' ? 
-                '<span class="badge bg-warning ms-2">多选题</span>' : 
+                `<span class="badge bg-warning ms-2">${t('multi')}</span>` : 
                 (q.type === 'judge' ? 
-                    '<span class="badge bg-info ms-2">判断题</span>' : 
-                    '<span class="badge bg-primary ms-2">单选题</span>');
+                    `<span class="badge bg-info ms-2">${t('judge')}</span>` : 
+                    `<span class="badge bg-primary ms-2">${t('single')}</span>`);
             
             // 得分显示
             const scoreDisplay = q.obtained_score === q.total_score ? 
-                `<span class="badge bg-success">得分: ${q.obtained_score}/${q.total_score}</span>` :
-                `<span class="badge ${q.obtained_score > 0 ? 'bg-warning' : 'bg-danger'}">得分: ${q.obtained_score}/${q.total_score}</span>`;
+                `<span class="badge bg-success">${t('get_score')}: ${q.obtained_score}/${q.total_score}</span>` :
+                `<span class="badge ${q.obtained_score > 0 ? 'bg-warning' : 'bg-danger'}">${t('get_score')}: ${q.obtained_score}/${q.total_score}</span>`;
             
             // 渲染选项
             let optionsHtml = '';
             if (q.type !== 'judge' && q.options && Object.keys(q.options).length > 0) {
-                optionsHtml = '<div class="mt-2 mb-2"><strong>选项：</strong></div><ul class="list-unstyled ms-3">';
+                optionsHtml = `<div class="mt-2 mb-2"><strong>${t('option')}：</strong></div><ul class="list-unstyled ms-3">`;
                 for (const [key, value] of Object.entries(q.options)) {
                     if (value && value.toString().trim()) {
                         // 高亮正确答案
@@ -558,11 +558,11 @@
                 }
                 optionsHtml += '</ul>';
             } else if (q.type === 'judge') {
-                optionsHtml = '<div class="mt-2 mb-2 text-muted"><small>判断题选项：正确(True) / 错误(False)</small></div>';
+                optionsHtml = `<div class="mt-2 mb-2 text-muted"><small>${t('judge_option')}：${t('correct')} / ${t('wrong')}</small></div>`;
             }
             
             // 考生答案显示（带对错符号）
-            const userAnswerDisplay = q.user_answer === '未作答' ? 
+            const userAnswerDisplay = q.user_answer === t('t_no_answer') ? 
                 `<span class="text-muted fst-italic">${escapeHtml(q.user_answer)}</span>` :
                 `<span class="fw-bold ${q.is_correct ? 'text-success' : 'text-danger'}">${escapeHtml(q.user_answer)}</span>`;
             
@@ -575,7 +575,7 @@
                                 aria-controls="collapse_${questionId}">
                             <div class="d-flex justify-content-between align-items-center w-100 me-3">
                                 <div>
-                                    <strong class="fs-6">第 ${q.num} 题</strong>
+                                    <strong class="fs-6">${t('question_prefix')} ${q.num} ${t('question_suffix')}</strong>
                                     ${typeBadge}
                                     <span class="ms-2 text-truncate" style="max-width: 400px;">${escapeHtml(q.content.substring(0, 60))}${q.content.length > 60 ? '...' : ''}</span>
                                 </div>
@@ -591,7 +591,7 @@
                         <div class="accordion-body bg-light">
                             <!-- 题目内容 -->
                             <div class="mb-3">
-                                <strong class="text-primary">📖 题目：</strong>
+                                <strong class="text-primary">📖 ${t('question')}：</strong>
                                 <div class="mt-2 p-2 bg-white rounded border">${escapeHtml(q.content)}</div>
                             </div>
                             
@@ -602,7 +602,7 @@
                                 <div class="col-md-6">
                                     <div class="card border-0 shadow-sm">
                                         <div class="card-header bg-light py-2">
-                                            <small><strong>📌 正确答案</strong></small>
+                                            <small><strong>📌 ${t('standard_answer')}</strong></small>
                                         </div>
                                         <div class="card-body py-2">
                                             <span class="text-success fw-bold">${escapeHtml(q.correct_answer)}</span>
@@ -612,7 +612,7 @@
                                 <div class="col-md-6">
                                     <div class="card border-0 shadow-sm">
                                         <div class="card-header bg-light py-2">
-                                            <small><strong>✏️ 考生答案 ${statusIcon}</strong></small>
+                                            <small><strong>✏️ ${t('candidate_answer')} ${statusIcon}</strong></small>
                                         </div>
                                         <div class="card-body py-2">
                                             ${userAnswerDisplay}
@@ -624,8 +624,8 @@
                             <!-- 得分显示 -->
                             <div class="mt-3 text-end">
                                 <small class="text-muted">
-                                    本题得分: ${q.obtained_score} / ${q.total_score} 分
-                                    ${q.obtained_score === q.total_score && q.total_score > 0 ? '🎉 满分' : (q.obtained_score > 0 ? '👍 部分得分' : '💪 继续加油')}
+                                    ${t('this_q_score')}: ${q.obtained_score} / ${q.total_score} ${t('score')}
+                                    ${q.obtained_score === q.total_score && q.total_score > 0 ? '🎉 ' + t('full_score') : (q.obtained_score > 0 ? '👍 ' + t('partial_score') : '💪 ' + t('keep_trying'))}
                                 </small>
                             </div>
                         </div>
@@ -651,7 +651,7 @@
         const tbody = document.getElementById('trainingHistoryBody');
         
         if (!data.length) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center">无培训记录<\/td><\/tr>';
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center">${t('no_training_records')}<\/td><\/tr>`;
             return;
         }
         
@@ -661,11 +661,14 @@
                 <td>${formatDate(t.sign_time)}<\/td>
                 <td>
                     ${t.signature_url ? 
-                        `<img src="${t.signature_url}" style="max-height: 40px; max-width: 100px; cursor: pointer;" class="view-signature" data-signature-url="${t.signature_url}" title="点击查看大图">` : 
-                        '<span class="text-muted">无签名</span>'}
+                        `<img src="${t.signature_url}" style="max-height: 40px; max-width: 100px; cursor: pointer;" 
+                        class="view-signature" data-signature-url="${t.signature_url}" 
+                        data-i18n-title="title_click_to_view_full_img"
+                        title="点击查看大图">` : 
+                        `<span class="text-muted">${t('no_signature')}</span>`}
                 <\/td>
                 <td>
-                    ${t.signature_url ? `<button class="btn btn-sm btn-outline-info view-signature-btn" data-signature-url="${t.signature_url}">查看签名</button>` : ''}
+                    ${t.signature_url ? `<button class="btn btn-sm btn-outline-info view-signature-btn" data-signature-url="${t.signature_url}">${t('view_signature')}</button>` : ''}
                 <\/td>
             </tr>
         `).join('');
@@ -689,7 +692,7 @@
         const tbody = document.getElementById('interviewHistoryBody');
         
         if (!data.length) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center">无访谈记录<\/td><\/tr>';
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center">${t('no_interview_records')}<\/td><\/tr>`;
             return;
         }
         
@@ -704,7 +707,7 @@
                         data-interview-id="${i.interview_id}" 
                         data-user-id="${userId}"
                         data-user-name="${escapeHtml(i.interview_title)}">
-                        答题详情
+                        ${t('details')}
                     </button>
                 <\/td>
             </tr>
@@ -827,9 +830,38 @@
         currentPage = 1;
         loadResignedUsers();
     });
-    
+
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
+        // 等待 i18n 就绪后加载列表
+        waitForI18n();
+        window.i18n.applyTranslations();  // 处理静态文本
         loadResignedUsers();
+        
+        // ✅ 语言切换时重新加载列表
+        if (window.i18n && window.i18n.subscribe) {
+            window.i18n.subscribe(() => {
+            loadResignedUsers();  // 重新加载列表，会触发使用新的翻译
+            });
+        }
+        window.addEventListener('app:languageChanged', function() {
+            loadResignedUsers();
+        });
     });
 </script>
 {% endblock %}

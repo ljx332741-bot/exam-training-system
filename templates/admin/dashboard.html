@@ -953,7 +953,8 @@
           exam_name: document.getElementById('filterExamName').value,
           start_date: document.getElementById('filterStartDate').value,
           end_date: document.getElementById('filterEndDate').value,
-          wh_id: document.getElementById('filterWhId').value.trim()   // 新增
+          wh_id: document.getElementById('filterWhId').value.trim(),
+          lang: currentLang
       };
       try {
           const response = await fetch('/api/admin/export_filtered_excel', {
@@ -1026,26 +1027,55 @@
           console.error('搜索库房失败', e);
       }
   });
-  
-  // 对当前考试批量导出PDF考试接口 0426
+
+  // 批量导出 PDF（增强版：带按钮状态提示）
   async function batchExport(examId) {
-      // 需要先获取该考试下的所有考生ID，然后调用批量导出接口
-      if (!confirm(t('t_export_all_pdf'))) return;
-      // 1. 获取该考试下的所有考生ID（一次性获取全部，避免分页）
-      const res = await fetch(`/api/admin/exam/${examId}/scores?per_page=1000`);
-      const data = await res.json();
-      const userIds = data.data.map(item => item.user_id);
-      if (userIds.length === 0) {
-          alert(t('t_no_have_result'));
-          return;
-      }
-      // 2. 调用批量导出接口
-      const response = await fetch(`/api/admin/exam/${examId}/batch_export`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_ids: userIds })
-      });
-      if (response.ok) {
+      // 获取按钮元素
+      const btn = document.querySelector(`.batch-export[data-id="${examId}"]`);
+      if (!btn) return;
+      
+      // 保存原始内容
+      const originalHtml = btn.innerHTML;
+      const originalText = btn.innerText;
+      
+      // 禁用按钮并显示加载状态
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> ';
+      btn.classList.remove('btn-outline-secondary');
+      btn.classList.add('btn-secondary', 'opacity-75');
+      
+      try {
+          if (!confirm(t('t_export_all_pdf') || '确定要导出所有考生的PDF答卷吗？')) {
+              return;
+          }
+          
+          // 显示全局加载提示（可选）
+          showLoading(t('generating_pdf') || '正在生成PDF，请稍候...');
+          
+          // 1. 获取该考试下的所有考生ID（一次性获取全部，避免分页）
+          const res = await fetch(`/api/admin/exam/${examId}/scores?per_page=1000`);
+          if (!res.ok) {
+              throw new Error(`HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          const userIds = data.data.map(item => item.user_id);
+          
+          if (userIds.length === 0) {
+              alert(t('t_no_have_result') || '暂无成绩记录');
+              return;
+          }
+          
+          // 2. 调用批量导出接口
+          const response = await fetch(`/api/admin/exam/${examId}/batch_export`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ user_ids: userIds })
+          });
+          
+          if (!response.ok) {
+              throw new Error(`HTTP ${response.status}`);
+          }
+          
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -1055,8 +1085,37 @@
           a.click();
           document.body.removeChild(a);
           URL.revokeObjectURL(url);
-      } else {
-          alert(t('t_batch_export_pdf_failed'));
+          
+          // 成功提示
+          if (typeof showToast === 'function') {
+              showToast(t('export_success') || '导出成功', 'success');
+          } else {
+              alert(t('export_success') || '导出成功');
+          }
+          
+      } catch (err) {
+          console.error('批量导出失败:', err);
+          if (typeof showToast === 'function') {
+              showToast(t('export_failed') || '导出失败: ' + err.message, 'error');
+          } else {
+              alert(t('export_failed') || '导出失败');
+          }
+      } finally {
+          // 隐藏全局加载提示
+          hideLoading();
+          
+          // 恢复按钮状态
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+          btn.classList.remove('btn-secondary', 'opacity-75');
+          btn.classList.add('btn-outline-secondary');
+          
+          // 重新绑定事件（可选，因为按钮被替换了）
+          const newBtn = document.querySelector(`.batch-export[data-id="${examId}"]`);
+          if (newBtn && !newBtn.hasListeners) {
+              newBtn.hasListeners = true;
+              newBtn.addEventListener('click', () => batchExport(examId));
+          }
       }
   }
 

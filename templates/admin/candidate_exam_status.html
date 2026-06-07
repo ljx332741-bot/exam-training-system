@@ -53,8 +53,10 @@
                         <button id="batchAssignBtn" class="btn btn-success btn-sm">
                             <i class="bi bi-plus-circle"></i> <span data-i18n="batch_assign">批量分配</span>
                         </button>
-                        <button id="batchDeleteAssignBtn" class="btn btn-danger btn-sm">
-                            <i class="bi bi-trash"></i> <span data-i18n="batch_remove">批量移除</span>
+                        <button id="batchDeleteAssignBtn" class="btn btn-danger btn-sm"
+                            data-i18n-title="title_batch_remove_exam_assign"
+                            title="批量移除考试分配">
+                            <i class="bi bi-trash"></i> <span data-i18n="batch_unassign">批量移除</span>
                         </button>
                     </div>
                 </div>
@@ -107,7 +109,7 @@
         country: ''
     };
 
-    // ==================== Toast 提示函数 ====================
+    // ==================== Toast 提示函数 ======================
     function showToast(message, type = 'success') {
         const toastEl = document.getElementById('globalToast');
         const toastIcon = document.getElementById('toastIcon');
@@ -211,7 +213,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message, 'success');
+                apiToast(result, 'operation_success');
                 loadExamStatusData();
             } else {
                 showToast(result.message || t('operation_failed'), 'error');
@@ -248,7 +250,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message, 'success');
+                apiToast(result, 'operation_success');
                 loadExamStatusData();
             } else {
                 showToast(result.message || t('operation_failed'), 'error');
@@ -472,18 +474,28 @@
                 ? `<a href="/admin/export_pdf_by_result/${u.result_id}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>`
                 : '';
             const resetBtn = submitted
-                ? `<button class="btn btn-sm btn-outline-warning reset-btn" data-exam-id="${examId}" data-user-id="${u.user_id}">🔄 ${t('reset')}</button>`
+                ? `<button class="btn btn-sm btn-outline-warning reset-btn" 
+                        data-exam-id="${examId}" data-user-id="${u.user_id}"
+                        data-i18n-title="title_retake_exam"
+                        title="点击可以让用户重新考试">
+                        🔄 ${t('reset')}</button>`
                 : '';
             
             const assignBtn = (u.exam_status === 'not_assigned')
-                ? `<button class="btn btn-sm btn-outline-success assign-single-btn" data-user-id="${u.user_id}">
-                    <i class="bi bi-plus-circle"></i> ${t('assign')}
+                ? `<button class="btn btn-sm btn-outline-success assign-single-btn" 
+                        data-user-id="${u.user_id}"
+                        data-i18n-title="title_exam_task_assign"
+                        title="考试任务分配">
+                        <i class="bi bi-plus-circle"></i> ${t('assign')}
                    </button>`
                 : '';
             
             const removeBtn = (u.exam_status !== 'not_assigned')
-                ? `<button class="btn btn-sm btn-outline-danger remove-single-btn" data-user-id="${u.user_id}">
-                    <i class="bi bi-trash"></i> ${t('remove')}
+                ? `<button class="btn btn-sm btn-outline-danger remove-single-btn" 
+                        data-user-id="${u.user_id}"
+                        data-i18n-title="title_remove_exam_assign"
+                        title="移除考试分配">
+                    <i class="bi bi-trash"></i> ${t('unassign')}
                    </button>`
                 : '';
 
@@ -536,7 +548,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message, 'success');
+                apiToast(result, 'operation_success');
                 loadExamStatusData();
             } else {
                 showToast(result.message || t('operation_failed'), 'error');
@@ -569,10 +581,18 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message, 'success');
+                if (typeof apiToast === 'function') {
+                    apiToast(result, 'operation_success', 'success');
+                } else {
+                    showToast(result.message, '成功', 'success');
+                }
                 loadExamStatusData();
             } else {
-                showToast(result.message || t('operation_failed'), 'error');
+                if (typeof apiToast === 'function') {
+                    apiToast(result, 'operation_failed', 'error');
+                } else {
+                    showToast(result.message, '错误', 'error');
+                }
             }
         } catch (err) {
             hideLoading();
