@@ -103,7 +103,7 @@ def admin_dashboard():
     exams_for_table, exams_for_selector = get_exams_for_display(
         filtered_exams, allowed_countries, allowed_user_ids
     )
-    
+
     # ========== 8. 培训签到开关 ==========
     sign_in_open = get_sign_in_status()
     
@@ -874,8 +874,6 @@ def update_exam_duration(exam_id):
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
 
-# routes/admin_exam.py - 修复 admin_exam_status 函数
-
 @admin_exam_bp.route('/admin/exam_status/<int:exam_id>')
 @login_required
 @admin_required
@@ -896,7 +894,7 @@ def admin_exam_status(exam_id):
     if not exam_countries and exam.get('country'):
         exam_countries = [exam.get('country')]
     
-    # ✅ 关键修复：检查考试是否在管理员权限范围内
+    # 检查考试是否在管理员权限范围内
     if not is_dev:
         if current_role == 'super_admin':
             if allowed is not None and allowed:
@@ -920,22 +918,35 @@ def admin_exam_status(exam_id):
 
     # ========== 2. 获取用户列表（带权限过滤）==========
     query = db.table("users").select("id, email, name_en, country").is_("deleted_at", "null")
+
+    # ✅ 添加考试国家过滤：只显示国家在 exam_countries 中的用户
+    if exam_countries:
+        query = query.in_("country", exam_countries)
     
-    # 权限过滤
-    if not is_dev:
-        if current_role == 'super_admin':
-            if allowed is not None and allowed:
-                query = query.in_("country", allowed)
-        elif current_role == 'admin':
-            if allowed:
-                query = query.in_("country", allowed)
-            else:
-                user_country = session.get('user_country')
-                if user_country:
-                    query = query.eq("country", user_country)
+        # 权限过滤（管理员的权限范围）
+        if not is_dev:
+            if current_role == 'super_admin':
+                if allowed is not None and allowed:
+                    # 取考试国家和管理员权限的交集
+                    allowed_countries_for_exam = [c for c in exam_countries if c in allowed]
+                    if allowed_countries_for_exam:
+                        query = query.in_("country", allowed_countries_for_exam)
+                    else:
+                        return jsonify([])
+            elif current_role == 'admin':
+                if allowed:
+                    allowed_countries_for_exam = [c for c in exam_countries if c in allowed]
+                    if allowed_countries_for_exam:
+                        query = query.in_("country", allowed_countries_for_exam)
+                    else:
+                        return jsonify([])
                 else:
-                    return jsonify([])
-    
+                    user_country = session.get('user_country')
+                    if user_country in exam_countries:
+                        query = query.eq("country", user_country)
+                    else:
+                        return jsonify([])
+        
     users_res = query.execute()
     users = users_res.data or []
 
@@ -957,6 +968,11 @@ def admin_exam_status(exam_id):
     data = []
     for u in users:
         uid = u['id']
+        user_country = u.get('country', '')
+
+        # ✅ 额外检查：用户国家必须在考试国家列表中
+        if user_country not in exam_countries:
+            continue
         
         # 判断考试状态
         if uid not in assigned_user_ids:

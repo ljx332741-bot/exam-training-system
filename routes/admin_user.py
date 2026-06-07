@@ -62,9 +62,6 @@ def api_admin_user_detail(user_id):
 @admin_required
 def api_admin_users():
     """获取用户列表（带完整权限控制）"""
-    logger.info("=" * 50)
-    logger.info("调用 api_admin_users")
-
     db = get_supabase()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)

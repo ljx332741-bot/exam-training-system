@@ -232,283 +232,6 @@ def dashboard():
         logger.error(f"dashboard 异常: {e}", exc_info=True)
         return render_template('exam/dashboard.html', exams=[], results=[], training_open=True, user_signed_in=False)
 
-'''
-@exam_bp.route('/exam/take/<int:exam_id>')
-@login_required
-def take_exam(exam_id):
-    try:
-        db = get_supabase()
-        user_id = session['user_id']
-        now = datetime.now(timezone.utc)
-        
-        # ========== 新增：检查强制重推记录 ==========
-        force_record = db.table("user_exam_force_records").select("*")\
-            .eq("user_id", user_id)\
-            .eq("original_exam_id", exam_id)\
-            .is_("deleted_at", "null")\
-            .execute()
-        
-        is_force = force_record and force_record.data
-        force_data = None
-        
-        if is_force:
-            force_data = force_record.data[0]
-            # 检查有效期
-            end_time = force_data.get('end_time')
-            if end_time:
-                try:
-                    end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                    if now > end_dt:
-                        # 过期，自动删除
-                        db.table("user_exam_force_records").update({
-                            "deleted_at": now.isoformat(),
-                            "deleted_by": user_id
-                        }).eq("id", force_data['id']).execute()
-                        is_force = False
-                        force_data = None
-                except Exception as e:
-                    logger.warning(f"解析强制重推时间失败: {e}")
-        
-        # 1. 获取考试基本信息
-        exam_info = db.table("exams").select("start_time, end_time, duration, title").eq("id", exam_id).maybe_single().execute()
-        if not exam_info.data:
-            flash("考试不存在", "danger")
-            return redirect(url_for('dashboard'))
-        
-        exam = exam_info.data
-
-        # ========== 强制重推模式：覆盖有效期检查 ==========
-        if is_force:
-            # 使用强制记录的有效期
-            effective_start_time = force_data.get('start_time')
-            effective_end_time = force_data.get('end_time')
-            logger.info(f"用户 {user_id} 使用强制重推模式进入考试 {exam_id}，有效期至 {effective_end_time}")
-        else:
-            effective_start_time = exam.get('start_time')
-            effective_end_time = exam.get('end_time')
-        
-        duration_minutes = exam.get('duration', 60)
-        end_time = exam.get('end_time')
-        start_time = exam.get('start_time')
-        exam_title = exam.get('title', '考试')
-
-        # 2. 获取用户考试状态
-        status = db.table("user_exam_status").select("*").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-        
-        # 检查是否已交卷
-        if status and status.data and status.data.get("is_submitted"):
-            flash("您已完成本场考试，无法再次进入。", "warning")
-            return redirect(url_for('exam.dashboard'))
-        
-        started_at = None
-        if status and status.data:
-            started_at = status.data.get("started_at")
-        
-        # ========== 区分首次进入和再次进入 ==========
-        is_first_entry = (started_at is None)
-        
-        if is_first_entry:
-            # 首次进入：检查有效期
-            if end_time:
-                try:
-                    end_dt = safe_parse_datetime(end_time)
-                    if end_dt and now > end_dt:
-                        flash({'msg': 'exam_ended', 'params': []}, 'warning')
-                        return redirect(url_for('dashboard'))
-                except ValueError as e:
-                    logger.warning(f"解析 end_time 失败: {e}")
-            
-            if start_time:
-                try:
-                    start_dt = safe_parse_datetime(start_time)
-                    if start_dt and now < start_dt:
-                        flash({'msg': 'exam_not_started', 'params': []}, 'warning')
-                        return redirect(url_for('dashboard'))
-                except ValueError as e:
-                    logger.warning(f"解析 start_time 失败: {e}")
-        else:
-            # 再次进入：只检查考试时长是否用完
-            logger.info(f"用户 {user_id} 再次进入考试 {exam_id}，跳过有效期检查")
-        
-        total_seconds = duration_minutes * 60
-        
-        # 3. 处理开始时间和重置标志
-        reset_timer = False
-        reset_token = ''
-        
-        if status and status.data:
-            submitted_at = status.data.get("submitted_at")
-            reset_at = status.data.get("reset_at")
-            
-            if reset_at and (not submitted_at or reset_at > submitted_at):
-                reset_timer = True
-                reset_token = reset_at
-            
-            if not started_at or reset_timer:
-                started_at = now.isoformat()
-                db.table("user_exam_status").update({
-                    "started_at": started_at,
-                    "reset_at": None
-                }).eq("user_id", user_id).eq("exam_id", exam_id).execute()
-        else:
-            started_at = now.isoformat()
-            db.table("user_exam_status").insert({
-                "user_id": user_id,
-                "exam_id": exam_id,
-                "started_at": started_at,
-                "is_submitted": False
-            }).execute()
-        
-        # 4. 计算剩余时间
-        remaining = total_seconds
-        if started_at:
-            try:
-                start_dt = safe_parse_datetime(started_at)
-                if start_dt:
-                    elapsed = (now - start_dt).total_seconds()
-                    remaining = max(0, total_seconds - int(elapsed))
-                else:
-                    remaining = total_seconds
-            except Exception as e:
-                logger.warning(f"计算剩余时间失败: {e}")
-                remaining = total_seconds
-        
-        # ========== 5. 超时处理 ==========
-        if remaining <= 0:
-            if not (status and status.data and status.data.get("is_submitted")):
-                try:
-                    # ✅ 正确获取草稿答案
-                    answers = {}
-                    draft = db.table("user_exam_drafts").select("answers").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-                    
-                    if draft and draft.data:
-                        answers_data = draft.data.get('answers')
-                        if answers_data:
-                            if isinstance(answers_data, str):
-                                answers = json.loads(answers_data)
-                            else:
-                                answers = answers_data
-                            logger.info(f"自动提交: 从草稿获取到 {len(answers)} 条答案")
-                        else:
-                            logger.warning("自动提交: 草稿 answers 为空")
-                    else:
-                        logger.warning(f"自动提交: 未找到草稿记录 user={user_id}, exam={exam_id}")
-                    
-                    # 评分
-                    grade = exam.auto_grade(answers, exam_id)
-                    
-                    # 计算用时
-                    time_used = None
-                    if started_at:
-                        try:
-                            start_dt = safe_parse_datetime(started_at)
-                            if start_dt:
-                                time_used = int((datetime.now(timezone.utc) - start_dt).total_seconds())
-                        except:
-                            pass
-                    
-                    # 保存成绩
-                    exam.save_result(
-                        user_id, exam_id, answers, grade['total'], grade['details'], 
-                        customs={}, 
-                        submit_method='auto', 
-                        time_used=time_used
-                    )
-                    
-                    # 更新状态
-                    existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-                    update_data = {
-                        "is_submitted": True,
-                        "submitted_at": datetime.now(timezone.utc).isoformat(),
-                        "reset_at": None
-                    }
-                    if existing and existing.data:
-                        db.table("user_exam_status").update(update_data).eq("id", existing.data['id']).execute()
-                    else:
-                        update_data.update({"user_id": user_id, "exam_id": exam_id, "started_at": started_at})
-                        db.table("user_exam_status").insert(update_data).execute()
-                    
-                    # 删除草稿
-                    db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-                    
-                    logger.info(f"超时自动提交完成，得分 {grade['total']}")
-                    flash({'msg': 'flash_time_expired_exam_automatically', 'params': []}, "info")
-                    
-                except Exception as e:
-                    logger.error(f"超时自动提交失败: {e}", exc_info=True)
-                    flash({'msg': 'flash_time_expired_exam_automatic_failed', 'params': []}, "danger")
-            
-            return redirect(url_for('exam.dashboard'))
-        
-        # ========== 6. 正常进入考试：查询题目 ==========
-        qs = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
-        questions = qs.data or []
-        for q in questions:
-            if isinstance(q.get('options'), str):
-                try:
-                    q['options'] = json.loads(q['options'])
-                except:
-                    q['options'] = {}
-        
-        # ========== 7. 加载已保存的草稿答案（移到正确位置）==========
-        saved_answers = {}
-        try:
-            draft = db.table("user_exam_drafts").select("answers").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-            
-            if draft and draft.data:
-                answers_data = draft.data.get('answers')
-                if answers_data:
-                    # ✅ 兼容两种格式：字典或字符串
-                    if isinstance(answers_data, str):
-                        saved_answers = json.loads(answers_data)
-                        logger.info(f"从草稿表(JSON字符串)加载成功，共 {len(saved_answers)} 条")
-                    elif isinstance(answers_data, dict):
-                        saved_answers = answers_data
-                        logger.info(f"从草稿表(字典)加载成功，共 {len(saved_answers)} 条")
-                    else:
-                        logger.warning(f"草稿答案格式异常: {type(answers_data)}")
-                else:
-                    logger.info("草稿表 answers 字段为空")
-            else:
-                logger.info(f"未找到草稿记录: user={user_id}, exam={exam_id}")
-                
-        except Exception as e:
-            logger.error(f"加载草稿失败: {e}", exc_info=True)
-            saved_answers = {}
-
-        # 调试日志
-        if saved_answers:
-            sample_keys = list(saved_answers.keys())[:3]
-            logger.info(f"草稿答案示例 keys: {sample_keys}")
-
-        # ========== 8. 获取用户信息 ==========
-        user_info_res = db.table("users").select("name_en, email").eq("id", user_id).single().execute()
-        user_info = user_info_res.data if user_info_res.data else {}
-        user_display_name = f"{user_info.get('name_en', '')} ({session.get('user_email', '')})" if user_info.get('name_en') else session.get('user_email', 'User')
-        
-        logger.info(f"考试 {exam_id} 用户 {user_id} 进入，剩余 {remaining} 秒，首次进入={is_first_entry}，草稿答案数={len(saved_answers)}")
-
-        # ========== 9. 渲染模板 ==========
-        return render_template(
-            'exam/take.html',
-            exam_id=exam_id,
-            exam_title=exam_title,
-            questions=questions,
-            duration_minutes=duration_minutes,
-            server_remaining_seconds=remaining,
-            reset_timer=reset_timer,
-            reset_token=reset_token,
-            user_id=user_id,
-            user_display_name=user_display_name,
-            saved_answers=json.dumps(saved_answers)  # 传递 JSON 字符串给前端
-        )
-        
-    except Exception as e:
-        logger.error(f"take_exam 发生异常: {e}", exc_info=True)
-        flash({'msg': 'flash_loading_failed_try_later', 'params': []}, "danger")
-        return redirect(url_for('exam.dashboard'))
-'''
-
 @exam_bp.route('/exam/take/<int:exam_id>')
 @login_required
 def take_exam(exam_id):
@@ -524,7 +247,7 @@ def take_exam(exam_id):
         exam_info = db.table("exams").select("start_time, end_time, duration, title").eq("id", exam_id).maybe_single().execute()
         if not exam_info.data:
             flash("考试不存在", "danger")
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('exam.dashboard'))
         
         exam = exam_info.data
         
@@ -557,7 +280,7 @@ def take_exam(exam_id):
         # 检查是否已交卷
         if status and status.data and status.data.get("is_submitted"):
             flash("您已完成本场考试，无法再次进入。", "warning")
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('exam.dashboard'))
         
         started_at = None
         if status and status.data:
@@ -573,7 +296,7 @@ def take_exam(exam_id):
                     end_dt = safe_parse_datetime(effective_end_time)
                     if end_dt and now > end_dt:
                         flash({'msg': 'exam_ended', 'params': []}, 'warning')
-                        return redirect(url_for('dashboard'))
+                        return redirect(url_for('exam.dashboard'))
                 except ValueError as e:
                     logger.warning(f"解析 end_time 失败: {e}")
             
@@ -582,7 +305,7 @@ def take_exam(exam_id):
                     start_dt = safe_parse_datetime(effective_start_time)
                     if start_dt and now < start_dt:
                         flash({'msg': 'exam_not_started', 'params': []}, 'warning')
-                        return redirect(url_for('dashboard'))
+                        return redirect(url_for('exam.dashboard'))
                 except ValueError as e:
                     logger.warning(f"解析 start_time 失败: {e}")
         else:
@@ -685,7 +408,7 @@ def take_exam(exam_id):
                     logger.error(f"超时自动提交失败: {e}", exc_info=True)
                     flash({'msg': 'flash_time_expired_exam_automatic_failed', 'params': []}, "danger")
             
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('exam.dashboard'))
         
         # 9. 查询题目
         qs = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
@@ -739,7 +462,7 @@ def take_exam(exam_id):
     except Exception as e:
         logger.error(f"take_exam 发生异常: {e}", exc_info=True)
         flash({'msg': 'flash_loading_failed_try_later', 'params': []}, "danger")
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('exam.dashboard'))
 
 @exam_bp.route('/exam/submit/<int:exam_id>', methods=['POST'])
 @login_required
@@ -942,12 +665,12 @@ def exam_export_pdf(result_id):
     if not result_res.data:
         #flash("成绩记录不存在", "danger")
         flash({'msg': 'result_not_found', 'params': []}, 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('exam.dashboard'))
     result = result_res.data[0]
     if result['user_id'] != session['user_id']:
         #flash("无权访问", "danger")
         flash({'msg': 'access_denied', 'params': []}, 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('exam.dashboard'))
     
     exam_id = result['exam_id']
     user_id = result['user_id']
@@ -1007,7 +730,7 @@ def exam_export_pdf(result_id):
         logger.error(f"PDF生成失败: {e}")
         #flash("PDF生成失败", "danger")
         flash({'msg': 'pdf_generation_error', 'params': []}, 'danger')
-        return redirect(url_for('dashboard'))
+        return redirect(url_for('exam.dashboard'))
     
     filename = f"Transcript_{user_name}_{exam_data.get('title', 'exam')}.pdf"
     return send_file(

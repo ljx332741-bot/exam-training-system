@@ -109,7 +109,7 @@
         country: ''
     };
 
-    // ==================== Toast 提示函数 ====================
+    // ==================== Toast 提示函数 ======================
     function showToast(message, type = 'success') {
         const toastEl = document.getElementById('globalToast');
         const toastIcon = document.getElementById('toastIcon');
@@ -495,7 +495,7 @@
                         data-user-id="${u.user_id}"
                         data-i18n-title="title_remove_exam_assign"
                         title="移除考试分配">
-                    <i class="bi bi-trash"></i> ${t('remove')}
+                    <i class="bi bi-trash"></i> ${t('unassign')}
                    </button>`
                 : '';
 
