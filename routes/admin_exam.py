@@ -2,13 +2,14 @@
 import os
 import json
 import logging
+import traceback
 from datetime import datetime, timezone, timedelta, date
 from flask import (
     current_app as app, 
     Flask, request, jsonify, redirect, url_for, render_template, session, flash, send_file, make_response
 )
 from . import admin_exam_bp
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 from routes.helpers import login_required, admin_required, parse_exam_countries, get_exam_countries_display, can_access_exam, is_user_resigned
 from services import auth, exam, export
 from config import Config
@@ -999,11 +1000,16 @@ def api_admin_exam_detail(exam_id):
     # ✅ 2. 权限检查
     if not can_access_exam(exam.data):
         return jsonify({"error": "无权访问此考试"}), 403
+
+    # ✅ 3. 获取考试状态
+    from utils.status import get_exam_status
+    status = get_exam_status(exam.data)
     
     return jsonify({
         "start_time": exam.data.get('start_time'),
         "end_time": exam.data.get('end_time'),
-        "duration": exam.data.get('duration', 60)
+        "duration": exam.data.get('duration', 60),
+        "status": status 
     })
 
 # routes/admin_exam.py
@@ -1484,12 +1490,21 @@ def api_admin_exams_stats():
 @login_required
 @admin_required
 def api_admin_exam_scores(exam_id):
-    db = get_supabase()
+
+    db = get_supabase_admin()
     allowed = get_allowed_countries()
     search = request.args.get('search', '').strip()
     submit_method = request.args.get('submit_method', '')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
+
+    # 获取当前用户的 JWT 信息（如果有）
+    try:
+        # 这会打印当前 session 中的用户角色
+        logger.info(f"Current user role: {session.get('role')}")
+        logger.info(f"Is super admin: {session.get('role') == 'super_admin'}")
+    except Exception as e:
+        logger.error(f"Debug error: {e}")
 
     # 使用权限函数获取当前用户信息
     current_user_role = session.get('role', 'user')
@@ -1557,6 +1572,19 @@ def api_admin_exam_scores(exam_id):
 
     # 7. 构造返回数据
     scores = []
+
+    # 在 api_admin_exam_scores 函数中，为每个成绩添加 has_force_reset 字段
+    # 批量查询强制重推记录
+    force_map = {}
+    try:
+        force_records = db.table("user_exam_force_records").select("user_id, end_time")\
+            .eq("original_exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        force_map = {r['user_id']: r for r in (force_records.data or [])}
+    except Exception as e:
+        logger.warning(f"查询强制重推记录失败: {e}")
+
     for r in paginated:
         user = users_dict.get(r['user_id'], {})
         user_country = user.get('country', '')
@@ -1577,7 +1605,10 @@ def api_admin_exam_scores(exam_id):
             started_at = status_res.data.get('started_at')
         else:
             started_at = None
-        
+
+        # ✅ 使用 r['user_id'] 而不是 user_id
+        has_force = r['user_id'] in force_map
+
         scores.append({
             "user_id": r['user_id'],
             "name": user.get('name_cn') or user.get('name_en') or user.get('email', ''),
@@ -1591,7 +1622,9 @@ def api_admin_exam_scores(exam_id):
             "score": r.get('total_score', 0),
             "result_id": r['id'],
             "reviewer": reviewer,
-            "can_delete": can_delete  # 权限字段
+            "can_delete": can_delete,  # 权限字段
+            "has_force_reset": has_force,
+            "force_end_time": force_map.get(r['user_id'], {}).get('end_time', '')
         })
 
     return jsonify({"data": scores, "total": total, "page": page, "per_page": per_page})
@@ -1829,7 +1862,7 @@ def admin_quick_assign_exam(exam_id):
         user_ids = data.get('user_ids', [])
         
         if not user_ids:
-            return jsonify({"success": False, "message": "请选择要分配的考生"}), 400
+            return jsonify({"success": False, "message": "jsonify_selected_candidate_to_be_assigned", "params": []}), 400
         
         db = get_supabase()
         
@@ -1842,11 +1875,11 @@ def admin_quick_assign_exam(exam_id):
         
         # 2. 检查考试是否已配置有效期
         if not exam.get('start_time') or not exam.get('end_time'):
-            return jsonify({"success": False, "message": "考试尚未配置有效期，请先完成推送设置"}), 400
+            return jsonify({"success": False, "message": "jsonify_exam_validity_not_set_configure_push_first", "params": []}), 400
         
         # 3. 权限检查
         if not can_access_exam(exam):
-            return jsonify({"success": False, "message": "无权操作此考试"}), 403
+            return jsonify({"success": False, "message": "jsonify_no_permmission_operate_exam", "params": []}), 403
         
         # 4. 获取现有分配
         existing_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
@@ -1859,7 +1892,7 @@ def admin_quick_assign_exam(exam_id):
         to_add = [uid for uid in user_ids if uid not in existing_ids]
         
         if not to_add:
-            return jsonify({"success": False, "message": "所选考生已全部分配"}), 400
+            return jsonify({"success": False, "message": "jsonify_selected_have_been_assigned", "params": []}), 400
         
         # 6. 添加分配记录
         for uid in to_add:
@@ -1899,9 +1932,8 @@ def admin_quick_assign_exam(exam_id):
         logger.info(f"快速分配: 考试 {exam_id}, 新增 {len(to_add)} 名考生")
         
         return jsonify({
-            "success": True,
-            "message": f"成功分配 {len(to_add)} 名考生",
-            "added_count": len(to_add)
+            "success": True,          
+            "message": "jsonify_successfully_assigned", "params": [len(to_add)]
         })
         
     except Exception as e:
@@ -1918,7 +1950,7 @@ def admin_batch_remove_exam_assignment(exam_id):
         user_ids = data.get('user_ids', [])
         
         if not user_ids:
-            return jsonify({"success": False, "message": "请选择要移除的考生"}), 400
+            return jsonify({"success": False, "message": "jsonify_selected_candidate_to_be_removed", "params": []}), 400
         
         db = get_supabase()
         
@@ -1931,7 +1963,7 @@ def admin_batch_remove_exam_assignment(exam_id):
         
         # 2. 权限检查
         if not can_access_exam(exam):
-            return jsonify({"success": False, "message": "无权操作此考试"}), 403
+            return jsonify({"success": False, "message": "jsonify_no_permmission_operate_exam", "params": []}), 403
         
         # 3. 只移除已分配的考生（保留未分配的，避免误删）
         existing_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
@@ -1956,13 +1988,125 @@ def admin_batch_remove_exam_assignment(exam_id):
         
         return jsonify({
             "success": True,
-            "message": f"成功移除 {len(to_remove)} 名考生的分配",
-            "removed_count": len(to_remove)
+            "message": "jsonify_successfully_removed_assignment_exam_task", "params": [len(to_remove)]
         })
         
     except Exception as e:
         logger.error(f"批量移除失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exam/<int:exam_id>/force_reset/<user_id>', methods=['POST'])
+@login_required
+@admin_required
+def force_reset_exam_for_user(exam_id, user_id):
+    """
+    强制重置单个学员的考试（覆盖式：删除旧记录，创建新记录）
+    """
+    db = get_supabase_admin()
+    operator_id = session['user_id']
+    now = datetime.now(timezone.utc)
+    
+    # 1. 权限检查
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    # 2. 获取考试信息
+    exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
+    if not exam_res.data:
+        return jsonify({"success": False, "message": "考试不存在"}), 404
+    exam = exam_res.data
+    
+    # 3. 检查用户是否存在
+    user_res = db.table("users").select("id, name_en").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+    
+    # ========== 4. 清理旧的强制重推记录（硬删除，不留痕迹）==========
+    # 删除旧的强制重推记录（硬删除，不保留历史）
+    db.table("user_exam_force_records").delete()\
+        .eq("user_id", user_id)\
+        .eq("original_exam_id", exam_id)\
+        .execute()
+    
+    # ========== 5. 创建新的强制重推记录（有效期2小时）==========
+    force_start_time = now.isoformat()
+    force_end_time = (now + timedelta(hours=2)).isoformat()
+    
+    force_record_data = {
+        "user_id": user_id,
+        "original_exam_id": exam_id,
+        "exam_id": exam_id,
+        "start_time": force_start_time,
+        "end_time": force_end_time,
+        "duration": exam.get('duration', 60),  # ✅ 保存原考试时长
+        "created_at": now.isoformat(),
+        "created_by": operator_id
+    }
+    
+    insert_res = db.table("user_exam_force_records").insert(force_record_data).execute()
+    
+    # ========== 6. 重置该用户在此考试下的状态 ==========
+    status_res = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
+    
+    if status_res and status_res.data:
+        db.table("user_exam_status").update({
+            "is_submitted": False,
+            "started_at": None,
+            "submitted_at": None,
+            "reset_at": now.isoformat()
+        }).eq("id", status_res.data['id']).execute()
+    else:
+        db.table("user_exam_status").insert({
+            "user_id": user_id,
+            "exam_id": exam_id,
+            "is_submitted": False,
+            "reset_at": now.isoformat()
+        }).execute()
+    
+    # 7. 清除草稿
+    db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
+    
+    logger.info(f"强制重推考试成功: exam_id={exam_id}, user_id={user_id}, 有效期至 {force_end_time}")
+    
+    return jsonify({
+        "success": True,
+        "message": f"已为学员 {user_res.data.get('name_en', '')} 创建重推考试，有效期2小时",
+        "end_time": force_end_time
+    })
+
+@admin_exam_bp.route('/api/admin/exam/<int:exam_id>/cancel_force_reset/<user_id>', methods=['POST'])
+@login_required
+@admin_required
+def cancel_force_reset_for_user(exam_id, user_id):
+    """
+    撤销强制重推（硬删除记录）
+    """
+    db = get_supabase_admin()
+    operator_id = session['user_id']
+    now = datetime.now(timezone.utc)
+    
+    # 权限检查
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    # 硬删除强制记录
+    result = db.table("user_exam_force_records").delete()\
+        .eq("user_id", user_id)\
+        .eq("original_exam_id", exam_id)\
+        .execute()
+    
+    if not result.data:
+        return jsonify({"success": False, "message": "未找到有效的重推记录"}), 404
+    
+    # 可选：恢复用户考试状态到原始状态（不清除成绩）
+    # 这里不做额外处理，让用户保持原有成绩
+    
+    logger.info(f"撤销强制重推: exam_id={exam_id}, user_id={user_id}")
+    
+    return jsonify({
+        "success": True,
+        "message": "已撤销强制重推"
+    })
 
 @admin_exam_bp.route('/api/admin/exam/debug_mode', methods=['GET', 'POST'])
 @login_required

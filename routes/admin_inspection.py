@@ -689,7 +689,7 @@ def take_interview(interview_id):
             # 确保选项是字典
             if not isinstance(q_copy.get('options'), dict):
                 q_copy['options'] = {}
-            
+        
             q_copy['interview_result_id'] = row['id']
             q_copy['user_answer'] = row.get('answer') or ''
             questions.append(q_copy)
@@ -722,6 +722,11 @@ def submit_interview(interview_id):
     user_id = session['user_id']
     answers = request.json.get('answers', {})  # {result_id: answer}
     db = get_supabase()
+
+    # ✅ 获取访谈级别的 feedback
+    interview_res = db.table("interviews").select("feedback").eq("id", interview_id).maybe_single().execute()
+    interview_feedback = interview_res.data.get('feedback', '') if interview_res.data else ''
+
     for rid, ans in answers.items():
         # 获取关联题目 ID
         result = db.table("interview_results").select("question_id").eq("id", rid).eq("user_id", user_id).maybe_single().execute()
@@ -749,7 +754,8 @@ def submit_interview(interview_id):
         db.table("interview_results").update({
             "answer": ans,
             "is_correct": is_correct,
-            "submitted_at": datetime.now(timezone.utc).isoformat()
+            "submitted_at": datetime.now(timezone.utc).isoformat(),
+            "feedback": interview_feedback  # ✅ 新增：存储访谈级别的反馈人
         }).eq("id", rid).eq("user_id", user_id).execute()
     return jsonify({"success": True, "message": "jsonify_interview_has_been_submitted", "params": []})
 
@@ -1371,7 +1377,8 @@ def force_resample_interview(interview_id):
                     "interview_id": interview_id,
                     "user_id": user_id,
                     "question_id": q['id'],
-                    "created_at": now.isoformat()
+                    "created_at": now.isoformat(),
+                    "feedback": feedback  # ✅ 新增：存储反馈人
                 }).execute()
                 logger.debug(f"插入题目 {q['id']} 成功")
             

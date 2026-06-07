@@ -17,6 +17,8 @@ secrets.py
 1 launcher_fast_run.bat
 dev_launcher.py
 launcher.py
+test_config.py
+test_admin.py
 
 # Supabase 相关（如果代码中硬编码了）
 supabase_key.txt

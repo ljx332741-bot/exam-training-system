@@ -92,19 +92,61 @@
     let currentSearch = '';
     let currentSubmitMethod = '';
     let allSelected = [];
+    let examStatus = '';
+
+    // ==================== Loading 遮罩函数 ====================
+    function showLoading(text = '正在处理...') {
+        const loadingEl = document.getElementById('globalLoading');
+        const loadingText = document.getElementById('loadingText');
+        
+        // ✅ 检查元素是否存在
+        if (!loadingEl) {
+            console.warn('Loading 元素不存在');
+            return;
+        }
+        
+        if (loadingText) loadingText.textContent = text;
+        loadingEl.style.display = 'flex';
+    }
+
+    function hideLoading() {
+        const loadingEl = document.getElementById('globalLoading');
+        if (loadingEl) {
+            loadingEl.style.display = 'none';
+        }
+    }
 
     async function loadScores() {
+        if (!examStatus) {
+            await loadExamStatus();
+        }
+        
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
             search: currentSearch,
             submit_method: currentSubmitMethod
         });
-        const res = await fetch(`/api/admin/exam/${examId}/scores?${params}`);
-        const data = await res.json();
-        renderScoresTable(data.data);
-        document.getElementById('totalCount').innerText = data.total;
-        renderPagination(data.page, Math.ceil(data.total / data.per_page));
+        
+        try {
+            const res = await fetch(`/api/admin/exam/${examId}/scores?${params}`);
+            
+            // ✅ 检查响应状态
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('API 错误响应:', text);
+                throw new Error(`HTTP ${res.status}: ${text.substring(0, 200)}`);
+            }
+            
+            const data = await res.json();
+            renderScoresTable(data.data);
+            document.getElementById('totalCount').innerText = data.total;
+            renderPagination(data.page, Math.ceil(data.total / data.per_page));
+        } catch (err) {
+            console.error('加载成绩列表失败:', err);
+            document.getElementById('scoresTbody').innerHTML = 
+                `<tr><td colspan="14" class="text-center text-danger">加载失败: ${err.message}</td></tr>`;
+        }
     }
 
     // 批量删除（使用全局删除模态框）
@@ -180,6 +222,23 @@
         });
     }
 
+    // 获取考试状态（用于判断是否显示强推按钮）
+    async function loadExamStatus() {
+        try {
+            const res = await fetch(`/api/admin/exam/${examId}`);
+            if (res.ok) {
+                const data = await res.json();
+                examStatus = data.status || '';
+                console.log('考试状态:', examStatus);
+            } else {
+                examStatus = '';
+            }
+        } catch (err) {
+            console.error('获取考试状态失败:', err);
+            examStatus = '';
+        }
+    }
+    
     function renderScoresTable(scores) {
         const tbody = document.getElementById('scoresTbody');
         if (!scores.length) {
@@ -188,6 +247,24 @@
         }
         
         tbody.innerHTML = scores.map((s, idx) => {
+            const isClosed = examStatus === 'closed';  // 需要从后端获取考试状态 
+            // 强制重推按钮（仅已关闭的考试显示）
+            let forceResetBtnHtml = '';
+            if (isClosed && isSuperAdmin) {
+                forceResetBtnHtml = `
+                    <button class="btn btn-sm btn-outline-warning force-reset-btn" 
+                        data-user-id="${s.user_id}" 
+                        data-user-name="${escapeHtml(s.name)}"
+                        data-exam-id="${examId}"
+                        data-has-force="${s.has_force_reset || false}"
+                        data-force-end="${s.force_end_time || ''}"
+                        title="强制推送当前学员重新考试（保留原成绩，有效期2小时）">
+                        <i class="bi bi-lightning-charge"></i> 
+                        <span class="force-btn-text">${s.has_force_reset ? '撤销重推' : '强推考试'}</span>
+                    </button>
+                `;
+            }
+            
             // 只有超级管理员才显示删除按钮
             const deleteButtonHtml = isSuperAdmin ? 
                 `<button class="btn btn-sm btn-outline-danger delete-result-btn" data-result-id="${s.result_id}" data-user-name="${escapeHtml(s.name)}">
@@ -211,11 +288,18 @@
                 <td>
                     <a href="/admin/result/${s.result_id}" class="btn btn-sm btn-outline-info">${t('t_details')}</a>
                     <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
+                    ${forceResetBtnHtml}
                     ${deleteButtonHtml}
                 </td>
             </tr>
             `;
         }).join('');
+
+        // 绑定强制重推按钮事件
+        document.querySelectorAll('.force-reset-btn').forEach(btn => {
+            btn.removeEventListener('click', handleForceReset);
+            btn.addEventListener('click', handleForceReset);
+        });
 
         // 绑定删除按钮事件
         document.querySelectorAll('.delete-result-btn').forEach(btn => {
@@ -244,6 +328,63 @@
         });
         
         updateSelected();
+    }
+
+    // 强制重推处理函数
+    async function handleForceReset(e) {
+        const btn = e.currentTarget;
+        const examId = btn.dataset.examId;
+        const userId = btn.dataset.userId;
+        const userName = btn.dataset.userName;
+        const hasForce = btn.dataset.hasForce === 'true';
+        
+        if (hasForce) {
+            // 已有强制重推，执行撤销
+            if (!confirm(`确定要撤销 ${userName} 的强制重推资格吗？`)) return;
+            
+            showLoading('撤销中...');
+            try {
+                const response = await fetch(`/api/admin/exam/${examId}/cancel_force_reset/${userId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                hideLoading();
+                
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    loadScores();  // 刷新列表
+                } else {
+                    showToast(result.message || '撤销失败', 'error');
+                }
+            } catch (err) {
+                hideLoading();
+                showToast('操作失败', 'error');
+            }
+        } else {
+            // 创建强制重推
+            if (!confirm(`确定要为 ${userName} 强制推送重考吗？\n\n操作说明：\n• 保留原考试成绩记录\n• 新考试有效期2小时\n• 学员可重新参加考试`)) return;
+            
+            showLoading('强制推送中...');
+            try {
+                const response = await fetch(`/api/admin/exam/${examId}/force_reset/${userId}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await response.json();
+                hideLoading();
+                
+                if (result.success) {
+                    showToast(result.message, 'success');
+                    loadScores();  // 刷新列表，按钮状态会更新
+                } else {
+                    showToast(result.message || '操作失败', 'error');
+                }
+            } catch (err) {
+                hideLoading();
+                showToast('操作失败', 'error');
+            }
+        }
     }
 
     // 添加用时格式化函数
@@ -343,10 +484,15 @@
             alert('导出失败');
         }
     }
-    
-    // 初始化加载
-    loadScores();
-    
+
+    // 页面初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+        await loadExamStatus();  // ✅ 先加载考试状态
+        loadScores();
+        
+        // ... 其他初始化代码
+    });
+
     // 语言切换时重新加载
     window.addEventListener('app:languageChanged', function() {
         loadScores();

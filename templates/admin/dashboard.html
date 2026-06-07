@@ -953,7 +953,8 @@
           exam_name: document.getElementById('filterExamName').value,
           start_date: document.getElementById('filterStartDate').value,
           end_date: document.getElementById('filterEndDate').value,
-          wh_id: document.getElementById('filterWhId').value.trim()   // 新增
+          wh_id: document.getElementById('filterWhId').value.trim(),
+          lang: currentLang
       };
       try {
           const response = await fetch('/api/admin/export_filtered_excel', {
@@ -1026,7 +1027,7 @@
           console.error('搜索库房失败', e);
       }
   });
-  
+
   // 对当前考试批量导出PDF考试接口 0426
   async function batchExport(examId) {
       // 需要先获取该考试下的所有考生ID，然后调用批量导出接口

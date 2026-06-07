@@ -87,6 +87,7 @@ def export_filtered_excel():
     end_date = data.get('end_date', '')
     wh_raw = data.get('wh_id', '').strip()
     wh_id = wh_raw.split('(')[0].strip() if wh_raw else None
+    lang = data.get('lang', 'zh')
 
     db = get_supabase()
     
@@ -241,10 +242,11 @@ def export_filtered_excel():
             start_date=start_date,
             end_date=end_date,
             user_ids=final_user_ids,
-            wh_id=wh_id
+            wh_id=wh_id,
+            lang=lang
         )
         return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                         as_attachment=True, download_name=filename)
+                        as_attachment=True, download_name=filename)
     except Exception as e:
         logger.error(f"Excel 生成失败: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

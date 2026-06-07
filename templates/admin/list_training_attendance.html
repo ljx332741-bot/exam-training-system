@@ -3,6 +3,217 @@
 {% block title %}培训签到详情{% endblock %}
 
 {% block content %}
+
+<style media="print">
+    /* ========== 打印全局设置 ========== */
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif;
+        font-size: 10pt;
+        padding: 0;
+        margin: 0;
+    }
+    
+    /* 隐藏不需要打印的元素 */
+    .no-print, 
+    .navbar, 
+    footer, 
+    .btn, 
+    button,
+    .print-hide,
+    #selectAll,
+    .attendance-checkbox,
+    .d-flex.justify-content-end,
+    .dropdown,
+    nav,
+    .card-footer,
+    .pagination,
+    [class*="btn"],
+    .country-cell {
+        display: none !important;
+    }
+    
+    /* 卡片样式重置 */
+    .card {
+        border: none !important;
+        box-shadow: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .card-body {
+        padding: 0 !important;
+    }
+    
+    .container-fluid {
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+    
+    /* ========== 标题样式 ========== */
+    h2 {
+        font-size: 14pt;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 15px;
+        display: block !important;
+    }
+    
+    /* ========== 表头信息两列布局（与 PDF 一致）========== */
+    #headerInfo .row {
+        border: 1px solid #000;
+        border-collapse: collapse;
+        margin-bottom: 15px;
+    }
+    #headerInfo .row > .col-md-6 {
+        border: 1px solid #000;
+        padding: 4px 6px;
+        font-size: 10pt;
+        word-break: break-word;
+    }
+
+    #headerInfo .col-md-6:nth-child(odd) {
+        clear: left;
+    }
+    
+    #headerInfo .row::after {
+        content: "";
+        display: table;
+        clear: both;
+    }
+    
+    #headerInfo hr {
+        display: none;
+    }
+    
+    /* ========== 签到表格样式 ========== */
+    .table-responsive {
+        overflow: visible !important;
+    }
+    
+    .table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        table-layout: fixed !important;
+        font-size: 9pt;
+    }
+    
+    .table-bordered,
+    .table-bordered th,
+    .table-bordered td {
+        border: 1px solid #000 !important;
+    }
+    
+    /* 表格头部背景（保持浅灰） */
+    .table thead th {
+        background-color: #f0f0f0 !important;
+        font-weight: bold;
+        text-align: center;
+    }
+    
+    /* 打印时只保留可见列，隐藏操作列和多余列 */
+    .table th:nth-child(1),  /* 复选框列（隐藏） */
+    .table td:nth-child(1) {
+        display: none !important;
+    }
+    
+    .table th:nth-child(6),  /* 签到时间列（隐藏） */
+    .table td:nth-child(6) {
+        display: none !important;
+    }
+    
+    .table th:nth-child(7),  /* 国家列（隐藏） */
+    .table td:nth-child(7) {
+        display: none !important;
+    }
+    
+    .table th:nth-child(8),  /* 操作列（隐藏） */
+    .table td:nth-child(8) {
+        display: none !important;
+    }
+    
+    /* 重新计算打印时可见列的数量（4列） */
+    .table th:nth-child(2),
+    .table td:nth-child(2) {
+        width: 8% !important;  /* 序号 */
+    }
+    
+    .table th:nth-child(3),
+    .table td:nth-child(3) {
+        width: 34% !important;  /* 部门/合作伙伴 */
+    }
+    
+    .table th:nth-child(4),
+    .table td:nth-child(4) {
+        width: 30% !important;  /* 姓名+工号 */
+    }
+    
+    .table th:nth-child(5),
+    .table td:nth-child(5) {
+        width: 28% !important;  /* 签名 */
+    }
+    
+    /* 表格单元格内边距 */
+    .table td, 
+    .table th {
+        padding: 6px 8px;
+        vertical-align: middle;
+        word-break: break-word;
+    }
+    
+    /* 序号列居中对齐 */
+    .table td:nth-child(2),
+    .table th:nth-child(2) {
+        text-align: center;
+    }
+    
+    /* 签名图片样式 */
+    .table td img {
+        max-width: 100px;
+        max-height: 45px;
+        object-fit: contain;
+    }
+    
+    /* 无签名的提示文字 */
+    .text-warning {
+        color: #856404 !important;
+        font-style: italic;
+    }
+    
+    /* ========== 页面边距设置 ========== */
+    @page {
+        size: A4;
+        margin: 1.5cm;
+    }
+    
+    /* 避免分页在表格中间断开 */
+    .sign-table tr,
+    .table tr {
+        page-break-inside: avoid;
+        page-break-after: avoid;
+    }
+    
+    /* 表格头部重复打印 */
+    .table thead {
+        display: table-header-group;
+    }
+    
+    /* 保证表格完整显示 */
+    .table {
+        page-break-inside: avoid;
+    }
+    
+    /* 标题和表头不分页 */
+    h2, #headerInfo {
+        page-break-after: avoid;
+    }
+</style>
+
 <div class="container-fluid">
     <div class="mb-4">
         <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_record">培训签到表</span></h2>
@@ -26,113 +237,24 @@
                 <table class="table table-bordered align-middle">
                     <thead class="table-light">
                         <tr>
-                            <th class="no-print"><input type="checkbox" id="selectAll"></th>
-                            <th>序号No</th>
-                            <th>部门/合作伙伴（双语）Department/Partner</th>
-                            <th>姓名+工号Name + Employee ID </th>
-                            <th>签名Signature</th>
-                            <th class="print-hide" data-i18n="sign_in_period">签到时间</th>
-                            <th class="print-hide" data-i18n="country">国家</th>
-                            <th class="print-hide" data-i18n="actions">操作</th>
+                            <th class="no-print" style="width: 5%;"><input type="checkbox" id="selectAll"></th>
+                            <th style="width: 5%;">序号No</th>
+                            <th style="width: 30%;">部门/合作伙伴（双语）Department/Partner</th>
+                            <th style="width: 20%;">姓名+工号Name + Employee ID </th>
+                            <th style="width: 20%;">签名Signature</th>
+                            <th class="print-hide" style="width: 10%;" data-i18n="sign_in_period">签到时间</th>
+                            <th class="print-hide" style="width: 5%;" data-i18n="country">国家</th>
+                            <th class="print-hide" style="width: 5%;" data-i18n="actions">操作</th>
                         </tr>
                     </thead>
                     <tbody id="attendanceTbody">
-                        <tr><td colspan="5" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="8" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
         </div>
     </div>
 </div>
-
-<style media="print">
-    #headerInfo .row {
-        border: 1px solid #000;
-        border-collapse: collapse;
-        margin-bottom: 15px;
-    }
-    #headerInfo .row > .col-md-6 {
-        border: 1px solid #000;
-        padding: 4px 6px;
-        font-size: 10pt;
-        word-break: break-word;
-    }
-
-    /* 隐藏按钮、导航、页脚、打印隐藏类 */
-    .no-print, .btn, .navbar, footer, .print-hide { display: none !important; }
-    .card { border: none !important; box-shadow: none !important; }
-    body { 
-        padding: 0; 
-        margin: 0; 
-        font-size: 11pt;
-    }
-
-    /* 页面边距 */
-    @page {
-        size: A4;
-        margin: 0.8cm;
-    }
-
-    /* 标题 */
-    h2 {
-        font-size: 14pt;
-        display: block !important;
-        margin: 0 0 10px 0;
-    }
-
-    /* 表格边框 */
-    .table-bordered td, .table-bordered th { border: 1px solid #000 !important; }
-
-    /* 表头两列布局 */
-    #headerInfo .row > .col-md-6 {
-        width: 50% !important;
-        float: left !important;
-        box-sizing: border-box;
-        padding: 0 4px;
-        margin-bottom: 4px;
-        font-size: 10pt;
-    }
-    #headerInfo .row::after {
-        content: "";
-        display: table;
-        clear: both;
-    }
-    #headerInfo strong {
-        font-weight: 600;
-    }
-
-    /* 表格整体 */
-    .table-responsive {
-        overflow-x: visible !important;
-        white-space: normal !important;
-    }
-    .table {
-        width: 100% !important;
-        table-layout: fixed;
-        font-size: 10pt;
-        border-collapse: collapse;
-    }
-
-    /* 列宽分配（仅可见的四列） */
-    .table td:nth-child(1), .table th:nth-child(1) { width: 5%; }
-    .table td:nth-child(2), .table th:nth-child(2) { width: 45%; }
-    .table td:nth-child(3), .table th:nth-child(3) { width: 25%; }
-    .table td:nth-child(4), .table th:nth-child(4) { width: 25%; }
-
-    .table td, .table th {
-        padding: 4px 5px;
-        word-break: break-word;
-        vertical-align: middle;
-    }
-
-    /* 签名图片 */
-    .table td img {
-        max-width: 100%;
-        max-height: 65px;
-        height: auto;
-        object-fit: contain;
-    }
-</style>
 
 {% endblock %}
 
@@ -201,7 +323,7 @@
         const tbody = document.getElementById('attendanceTbody');
         const records = data.attendances || [];
         if (records.length === 0) {
-            tbody.innerHTML = `<td><td colspan="7">${t('t_no_sign_in_record_available')}</td></tr>`;
+            tbody.innerHTML = `<td><td colspan="8">${t('t_no_sign_in_record_available')}</td></tr>`;
             return;
         }
         tbody.innerHTML = '';

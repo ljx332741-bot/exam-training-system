@@ -5,6 +5,8 @@ from supabase import create_client, Client
 from config import Config
 from datetime import datetime, timezone
 
+_supabase_client = None
+_supabase_admin_client = None
 supabase = None
 
 def get_supabase():

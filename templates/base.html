@@ -809,13 +809,45 @@
                 }, 10000);
             };
         })();
-        
-        // 全局 Toast 函数
+
+        // 全局 Toast 函数（支持翻译）
         function showToast(message, title = '提示', type = 'info') {
             const toastEl = document.getElementById('globalToast');
             const toastTitle = document.getElementById('toastTitle');
             const toastMessage = document.getElementById('toastMessage');
-            const toastHeader = toastEl.querySelector('.toast-header');
+            
+            // ✅ 检查元素是否存在，如果不存在则使用 alert 作为降级方案
+            if (!toastEl || !toastTitle || !toastMessage) {
+                console.warn('Toast 元素不存在，使用 alert 代替');
+                alert(message);
+                return;
+            }
+            
+            // ✅ 对消息进行翻译（如果传入的是翻译键名）
+            let displayMessage = message;
+            let displayTitle = title;
+            
+            if (typeof t === 'function') {
+                // 翻译消息内容
+                if (message && typeof message === 'string') {
+                    // 尝试翻译，如果翻译后和原字符串不同，说明成功翻译
+                    const translated = t(message);
+                    if (translated !== message) {
+                        displayMessage = translated;
+                    } else if (message.includes('_') && !message.includes(' ')) {
+                        // 如果包含下划线且无空格，很可能是未翻译的键名，保留原样
+                        displayMessage = message;
+                    }
+                }
+                
+                // 翻译标题（如果标题是翻译键名）
+                if (title && typeof title === 'string') {
+                    const translatedTitle = t(title);
+                    if (translatedTitle !== title) {
+                        displayTitle = translatedTitle;
+                    }
+                }
+            }
             
             // 设置图标和样式
             let icon = 'bi-info-circle-fill';
@@ -831,8 +863,8 @@
                 headerClass = 'text-warning';
             }
             
-            toastTitle.innerHTML = `<i class="bi ${icon} me-1 ${headerClass}"></i> ${title}`;
-            toastMessage.innerText = message;
+            toastTitle.innerHTML = `<i class="bi ${icon} me-1 ${headerClass}"></i> ${displayTitle}`;
+            toastMessage.innerText = displayMessage;
             
             const toast = new bootstrap.Toast(toastEl, {
                 autohide: true,
@@ -883,6 +915,7 @@
                 toastEl.remove();
             });
         }
+        
         // 获取 flash 消息元素
         const flashMessages = document.querySelectorAll('.alert');
         flashMessages.forEach(alert => {
@@ -909,6 +942,58 @@
             // 显示 Toast
             showFlashToast(message, category);
         });
+        
+        /**
+         * 处理 API 返回的消息并通过 Toast 显示（支持自动翻译）
+         * @param {object} json - fetch 解析后的 JSON 对象（含 message 键和可选的 params 数组）
+         * @param {string} fallbackKey - 如果 json 中没有 message 时的备用翻译键
+         * @param {string} type - 消息类型: 'success', 'error', 'warning', 'info'
+         */
+        function apiToast(json, fallbackKey = 'unknown_error', type = 'success') {
+            const key = json?.message || fallbackKey;
+            const params = json?.params || [];
+            const translatedMessage = t(key, ...params);
+            
+            // 根据 success 字段自动判断类型
+            let toastType = type;
+            if (json?.success === false) {
+                toastType = 'error';
+            } else if (json?.success === true && type === 'success') {
+                toastType = 'success';
+            }
+            
+            // 根据类型设置标题
+            let title = '';
+            if (toastType === 'success') title = t('success') || '成功';
+            else if (toastType === 'error') title = t('error') || '错误';
+            else if (toastType === 'warning') title = t('warning') || '警告';
+            else title = t('info') || '提示';
+            
+            showToast(translatedMessage, title, toastType);
+        }
+
+        // ==================== Loading 遮罩函数 ====================
+        function showLoading(text = '正在处理...') {
+            const loadingEl = document.getElementById('globalLoading');
+            const loadingText = document.getElementById('loadingText');
+            
+            // ✅ 检查元素是否存在
+            if (!loadingEl) {
+                console.warn('Loading 元素不存在');
+                return;
+            }
+            
+            if (loadingText) loadingText.textContent = text;
+            loadingEl.style.display = 'flex';
+        }
+
+        function hideLoading() {
+            const loadingEl = document.getElementById('globalLoading');
+            if (loadingEl) {
+                loadingEl.style.display = 'none';
+            }
+        }
+
     </script>
 
     <!-- 引入全局删除模态框 -->
