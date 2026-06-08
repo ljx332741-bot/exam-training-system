@@ -600,7 +600,7 @@ def generate_bilingual_excel(training_id: int, exam_id: int, country: str = None
     filename = f"培训报告_{training_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return buffer, filename
 
-def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end_date, user_ids=None, wh_id=None):
+def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end_date, user_ids=None, wh_id=None, lang='zh'):
     """
     生成双语Excel报告，支持按国家、库房、培训名称、考试名称筛选
     user_ids: 外部计算好的允许用户ID列表（None表示不限制）

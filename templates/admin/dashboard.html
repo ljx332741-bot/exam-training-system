@@ -947,6 +947,9 @@
       const btn = document.getElementById('confirmExportBtn');
       btn.disabled = true;
       btn.textContent = t('t_exporting');
+
+      const currentLang = window.i18n?.currentLang || 'zh';
+
       const params = {
           country: document.getElementById('exportCountryCode').value,   // 使用标准化后的代码
           training_name: document.getElementById('filterTrainingName').value,
@@ -967,7 +970,12 @@
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = `培训考试综合报告_${new Date().toISOString().slice(0,19)}.xlsx`;
+          // 根据语言设置文件名
+          const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+          const fileName = currentLang === 'en' 
+              ? `Training_Exam_Report_${timestamp}.xlsx` 
+              : `培训考试综合报告_${timestamp}.xlsx`;
+          a.download = fileName;
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -1273,7 +1281,7 @@
               suggestionList.innerHTML = '';
               return;
           }
-          
+        
           const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
           const matched = countries.filter(c => 
               c.name_zh.toLowerCase().includes(q) || 
