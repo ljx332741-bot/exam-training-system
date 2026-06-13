@@ -2,10 +2,53 @@
 {% extends "base.html" %}
 {% block title %}培训管理{% endblock %}
 {% block content %}
+<style>
+    /* 可展开行样式 */
+    .expand-icon {
+        cursor: pointer;
+        transition: transform 0.2s;
+        display: inline-block;
+        margin-right: 8px;
+        font-size: 12px;
+        color: #0d6efd;
+    }
+    .expand-icon:hover {
+        color: #0a58ca;
+    }
+    .expand-icon.expanded {
+        transform: rotate(90deg);
+    }
+    .binding-detail-row {
+        background-color: #f8f9fc;
+    }
+    .binding-detail-row td {
+        padding: 0 !important;
+    }
+    .binding-content {
+        padding: 15px 20px;
+        background: #f8f9fc;
+        border-left: 3px solid #0d6efd;
+    }
+    .binding-table {
+        margin-bottom: 0;
+        font-size: 0.85rem;
+    }
+    .binding-table th {
+        background-color: #e9ecef;
+    }
+    .binding-table td {
+        vertical-align: middle;
+    }
+    .pass-score-input {
+        width: 70px;
+        display: inline-block;
+    }
+</style>
+
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
-        <button class="btn btn-outline-secondary" onclick="history.back();">
+        <button class="btn btn-outline-secondary" onclick="window.location.href='/admin/dashboard';">
             <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
         </button>
     </div>
@@ -41,11 +84,10 @@
                 </div>
                 <div class="col-md-5 d-flex justify-content-end">
                     <button class="btn btn-primary me-2" id="newTrainingBtn"><i class="bi bi-plus-circle"></i> <span data-i18n="new_training">新增培训</span></button>
-                    <button class="btn btn-sm btn-outline-info view-attendance-users-btn" 
+                    <button class="btn btn-sm btn-outline-info view-attendance-users-btn"
                             data-training-id="${t.id}" 
-                            data-training-name="${escapeHtml(t.name)}"
                             data-i18n-title="title_view_sign_in_status"
-                            title="查看签到人员状态">
+                            title="查看全部培训的人员签到状态">
                         <i class="bi bi-eye"></i> <span data-i18n="view_attendance_users">签到人员</span>
                     </button>
                 </div>
@@ -76,9 +118,10 @@
                     </style>
                     <thead class="table-light">
                         <tr>
-                            <th>ID</th>
+                            <th>Sqn</th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="training_name">培训名称</span></th>
+                            <th><span data-i18n="training_id">tid</span></th>
                             <th><span data-i18n="quarter">季度</span></th>
                             <th><span data-i18n="sign_count">签到人数</span></th>
                             <th><span data-i18n="created_at">创建时间</span></th>
@@ -280,6 +323,7 @@
 
 {% block extra_js %}
 <script>
+    const STATUS_VIEW_URL = {{ url_for('admin_training.training_attendance_status_view')|tojson }};
     let currentPage = 1;
     let filters = { name: '', country: '', quarter: '' };
     let currentTrainingId = null;
@@ -422,19 +466,23 @@
             }
 
             // ✅ 修改培训名称列：根据是否有国家决定跳转方式
+            const expandIcon = `<span class="expand-icon" data-training-id="${t.id}">▶</span>`;
             let nameHtml = '';
             if (t.country) {
-                // 有国家：跳转到签到详情页
-                nameHtml = `<a href="/admin/training/${t.id}/attendance" class="text-decoration-none fw-bold" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
+                nameHtml = `${expandIcon}<a href="/admin/training/${t.id}/attendance" class="text-decoration-none fw-bold" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
             } else {
-                // 无国家：弹出国家分组模态框
-                nameHtml = `<a href="#" class="text-decoration-none fw-bold group-detail-link" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
+                nameHtml = `${expandIcon}<a href="#" class="text-decoration-none fw-bold group-detail-link" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
             }
 
             row.innerHTML = `
                 <td class="seq-column">${rowNumber}</td>  <!-- 使用连续序号 -->
                 <td class="country-cell" title="${escapeHtml(t.country || safeT('t_general'))}">${escapeHtml(t.country || safeT('t_general'))}</td>
                 <td class="name-cell">${nameHtml}</td>
+                <td>
+                    <a href="#" class="training-id-link" data-id="${t.id}" data-name="${escapeHtml(t.name)}" 
+                    title="${safeT('title_view_this_sign_in_status')}"
+                    style="cursor: pointer; text-decoration: none; color: #0d6efd;">${t.id}</a>
+                </td>
                 <td>${quarter}</td>
                 <td>${t.signed_count || 0}</td>
                 <td title="${new Date(t.created_at).toLocaleString()}">${new Date(t.created_at).toLocaleString()}</td>
@@ -450,12 +498,13 @@
                         `<button class="btn btn-sm btn-outline-info header-btn" 
                                 data-id="${t.id}"
                                 style="pointer-events: none; opacity: 0.65;"
-                                title="存在多个国家的不同表头模板，无法统一编辑，请在分组详情页分别录入" data-i18n-key="t_header_input">
+                                title="${safeT('title_header_input_vary_prompt')}">
                             📋 ${safeT('t_header_input')}
                         </button>` : 
-                        `<button class="btn btn-sm btn-outline-info header-btn data-i18n-key="t_header_input"" 
+                        `<button class="btn btn-sm btn-outline-info header-btn" 
                                 data-id="${t.id}"
-                                title="录入表头字段">
+                                data-i18n-title="title_header_input"
+                                title="${safeT('title_header_input')}">
                             📋 ${safeT('t_header_input')}
                         </button>`
                     }
@@ -632,26 +681,62 @@
         });
 
         // 推送
+        // 推送按钮事件（在 attachRowEvents 或初始化中）
         document.querySelectorAll('.push-btn').forEach(btn => {
             btn.onclick = (e) => {
-                currentTrainingId = btn.dataset.id;
+                currentTrainingId = btn.dataset.id;  // ✅ 设置当前培训ID
                 // 填充已有有效期（本地时间）
-                document.getElementById('start_time').value = utcToLocalDatetimeLocal(btn.dataset.start);
-                document.getElementById('end_time').value = utcToLocalDatetimeLocal(btn.dataset.end);
-                // 清空用户列表并加载
-                document.getElementById('pushUserListBody').innerHTML = '';
+                const startTime = btn.dataset.start;
+                const endTime = btn.dataset.end;
+                document.getElementById('start_time').value = startTime ? utcToLocalDatetimeLocal(startTime) : '';
+                document.getElementById('end_time').value = endTime ? utcToLocalDatetimeLocal(endTime) : '';
+                
+                // 清空用户列表并显示加载状态
+                const tbody = document.getElementById('pushUserListBody');
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center">${t('loading')}</td></tr>`;
+                
+                // 显示模态框
                 new bootstrap.Modal(document.getElementById('pushModal')).show();
-                loadPushUserList(); // 初始加载用户列表
+                
+                // 加载用户列表（会根据培训国家过滤）
+                loadPushUserList();
             };
         });
 
         // 删除
+
         document.querySelectorAll('.delete-btn').forEach(btn => {
             btn.onclick = async (e) => {
                 if(confirm(safeT('t_training_delete_tip'))) {
                     const id = btn.dataset.id;
-                    await fetch(`/api/admin/trainings?id=${id}`, {method: 'DELETE'});
-                    loadTrainings();
+                    const originalHtml = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+                    
+                    try {
+                        const res = await fetch(`/api/admin/trainings?id=${id}`, {method: 'DELETE'});
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            if (typeof showToast === 'function') {
+                                showToast(safeT('t_delete_success'), 'success');
+                            }
+                            loadTrainings();
+                        } else {
+                            // ✅ 使用 apiToast 自动翻译
+                            if (typeof apiToast === 'function') {
+                                apiToast(data, 't_delete_failed', 'error');
+                            }
+                        }
+                    } catch (err) {
+                        console.error('删除失败:', err);
+                        if (typeof showToast === 'function') {
+                            showToast(safeT('t_network_error') + err.message, 'error');
+                        }
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
+                    }
                 }
             };
         });
@@ -689,38 +774,140 @@
                 addNewTrainingRow(prefillData);
             });
         });
+
+        // 展开图标点击事件 培训考试关系绑定
+        document.querySelectorAll('.expand-icon').forEach(icon => {
+            icon.removeEventListener('click', handleExpandClick);
+            icon.addEventListener('click', handleExpandClick);
+        });
+
+        // ✅ 添加加载状态锁，防止重复请求
+        let isLoading = false;
+        async function handleExpandClick(e) {
+            e.stopPropagation();
+            
+            // ✅ 防止重复点击
+            if (this._isLoading) return;
+            
+            const icon = e.currentTarget;
+            const trainingId = icon.dataset.trainingId;
+            const row = icon.closest('tr');
+            
+            if (icon.classList.contains('expanded')) {
+                // 收起：删除详情行
+                const detailRow = document.getElementById(`binding-detail-${trainingId}`);
+                if (detailRow) {
+                    detailRow.remove();
+                }
+                icon.classList.remove('expanded');
+            } else {
+                // 展开：加载详情
+                this._isLoading = true;
+                try {
+                    await loadTrainingBindings(trainingId, row, icon);
+                    // ✅ 只有成功加载后才添加 expanded 类
+                    if (document.getElementById(`binding-detail-${trainingId}`)) {
+                        icon.classList.add('expanded');
+                    }
+                } finally {
+                    this._isLoading = false;
+                }
+            }
+        }
+
+        // 绑定培训ID点击事件
+        document.querySelectorAll('.training-id-link').forEach(link => {
+            // 移除旧事件避免重复绑定
+            link.removeEventListener('click', link._clickHandler);
+            link._clickHandler = (e) => {
+                e.preventDefault();
+                const trainingId = link.dataset.id;
+                const trainingName = link.dataset.name || '培训';
+                
+                if (!trainingId) {
+                    console.error('培训ID未找到');
+                    alert('无法获取培训信息');
+                    return;
+                }
+                
+                const url = `${STATUS_VIEW_URL}?training_id=${trainingId}&name=${encodeURIComponent(trainingName)}`;
+                window.location.href = url;
+            };
+            link.addEventListener('click', link._clickHandler);
+        });
     }
 
-    // 加载推送候选用户
+    // 加载推送候选用户（根据培训国家过滤）
     async function loadPushUserList() {
         const search = document.getElementById('pushUserSearch').value;
         const whFilter = document.getElementById('pushWhFilter').value.toLowerCase();
         const isPartner = document.getElementById('pushIsPartner').value;
-        const countryCodeHidden = document.getElementById('pushCountryCode');
-        let countryCode = countryCodeHidden ? countryCodeHidden.value : '';
-        // 若隐藏字段为空，尝试从输入框文本转换
-        if (!countryCode) {
-            const countryText = document.getElementById('pushCountryFilter').value.trim();
-            if (countryText) {
-                const matched = window.countryList?.find(c =>
-                    c.name_zh === countryText || c.name_en.toLowerCase() === countryText.toLowerCase() || c.code === countryText.toUpperCase()
-                );
-                countryCode = matched ? matched.code : countryText;
-            }
+        
+        // ✅ 关键修改：根据当前培训的国家过滤，而不是管理员的权限范围
+        const trainingId = currentTrainingId;
+        if (!trainingId) {
+            console.warn('没有选中培训');
+            const tbody = document.getElementById('pushUserListBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-warning">请先选择培训</td></tr>';
+            return;
         }
-
-        const params = new URLSearchParams({
-            search: search,
-            country: countryCode,
-            status: 'registered',
-            page: 1,
-            per_page: 100
-        });
+        
         try {
+            // 获取培训的国家信息
+            const trainingRes = await fetch(`/api/admin/trainings?id=${trainingId}`);
+            const trainingData = await trainingRes.json();
+            const training = Array.isArray(trainingData) ? trainingData[0] : trainingData.data?.[0];
+            
+            if (!training) {
+                console.warn('培训不存在');
+                const tbody = document.getElementById('pushUserListBody');
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">培训不存在</td></tr>';
+                return;
+            }
+            
+            // ✅ 获取培训的国家（支持多国家，优先使用 countries 字段）
+            let trainingCountries = [];
+            if (training.countries) {
+                try {
+                    trainingCountries = typeof training.countries === 'string' 
+                        ? JSON.parse(training.countries) 
+                        : training.countries;
+                } catch(e) {
+                    trainingCountries = [];
+                }
+            }
+            if (trainingCountries.length === 0 && training.country) {
+                trainingCountries = [training.country];
+            }
+            
+            if (trainingCountries.length === 0) {
+                const tbody = document.getElementById('pushUserListBody');
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-warning">该培训未指定国家，无法选择用户</td></tr>';
+                return;
+            }
+            
+            // ✅ 显示培训国家信息
+            console.log('培训国家:', trainingCountries);
+            
+            // ✅ 根据培训国家获取用户（使用 in 查询多个国家）
+            const params = new URLSearchParams({
+                search: search,
+                status: 'registered',
+                page: 1,
+                per_page: 100
+            });
+            
+            // 添加国家过滤（支持多国家）
+            if (trainingCountries.length === 1) {
+                params.append('country', trainingCountries[0]);
+            } else if (trainingCountries.length > 1) {
+                params.append('countries', trainingCountries.join(','));
+            }
+            
             const res = await fetch(`/api/admin/users?${params}`);
             const data = await res.json();
             let users = (data.data || []).filter(u => u.user_status === 'registered');
-
+            
             // 前端额外过滤：库房编码/名称
             if (whFilter) {
                 users = users.filter(u =>
@@ -732,25 +919,37 @@
             if (isPartner) {
                 users = users.filter(u => u.is_partner === (isPartner === 'Y'));
             }
-
+            
             const tbody = document.getElementById('pushUserListBody');
-            tbody.innerHTML = users.map(u => `
-                <tr>
-                    <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
-                    <td>${escapeHtml(u.name_en || '')}</td>
-                    <td>${escapeHtml(u.email)}</td>
-                    <td>${escapeHtml(u.country || '-')}</td>
-                    <td>${escapeHtml(u.wh_id || '-')}</td>
-                </tr>
-            `).join('');
-
-            document.getElementById('pushSelectAll').onclick = (e) => {
-                document.querySelectorAll('.push-user-checkbox').forEach(cb => cb.checked = e.target.checked);
-            };
+            if (users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">该培训国家(${trainingCountries.join(', ')})下暂无用户</td></tr>`;
+            } else {
+                tbody.innerHTML = users.map(u => `
+                    <tr>
+                        <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
+                        <td>${escapeHtml(u.name_en || '')}</td>
+                        <td>${escapeHtml(u.email)}</td>
+                        <td class="country-cell">${escapeHtml(u.country || '-')}</td>
+                        <td>${escapeHtml(u.wh_id || '-')}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            // 绑定全选事件
+            const selectAllCheckbox = document.getElementById('pushSelectAll');
+            if (selectAllCheckbox) {
+                selectAllCheckbox.onclick = (e) => {
+                    document.querySelectorAll('.push-user-checkbox').forEach(cb => cb.checked = e.target.checked);
+                };
+            }
+            
         } catch (err) {
             console.error('加载用户列表失败', err);
+            const tbody = document.getElementById('pushUserListBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败，请重试</td></tr>';
         }
     }
+
 
     // 绑定刷新按钮
     document.getElementById('pushLoadUsersBtn')?.addEventListener('click', loadPushUserList);
@@ -979,8 +1178,8 @@
             const hours = String(now.getHours()).padStart(2, '0');
             const minutes = String(now.getMinutes()).padStart(2, '0');
             prefillStart = `${year}-${month}-${day}T${hours}:${minutes}`;
-            // 结束时间 = 当前时间 + 4 小时
-            const endTime = new Date(now.getTime() + 4 * 60 * 60 * 1000);
+            // 结束时间 = 当前时间 + 72 小时(3天)
+            const endTime = new Date(now.getTime() + 72 * 60 * 60 * 1000);
             const endYear = endTime.getFullYear();
             const endMonth = String(endTime.getMonth() + 1).padStart(2, '0');
             const endDay = String(endTime.getDate()).padStart(2, '0');
@@ -1001,7 +1200,7 @@
             </td>
             <td><input type="text" id="newName" class="form-control form-control-sm" value="${escapeHtml(prefillName)}" 
                 data-i18n-placeholder="placeholder_training_name" placeholder="培训名称"></td>
-            <td colspan="3"></td>
+            <td colspan="4"></td>
             <td>
                 <input type="datetime-local" id="newStartTime" class="form-control form-control-sm" value="${prefillStart}">
                 -
@@ -1077,6 +1276,12 @@
                 endISO = localDateTimeToUTC(end);
             }
 
+            // 显示加载状态
+            const saveBtn = newRow.querySelector('.save-new-training');
+            const originalText = saveBtn.innerHTML;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${t('saving')}`;
+
             const payload = {
                 name: name,
                 country: countryCode || null,
@@ -1084,20 +1289,196 @@
                 end_time: endISO,
                 header_template: copiedHeaderTemplate || {}   // 复制原培训的表头模板（如果有）
             };
-            const res = await fetch('/api/admin/trainings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (res.ok) {
-                loadTrainings();
-            } else {
-                const error = await res.json();
-                alert('创建失败: ' + (error.message || '未知错误'));
+            try {
+                const res = await fetch('/api/admin/trainings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    const newTrainingId = data.id;
+                    
+                    // 刷新列表
+                    await loadTrainings();
+                    
+                    // ✅ 弹出推送对象选择对话框
+                    showPushTargetDialog(newTrainingId, name, countryCode);
+                    
+                    // 移除新增行
+                    newRow.remove();
+                } else {
+                    const error = await res.json();
+                    // ✅ 使用 apiToast 自动翻译
+                    if (typeof apiToast === 'function') {
+                        apiToast(error, 't_operation_failed', 'error');
+                    } else {
+                        alert(error.message || '操作失败');
+                    }
+                }
+            } catch (err) {
+                console.error('创建培训失败:', err);
+                alert('创建失败: ' + err.message);
+            } finally {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalText;
             }
         };
 
         newRow.querySelector('.cancel-new-training').onclick = () => newRow.remove();
+    }
+
+    // ==================== 推送对象选择对话框 ====================
+    function showPushTargetDialog(trainingId, trainingName, countryCode) {
+        // 移除已存在的模态框
+        const existingModal = document.getElementById('pushTargetDialog');
+        if (existingModal) existingModal.remove();
+        
+        const modalHtml = `
+            <div class="modal fade" id="pushTargetDialog" tabindex="-1" data-bs-backdrop="static">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title">
+                                <i class="bi bi-bell"></i> 推送培训签到 - ${escapeHtml(trainingName)}
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">选择推送对象</label>
+                                <div class="form-check mb-2">
+                                    <input type="radio" name="pushTarget" id="pushAllRadio" class="form-check-input" value="all" checked>
+                                    <label class="form-check-label" for="pushAllRadio">
+                                        📢 推送给全国所有学员 (${escapeHtml(countryCode || '未知')})
+                                    </label>
+                                    <div class="text-muted small mt-1 ms-4">将向该国家下所有注册用户发送签到通知</div>
+                                </div>
+                                <div class="form-check">
+                                    <input type="radio" name="pushTarget" id="pushCustomRadio" class="form-check-input" value="custom">
+                                    <label class="form-check-label" for="pushCustomRadio">
+                                        🎯 定点推送（选择特定学员）
+                                    </label>
+                                    <div class="text-muted small mt-1 ms-4">可指定库房、服务商或具体人员</div>
+                                </div>
+                            </div>
+                            <div id="customPushPanel" style="display: none;">
+                                <hr>
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i> 
+                                    点击"确认并推送"后将打开推送设置窗口，您可以选择特定的库房、服务商或具体人员。
+                                </div>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">稍后推送</button>
+                            <button type="button" class="btn btn-primary" id="confirmPushTargetBtn">确认并推送</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modalElement = document.getElementById('pushTargetDialog');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+        
+        const pushAllRadio = document.getElementById('pushAllRadio');
+        const pushCustomRadio = document.getElementById('pushCustomRadio');
+        const customPanel = document.getElementById('customPushPanel');
+        
+        pushCustomRadio.addEventListener('change', () => {
+            customPanel.style.display = pushCustomRadio.checked ? 'block' : 'none';
+        });
+        pushAllRadio.addEventListener('change', () => {
+            customPanel.style.display = 'none';
+        });
+        
+        document.getElementById('confirmPushTargetBtn').onclick = () => {
+            modal.hide();
+            
+            if (pushAllRadio.checked) {
+                // 推送给所有人：直接调用推送API
+                pushTrainingToAll(trainingId);
+            } else {
+                // 定点推送：打开培训推送模态框
+                openTrainingPushModal(trainingId);
+            }
+        };
+    }
+
+    // 推送给所有人
+    async function pushTrainingToAll(trainingId) {
+        // 设置默认有效期（当前时间 + 30天）
+        const now = new Date();
+        const endDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        
+        const startISO = localDateTimeToUTC(now.toISOString().slice(0, 16));
+        const endISO = localDateTimeToUTC(endDate.toISOString().slice(0, 16));
+        
+        showLoading('正在推送...');
+        
+        try {
+            const res = await fetch('/api/admin/trainings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: trainingId,
+                    start_time: startISO,
+                    end_time: endISO,
+                    is_active: true,
+                    user_ids: null  // null 表示推送给所有人
+                })
+            });
+            
+            if (res.ok) {
+                if (typeof showToast === 'function') {
+                    showToast('培训已创建并推送给所有学员', 'success');
+                } else {
+                    alert('培训已创建并推送给所有学员');
+                }
+            } else {
+                const error = await res.json();
+                throw new Error(error.message || '推送失败');
+            }
+        } catch (err) {
+            console.error('推送失败:', err);
+            if (typeof showToast === 'function') {
+                showToast('推送失败: ' + err.message, 'error');
+            } else {
+                alert('推送失败: ' + err.message);
+            }
+        } finally {
+            hideLoading();
+            loadTrainings();
+        }
+    }
+
+    // 打开培训推送模态框（复用现有功能）
+    function openTrainingPushModal(trainingId) {
+        // 找到对应的推送按钮并触发点击
+        const pushBtn = document.querySelector(`.push-btn[data-id="${trainingId}"]`);
+        if (pushBtn) {
+            pushBtn.click();
+        } else {
+            // 如果没有推送按钮，手动设置并打开模态框
+            currentTrainingId = trainingId;
+            const startTimeInput = document.getElementById('start_time');
+            const endTimeInput = document.getElementById('end_time');
+            if (startTimeInput) startTimeInput.value = '';
+            if (endTimeInput) endTimeInput.value = '';
+            
+            const tbody = document.getElementById('pushUserListBody');
+            if (tbody) tbody.innerHTML = '';
+            
+            const modal = new bootstrap.Modal(document.getElementById('pushModal'));
+            modal.show();
+            if (typeof loadPushUserList === 'function') {
+                loadPushUserList();
+            }
+        }
     }
 
     // 绑定查看签到人员按钮事件
@@ -1267,6 +1648,366 @@
         }
         if (typeof loadTrainings === 'function') loadTrainings();
     });
+    
+    // ==================== 培训-考试绑定管理 ====================
+    // 加载培训绑定的考试列表
+    async function loadTrainingBindings(trainingId, rowElement, iconElement = null) {
+        const detailRowId = `binding-detail-${trainingId}`;
+        
+        // 检查是否已存在展开行
+        let detailRow = document.getElementById(detailRowId);
+        if (detailRow) {
+            // ✅ 存在：删除行
+            detailRow.remove();
+            // ✅ 同步更新图标状态
+            if (iconElement) {
+                iconElement.classList.remove('expanded');
+            }
+            return;
+        }
+        
+        // ✅ 在当前行下方插入加载行
+        const newRow = rowElement.insertAdjacentElement('afterend', document.createElement('tr'));
+        newRow.id = detailRowId;
+        newRow.className = 'binding-detail-row';
+        newRow.innerHTML = `<td colspan="9" class="p-0"><div class="binding-content"><div class="text-center py-3"><div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}</div></div></td>`;
+        
+        try {
+            const res = await fetch(`/api/admin/training/${trainingId}/bindings`);
+            const data = await res.json();
+            const bindings = data.bindings || [];
+            const availableExams = data.available_exams || [];
+            
+            // ✅ 再次检查行是否已被其他操作删除（防止竞态）
+            const existingRow = document.getElementById(detailRowId);
+            if (!existingRow) {
+                return;
+            }
+            
+            if (bindings.length === 0) {
+                newRow.innerHTML = `<td colspan="9" class="p-0"><div class="binding-content">
+                    <div class="text-muted text-center py-3">
+                        ${t('no_related_exam')}
+                        <button class="btn btn-sm btn-outline-primary ms-2 add-binding-btn" data-training-id="${trainingId}">+ ${t('binding_exam')}</button>
+                    </div>
+                </div></td>`;
+            } else {
+                let bindingsHtml = `
+                    <div class="binding-content">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <strong><i class="bi bi-link"></i> ${t('related_exam')}</strong>
+                            <div>
+                                <button class="btn btn-sm btn-outline-primary me-2 add-binding-btn" data-training-id="${trainingId}">+ ${t('add_exam')}</button>
+                                <button class="btn btn-sm btn-outline-secondary refresh-bindings-btn" data-training-id="${trainingId}">${t('refresh_list')}</button>
+                            </div>
+                        </div>
+                        <table class="table table-sm binding-table">
+                            <thead>
+                                <tr>
+                                    <th>${t('exam_name')}</th>
+                                    <th>eid</th>
+                                    <th>${t('applicable_countries')}</th>
+                                    <th>${t('passing_grade')}</th>
+                                    <th>${t('auto_assign')}</th>
+                                    <th>${t('compulsory')}</th>
+                                    <th>${t('actions')}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${bindings.map(b => `
+                                    <tr>
+                                        <td><strong>${escapeHtml(b.exam_title)}</strong></td>
+                                        <td><strong>${b.exam_id}</strong></td>
+                                        <td>${b.exam_countries ? b.exam_countries.join(', ') : '-'}</td>
+                                        <td><input type="number" class="form-control form-control-sm pass-score-input" style="width: 70px;" value="${b.pass_score}" data-binding-id="${b.id}" data-field="pass_score" min="0" max="100"></td>
+                                        <td><input type="checkbox" class="form-check-input auto-assign-checkbox" ${b.is_auto_assign ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_auto_assign"></td>
+                                        <td><input type="checkbox" class="form-check-input required-checkbox" ${b.is_required ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_required"></td>
+                                        <td><button class="btn btn-sm btn-outline-danger unbind-btn" data-binding-id="${b.id}" data-exam-title="${escapeHtml(b.exam_title)}">${t('unbind')}</button></td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+                newRow.innerHTML = `<td colspan="9" class="p-0">${bindingsHtml}</td>`;
+            }
+            
+            // 绑定修改事件
+            attachBindingEvents(trainingId, newRow);
+            
+        } catch (err) {
+            console.error(t('bind_loading_failed'), err);
+            // ✅ 检查行是否还存在
+            const errorRow = document.getElementById(detailRowId);
+            if (errorRow) {
+                errorRow.innerHTML = `<td colspan="9" class="p-0"><div class="binding-content"><div class="text-danger text-center py-3">${t('failed_to_load_try_again')}</div></div></td>`;
+            }
+        }
+    }
 
+    // 绑定修改事件
+    function attachBindingEvents(trainingId, rowElement) {
+        // 及格分数修改
+        rowElement.querySelectorAll('.pass-score-input').forEach(input => {
+            input.addEventListener('change', async (e) => {
+                const bindingId = input.dataset.bindingId;
+                const passScore = parseInt(input.value);
+                if (isNaN(passScore) || passScore < 0 || passScore > 100) {
+                    alert('及格分数必须在0-100之间');
+                    input.value = 85;
+                    return;
+                }
+                await updateBinding(bindingId, { pass_score: passScore });
+            });
+        });
+        
+        // 自动分配复选框
+        rowElement.querySelectorAll('.auto-assign-checkbox').forEach(cb => {
+            cb.addEventListener('change', async (e) => {
+                const bindingId = cb.dataset.bindingId;
+                await updateBinding(bindingId, { is_auto_assign: cb.checked });
+            });
+        });
+        
+        // 必考复选框
+        rowElement.querySelectorAll('.required-checkbox').forEach(cb => {
+            cb.addEventListener('change', async (e) => {
+                const bindingId = cb.dataset.bindingId;
+                await updateBinding(bindingId, { is_required: cb.checked });
+            });
+        });
+        
+        // 解除绑定(t('confirm_unbind_exam'),${examTitle})
+        rowElement.querySelectorAll('.unbind-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const bindingId = btn.dataset.bindingId;
+                const examTitle = btn.dataset.examTitle;
+                //if (confirm(`确定要解除与考试「${examTitle}」的绑定吗？`)) {
+                if (confirm(t('confirm_unbind_exam',{examTitle: examTitle}))) {
+                    const success = await deleteBinding(bindingId);
+                    if (success) {
+                        showToast('解除成功', 'success');
+                        // 刷新绑定列表（保持展开状态）
+                        const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                        if (row) {
+                            await loadTrainingBindings(trainingId, row);
+                        }
+                    }
+                }
+            });
+        });
+        
+        // 添加考试按钮
+        rowElement.querySelectorAll('.add-binding-btn').forEach(btn => {
+            btn.addEventListener('click', () => showAddExamModal(trainingId));
+        });
+        
+        // 刷新按钮
+        rowElement.querySelectorAll('.refresh-bindings-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                if (row) {
+                    loadTrainingBindings(trainingId, row);
+                }
+            });
+        });
+    }
+
+    // 更新绑定配置
+    async function updateBinding(bindingId, data) {
+        try {
+            const res = await fetch(`/api/admin/training/binding/${bindingId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            if (!res.ok) throw new Error('更新失败');
+            showToast('更新成功', 'success');
+        } catch (err) {
+            console.error('更新失败:', err);
+            showToast('更新失败', 'error');
+        }
+    }
+
+    // 解除绑定
+    async function deleteBinding(bindingId) {
+        try {
+            const res = await fetch(`/api/admin/training/binding/${bindingId}`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            if (!res.ok) throw new Error('解除失败');
+            showToast('解除成功', 'success');
+            return true;
+        } catch (err) {
+            console.error('解除失败:', err);
+            showToast('解除失败', 'error');
+            return false;
+        }
+    }
+
+    // 显示添加考试模态框（改造版）
+    async function showAddExamModal(trainingId) {
+        // 获取可用的考试列表
+        const res = await fetch(`/api/admin/training/${trainingId}/bindings`);
+        const data = await res.json();
+        const availableExams = data.available_exams || [];
+        
+        // 获取培训名称
+        const trainingRow = document.querySelector(`tr[data-id="${trainingId}"]`);
+        const trainingName = trainingRow ? trainingRow.querySelector('.name-cell')?.innerText || trainingId : trainingId;
+        
+        // ✅ 创建模态框，增加"新建考试"选项
+        const modalId = 'addExamModal_' + Date.now();
+        const modalHtml = `
+            <div class="modal fade" id="${modalId}" tabindex="-1" data-bs-backdrop="static">
+                <div class="modal-dialog modal-lg">
+                    <div class="modal-content">
+                        <div class="modal-header bg-primary text-white">
+                            <h5 class="modal-title">${t('binding_exam')} - ${escapeHtml(trainingName)}</h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="mb-3">
+                                <label class="form-label">${t('select_exam')}</label>
+                                <div class="input-group">
+                                    <select id="selectExam_${modalId}" class="form-select">
+                                        <option value="">${t('please_select')}...</option>
+                                        ${availableExams.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${e.countries ? e.countries.join(', ') : '-'})</option>`).join('')}
+                                        <option value="__NEW__" style="background-color: #e7f3ff; font-weight: bold;">➕ ${t('creat_new_exam')}...</option>
+                                    </select>
+                                </div>
+                                <div class="form-text">${t('creat_new_exam_prompt')}</div>
+                            </div>
+                            <div id="newExamFields_${modalId}" style="display: none;">
+                                <hr>
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle"></i> ${t('open_creat_exam_page_prompt')}
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">及格分数</label>
+                                <input type="number" id="passScore_${modalId}" class="form-control" value="85" min="0" max="100">
+                            </div>
+                            <div class="form-check mb-2">
+                                <input type="checkbox" id="isAutoAssign_${modalId}" class="form-check-input" checked>
+                                <label class="form-check-label">${t('auto_assign_after_signin')}</label>
+                            </div>
+                            <div class="form-check">
+                                <input type="checkbox" id="isRequired_${modalId}" class="form-check-input" checked>
+                                <label class="form-check-label">${t('required')}</label>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${t('cancel')}</button>
+                            <button type="button" class="btn btn-primary confirm-add-btn" data-modal-id="${modalId}" data-training-id="${trainingId}">${t('confirm_bind')}</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const modalElement = document.getElementById(modalId);
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+        
+        const selectExam = document.getElementById(`selectExam_${modalId}`);
+        
+        // 监听选择变化
+        selectExam.addEventListener('change', async (e) => {
+            if (e.target.value === '__NEW__') {
+                // 关闭当前模态框
+                modal.hide();
+                
+                // 打开新窗口创建考试（传入培训ID和国家信息用于预填）
+                const trainingCountry = trainingRow?.querySelector('.country-cell')?.innerText || '';
+                const createUrl = `/admin/import?training_id=${trainingId}&country=${trainingCountry}&from_binding=true`;
+                window.open(createUrl, '_blank');
+                
+                // 监听窗口关闭后刷新绑定列表
+                const checkInterval = setInterval(() => {
+                    if (window.opener && window.opener.closed) {
+                        clearInterval(checkInterval);
+                        // 重新加载绑定列表
+                        const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                        if (row && typeof loadTrainingBindings === 'function') {
+                            loadTrainingBindings(trainingId, row);
+                        }
+                    }
+                }, 500);
+            }
+        });
+        
+        // 绑定确认按钮事件
+        modalElement.querySelector('.confirm-add-btn').onclick = async () => {
+            const passScore = document.getElementById(`passScore_${modalId}`).value;
+            const isAutoAssign = document.getElementById(`isAutoAssign_${modalId}`).checked;
+            const isRequired = document.getElementById(`isRequired_${modalId}`).checked;
+            const examId = selectExam.value;
+            if (!examId || examId === '__NEW__') {
+                alert('请选择考试');
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/admin/training/bind_exam', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        training_id: trainingId,
+                        exam_id: parseInt(examId),
+                        pass_score: parseInt(passScore),
+                        is_auto_assign: isAutoAssign,
+                        is_required: isRequired
+                    })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast('绑定成功', 'success');
+                    modal.hide();
+                    // 刷新绑定列表
+                    const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                    if (row) {
+                        await loadTrainingBindings(trainingId, row);
+                    }
+                    // 移除模态框
+                    setTimeout(() => modalElement.remove(), 300);
+                } else {
+                    alert(result.message || '绑定失败');
+                }
+            } catch (err) {
+                console.error('绑定失败:', err);
+                alert('绑定失败');
+            }
+        };
+    
+        // 模态框关闭时移除DOM
+        modalElement.addEventListener('hidden.bs.modal', () => {
+            modalElement.remove();
+        });
+    }
+
+    // Toast 提示函数（如果不存在）
+    if (typeof showToast !== 'function') {
+        function showToast(message, type = 'info') {
+            const toastHtml = `
+                <div class="position-fixed bottom-0 end-0 p-3" style="z-index: 1100">
+                    <div class="toast align-items-center text-white bg-${type === 'success' ? 'success' : 'danger'} border-0" role="alert">
+                        <div class="d-flex">
+                            <div class="toast-body">${message}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            const container = document.createElement('div');
+            container.innerHTML = toastHtml;
+            document.body.appendChild(container);
+            const toast = new bootstrap.Toast(container.querySelector('.toast'));
+            toast.show();
+            setTimeout(() => container.remove(), 3000);
+        }
+    }
 </script>
 {% endblock %}

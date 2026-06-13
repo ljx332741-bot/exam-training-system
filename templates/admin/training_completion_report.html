@@ -1,0 +1,406 @@
+<!-- templates/admin/training_completion_report.html -->
+{% extends "base.html" %}
+{% block title %}培训完成度报表{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-bar-chart-steps me-2"></i><span data-i18n="training_completion_report">培训完成度报表</span></h2>
+        <button class="btn btn-outline-secondary" onclick="history.back();">
+            <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+        </button>
+    </div>
+
+    <!-- 筛选栏（实时模糊查询，无搜索按钮） -->
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-2">
+                    <input type="text" id="filterName" class="form-control" 
+                           placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist"
+                           placeholder="国家" data-i18n-placeholder="placeholder_country">
+                    <datalist id="countryDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterTrainingName" class="form-control"
+                           placeholder="培训名称" data-i18n-placeholder="placeholder_training_name">
+                </div>
+                <div class="col-md-3">
+                    <select id="filterTrainingId" class="form-select">
+                        <option value="">所有培训</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="filterExamName" class="form-control"
+                           placeholder="考试名称" data-i18n-placeholder="placeholder_exam_name">
+                </div>
+                <div class="col-md-2">
+                    <input type="date" id="filterStartDate" class="form-control" placeholder="开始日期">
+                </div>
+                <div class="col-md-2">
+                    <input type="date" id="filterEndDate" class="form-control" placeholder="结束日期">
+                </div>
+                <div class="col-md-2">
+                    <select id="filterStatus" class="form-select">
+                        <option value="">全部状态</option>
+                        <option value="completed">已完成且及格</option>
+                        <option value="incomplete">未完成</option>
+                        <option value="failed">已考试不及格</option>
+                        <option value="not_signed">未签到</option>
+                        <option value="not_exam">已签到未考试</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button id="resetFiltersBtn" class="btn btn-secondary w-100">
+                        <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                    </button>
+                </div>
+                <div class="col-md-2">
+                    <button id="exportExcelBtn" class="btn btn-success w-100">
+                        <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 统计汇总卡片 -->
+    <div class="row g-3 mb-4" id="summaryCards">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6 class="card-title"><span data-i18n="total_users">总学员数</span></h6>
+                    <h2 class="mb-0" id="totalUsers">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6 class="card-title"><span data-i18n="signed_count">已签到人数</span></h6>
+                    <h2 class="mb-0" id="totalSigned">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6 class="card-title"><span data-i18n="completed_count">已完成考试人数</span></h6>
+                    <h2 class="mb-0" id="totalCompleted">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6 class="card-title"><span data-i18n="pass_rate">及格率</span></h6>
+                    <h2 class="mb-0" id="passRate">0%</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 详细数据表格 -->
+    <div class="card shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" style="min-width: 1200px;">
+                    <thead class="table-light">
+                        <tr>
+                            <th>序号</th>
+                            <th>培训名称</th>
+                            <th>tid</th>
+                            <th>国家</th>
+                            <th>姓名</th>
+                            <th>userid</th>
+                            <th>邮箱</th>
+                            <th>库房编码</th>
+                            <th>考试名称</th>
+                            <th>exid</th>
+                            <th>签到状态</th>
+                            <th>考试状态</th>
+                            <th>得分</th>
+                            <th>及格状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportTableBody">
+                        <tr><td colspan="14" class="text-center"><span data-i18n="loading">加载中...</span><\/td><\/tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer d-flex justify-content-between align-items-center">
+            <div><span data-i18n="total_questions">共</span> <span id="totalCount">0</span> <span data-i18n="record">条记录</span></div>
+            <nav><ul class="pagination mb-0" id="pagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<script>
+    let currentPage = 1;
+    let filters = {
+        name: '', country: '', training_name: '', exam_name: '',
+        status: '', start_date: '', end_date: ''
+    };
+
+    // 防抖函数
+    function debounce(fn, delay) {
+        let timer;
+        return function(...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
+    // 加载报表数据
+    async function loadReport() {
+        const params = new URLSearchParams({
+            page: currentPage,
+            per_page: 20,
+            name: filters.name,
+            country: filters.country,
+            training_name: filters.training_name,
+            exam_name: filters.exam_name,
+            status: filters.status,
+            start_date: filters.start_date,
+            end_date: filters.end_date
+        });
+
+        const res = await fetch('/api/admin/trainings?per_page=100');
+        const data = await res.json();
+        const select = document.getElementById('filterTrainingId');
+        select.innerHTML = '<option value="">所有培训</option>';
+        data.data.forEach(t => {
+            select.innerHTML += `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
+        });
+
+        const url = `/api/admin/training/completion_report?${params}`;
+        console.log('请求URL:', url);  // 添加日志
+
+        try {
+            const res = await fetch(url);
+            console.log('响应状态:', res.status);  // 添加日志
+            
+            if (!res.ok) {
+                const text = await res.text();
+                console.error('响应内容:', text);
+                throw new Error(`HTTP ${res.status}`);
+            }
+            
+            const data = await res.json();
+            console.log('返回数据:', data);  // 添加日志
+            
+            renderTable(data.data);
+            document.getElementById('totalCount').innerText = data.total;
+            renderPagination(data.page, Math.ceil(data.total / data.per_page));
+            
+            if (data.summary) {
+                document.getElementById('totalUsers').innerText = data.summary.total_users || 0;
+                document.getElementById('totalSigned').innerText = data.summary.total_signed || 0;
+                document.getElementById('totalCompleted').innerText = data.summary.total_completed || 0;
+                document.getElementById('passRate').innerText = (data.summary.pass_rate || 0) + '%';
+            }
+        } catch (err) {
+            console.error('加载报表失败:', err);
+            document.getElementById('reportTableBody').innerHTML = '<tr><td colspan="14" class="text-center text-danger">加载失败<\/td><\/tr>';
+        }
+    }
+
+    function renderTable(rows) {
+        const tbody = document.getElementById('reportTableBody');
+        if (!rows.length) {
+            tbody.innerHTML = '<tr><td colspan="14" class="text-center">暂无数据</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = rows.map((r, idx) => {
+            let signedBadge = r.is_signed ? 
+                '<span class="badge bg-success">已签到</span>' : 
+                '<span class="badge bg-secondary">未签到</span>';
+            
+            let examBadge = '';
+            if (r.is_completed) {
+                examBadge = '<span class="badge bg-success">已完成</span>';
+            } else if (r.is_signed) {
+                examBadge = '<span class="badge bg-warning text-dark">待考试</span>';
+            } else {
+                examBadge = '<span class="badge bg-secondary">未开始</span>';
+            }
+            
+            let passedBadge = '';
+            if (r.is_passed) {
+                passedBadge = '<span class="badge bg-success">及格</span>';
+            } else if (r.is_completed && !r.is_passed) {
+                passedBadge = '<span class="badge bg-danger">不及格</span>';
+            } else {
+                passedBadge = '<span class="badge bg-secondary">-</span>';
+            }
+
+            return `
+                <tr>
+                    <td>${(currentPage-1)*20 + idx + 1}</td>
+                    <td>${escapeHtml(r.training_name)}</td>
+                    <td>${escapeHtml(r.training_id || '-')}</td>
+                    <td>${escapeHtml(r.training_country || '-')}</td>
+                    <td>${escapeHtml(r.user_name)}</td>
+                    <td>
+                        ${(() => {
+                            const userIdFull = String(r.user_id || '-');
+                            if (userIdFull === '-') return '-';
+                            const userIdDisplay = userIdFull.slice(0, 8) + '...';
+                            return `<div class="d-flex align-items-center gap-2">
+                                <span title="${escapeHtml(userIdFull)}" style="cursor: help;">${escapeHtml(userIdDisplay)}</span>
+                                <button class="btn btn-sm btn-outline-secondary copy-id-btn" 
+                                    style="padding: 0px 4px; font-size: 0.7rem;" 
+                                    onclick="window.copyToClipboard('${escapeHtml(userIdFull)}', this)" 
+                                    title="复制完整ID">
+                                    <i class="bi bi-files"></i>
+                                </button>
+                            </div>`;
+                        })()}
+                    </td>
+                    <td>${escapeHtml(r.user_email)}</td>
+                    <td>${escapeHtml(r.wh_id || '-')}</td>
+                    <td>${escapeHtml(r.exam_name)}</td>
+                    <td>${escapeHtml(r.exam_id)}</td>
+                    <td>${signedBadge}</td>
+                    <td>${examBadge}</td>
+                    <td class="fw-bold ${r.score >= r.pass_score ? 'text-success' : 'text-danger'}">${r.score || '-'}</td>
+                    <td>${passedBadge}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function renderPagination(current, totalPages) {
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                currentPage = parseInt(link.dataset.page);
+                loadReport();
+            });
+        });
+    }
+
+    // 复制到剪贴板函数
+    window.copyToClipboard = async function(text, element) {
+        try {
+            await navigator.clipboard.writeText(text);
+           
+            const isButton = element.tagName === 'BUTTON';
+            const originalHtml = element.innerHTML;
+           
+            if (isButton) {
+                element.innerHTML = '<i class="bi bi-check"></i>';
+                element.classList.add('btn-success');
+                element.classList.remove('btn-outline-secondary');
+                setTimeout(() => {
+                    element.innerHTML = originalHtml;
+                    element.classList.remove('btn-success');
+                    element.classList.add('btn-outline-secondary');
+                }, 1500);
+            } else {
+                const originalBg = element.style.background;
+                element.style.background = '#d4edda';
+                element.innerText = '已复制!';
+                setTimeout(() => {
+                    element.style.background = originalBg;
+                    element.innerText = originalHtml;
+                }, 1500);
+            }
+           
+            // 可选：显示提示
+            console.log('复制成功:', text);
+        } catch (err) {
+            console.error('复制失败:', err);
+            // 降级方案
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert('ID已复制到剪贴板');
+        }
+    };
+
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        str = String(str); // 将任何类型转换为字符串
+        return str.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' })[m]);
+    }
+
+    // 绑定输入事件（实时查询）
+    const debouncedLoad = debounce(() => {
+        currentPage = 1;
+        loadReport();
+    }, 300);
+
+    document.getElementById('filterName').addEventListener('input', (e) => {
+        filters.name = e.target.value;
+        debouncedLoad();
+    });
+    document.getElementById('filterCountry').addEventListener('input', (e) => {
+        filters.country = e.target.value;
+        debouncedLoad();
+    });
+    document.getElementById('filterTrainingName').addEventListener('input', (e) => {
+        filters.training_name = e.target.value;
+        debouncedLoad();
+    });
+    document.getElementById('filterExamName').addEventListener('input', (e) => {
+        filters.exam_name = e.target.value;
+        debouncedLoad();
+    });
+    document.getElementById('filterStartDate').addEventListener('change', (e) => {
+        filters.start_date = e.target.value;
+        debouncedLoad();
+    });
+    document.getElementById('filterEndDate').addEventListener('change', (e) => {
+        filters.end_date = e.target.value;
+        debouncedLoad();
+    });
+    document.getElementById('filterStatus').addEventListener('change', (e) => {
+        filters.status = e.target.value;
+        debouncedLoad();
+    });
+
+    // 重置按钮
+    document.getElementById('resetFiltersBtn').addEventListener('click', () => {
+        document.getElementById('filterName').value = '';
+        document.getElementById('filterCountry').value = '';
+        document.getElementById('filterTrainingName').value = '';
+        document.getElementById('filterExamName').value = '';
+        document.getElementById('filterStartDate').value = '';
+        document.getElementById('filterEndDate').value = '';
+        document.getElementById('filterStatus').value = '';
+        filters = { name: '', country: '', training_name: '', exam_name: '', status: '', start_date: '', end_date: '' };
+        currentPage = 1;
+        loadReport();
+    });
+
+    // 导出Excel
+    document.getElementById('exportExcelBtn').addEventListener('click', () => {
+        const params = new URLSearchParams(filters);
+        window.open(`/api/admin/training/completion_report/export?${params}`, '_blank');
+    });
+
+    // 页面初始化
+    document.addEventListener('DOMContentLoaded', () => {
+        loadReport();
+    });
+</script>
+{% endblock %}

@@ -5,7 +5,7 @@ from . import exam_bp
 import os
 import re
 from dateutil import parser
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, timedelta
 from flask import (
     Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file
@@ -100,6 +100,20 @@ def dashboard():
             any_assign = db.table("exam_assignments").select("id").eq("exam_id", exam_id).limit(1).execute()
             if any_assign.data and exam_id not in assigned_exam_ids:
                 continue
+
+            # ✅ 关键修复：绑定模式的考试处理
+            is_binding_exam = ex.get('is_binding_exam', False)
+            
+            if is_binding_exam:
+                # 绑定模式的考试：只有被分配到 exam_assignments 的学员才能看到
+                # 如果用户没有被分配，即使考试是 active 状态，也不显示
+                if exam_id not in assigned_exam_ids:
+                    continue
+                # 如果被分配了，强制设置为 active 状态（如果尚未激活）
+                if not ex.get('is_active'):
+                    db.table("exams").update({"is_active": True, "status": "active"}).eq("id", exam_id).execute()
+                    ex['is_active'] = True
+                    ex['status'] = 'active'
             
             # 获取该用户的考试状态
             user_status = status_map.get(exam_id, {})
@@ -472,6 +486,9 @@ def submit_exam(exam_id):
     now = datetime.now(timezone.utc)
     
     logger.info(f"📥 收到交卷请求：用户 {user_id}，考试 {exam_id}")
+
+    # 检测是否为 AJAX 请求
+    is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     
     # 获取开始时间和提交时间
     status = db.table("user_exam_status").select("*").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
@@ -521,12 +538,16 @@ def submit_exam(exam_id):
         db.table("user_exam_status").insert(update_data).execute()
         logger.info(f"✅ 插入考试状态成功")
     
-    # 超时检查
-    exam_info = db.table("exams").select("duration").eq("id", exam_id).maybe_single().execute()
+    # 超时检查# ✅ 获取及格分数
+    exam_info = db.table("exams").select("duration, pass_score, title").eq("id", exam_id).maybe_single().execute()
     duration_minutes = exam_info.data.get("duration", 60) if exam_info.data else 60
+    pass_score = exam_info.data.get('pass_score', 85) if exam_info.data else 85
+    exam_title = exam_info.data.get('title', '考试') if exam_info.data else '考试'
     total_seconds = duration_minutes * 60
     
     if started_at_str and time_used and time_used > total_seconds:
+        if is_ajax:
+            return jsonify({"success": False, "message": "exam_timeout", "params": []}), 400
         flash({'msg': 'exam_timeout', 'params': []}, 'danger')
         return redirect(url_for('exam.dashboard'))
     
@@ -547,9 +568,20 @@ def submit_exam(exam_id):
         logger.info(f"📊 评分结果：总分={grade['total']}")
     except Exception as e:
         logger.error(f"❌ 评分失败: {e}")
+        if is_ajax:
+            return jsonify({"success": False, "message": "grading_error", "params": []}), 500
         flash({'msg': 'grading_error', 'params': []}, 'danger')
         return redirect(url_for('exam.dashboard'))
+
     
+    total_score = grade['total']
+    is_passed = total_score >= pass_score
+    pass_status = "及格" if is_passed else "不及格"
+    
+    # 可以存储到 exam_results 表（如果需要）
+    # 或者在 flash 消息中显示
+    flash(f'✅ 交卷成功！得分：{total_score}（{pass_status}，及格线：{pass_score}分）', 
+          'success' if is_passed else 'warning')
     # 保存成绩（传入用时）
     customs = {f"c{i}": request.form.get(f"custom{i}", "") for i in range(1, 6)}
     try:
@@ -562,6 +594,8 @@ def submit_exam(exam_id):
         logger.info(f"💾 成绩保存成功，用时: {time_used}秒")
     except Exception as e:
         logger.error(f"❌ 成绩保存失败: {e}")
+        if is_ajax:
+            return jsonify({"success": False, "message": "save_score_failed", "params": []}), 500
         flash({'msg': 'save_score_failed', 'params': []}, 'danger')
         return redirect(url_for('exam.dashboard'))
     
@@ -589,8 +623,24 @@ def submit_exam(exam_id):
     
     # 清理草稿
     db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-    
-    flash(f'✅ 交卷成功！得分：{grade["total"]}', 'success')
+
+    # ✅ 根据请求类型返回不同格式
+    if is_ajax:
+        # 返回 JSON 供前端弹窗显示
+        return jsonify({
+            "success": True,
+            "score": total_score,
+            "is_passed": is_passed,
+            "pass_score": pass_score,
+            "exam_title": exam_title,
+            "message": f'交卷成功！得分：{total_score}（{"及格" if is_passed else "不及格"}，及格线：{pass_score}分）'
+        })
+    else:
+        # 传统表单提交：显示 flash 消息并重定向
+        if is_passed:
+            flash(f'✅ 交卷成功！得分：{total_score}（及格，及格线：{pass_score}分）', 'success')
+        else:
+            flash(f'📝 交卷成功！得分：{total_score}（不及格，及格线：{pass_score}分）', 'warning')
     return redirect(url_for('exam.dashboard'))
 
 @exam_bp.route('/exam/result/<int:result_id>')

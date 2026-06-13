@@ -9,7 +9,7 @@ import re
 import string
 from routes import register_blueprints
 from datetime import datetime, timezone, date
-from flask import Flask, request, jsonify, session, make_response
+from flask import Flask, request, jsonify, session, make_response, redirect, url_for
 from services.db import get_supabase
 from services import auth, exam, export
 from services.auth import hash_password
@@ -220,7 +220,6 @@ def user_timezone():
     else:
         current_tz = get_user_timezone()
         return jsonify({"timezone": current_tz})
-
 
 # ========== 7. 模板过滤器 ==========
 @app.template_filter('local_time')

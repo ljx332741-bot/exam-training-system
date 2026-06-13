@@ -84,7 +84,9 @@
                             <th><span data-i18n="sequence">序号</span></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="exam_name">考试名称</span></th>
+                            <th><span data-i18n="exam_id">exid</span></th>
                             <th><span data-i18n="status">状态</span></th>
+                            <th><span data-i18n="created_at">创建时间</span></th>
                             <th><span data-i18n="period">有效期</span></th>
                             <th><span data-i18n="quenstion_number">题目数量</span></th>
                             <th><span data-i18n="time">时长</span></th>
@@ -98,7 +100,7 @@
                     <tbody id="examsTbody" style="font-size: 0.875rem";>
                         <tr>
                             <td 
-                                colspan="13" class="text-center">
+                                colspan="14" class="text-center">
                                 <span data-i18n="loading">加载中...</span>
                             </td>
                         </tr>
@@ -398,13 +400,21 @@
 
     // ========== 删除考试逻辑 ==========
     let currentDeleteExamId = null;
+    let isDeleting = false;
 
     function confirmDeleteExam(examId) {
+        if (isDeleting) {
+            if (typeof showToast === 'function') {
+                showToast(t('please_wait_operation_in_progress') || '请等待当前操作完成', 'warning');
+            }
+            return;
+        }
         currentDeleteExamId = examId;
         const modal = new bootstrap.Modal(document.getElementById('deleteExamModal'));
         modal.show();
     }
 
+    /*
     async function deleteExam(examId, permanent) {
         const response = await fetch(`/admin/exam/delete/${examId}?permanent=${permanent}`, { method: 'POST' });
         if (response.ok) {
@@ -414,8 +424,74 @@
             alert(t('t_delete_failed'));
         }
     }
+    使用以下改善后的删除逻辑带动态提示*/
+    // 执行删除
+    async function deleteExam(examId, permanent) {
+        if (isDeleting) return;
+        
+        isDeleting = true;
+        
+        // 获取对应的删除按钮
+        const btn = document.querySelector(`.delete-exam-btn[data-id="${examId}"]`);
+        const originalHtml = btn ? btn.innerHTML : '';
+        const originalDisabled = btn ? btn.disabled : false;
+        
+        // 显示按钮加载状态
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> ' + (t('deleting') || '删除中...');
+        }
+        
+        // 显示全局加载提示
+        if (typeof showLoading === 'function') {
+            showLoading(t('processing_delete') || '正在删除，请稍候...');
+        }
+        
+        try {
+            const response = await fetch(`/admin/exam/delete/${examId}?permanent=${permanent}`, { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            
+            const result = await response.json();
+            
+            if (response.ok && result.success !== false) {
+                // 成功提示
+                const successMsg = permanent ? (t('t_permanently_deleted') || '已永久删除') : (t('t_soft_deleted') || '已软删除');
+                if (typeof showToast === 'function') {
+                    showToast(successMsg, 'success');
+                } else {
+                    alert(successMsg);
+                }
+                // 刷新列表
+                currentPage = 1;
+                await loadExams();
+            } else {
+                throw new Error(result.message || t('t_delete_failed'));
+            }
+        } catch (err) {
+            console.error('删除失败:', err);
+            const errorMsg = err.message || t('t_delete_failed');
+            if (typeof showToast === 'function') {
+                showToast(errorMsg, 'error');
+            } else {
+                alert(errorMsg);
+            }
+            // 恢复按钮状态（删除失败时）
+            if (btn) {
+                btn.disabled = originalDisabled;
+                btn.innerHTML = originalHtml;
+            }
+        } finally {
+            isDeleting = false;
+            if (typeof hideLoading === 'function') {
+                hideLoading();
+            }
+            currentDeleteExamId = null;
+        }
+    }
 
-    // 绑定模态框按钮事件（在 DOMContentLoaded 中或单独）
+    // 永久删除按钮
     document.getElementById('deletePermanentBtn')?.addEventListener('click', function() {
         if (currentDeleteExamId) {
             deleteExam(currentDeleteExamId, true);
@@ -423,7 +499,7 @@
             currentDeleteExamId = null;
         }
     });
-
+    // 软删除按钮
     document.getElementById('deleteSoftBtn')?.addEventListener('click', function() {
         if (currentDeleteExamId) {
             deleteExam(currentDeleteExamId, false);
@@ -433,9 +509,10 @@
     });
 
     function renderExamsTable(exams) {
+        console.log('当前用户角色:', CURRENT_USER_ROLE);
         const tbody = document.getElementById('examsTbody');
         if (!exams.length) {
-            tbody.innerHTML = '<tr><td colspan="13" class="text-center">' + t('t_no_data') + '</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="14" class="text-center">' + t('t_no_data') + '</td></tr>';
             return;
         }        
         tbody.innerHTML = exams.map((ex, idx) => {
@@ -448,7 +525,7 @@
                              (ex.status === 'closed' && ex.assigned_count === 0);
             const showExport = ['active', 'closed'].includes(ex.status);
             const showEdit = ['draft', 'created', 'active'].includes(ex.status);
-            const showDelete = CURRENT_USER_ROLE === 'super_admin';
+            const showDelete = ['super_admin', 'developer'].includes(CURRENT_USER_ROLE);
 
             // ✅ 新增：已关闭考试的调试推送按钮
             const showDebugPush = ex.can_show_debug_push === true;
@@ -477,7 +554,9 @@
                 <td>${(currentPage-1)*20 + idx + 1}</td>
                 <td>${escapeHtml(countryDisplay)}</td>  <!-- ✅ 使用格式化后的国家显示 -->
                 <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
+                <td>${ex.id}</td>
                 <td>${getStatusText(ex.status)}</td>
+                <td>${formatLocalTime(ex.created_at)}</td>
                 <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
                 <td>${ex.question_count}</td>
                 <td>${ex.duration}</td>
@@ -796,7 +875,61 @@
     async function copyExam(examId) {
         const newTitle = prompt(t('t_enter_new_name'), examId + "_copy");
         if (!newTitle) return;
-        window.location.href = `/admin/exam/copy_preview/${examId}?new_title=${encodeURIComponent(newTitle)}`;
+
+        try {
+            // 获取原考试完整信息
+            const res = await fetch(`/api/admin/exam/${examId}`);
+            if (!res.ok) throw new Error('获取考试信息失败');
+            
+            const examData = await res.json();
+            
+            // 解析国家列表
+            let countries = [];
+            if (examData.countries) {
+                countries = typeof examData.countries === 'string' 
+                    ? JSON.parse(examData.countries) 
+                    : examData.countries;
+            } else if (examData.country) {
+                countries = [examData.country];
+            }
+            
+            // 计算默认有效期：当前时间 至 7天后
+            const now = new Date();
+            const sevenDaysLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+            
+            // 存储完整的考试配置到 sessionStorage
+            const examConfig = {
+                title: newTitle,
+                duration: examData.duration || 60,
+                reviewer: examData.reviewer || '',
+                countries: countries,
+                start_time: now.toISOString().slice(0, 16),
+                end_time: sevenDaysLater.toISOString().slice(0, 16)
+            };
+            sessionStorage.setItem('copy_exam_config', JSON.stringify(examConfig));
+            
+            // 跳转到复制预览页面
+            window.location.href = `/admin/exam/copy_preview/${examId}?new_title=${encodeURIComponent(newTitle)}&copy_from=${examId}`;
+            
+        } catch(e) {
+            console.error('复制考试失败:', e);
+            alert(t('copy_failed') || '复制失败: ' + e.message);
+        }
+    }
+
+    // 获取默认开始时间（当前时间）
+    function getDefaultStartTime() {
+        const now = new Date();
+        now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+        return now.toISOString().slice(0, 16);
+    }
+
+    // 获取默认结束时间（7天后）
+    function getDefaultEndTime() {
+        const date = new Date();
+        date.setDate(date.getDate() + 7);
+        date.setMinutes(date.getMinutes() - date.getTimezoneOffset());
+        return date.toISOString().slice(0, 16);
     }
 
     // 加载季度选项

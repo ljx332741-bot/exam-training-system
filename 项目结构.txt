@@ -80,10 +80,10 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   ├── api_exam.py                 # [新增] 学员考试模块
 │   ├── api_training.py             # [新增] 学员培训模块 
 │   ├── admin_stats.py              # [新增] 统计专用函数
-│   ├── admin_wh.py.py              # [新增] 库房管理API模块
+│   ├── admin_wh.py                 # [新增] 库房管理API模块
 │   ├── admin_exam.py               # [新增] 管理员：考试 & 仪表盘
 │   ├── admin_user.py               # [新增] 管理员：用户管理
 │   ├── admin_training.py           # [新增] 管理员：培训管理
 │   ├── admin_inspection.py         # [新增] 管理员：访谈管理
-│   └── admin_export.py             # [新增] 管理员：导出模块 ,需重新拷贝代码+++
+│   └── admin_export.py             # [新增] 管理员：导出模块
 

@@ -10,15 +10,20 @@ from flask import (
 )
 from . import admin_exam_bp
 from services.db import get_supabase, get_supabase_admin
-from routes.helpers import login_required, admin_required, parse_exam_countries, get_exam_countries_display, can_access_exam, is_user_resigned
 from services import auth, exam, export
 from config import Config
 from utils.status import get_exam_status
 from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country, utc_to_local, format_datetime_local
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
+from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
 from utils.permissions import (
-    is_developer, get_admin_allowed_countries, set_admin_allowed_countries, 
-    developer_required, get_allowed_countries, apply_country_filter, has_role
+    is_developer, 
+    get_admin_allowed_countries, 
+    set_admin_allowed_countries, 
+    developer_required, 
+    get_allowed_countries, 
+    apply_country_filter, 
+    has_role
 )
 from .admin_stats import (
     get_user_stats,
@@ -29,8 +34,16 @@ from .admin_stats import (
     get_exams_for_display,
     get_sign_in_status
 )
+from routes.helpers import (
+    login_required, 
+    admin_required, 
+    parse_exam_countries, 
+    get_exam_countries_display, 
+    can_access_exam, 
+    is_user_resigned,
+    get_default_exam_values
+)
 
-from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -198,7 +211,6 @@ def admin_import():
         
         if not file.filename.endswith('.docx'):
             logger.warning(f"❌ 文件格式错误: {file.filename}")
-            #flash('❌ 仅支持 .docx 格式', 'danger')
             flash({'msg': 'only_docx', 'params': []}, 'danger')
             return redirect(request.url)
         
@@ -206,7 +218,6 @@ def admin_import():
         tmp_path = None
         
         try:
-            # Windows 兼容的临时文件处理
             with tempfile.NamedTemporaryFile(
                 delete=False, suffix='.docx', dir=os.getenv('TEMP', '/tmp')
             ) as tmp:
@@ -214,9 +225,7 @@ def admin_import():
                 tmp_path = tmp.name
             logger.info(f"💾 临时文件已保存: {tmp_path}")
             
-            # 调用双语解析函数
-            exam_title, qs = exam.parse_docx_bilingual(tmp_path, exam_id=0)  # 不再需要 exam_id 参数
-            # 如果解析出的标题无效（空或默认值），则使用文件名
+            exam_title, qs = exam.parse_docx_bilingual(tmp_path, exam_id=0)
             if not exam_title or exam_title == '未命名考试':
                 exam_title = os.path.splitext(os.path.basename(file.filename))[0]
                 logger.info(f"使用文件名作为考试标题: {exam_title}")
@@ -224,31 +233,45 @@ def admin_import():
             
             if not qs:
                 logger.warning("⚠️ 解析结果为空")
-                #flash('⚠️ 未识别到有效题目，请检查 Word 格式', 'warning')
                 flash({'msg': 'no_valid_question', 'params': []}, 'warning')
                 return render_template('admin/import.html')
             
             logger.info("🔄 跳转预览页")
-            return render_template('admin/import_preview.html', questions=qs, exam_title=exam_title)
+            
+            # ✅ 获取默认值
+            defaults = get_default_exam_values(request)
+            
+            return render_template('admin/import_preview.html', 
+                questions=qs, 
+                exam_title=exam_title,
+                edit_mode=False,
+                copy_mode=False,
+                original_exam_id=0,
+                exam_status='draft',
+                exam_duration=60,
+                exam_reviewer='',
+                exam_start_time=defaults['exam_start_time'],
+                exam_end_time=defaults['exam_end_time'],
+                exam_countries=defaults['exam_countries'],
+                from_binding=defaults['from_binding'],
+                training_id=defaults['training_id'],
+                training_country=defaults['training_country'],
+                exam_pass_score=85  # ✅ 新增
+            )
             
         except AttributeError as e:
             logger.error(f"❌ AttributeError: {e}")
-            logger.error(f"💡 请确认 services/exam.py 中存在 parse_docx_bilingual 函数")
-            #flash('❌ 系统错误: 解析函数未找到', 'danger')
             flash({'msg': 'parse_func_missing', 'params': []}, 'danger')
         except FileNotFoundError as e:
             logger.error(f"❌ 文件未找到: {e}")
-            #flash('❌ 临时文件创建失败', 'danger')
             flash({'msg': 'temp_file_failed', 'params': []}, 'danger')
         except PermissionError as e:
             logger.error(f"❌ 权限错误: {e}")
-            #flash('❌ 文件访问权限不足', 'danger')
             flash({'msg': 'file_permission_denied', 'params': []}, 'danger')
         except Exception as e:
             logger.error(f"❌ 未知异常: {type(e).__name__}: {e}")
             logger.error(f"📋 完整堆栈:\n{traceback.format_exc()}")
-            #flash(f'❌ 解析失败: {str(e)}', 'danger')
-            flash({'msg': 'parse_error', 'params': [str(e)]}, 'danger')          # 带参数
+            flash({'msg': 'parse_error', 'params': [str(e)]}, 'danger')
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 try:
@@ -258,8 +281,9 @@ def admin_import():
                     pass
         return redirect(request.url)
     
-    # GET 请求：渲染上传表单
-    logger.info("📄 渲染 import.html")
+    # ========== GET 请求 ==========
+    logger.info("📄 渲染 import_preview.html（新建考试）")
+    
     return render_template('admin/import.html')
 
 @admin_exam_bp.route('/admin/import/save', methods=['POST'])
@@ -273,9 +297,17 @@ def admin_import_save():
 
     exam_title = request.args.get('title', '未命名考试')
     is_draft = request.args.get('draft', 'false').lower() == 'true'
+
+    # 获取附加信息
+    countries = request.json.get('countries', [])
+    duration = request.json.get('duration', 60)
+    reviewer = request.json.get('reviewer', '')
+    start_time = request.json.get('start_time')
+    end_time = request.json.get('end_time')
+    
     db = get_supabase()
     
-    # ✅ 修改：支持多国家，接收 countries 数组
+    # 支持多国家，接收 countries 数组
     countries = request.json.get('countries', [])  # 数组格式 ["NP", "LK", "BD"]
     country_code = request.json.get('country_code', '')  # 兼容旧版单国家
     
@@ -312,7 +344,11 @@ def admin_import_save():
                 allowed = [user_country]
             else:
                 allowed = []
-    
+
+    # 检查是否从培训绑定进入
+    from_binding = request.args.get('from_binding') == 'true'
+    is_draft = request.args.get('draft', 'false').lower() == 'true'
+
     # 权限检查：管理员创建的所有国家必须在允许范围内
     if current_role == 'admin':
         if not allowed or len(allowed) == 0:
@@ -326,13 +362,38 @@ def admin_import_save():
                 return jsonify({"success": False, "message": f"无权创建国家 {c} 的考试"}), 403
 
     try:
-        # 创建考试记录
-        exam_insert = db.table("exams").insert({
+        logger.info("=" * 60)
+        logger.info(f"📌 导入保存请求:")
+        logger.info(f"   from_binding: {from_binding}")
+        logger.info(f"   is_draft: {is_draft}")
+        logger.info(f"   exam_title: {exam_title}")
+        logger.info(f"   countries: {countries}")
+        logger.info(f"   start_time: {start_time}")
+        logger.info(f"   end_time: {end_time}")
+
+        # ✅ 获取及格分数（默认85）
+        pass_score = request.json.get('pass_score', 85)
+    
+        # 创建考试记录（包含完整信息）
+        exam_data = {
             "title": exam_title,
-            "is_active": not is_draft,
-            "countries": json.dumps(countries),  # ✅ 存储为 JSON 字符串
-            "status": "draft" if is_draft else "active"
-        }).execute()
+            "countries": json.dumps(countries) if countries else None,
+            "duration": duration,
+            "reviewer": reviewer,
+            "pass_score": pass_score,
+            "is_active": not is_draft,  # 正常创建时激活，草稿时不激活
+            "status": "active" if (not is_draft and start_time and end_time) else ("draft" if is_draft else "created"),
+            "is_binding_exam": from_binding  # 标识这是绑定模式的考试
+        }
+
+        logger.info(f"📌 准备插入的 exam_data: {exam_data}")
+    
+        # 非草稿模式时添加起止时间
+        if not is_draft and start_time and end_time:
+            exam_data["start_time"] = start_time
+            exam_data["end_time"] = end_time
+        
+        exam_insert = db.table("exams").insert(exam_data).execute()
         
         if not exam_insert.data:
             raise Exception("创建考试失败")
@@ -465,8 +526,7 @@ def admin_delete_exam(exam_id):
         # 检查考试是否存在
         exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
         if not exam_res.data:
-            flash(f"考试 ID {exam_id} 不存在", "warning")
-            return redirect(referer)
+            return jsonify({"success": False, "message": "考试不存在"}), 404
         
         exam_title = exam_res.data.get('title', f'ID {exam_id}')
         
@@ -480,12 +540,13 @@ def admin_delete_exam(exam_id):
                 ("exam_results", "考试成绩"),
                 ("user_exam_status", "考试状态"),
                 ("user_exam_drafts", "考试草稿"),
+                ("training_exam_bindings", "培训-考试绑定"),
+                ("user_interview_force_records", "强制访谈记录"),
             ]
             
             for table_name, cn_name in tables_to_delete:
                 try:
                     result = db.table(table_name).delete().eq("exam_id", exam_id).execute()
-                    # 检查删除结果
                     deleted_count = 0
                     if hasattr(result, 'count'):
                         deleted_count = result.count
@@ -495,7 +556,7 @@ def admin_delete_exam(exam_id):
                 except Exception as e:
                     logger.warning(f"删除 {cn_name} 时出错: {e}")
             
-            # ✅ 关键：删除考试本身，并检查结果
+            # 删除考试本身
             delete_result = db.table("exams").delete().eq("id", exam_id).execute()
             logger.info(f"删除考试原始结果: {delete_result}")
             
@@ -507,8 +568,8 @@ def admin_delete_exam(exam_id):
                 deleted_success = delete_result.count > 0
             
             if deleted_success:
-                flash(f"考试「{exam_title}」已永久删除", "success")
                 logger.info(f"✅ 考试 {exam_id} 永久删除成功")
+                return jsonify({"success": True, "message": "永久删除成功"})
             else:
                 # 尝试使用 raw SQL 删除
                 logger.warning("Supabase API 删除失败，尝试使用 raw SQL")
@@ -516,29 +577,31 @@ def admin_delete_exam(exam_id):
                     from services.db import get_supabase_raw
                     raw_result = get_supabase_raw().table("exams").delete().eq("id", exam_id).execute()
                     logger.info(f"Raw SQL 删除结果: {raw_result}")
-                    flash(f"考试「{exam_title}」已永久删除", "success")
+                    return jsonify({"success": True, "message": "永久删除成功"})
                 except Exception as raw_e:
                     logger.error(f"Raw SQL 删除也失败: {raw_e}")
-                    flash(f"考试「{exam_title}」删除失败，请检查数据库权限", "danger")
+                    return jsonify({"success": False, "message": "删除失败，请检查数据库权限"}), 500
+        
         else:
             # 软删除
             now_utc = datetime.now(timezone.utc).isoformat()
             update_result = db.table("exams").update({
                 "deleted_at": now_utc
             }).eq("id", exam_id).execute()
-            
+
+            # 软删除关联的强制访谈记录
+            db.table("user_interview_force_records").update({"deleted_at": now_utc}).eq("exam_id", exam_id).execute()
+
             if update_result.data:
-                flash(f"考试「{exam_title}」已软删除", "info")
                 logger.info(f"考试 {exam_id} 软删除成功")
+                return jsonify({"success": True, "message": "软删除成功"})
             else:
-                flash(f"考试「{exam_title}」软删除失败", "danger")
-        
-        return redirect(referer)
-        
+                logger.error(f"考试 {exam_id} 软删除失败")
+                return jsonify({"success": False, "message": "软删除失败"}), 500
+
     except Exception as e:
         logger.error(f"❌ 删除考试失败: {type(e).__name__}: {e}", exc_info=True)
-        flash(f"删除失败: {str(e)}", "danger")
-        return redirect(referer)
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_exam_bp.route('/admin/exam/restore/<int:exam_id>', methods=['POST'])
 @login_required
@@ -681,15 +744,20 @@ def copy_exam_preview(exam_id):
                 q['options'] = {}
     # 获取用户输入的新考试名称（从 query 参数）
     new_title = request.args.get('new_title', exam['title'] + '_copy')
+    countries = parse_exam_countries(exam)
     return render_template('admin/import_preview.html', 
-                           questions=questions,
-                           exam_title=new_title,
-                           copy_mode=False,        # 拷贝是新建，非编辑
-                           original_exam_id=exam_id,
-                           return_url=url_for('admin_exam.admin_exams_page'), # 拷贝后返回的页面有疑问
-                           exam_country=exam.get('country', ''),
-                           exam_country_name=''   # 可选
-                           ) 
+        questions=questions,
+        exam_title=new_title,
+        original_exam_id=exam_id,
+        return_url=url_for('admin_exam.admin_dashboard'),
+        exam_country=exam.get('country', ''),
+        copy_mode=True,
+        exam_status='draft',
+        exam_duration=exam.get('duration', 60),
+        exam_reviewer=exam.get('reviewer', ''),
+        exam_countries=countries,
+        exam_pass_score=exam.get('pass_score', 85)  # ✅ 新增
+    )
 
 
 @admin_exam_bp.route('/admin/exam/<int:exam_id>/update_full', methods=['PUT'])
@@ -725,7 +793,8 @@ def update_exam_full(exam_id):
         logger.info(f"更新考试阅卷人: {data['reviewer']}")
     if 'country_code' in data:
         update_data['country'] = data['country_code']
-    
+    if 'pass_score' in data:
+        update_data['pass_score'] = data['pass_score']
     # 有效期（只有草稿和未开始状态可更新）
     if current_status in ['draft', 'created']:
         if 'start_time' in data:
@@ -1008,24 +1077,28 @@ def api_admin_exam_detail(exam_id):
     """获取单个考试信息接口（用于模态框回显）"""
     db = get_supabase()
 
-    # ✅ 1. 获取考试信息
-    exam = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
-    if not exam.data:
+    # ✅ 先获取 data
+    result = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
+    if not result.data:
         return jsonify({"error": "考试不存在"}), 404
 
+    exam_data = result.data  # 这是字典
+
     # ✅ 2. 权限检查
-    if not can_access_exam(exam.data):
+    if not can_access_exam(exam_data):
         return jsonify({"error": "无权访问此考试"}), 403
 
     # ✅ 3. 获取考试状态
-    from utils.status import get_exam_status
-    status = get_exam_status(exam.data)
-    
+    status = get_exam_status(exam_data)
+    countries = parse_exam_countries(exam_data)
     return jsonify({
-        "start_time": exam.data.get('start_time'),
-        "end_time": exam.data.get('end_time'),
-        "duration": exam.data.get('duration', 60),
-        "status": status 
+        "title": exam_data.get('title'),
+        "start_time": exam_data.get('start_time'),
+        "end_time": exam_data.get('end_time'),
+        "duration": exam_data.get('duration', 60),
+        "reviewer": exam_data.get('reviewer', ''),
+        "status": status,
+        "countries": countries
     })
 
 # routes/admin_exam.py
@@ -1062,19 +1135,73 @@ def api_admin_exam_assignments(exam_id):
     
     return jsonify({"user_ids": user_ids})
 
+@admin_exam_bp.route('/api/admin/exam/assignments', methods=['POST'])
+@login_required
+@admin_required
+def save_exam_assignments():
+    """保存考试分配关系（定点推送时选择的学员）"""
+    from services.db import get_supabase_admin
+    from datetime import datetime, timezone
+    
+    data = request.json
+    exam_id = data.get('exam_id')
+    user_ids = data.get('user_ids', [])
+    
+    if not exam_id:
+        return jsonify({"success": False, "message": "考试ID不能为空"}), 400
+    
+    if not user_ids:
+        return jsonify({"success": False, "message": "请至少选择一位学员"}), 400
+    
+    db = get_supabase_admin()
+    now = datetime.now(timezone.utc).isoformat()
+    operator_id = session.get('user_id')
+    
+    # 1. 软删除该考试的所有旧分配
+    db.table("exam_assignments").update({
+        "deleted_at": now,
+        "deleted_by": operator_id
+    }).eq("exam_id", exam_id).is_("deleted_at", "null").execute()
+    
+    # 2. 批量插入新分配
+    assignments = []
+    for uid in user_ids:
+        assignments.append({
+            "exam_id": exam_id,
+            "user_id": uid,
+            "assigned_at": now,
+            "deleted_at": None,
+            "deleted_by": None
+        })
+    
+    result = db.table("exam_assignments").insert(assignments).execute()
+    
+    return jsonify({
+        "success": True,
+        "count": len(result.data) if result.data else 0,
+        "message": f"已成功分配给 {len(result.data)} 位学员"
+    })
+
 @admin_exam_bp.route('/api/admin/exam/<int:exam_id>/update', methods=['PUT'])
 @login_required
 @admin_required
 def api_admin_exam_update(exam_id):
     data = request.json
     update_data = {}
+    # 支持更新 status 和 is_active
+    if 'status' in data:
+        update_data['status'] = data['status']
+    if 'is_active' in data:
+        update_data['is_active'] = data['is_active']
+
     if 'start_time' in data:
         update_data['start_time'] = data['start_time'] if data['start_time'] else None
     if 'end_time' in data:
         update_data['end_time'] = data['end_time'] if data['end_time'] else None
     if 'duration' in data:
         update_data['duration'] = data['duration']
-
+    if 'pass_score' in data:
+        update_data['pass_score'] = data['pass_score']
     # 根据是否有完整有效期，同步 is_active 和 status
     if update_data.get('start_time') and update_data.get('end_time'):
         update_data['is_active'] = True
@@ -1096,10 +1223,10 @@ def api_admin_exam_update(exam_id):
 def admin_push_exam_with_settings(exam_id):
     db = get_supabase()
     data = request.json
-    logger.info(f"接收到的推送数据: {data}")  # ✅ 添加这行，查看前端是否传递了 reviewer
+    logger.info(f"接收到的推送数据: {data}")  # ✅ 查看前端是否传递了 reviewer
     
-    # ✅ 1. 首先检查考试权限
-    exam_res = db.table("exams").select("countries, country, title").eq("id", exam_id).maybe_single().execute()
+    # 1. 首先检查考试权限
+    exam_res = db.table("exams").select("countries, country, title, reviewer").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
         return jsonify({"success": False, "message": "考试不存在"}), 404
     
@@ -1111,7 +1238,6 @@ def admin_push_exam_with_settings(exam_id):
     # 获取用户列表时排除离职人员
     def get_active_users_for_exam(allowed_countries=None):
         """获取活跃用户（未离职）用于考试推送"""
-        db = get_supabase()
         query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
         
         if allowed_countries is not None and allowed_countries:
@@ -1119,38 +1245,37 @@ def admin_push_exam_with_settings(exam_id):
         
         return query.execute().data or []
 
-    # ✅ 2. 获取请求数据
-    data = request.json
-    user_ids = data.get('user_ids', [])
-    
-    # ✅ 3. 过滤用户（只保留权限范围内的用户）
-    if not is_developer():
+    # 2. 获取请求数据
+    start_time_local = data.get('start_time')
+    end_time_local = data.get('end_time')
+    duration = data.get('duration')
+    raw_user_ids = data.get('user_ids', [])
+    reviewer = data.get('reviewer', '')
+
+    # 3. 过滤用户（只保留权限范围内的用户）
+    user_ids = raw_user_ids if raw_user_ids is not None else []
+
+    logger.info(f"获取到的 reviewer 值: {reviewer}")
+    logger.info(f"原始 user_ids: {raw_user_ids}, 处理后: {user_ids}")
+
+    # 4. 过滤用户（只保留权限范围内的用户）
+    if not is_developer() and user_ids:  # 只有 user_ids 非空时才过滤
         allowed = get_admin_allowed_countries()
         if allowed is not None and allowed:
             users_res = db.table("users").select("id").in_("id", user_ids).in_("country", allowed).execute()
             user_ids = [u['id'] for u in (users_res.data or [])]
         
-        # 如果没有有效用户，返回错误
+        # 如果没有有效用户，返回错误（仅当用户指定了 ID 但没有有效用户时）
         if not user_ids:
             return jsonify({"success": False, "message": "所选考生不在您的权限范围内"}), 403
-
-    start_time_local = data.get('start_time')
-    end_time_local = data.get('end_time')
-    duration = data.get('duration')
-    user_ids = data.get('user_ids', [])
-    reviewer = data.get('reviewer', '')  # ✅ 新增：获取阅卷人
-
-    logger.info(f"获取到的 reviewer 值: {reviewer}")  # ✅ 添加这行
-
-    db = get_supabase()
-
-    # 获取考试信息（用于国家和标题）
-    exam_info = db.table("exams").select("country, title").eq("id", exam_id).maybe_single().execute()
+            
+    # 5. 获取考试信息（用于国家和标题）
+    exam_info = db.table("exams").select("country, title, reviewer").eq("id", exam_id).maybe_single().execute()
     if not exam_info.data:
         return jsonify({"success": False, "message": "考试不存在"}), 404
     exam_data = exam_info.data
 
-    # 更新考试有效期和时长
+    # 6. 更新考试有效期和时长
     update_data = {}
     if start_time_local is not None:
         update_data['start_time'] = start_time_local
@@ -1161,13 +1286,13 @@ def admin_push_exam_with_settings(exam_id):
         update_data['duration'] = duration
     if start_time_local and end_time_local:
         update_data['status'] = 'active'
-        update_data['is_active'] = True   # ✅ 关键：确保考试对学员可见
+        update_data['is_active'] = True
     else:
         # 如果没有有效期，视为草稿，关闭激活状态
         update_data['is_active'] = False
         update_data['status'] = 'draft'
 
-    # ✅ 新增：更新阅卷人（如果有值）
+    # 7. 更新阅卷人（如果有值）
     if reviewer and reviewer.strip():
         update_data['reviewer'] = reviewer
         logger.info(f"使用前端传递的阅卷人: {reviewer}")
@@ -1193,7 +1318,7 @@ def admin_push_exam_with_settings(exam_id):
         db.table("exams").update(update_data).eq("id", exam_id).execute()
         logger.info(f"更新考试 {exam_id} 的数据: {update_data}")
 
-    # 可选：按国家过滤考生（如果不需要，可以注释掉整个块）
+    # 8. 按国家过滤考生（保留原有逻辑）
     def get_user_country(uid):
         user_res = db.table("users").select("country").eq("id", uid).maybe_single().execute()
         return user_res.data.get('country') if user_res.data else None
@@ -1205,8 +1330,7 @@ def admin_push_exam_with_settings(exam_id):
             return jsonify({"success": False, "message": "没有符合国家条件的考生"}), 400
         user_ids = filtered_ids
 
-    # 更新考生分配
-    # 不再删除全部，而是获取现有分配，然后合并
+    # 9. 更新考生分配（只在有用户时处理）
     if user_ids:
         # 获取现有分配
         existing_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
@@ -1217,11 +1341,15 @@ def admin_push_exam_with_settings(exam_id):
         to_remove = [uid for uid in existing_ids if uid not in user_ids]
         if to_remove:
             db.table("exam_assignments").delete().eq("exam_id", exam_id).in_("user_id", to_remove).execute()
+            logger.info(f"移除 {len(to_remove)} 名考生的分配")
+        
         for uid in to_add:
             db.table("exam_assignments").insert({"exam_id": exam_id, "user_id": uid}).execute()
+        logger.info(f"新增 {len(to_add)} 名考生的分配")
 
-        # 发送邮件通知
+        # 10. 发送邮件通知
         exam_title = exam_data.get('title', '考试')
+        final_reviewer = reviewer or update_data.get('reviewer', '管理员')
         for uid in user_ids:
             user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
             if user_res.data:
@@ -1245,6 +1373,9 @@ def admin_push_exam_with_settings(exam_id):
                     )
                 except Exception as e:
                     logger.warning(f"发送邮件失败: {e}")
+    else:
+        # 全国推送（user_ids 为空）：只更新有效期，不修改分配关系
+        logger.info(f"全国推送，不修改分配关系")
 
     return jsonify({"success": True})
 
@@ -1459,6 +1590,7 @@ def api_admin_exams_list():
                 "id": exam_id,
                 "title": exam.get('title', ''),
                 "status": status,
+                "created_at": exam.get('created_at'),
                 "countries_display": countries_display,
                 "start_time": exam.get('start_time'),
                 "end_time": exam.get('end_time'),
