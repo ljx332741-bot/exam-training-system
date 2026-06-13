@@ -237,15 +237,21 @@
 			</div>
 			
 			<div class="col-md-3">
-				<label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
-				<input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
-			</div>
-			
-			<div class="col-md-3">
 				<label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
 				<input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
 			</div>
 			
+			<div class="col-md-2">
+				<label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
+				<input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
+			</div>
+
+			<!-- ✅ 新增：及格分数 -->
+			<div class="col-md-2">
+				<label class="form-label fw-bold" for="passScoreInput">🎯 <span data-i18n="pass_score">及格分数</span></label>
+				<input type="number" id="passScoreInput" class="form-control" value="{{ exam_pass_score|default(85) }}" min="0" max="100">
+				<div class="form-text">默认85分，学员需达到此分数才算及格</div>
+			</div>
 			<!-- 简洁版国家多选组件 - 完整代码 -->
             <div class="mb-3">
                 <label class="form-label fw-bold">
@@ -696,20 +702,22 @@
 
 		const duration = parseInt(document.getElementById('durationInput')?.value || 60);
 		const reviewer = document.getElementById('reviewerInput')?.value || '';
+    	const passScore = parseInt(document.getElementById('passScoreInput')?.value || 85);  // ✅ 新增
 		
 		let startTime = null, endTime = null;
 		if (!isDraft) {
 			const startTimeInput = document.getElementById('startTimeInput');
 			const endTimeInput = document.getElementById('endTimeInput');
-			if (startTimeInput && startTimeInput.value) startTime = startTimeInput.value;
-			if (endTimeInput && endTimeInput.value) endTime = endTimeInput.value;
+			if (startTimeInput && startTimeInput.value) startTime = localDateTimeToUTC(startTimeInput.value);
+			if (endTimeInput && endTimeInput.value) endTime = localDateTimeToUTC(endTimeInput.value);
 		}
 		
 		const requestData = {
 			questions: questions,
 			countries: selectedCountries,
 			duration: duration,
-			reviewer: reviewer
+			reviewer: reviewer,
+        	pass_score: passScore  // ✅ 新增
 		};
 		if (!isDraft) {
 			if (startTime) requestData.start_time = startTime;
@@ -822,8 +830,8 @@
 		if (examStatus === 'draft' || examStatus === 'created') {
 			const startTimeInput = document.getElementById('startTimeInput');
 			const endTimeInput = document.getElementById('endTimeInput');
-			if (startTimeInput && startTimeInput.value) updateData.start_time = startTimeInput.value;
-			if (endTimeInput && endTimeInput.value) updateData.end_time = endTimeInput.value;
+			if (startTimeInput && startTimeInput.value) updateData.start_time = localDateTimeToUTC(startTimeInput.value);
+			if (endTimeInput && endTimeInput.value) updateData.end_time = localDateTimeToUTC(endTimeInput.value);
 		}
 		
 		if (canEditQuestions && examStatus !== 'closed') {

@@ -6,144 +6,148 @@
 {% block extra_css %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <style>
-  :root { --primary: #0d6efd; --success: #198754; --warning: #ffc107; --danger: #dc3545; --gray: #6c757d; }
-  body { background-color: #f4f6f9; }
-  
-  /* 📊 考试布局 */
-  .exam-header { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-  .timer-box { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
-  .timer-warning { color: var(--danger) !important; animation: pulse 1s infinite; }
-  @keyframes pulse { 50% { opacity: 0.6; } }
-  
-  .question-card { border: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; }
-  .option-label { cursor: pointer; padding: 8px 12px; border-radius: 6px; display: block; margin-bottom: 6px; transition: background 0.15s; }
-  .option-label:hover { background: #f8f9fa; }
-  .form-check-input:checked ~ .option-label { background: #e9ecef; font-weight: 500; }
-  
-  .nav-btn { width: 40px; height: 40px; margin: 4px; font-weight: 600; border-radius: 8px; transition: all 0.2s; }
-  .nav-current { border: 2px solid var(--primary); background: #e7f1ff; color: var(--primary); }
-  .nav-answered { background: var(--success); color: #fff; border-color: var(--success); }
-  .nav-flagged { background: var(--warning); color: #000; border-color: var(--warning); }
-  .nav-unanswered { background: #fff; border: 1px solid #dee2e6; }
-  
-  .sticky-nav { position: sticky; top: 20px; z-index: 10; }
-  .question-meta { font-size: 0.8rem; color: var(--gray); }
+	:root { --primary: #0d6efd; --success: #198754; --warning: #ffc107; --danger: #dc3545; --gray: #6c757d; }
+	body { background-color: #f4f6f9; }
+	
+	/* 📊 考试布局 */
+	.exam-header { background: #fff; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+	.timer-box { font-size: 1.5rem; font-weight: 700; letter-spacing: 1px; font-variant-numeric: tabular-nums; }
+	.timer-warning { color: var(--danger) !important; animation: pulse 1s infinite; }
+	@keyframes pulse { 50% { opacity: 0.6; } }
+	
+	.question-card { border: none; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); transition: transform 0.2s; }
+	.option-label { cursor: pointer; padding: 8px 12px; border-radius: 6px; display: block; margin-bottom: 6px; transition: background 0.15s; }
+	.option-label:hover { background: #f8f9fa; }
+	.form-check-input:checked ~ .option-label { background: #e9ecef; font-weight: 500; }
+	
+	.nav-btn { width: 40px; height: 40px; margin: 4px; font-weight: 600; border-radius: 8px; transition: all 0.2s; }
+	.nav-current { border: 2px solid var(--primary); background: #e7f1ff; color: var(--primary); }
+	.nav-answered { background: var(--success); color: #fff; border-color: var(--success); }
+	.nav-flagged { background: var(--warning); color: #000; border-color: var(--warning); }
+	.nav-unanswered { background: #fff; border: 1px solid #dee2e6; }
+	
+	.sticky-nav { position: sticky; top: 20px; z-index: 10; }
+	.question-meta { font-size: 0.8rem; color: var(--gray); }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid py-3 px-md-5">
-  <!-- 🧭 顶部状态栏 -->
-  <div class="exam-header p-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
-    <div>
-      <h4 class="mb-1 fw-bold"><span data-i18n="exam_system_title">📝 在线考试系统 / Online Exam</span></h4>
-      <span class="question-meta">
-        👤 {{ user_display_name | default(session.get('user_email', 'User')) }} |
-        📄 <span data-i18n="total_questions">共</span> {{ questions|length }} <span data-i18n="question_unit">题</span> | 
-        ⭐ <span data-i18n="full_score">满分</span> {{ total_score | default(100) }}
-      </span>
-    </div>
-    <div class="d-flex align-items-center gap-3">
-      <div id="timer" class="timer-box text-primary"><span data-i18n="remaining">剩余</span>：--:--</div>
-      <button type="button" class="btn btn-sm btn-outline-secondary" id="toggle-nav">📋 <span data-i18n="question_no_nav">题号导航</span></button>
-    </div>
-  </div>
+	<!-- 🧭 顶部状态栏 -->
+	<div class="exam-header p-3 mb-4 d-flex flex-wrap align-items-center justify-content-between gap-3">
+		<div>
+			<h4 class="mb-1 fw-bold"><span data-i18n="exam_system_title">📝 在线考试系统 / Online Exam</span></h4>
+			<span class="question-meta">
+				👤 {{ user_display_name | default(session.get('user_email', 'User')) }} |
+				📄 <span data-i18n="total_questions">共</span> {{ questions|length }} <span data-i18n="question_unit">题</span> | 
+				⭐ <span data-i18n="full_score">满分</span> {{ total_score | default(100) }}
+			</span>
+		</div>
+		<div class="d-flex align-items-center gap-3">
+			<div id="timer" class="timer-box text-primary">
+				<span data-i18n="remaining">剩余</span>：--:--
+			</div>
+			<button type="button" class="btn btn-sm btn-outline-secondary" id="toggle-nav">
+				📋 <span data-i18n="question_no_nav">题号导航</span>
+			</button>
+		</div>
+	</div>
 
-  <div class="row">
-    <!-- 📝 答题区 -->
-    <div class="col-lg-8">
-      <form id="exam-form" method="POST" action="{{ url_for('submit_exam', exam_id=exam_id) }}">
-        {% for q in questions %}
-        <div class="card question-card mb-4 d-none" id="q-card-{{ loop.index0 }}" data-index="{{ loop.index0 }}" data-qid="{{ q.id }}">
-          <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
-              <span class="fw-bold"><span data-i18n="question_prefix">第</span> {{ loop.index }} <span data-i18n="question_suffix">题</span></span>
-              <span class="badge bg-info text-dark question-type-badge" data-type="{{ q.type }}"></span>
-          </div>
-          <div class="card-body">
-            <!-- 题干双语 -->
-            <div class="mb-3">
-              <p class="fs-5 mb-2">{{ q.content or q.content_cn }}</p>
-            </div>
-            
-            <!-- 选项渲染 -->
-            {% if q.type == 'single' %}
-              {% for key, val in q.options.items() %}
-                {% if val and val|string|trim %}
-                <div class="form-check">
-                  <input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_{{ key }}" value="{{ key }}">
-                  <label class="form-check-label option-label" for="q{{ q.id }}_{{ key }}">
-                    {{ val }}
-                  </label>
-                </div>
-                {% endif %}
-              {% endfor %}
-            {% elif q.type == 'multi' %}
-              {% for key, val in q.options.items() %}
-                {% if val and val|string|trim %}
-                <div class="form-check">
-                  <input class="form-check-input" type="checkbox" name="q_{{ q.id }}" id="q{{ q.id }}_{{ key }}" value="{{ key }}">
-                  <label class="form-check-label option-label" for="q{{ q.id }}_{{ key }}">
-                    {{ val }}
-                  </label>
-                </div>
-                {% endif %}
-              {% endfor %}
-            {% elif q.type == 'judge' %}
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_T" value="T">
-                <label class="form-check-label option-label" for="q{{ q.id }}_T">
-                  <span class="text-cn">✅ 正确</span><span class="text-en text-muted">Correct</span>
-                </label>
-              </div>
-              <div class="form-check">
-                <input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_F" value="F">
-                <label class="form-check-label option-label" for="q{{ q.id }}_F">
-                  <span class="text-cn">❌ 错误</span><span class="text-en text-muted">Incorrect</span>
-                </label>
-              </div>
-            {% else %}
-              <input type="text" class="form-control form-control-lg" name="q_{{ q.id }}" 
-              data-i18n-placeholder="placeholder_enter_answer" placeholder="请输入答案">
-            {% endif %}
-          </div>
-        </div>
-        {% endfor %}
+	<div class="row">
+		<!-- 📝 答题区 -->
+		<div class="col-lg-8">
+			<form id="exam-form" method="POST" action="{{ url_for('submit_exam', exam_id=exam_id) }}">
+				{% for q in questions %}
+					<div class="card question-card mb-4 d-none" id="q-card-{{ loop.index0 }}" data-index="{{ loop.index0 }}" data-qid="{{ q.id }}">
+						<div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+							<span class="fw-bold"><span data-i18n="question_prefix">第</span> {{ loop.index }} <span data-i18n="question_suffix">题</span></span>
+							<span class="badge bg-info text-dark question-type-badge" data-type="{{ q.type }}"></span>
+						</div>
+						<div class="card-body">
+							<!-- 题干双语 -->
+							<div class="mb-3">
+								<p class="fs-5 mb-2">{{ q.content or q.content_cn }}</p>
+							</div>
+							
+							<!-- 选项渲染 -->
+							{% if q.type == 'single' %}
+								{% for key, val in q.options.items() %}
+									{% if val and val|string|trim %}
+										<div class="form-check">
+											<input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_{{ key }}" value="{{ key }}">
+											<label class="form-check-label option-label" for="q{{ q.id }}_{{ key }}">
+												{{ val }}
+											</label>
+										</div>
+									{% endif %}
+								{% endfor %}
+							{% elif q.type == 'multi' %}
+							{% for key, val in q.options.items() %}
+								{% if val and val|string|trim %}
+									<div class="form-check">
+										<input class="form-check-input" type="checkbox" name="q_{{ q.id }}" id="q{{ q.id }}_{{ key }}" value="{{ key }}">
+										<label class="form-check-label option-label" for="q{{ q.id }}_{{ key }}">
+											{{ val }}
+										</label>
+									</div>
+								{% endif %}
+							{% endfor %}
+							{% elif q.type == 'judge' %}
+								<div class="form-check">
+									<input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_T" value="T">
+									<label class="form-check-label option-label" for="q{{ q.id }}_T">
+										<span class="text-cn">✅ 正确</span><span class="text-en text-muted">Correct</span>
+									</label>
+								</div>
+								<div class="form-check">
+									<input class="form-check-input" type="radio" name="q_{{ q.id }}" id="q{{ q.id }}_F" value="F">
+									<label class="form-check-label option-label" for="q{{ q.id }}_F">
+										<span class="text-cn">❌ 错误</span><span class="text-en text-muted">Incorrect</span>
+									</label>
+								</div>
+							{% else %}
+								<input type="text" class="form-control form-control-lg" name="q_{{ q.id }}" 
+								data-i18n-placeholder="placeholder_enter_answer" placeholder="请输入答案">
+							{% endif %}
+						</div>
+					</div>
+				{% endfor %}
 
-        <!-- 操作按钮 -->
-        <div class="d-flex justify-content-between mt-4 mb-5">
-          <button type="button" class="btn btn-secondary px-4" id="prev-btn" disabled>⬅ <span data-i18n="prev">上一题</span></button>
-          <div>
-            <button type="button" class="btn btn-warning px-3 me-2" id="flag-btn">🚩 <span data-i18n="flag">标记疑难题</span></button>
-            <button type="button" class="btn btn-primary px-4" id="next-btn"><span data-i18n="next">下一题</span> ➡</button>
-          </div>
-        </div>
-        <div class="text-center mb-4">
-          <button type="button" class="btn btn-success btn-lg px-5 rounded-pill shadow-sm" id="submit-btn">✅ <span data-i18n="submit_exam">确认交卷</span></button>
-        </div>
-      </form>
-    </div>
+				<!-- 操作按钮 -->
+				<div class="d-flex justify-content-between mt-4 mb-5">
+					<button type="button" class="btn btn-secondary px-4" id="prev-btn" disabled>⬅ <span data-i18n="prev">上一题</span></button>
+					<div>
+						<button type="button" class="btn btn-warning px-3 me-2" id="flag-btn">🚩 <span data-i18n="flag">标记疑难题</span></button>
+						<button type="button" class="btn btn-primary px-4" id="next-btn"><span data-i18n="next">下一题</span> ➡</button>
+					</div>
+				</div>
+				<div class="text-center mb-4">
+					<button type="button" class="btn btn-success btn-lg px-5 rounded-pill shadow-sm" id="submit-btn">✅ <span data-i18n="submit_exam">确认交卷</span></button>
+				</div>
+			</form>
+		</div>
 
-    <!-- 📑 侧边导航面板 -->
-    <div class="col-lg-4" id="nav-panel" style="display: none;">
-      <div class="card sticky-nav shadow-sm">
-        <div class="card-header fw-bold bg-white">📑 <span data-i18n="question_nav">题目导航</span></div>
-        <div class="card-body">
-          <div class="d-flex flex-wrap justify-content-center" id="nav-grid">
-            {% for q in questions %}
-            <button type="button" class="btn btn-outline-secondary nav-btn nav-unanswered" data-index="{{ loop.index0 }}" data-qid="{{ q.id }}">{{ loop.index }}</button>
-            {% endfor %}
-          </div>
-          <hr class="my-3">
-          <div class="d-flex flex-wrap gap-2 small justify-content-center">
-            <span class="badge bg-success" data-i18n="answered">已作答</span>
-            <span class="badge bg-warning text-dark" data-i18n="flagged">已标记</span>
-            <span class="badge bg-primary" data-i18n="current">当前</span>
-            <span class="badge bg-light text-dark border" data-i18n="pending">未作答</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+		<!-- 📑 侧边导航面板 -->
+		<div class="col-lg-4" id="nav-panel" style="display: none;">
+			<div class="card sticky-nav shadow-sm">
+				<div class="card-header fw-bold bg-white">📑 <span data-i18n="question_nav">题目导航</span></div>
+				<div class="card-body">
+					<div class="d-flex flex-wrap justify-content-center" id="nav-grid">
+						{% for q in questions %}
+							<button type="button" class="btn btn-outline-secondary nav-btn nav-unanswered" data-index="{{ loop.index0 }}" data-qid="{{ q.id }}">{{ loop.index }}</button>
+						{% endfor %}
+					</div>
+					<hr class="my-3">
+					<div class="d-flex flex-wrap gap-2 small justify-content-center">
+						<span class="badge bg-success" data-i18n="answered">已作答</span>
+						<span class="badge bg-warning text-dark" data-i18n="flagged">已标记</span>
+						<span class="badge bg-primary" data-i18n="current">当前</span>
+						<span class="badge bg-light text-dark border" data-i18n="pending">未作答</span>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
 </div>
 
 <!-- ⚠️ 交卷确认弹窗 -->
@@ -170,500 +174,605 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+	function safeT(key, fallback = '') {
+		if (window.i18n && typeof window.i18n.t === 'function') {
+			return window.i18n.t(key) || fallback || key;
+		}
+		return fallback || key;
+	}
+	// 题型翻译映射
+	const QUESTION_TYPE_MAP = {
+		'single': { zh: '单选题', en: 'Single' },
+		'multi': { zh: '多选题', en: 'Multi' },
+		'judge': { zh: '判断题', en: 'Judge' }
+	};
 
-  function safeT(key, fallback = '') {
-      if (window.i18n && typeof window.i18n.t === 'function') {
-          return window.i18n.t(key) || fallback || key;
-      }
-      return fallback || key;
-  }
-  // 题型翻译映射
-  const QUESTION_TYPE_MAP = {
-      'single': { zh: '单选题', en: 'Single' },
-      'multi': { zh: '多选题', en: 'Multi' },
-      'judge': { zh: '判断题', en: 'Judge' }
-  };
+	// 获取题型翻译文本
+	function getQuestionTypeText(type) {
+		const typeInfo = QUESTION_TYPE_MAP[type] || { zh: type, en: type };
+		return `${typeInfo.zh} / ${typeInfo.en}`;
+	}
 
-  // 获取题型翻译文本
-  function getQuestionTypeText(type) {
-      const typeInfo = QUESTION_TYPE_MAP[type] || { zh: type, en: type };
-      return `${typeInfo.zh} / ${typeInfo.en}`;
-  }
+	// 后端传递的重置标志（必须在全局作用域声明）
+	const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
+	const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
 
-  // 后端传递的重置标志（必须在全局作用域声明）
-  const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
-  const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
+	document.addEventListener('DOMContentLoaded', function() {
+		// ==================== 常量与变量 ====================
+		const TOTAL = {{ questions|length }};
+		const DURATION = {{ duration_minutes | default(60) }} * 60;
+		const USER_ID = {{ user_id | tojson }};
+		const EXAM_ID = {{ exam_id }};
+		const STORAGE_PREFIX = `exam_${USER_ID}_${EXAM_ID}`;
+		const SERVER_REMAINING = {{ server_remaining_seconds | default(DURATION)  | int }};
+		const STORAGE_TIME = `${STORAGE_PREFIX}_time_left`;
+		const STORAGE_ANS = `${STORAGE_PREFIX}_ans`;
+		const STORAGE_FLAG = `${STORAGE_PREFIX}_flag`;
+		const STORAGE_CURR = `${STORAGE_PREFIX}_curr`;
+		const RESET_HANDLED_KEY = `${STORAGE_PREFIX}_reset_handled`;
 
-  document.addEventListener('DOMContentLoaded', function() {
-    // ==================== 常量与变量 ====================
-    const TOTAL = {{ questions|length }};
-    const DURATION = {{ duration_minutes | default(60) }} * 60;
-    const USER_ID = {{ user_id | tojson }};
-    const EXAM_ID = {{ exam_id }};
-    const STORAGE_PREFIX = `exam_${USER_ID}_${EXAM_ID}`;
-    const SERVER_REMAINING = {{ server_remaining_seconds | default(DURATION)  | int }};
-    const STORAGE_TIME = `${STORAGE_PREFIX}_time_left`;
-    const STORAGE_ANS = `${STORAGE_PREFIX}_ans`;
-    const STORAGE_FLAG = `${STORAGE_PREFIX}_flag`;
-    const STORAGE_CURR = `${STORAGE_PREFIX}_curr`;
-    const RESET_HANDLED_KEY = `${STORAGE_PREFIX}_reset_handled`;
+		// 在页面加载时检查 sessionStorage 中存储的上次用户 ID，如果不匹配则清空所有相关 localStorage
+		const LAST_USER_KEY = `exam_last_user`;
+		const lastUserId = sessionStorage.getItem(LAST_USER_KEY);
+		if (lastUserId && lastUserId !== USER_ID) {
+			// 用户已切换，清除所有考试相关的 localStorage（可选）
+			Object.keys(localStorage).forEach(key => {
+				if (key.startsWith('exam_')) {
+					localStorage.removeItem(key);
+				}
+			});
+		}
+		sessionStorage.setItem(LAST_USER_KEY, USER_ID);
 
-    // 在页面加载时检查 sessionStorage 中存储的上次用户 ID，如果不匹配则清空所有相关 localStorage
-    const LAST_USER_KEY = `exam_last_user`;
-    const lastUserId = sessionStorage.getItem(LAST_USER_KEY);
-    if (lastUserId && lastUserId !== USER_ID) {
-        // 用户已切换，清除所有考试相关的 localStorage（可选）
-        Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('exam_')) {
-                localStorage.removeItem(key);
-            }
-        });
-    }
-    sessionStorage.setItem(LAST_USER_KEY, USER_ID);
+		// 获取上次存储的重置标识
+		const lastResetToken = sessionStorage.getItem(`${STORAGE_PREFIX}_reset_token`);
+		// ==================== 重置处理（仅重置后首次进入时执行） ====================
+		// const resetHandled = localStorage.getItem(RESET_HANDLED_KEY);  // 用于标记重置清除是否已执行（防止刷新时重复清除）
+		if (RESET_TIMER || (RESET_TOKEN && RESET_TOKEN !== lastResetToken)) {
+		console.log(safeT('t_detected_exam_reset_clear_cache'));
+		// 删除所有以 exam_{EXAM_ID}_ 开头的 localStorage 键
+		Object.keys(localStorage).forEach(key => {
+			if (key.startsWith(`${STORAGE_PREFIX}_`)) {
+				localStorage.removeItem(key);
+			}
+		});
+		const keysToRemove = [
+			STORAGE_TIME,
+			STORAGE_ANS,
+			STORAGE_FLAG,
+			STORAGE_CURR,
+			RESET_HANDLED_KEY
+		];
+		keysToRemove.forEach(k => localStorage.removeItem(k));
 
-    // 获取上次存储的重置标识
-    const lastResetToken = sessionStorage.getItem(`${STORAGE_PREFIX}_reset_token`);
-    // ==================== 重置处理（仅重置后首次进入时执行） ====================
-    // const resetHandled = localStorage.getItem(RESET_HANDLED_KEY);  // 用于标记重置清除是否已执行（防止刷新时重复清除）
-    if (RESET_TIMER || (RESET_TOKEN && RESET_TOKEN !== lastResetToken)) {
-      console.log(safeT('t_detected_exam_reset_clear_cache'));
-      // 删除所有以 exam_{EXAM_ID}_ 开头的 localStorage 键
-      Object.keys(localStorage).forEach(key => {
-          if (key.startsWith(`${STORAGE_PREFIX}_`)) {
-              localStorage.removeItem(key);
-          }
-      });
-      const keysToRemove = [
-        STORAGE_TIME,
-        STORAGE_ANS,
-        STORAGE_FLAG,
-        STORAGE_CURR,
-        RESET_HANDLED_KEY
-      ];
-      keysToRemove.forEach(k => localStorage.removeItem(k));
+		// 存储本次重置标识，防止重复清除
+		if (RESET_TOKEN) {
+			sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, RESET_TOKEN);
+		} else {
+			sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, Date.now().toString());
+		}
+		} else if (!RESET_TIMER) {
+			// 正常进入，清除可能残留的会话标记（不影响重置后的首次进入）
+			sessionStorage.removeItem(`${STORAGE_PREFIX}_reset_token`);
+		}
 
-      // 存储本次重置标识，防止重复清除
-      if (RESET_TOKEN) {
-          sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, RESET_TOKEN);
-      } else {
-          sessionStorage.setItem(`${STORAGE_PREFIX}_reset_token`, Date.now().toString());
-      }
-    } else if (!RESET_TIMER) {
-        // 正常进入，清除可能残留的会话标记（不影响重置后的首次进入）
-        sessionStorage.removeItem(`${STORAGE_PREFIX}_reset_token`);
-    }
+		// ====================恢复本地状态（防刷新丢失） 状态变量声明 ====================
+		let current = 0;
+		let answered = new Set();
+		let flagged = new Set();
+		let timeLeft;  // 只声明，不赋值，稍后根据条件赋值
+		// 恢复当前题号
+		const savedIdx = localStorage.getItem(STORAGE_CURR);
+		if (savedIdx !== null) {
+		current = parseInt(savedIdx);
+		if (current >= TOTAL) current = 0;
+		}
 
-    // ====================恢复本地状态（防刷新丢失） 状态变量声明 ====================
-    let current = 0;
-    let answered = new Set();
-    let flagged = new Set();
-    let timeLeft;  // 只声明，不赋值，稍后根据条件赋值
-    // 恢复当前题号
-    const savedIdx = localStorage.getItem(STORAGE_CURR);
-    if (savedIdx !== null) {
-      current = parseInt(savedIdx);
-      if (current >= TOTAL) current = 0;
-    }
+		// 恢复标记
+		const savedFlag = localStorage.getItem(STORAGE_FLAG);
+		if (savedFlag) {
+		try {
+			JSON.parse(savedFlag).forEach(i => flagged.add(i));
+		} catch(e) {}
+		}
 
-    // 恢复标记
-    const savedFlag = localStorage.getItem(STORAGE_FLAG);
-    if (savedFlag) {
-      try {
-        JSON.parse(savedFlag).forEach(i => flagged.add(i));
-      } catch(e) {}
-    }
+		// 恢复答案
+		const savedAns = localStorage.getItem(STORAGE_ANS);
+		if (savedAns) {
+		try {
+			const ansObj = JSON.parse(savedAns);
+			for (const [qid, val] of Object.entries(ansObj)) {
+			answered.add(qid);
+			const inputs = document.querySelectorAll(`input[name="${qid}"]`);
+			inputs.forEach(inp => {
+				if (inp.type === 'checkbox') inp.checked = val.includes(inp.value);
+				else if (inp.type === 'radio') inp.checked = (inp.value === val);
+				else inp.value = val;
+			});
+			}
+		} catch(e) {
+			console.warn(safeT('t_recover_answer_failed'), e);
+		}
+		}
 
-    // 恢复答案
-    const savedAns = localStorage.getItem(STORAGE_ANS);
-    if (savedAns) {
-      try {
-        const ansObj = JSON.parse(savedAns);
-        for (const [qid, val] of Object.entries(ansObj)) {
-          answered.add(qid);
-          const inputs = document.querySelectorAll(`input[name="${qid}"]`);
-          inputs.forEach(inp => {
-            if (inp.type === 'checkbox') inp.checked = val.includes(inp.value);
-            else if (inp.type === 'radio') inp.checked = (inp.value === val);
-            else inp.value = val;
-          });
-        }
-      } catch(e) {
-        console.warn(safeT('t_recover_answer_failed'), e);
-      }
-    }
+		// ==================== 倒计时恢复与启动（整合服务器时间） ====================
+		const savedTime = localStorage.getItem(STORAGE_TIME);
+		const serverRemaining = SERVER_REMAINING;  // 服务器计算的剩余秒数
 
-    // ==================== 倒计时恢复与启动（整合服务器时间） ====================
-    const savedTime = localStorage.getItem(STORAGE_TIME);
-    const serverRemaining = SERVER_REMAINING;  // 服务器计算的剩余秒数
+		// 根据重置标志和本地存储决定初始剩余时间
+		if (RESET_TIMER) {
+		// 重置场景：强制使用服务器剩余时间，忽略本地缓存
+		timeLeft = serverRemaining;
+		localStorage.setItem(STORAGE_TIME, timeLeft);
+		} else {
+		// 正常进入或刷新：直接使用服务器权威剩余时间
+		timeLeft = serverRemaining;
+		localStorage.setItem(STORAGE_TIME, timeLeft);
+		}
 
-    // 根据重置标志和本地存储决定初始剩余时间
-    if (RESET_TIMER) {
-      // 重置场景：强制使用服务器剩余时间，忽略本地缓存
-      timeLeft = serverRemaining;
-      localStorage.setItem(STORAGE_TIME, timeLeft);
-    } else {
-      // 正常进入或刷新：直接使用服务器权威剩余时间
-      timeLeft = serverRemaining;
-      localStorage.setItem(STORAGE_TIME, timeLeft);
-    }
+		const timerEl = document.getElementById('timer');
+		function updateTimerDisplay() {
+		const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
+		const s = (timeLeft % 60).toString().padStart(2, '0');
+		timerEl.textContent = `${safeT('t_remaining')}：${m}:${s}`;
+		}
+		updateTimerDisplay();
 
-    const timerEl = document.getElementById('timer');
-    function updateTimerDisplay() {
-      const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
-      const s = (timeLeft % 60).toString().padStart(2, '0');
-      timerEl.textContent = `${safeT('t_remaining')}：${m}:${s}`;
-    }
-    updateTimerDisplay();
+		const tick = setInterval(() => {
+		timeLeft--;
+		localStorage.setItem(STORAGE_TIME, timeLeft);
+		updateTimerDisplay();
+		if (timeLeft <= 300) timerEl.classList.add('timer-warning');
+		if (timeLeft <= 0) {
+			clearInterval(tick);
+			alert(safeT('t_time_is_up_auto_submit'));
+			document.getElementById('exam-form').submit();
+		}
+		}, 1000);
 
-    const tick = setInterval(() => {
-      timeLeft--;
-      localStorage.setItem(STORAGE_TIME, timeLeft);
-      updateTimerDisplay();
-      if (timeLeft <= 300) timerEl.classList.add('timer-warning');
-      if (timeLeft <= 0) {
-        clearInterval(tick);
-        alert(safeT('t_time_is_up_auto_submit'));
-        document.getElementById('exam-form').submit();
-      }
-    }, 1000);
+		// ==================== UI 渲染与状态同步 ====================
+		function updateUI() {
+		document.querySelectorAll('.question-card').forEach((c, i) => c.classList.toggle('d-none', i !== current));
 
-    // ==================== UI 渲染与状态同步 ====================
-    function updateUI() {
-      document.querySelectorAll('.question-card').forEach((c, i) => c.classList.toggle('d-none', i !== current));
+		document.querySelectorAll('.nav-btn').forEach((b, i) => {
+			b.classList.remove('nav-current', 'nav-answered', 'nav-flagged', 'nav-unanswered');
+			const qid = b.dataset.qid;
+			if (i === current) b.classList.add('nav-current');
+			else if (flagged.has(i)) b.classList.add('nav-flagged');
+			else if (answered.has(qid)) b.classList.add('nav-answered');
+			else b.classList.add('nav-unanswered');
+		});
 
-      document.querySelectorAll('.nav-btn').forEach((b, i) => {
-        b.classList.remove('nav-current', 'nav-answered', 'nav-flagged', 'nav-unanswered');
-        const qid = b.dataset.qid;
-        if (i === current) b.classList.add('nav-current');
-        else if (flagged.has(i)) b.classList.add('nav-flagged');
-        else if (answered.has(qid)) b.classList.add('nav-answered');
-        else b.classList.add('nav-unanswered');
-      });
+		document.getElementById('prev-btn').disabled = current === 0;
+		document.getElementById('next-btn').disabled = current === TOTAL - 1;
+		document.getElementById('answered-count').textContent = answered.size;
+		document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('t_unflag') : safeT('t_flag');
+		}
 
-      document.getElementById('prev-btn').disabled = current === 0;
-      document.getElementById('next-btn').disabled = current === TOTAL - 1;
-      document.getElementById('answered-count').textContent = answered.size;
-      document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('t_unflag') : safeT('t_flag');
-    }
+		// 刷新题型文本（根据当前语言）
+		function refreshQuestionTypes() {
+			document.querySelectorAll('.question-type-badge').forEach(el => {
+				const type = el.dataset.type;
+				// 根据题型映射到翻译键
+				const typeKeyMap = {
+					'single': 't_single',
+					'multi': 't_multi',
+					'judge': 't_judge'
+				};
+				const key = typeKeyMap[type] || 't_single';
+				el.textContent = safeT(key);
+			});
+		}
 
-    // 刷新题型文本（根据当前语言）
-    function refreshQuestionTypes() {
-        document.querySelectorAll('.question-type-badge').forEach(el => {
-            const type = el.dataset.type;
-            // 根据题型映射到翻译键
-            const typeKeyMap = {
-                'single': 't_single',
-                'multi': 't_multi',
-                'judge': 't_judge'
-            };
-            const key = typeKeyMap[type] || 't_single';
-            el.textContent = safeT(key);
-        });
-    }
+		// 💾 保存状态
+		function saveState() {
+		localStorage.setItem(STORAGE_CURR, current);
+		localStorage.setItem(STORAGE_FLAG, JSON.stringify([...flagged]));
 
-    // 💾 保存状态
-    function saveState() {
-      localStorage.setItem(STORAGE_CURR, current);
-      localStorage.setItem(STORAGE_FLAG, JSON.stringify([...flagged]));
+		const fd = new FormData(document.getElementById('exam-form'));
+		const ans = {};
+		for (let [k, v] of fd.entries()) {
+			if (k.startsWith('q_')) {
+			if (ans[k]) {
+				ans[k] += v;
+			} else {
+				ans[k] = v;
+			}
+			}
+		}
+		localStorage.setItem(STORAGE_ANS, JSON.stringify(ans));
+		
+		// 上传到服务器草稿
+		fetch('/api/exam/draft', {
+			method: 'POST',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
+		}).catch(e => console.warn(safeT('t_upload_draft_failed'), e));
+		}
 
-      const fd = new FormData(document.getElementById('exam-form'));
-      const ans = {};
-      for (let [k, v] of fd.entries()) {
-        if (k.startsWith('q_')) {
-          if (ans[k]) {
-            ans[k] += v;
-          } else {
-            ans[k] = v;
-          }
-        }
-      }
-      localStorage.setItem(STORAGE_ANS, JSON.stringify(ans));
-      
-      // 上传到服务器草稿
-      fetch('/api/exam/draft', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
-      }).catch(e => console.warn(safeT('t_upload_draft_failed'), e));
-    }
+		// 刷新已回答状态
+		function refreshAnsweredStatus() {
+		answered.clear();
+		document.querySelectorAll('.question-card').forEach(card => {
+			const qid = card.dataset.qid;
+			const inputs = card.querySelectorAll('input');
+			let hasAnswer = false;
+			if (inputs.length > 0) {
+			const firstInput = inputs[0];
+			if (firstInput.type === 'radio') {
+				hasAnswer = card.querySelector('input[type="radio"]:checked') !== null;
+			} else if (firstInput.type === 'checkbox') {
+				hasAnswer = card.querySelectorAll('input[type="checkbox"]:checked').length > 0;
+			} else {
+				hasAnswer = firstInput.value.trim() !== '';
+			}
+			}
+			if (hasAnswer) answered.add(qid);
+		});
+		document.getElementById('answered-count').textContent = answered.size;
+		}
 
-    // 刷新已回答状态
-    function refreshAnsweredStatus() {
-      answered.clear();
-      document.querySelectorAll('.question-card').forEach(card => {
-        const qid = card.dataset.qid;
-        const inputs = card.querySelectorAll('input');
-        let hasAnswer = false;
-        if (inputs.length > 0) {
-          const firstInput = inputs[0];
-          if (firstInput.type === 'radio') {
-            hasAnswer = card.querySelector('input[type="radio"]:checked') !== null;
-          } else if (firstInput.type === 'checkbox') {
-            hasAnswer = card.querySelectorAll('input[type="checkbox"]:checked').length > 0;
-          } else {
-            hasAnswer = firstInput.value.trim() !== '';
-          }
-        }
-        if (hasAnswer) answered.add(qid);
-      });
-      document.getElementById('answered-count').textContent = answered.size;
-    }
+		// ==================== 事件绑定 ====================
+		document.getElementById('prev-btn').onclick = () => { if (current > 0) { current--; updateUI(); saveState(); } };
+		document.getElementById('next-btn').onclick = () => { if (current < TOTAL - 1) { current++; updateUI(); saveState(); } };
+		document.getElementById('toggle-nav').onclick = () => {
+		const p = document.getElementById('nav-panel');
+		p.style.display = p.style.display === 'none' ? 'block' : 'none';
+		};
+		document.querySelectorAll('.nav-btn').forEach(b => {
+		b.onclick = () => {
+			current = parseInt(b.dataset.index);
+			updateUI();
+			saveState();
+		};
+		});
+		document.getElementById('flag-btn').onclick = () => {
+		flagged.has(current) ? flagged.delete(current) : flagged.add(current);
+		updateUI();
+		saveState();
+		};
 
-    // ==================== 事件绑定 ====================
-    document.getElementById('prev-btn').onclick = () => { if (current > 0) { current--; updateUI(); saveState(); } };
-    document.getElementById('next-btn').onclick = () => { if (current < TOTAL - 1) { current++; updateUI(); saveState(); } };
-    document.getElementById('toggle-nav').onclick = () => {
-      const p = document.getElementById('nav-panel');
-      p.style.display = p.style.display === 'none' ? 'block' : 'none';
-    };
-    document.querySelectorAll('.nav-btn').forEach(b => {
-      b.onclick = () => {
-        current = parseInt(b.dataset.index);
-        updateUI();
-        saveState();
-      };
-    });
-    document.getElementById('flag-btn').onclick = () => {
-      flagged.has(current) ? flagged.delete(current) : flagged.add(current);
-      updateUI();
-      saveState();
-    };
+		document.querySelectorAll('input').forEach(i => {
+		i.addEventListener('change', () => {
+			refreshAnsweredStatus();
+			saveState();
+			updateUI();
+		});
+		});
 
-    document.querySelectorAll('input').forEach(i => {
-      i.addEventListener('change', () => {
-        refreshAnsweredStatus();
-        saveState();
-        updateUI();
-      });
-    });
+		// ==================== 提交控制 ====================
+		const submitModal = new bootstrap.Modal(document.getElementById('submitModal'));
+		document.getElementById('submit-btn').onclick = () => {
+		refreshAnsweredStatus();
+		submitModal.show();
+		};
 
-    // ==================== 提交控制 ====================
-    const submitModal = new bootstrap.Modal(document.getElementById('submitModal'));
-    document.getElementById('submit-btn').onclick = () => {
-      refreshAnsweredStatus();
-      submitModal.show();
-    };
-    document.getElementById('confirm-submit').onclick = () => {
-      [STORAGE_CURR, STORAGE_FLAG, STORAGE_ANS, STORAGE_TIME, RESET_HANDLED_KEY].forEach(k => localStorage.removeItem(k));
-      clearInterval(tick);
-      document.getElementById('exam-form').submit();
-    };
+		const confirmSubmitBtn = document.getElementById('confirm-submit');
+		if (confirmSubmitBtn) {
+			// 移除原有事件（如果有）
+			const newConfirmBtn = confirmSubmitBtn.cloneNode(true);
+			confirmSubmitBtn.parentNode.replaceChild(newConfirmBtn, confirmSubmitBtn);
+			
+			newConfirmBtn.onclick = async () => {
+				const submitBtn = newConfirmBtn;
+				const modal = bootstrap.Modal.getInstance(document.getElementById('submitModal'));
+				
+				// 防止重复提交
+				if (submitBtn.disabled) return;
+				
+				// 显示加载状态
+				submitBtn.disabled = true;
+				const originalText = submitBtn.innerHTML;
+				submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> ' + safeT('submitting');
+				
+				try {
+					const formData = new FormData(document.getElementById('exam-form'));
+					
+					// 添加 X-Requested-With 头标识 AJAX 请求
+					const response = await fetch(`/exam/submit/${EXAM_ID}`, {
+						method: 'POST',
+						headers: {
+							'X-Requested-With': 'XMLHttpRequest'
+						},
+						body: formData
+					});
+					
+					const result = await response.json();
+					
+					if (result.success) {
+						// 关闭确认模态框
+						if (modal) modal.hide();
+						
+						// 显示结果弹窗
+						showResultModal(result.score, result.is_passed, result.pass_score, result.exam_title);
+					} else {
+						// 使用全局翻译函数显示错误
+						if (typeof apiAlert === 'function') {
+							apiAlert(result);
+						} else {
+							alert(safeT(result.message, result.params || []));
+						}
+						submitBtn.disabled = false;
+						submitBtn.innerHTML = originalText;
+					}
+				} catch (err) {
+					console.error(safeT('submit_failed'), err);
+					if (typeof showToast === 'function') {
+						showToast(safeT('network_error_retry'), safeT('t_error'), 'error');
+					} else {
+						alert(safeT('network_error_retry'));
+					}
+					submitBtn.disabled = false;
+					submitBtn.innerHTML = originalText;
+				}
+			};
+		}
+		// 防误关页
+		window.onbeforeunload = () => safeT('exam_active_leave_page_lost_answer');
 
-    // 防误关页
-    window.onbeforeunload = () => safeT('t_exam_active_leave_page_lost_answer');
+		// 定期自动保存
+		setInterval(saveState, 15000);
 
-    // 定期自动保存
-    setInterval(saveState, 15000);
+		// 初始化界面
+		refreshAnsweredStatus();
+		updateUI();
+		refreshQuestionTypes()
+		if (window.i18n) {
+		window.i18n.subscribe(() => {
+			updateUI();
+			refreshQuestionTypes()
+		});
+		}
+	});
 
-    // 初始化界面
-    refreshAnsweredStatus();
-    updateUI();
-    refreshQuestionTypes()
-    if (window.i18n) {
-      window.i18n.subscribe(() => {
-        updateUI();
-        refreshQuestionTypes()
-      });
-    }
-  });
+	// ==================== 新增：提交评分弹窗 ====================
+	function showResultModal(score, isPassed, passScore, examTitle) {
+		// 移除已存在的模态框
+		const existingModal = document.getElementById('resultModal');
+		if (existingModal) existingModal.remove();
+		
+		const statusText = isPassed ? 
+			{ icon: '🎉', title: safeT('congratulations_passed'), message: safeT('you_passed_exam') } : 
+			{ icon: '📝', title: safeT('exam_not_passed'), message: safeT('you_did_not_pass') };
+		
+		const modalHtml = `
+			<div class="modal fade" id="resultModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+				<div class="modal-dialog modal-dialog-centered">
+					<div class="modal-content">
+						<div class="modal-header ${isPassed ? 'bg-success' : 'bg-danger'} text-white">
+							<h5 class="modal-title">
+								${statusText.icon} ${statusText.title}
+							</h5>
+							<button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+						</div>
+						<div class="modal-body text-center py-4">
+							<div class="display-1 fw-bold mb-3 ${isPassed ? 'text-success' : 'text-danger'}">${score}</div>
+							<p class="lead mb-2">${statusText.message}</p>
+							<p class="text-muted">${safeT('passing_score')}：${passScore}${safeT('points')} | ${safeT('your_score')}：${score}${safeT('points')}</p>
+							${!isPassed ? `<p class="text-warning small mt-2">${safeT('contact_admin_retake')}</p>` : ''}
+						</div>
+						<div class="modal-footer justify-content-center">
+							<a href="/dashboard" class="btn btn-primary px-4">${safeT('back_to_dashboard')}</a>
+						</div>
+					</div>
+				</div>
+			</div>
+		`;
+		
+		document.body.insertAdjacentHTML('beforeend', modalHtml);
+		const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
+		resultModal.show();
+		
+		// 清理本地存储
+		const keysToRemove = [
+			`${STORAGE_PREFIX}_time_left`,
+			`${STORAGE_PREFIX}_ans`,
+			`${STORAGE_PREFIX}_flag`,
+			`${STORAGE_PREFIX}_curr`
+		];
+		keysToRemove.forEach(k => localStorage.removeItem(k));
+		
+		// 停止计时器
+		if (window.examTimer) clearInterval(window.examTimer);
+	}
 
-  // ========== 新增：从服务器加载保存的答案 ==========
-  const savedAnswers = {{ saved_answers | safe }};
+	// ========== 从服务器加载保存的答案 ==========
+	const savedAnswers = {{ saved_answers | safe }};
 
-  // 页面加载时恢复答案（仅当有保存的答案时）
-  document.addEventListener('DOMContentLoaded', function() {
-      // ✅ 不影响现有逻辑，只是额外的恢复功能
-      if (savedAnswers && Object.keys(savedAnswers).length > 0) {
-          console.log('恢复草稿答案:', Object.keys(savedAnswers).length);
-          restoreSavedAnswers(savedAnswers);
-      }
-      
-      // ✅ 新增：启动自动保存（不影响手动保存）
-      startAutoSave();
-  });
+	// 页面加载时恢复答案（仅当有保存的答案时）
+	document.addEventListener('DOMContentLoaded', function() {
+		// 不影响现有逻辑，只是额外的恢复功能
+		if (savedAnswers && Object.keys(savedAnswers).length > 0) {
+			console.log('恢复草稿答案:', Object.keys(savedAnswers).length);
+			restoreSavedAnswers(savedAnswers);
+		}
+		
+		// 启动自动保存（不影响手动保存）
+		startAutoSave();
+	});
 
-  // 恢复保存的答案（新增函数）
-  function restoreSavedAnswers(answers) {
-      for (const [questionId, answer] of Object.entries(answers)) {
-          // 尝试恢复答案，如果元素不存在则跳过
-          try {
-              // 处理单选/判断
-              const radioInputs = document.querySelectorAll(`input[name="${questionId}"]`);
-              if (radioInputs.length > 0) {
-                  radioInputs.forEach(input => {
-                      if (input.value == answer) {
-                          input.checked = true;
-                      }
-                  });
-                  continue;
-              }
-              
-              // 处理多选
-              const checkboxes = document.querySelectorAll(`input[name="${questionId}[]"]`);
-              if (checkboxes.length > 0) {
-                  const selectedValues = Array.isArray(answer) ? answer : answer.split('');
-                  checkboxes.forEach(checkbox => {
-                      if (selectedValues.includes(checkbox.value)) {
-                          checkbox.checked = true;
-                      }
-                  });
-                  continue;
-              }
-              
-              // 处理文本
-              const textarea = document.querySelector(`textarea[name="${questionId}"]`);
-              if (textarea) {
-                  textarea.value = answer;
-              }
-          } catch(e) {
-              console.warn(`恢复答案 ${questionId} 失败:`, e);
-          }
-      }
-  }
+	// 恢复保存的答案（新增函数）
+	function restoreSavedAnswers(answers) {
+		for (const [questionId, answer] of Object.entries(answers)) {
+			// 尝试恢复答案，如果元素不存在则跳过
+			try {
+				// 处理单选/判断
+				const radioInputs = document.querySelectorAll(`input[name="${questionId}"]`);
+				if (radioInputs.length > 0) {
+					radioInputs.forEach(input => {
+						if (input.value == answer) {
+							input.checked = true;
+						}
+					});
+					continue;
+				}
+				
+				// 处理多选
+				const checkboxes = document.querySelectorAll(`input[name="${questionId}[]"]`);
+				if (checkboxes.length > 0) {
+					const selectedValues = Array.isArray(answer) ? answer : answer.split('');
+					checkboxes.forEach(checkbox => {
+						if (selectedValues.includes(checkbox.value)) {
+							checkbox.checked = true;
+						}
+					});
+					continue;
+				}
+				
+				// 处理文本
+				const textarea = document.querySelector(`textarea[name="${questionId}"]`);
+				if (textarea) {
+					textarea.value = answer;
+				}
+			} catch(e) {
+				console.warn(`恢复答案 ${questionId} 失败:`, e);
+			}
+		}
+	}
 
-  // ========== 新增：自动保存功能 ==========
-  let autoSaveTimer = null;
-  let isSaving = false;
-  async function saveDraftWithRetry(retryCount = 0) {
-      const maxRetries = 3;
-      const answers = collectAnswers();
-      
-      if (Object.keys(answers).length === 0) return;
-      
-      pendingAnswers = answers;
-      
-      try {
-          const response = await fetch('/api/exam/draft', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  exam_id: {{ exam_id }},
-                  answers: answers
-              })
-          });
-          
-          const result = await response.json();
-          if (result.success) {
-              lastSaveTime = Date.now();
-              pendingAnswers = null;
-              console.log('草稿保存成功');
-          } else if (retryCount < maxRetries) {
-              setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
-          }
-      } catch (err) {
-          console.error('保存草稿失败:', err);
-          if (retryCount < maxRetries) {
-              setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
-          }
-      }
-  }
+	// ========== 自动保存功能 ==========
+	let autoSaveTimer = null;
+	let isSaving = false;
+	async function saveDraftWithRetry(retryCount = 0) {
+		const maxRetries = 3;
+		const answers = collectAnswers();
+		
+		if (Object.keys(answers).length === 0) return;
+		
+		pendingAnswers = answers;
+		
+		try {
+			const response = await fetch('/api/exam/draft', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					exam_id: {{ exam_id }},
+					answers: answers
+				})
+			});
+			
+			const result = await response.json();
+			if (result.success) {
+				lastSaveTime = Date.now();
+				pendingAnswers = null;
+				console.log('草稿保存成功');
+			} else if (retryCount < maxRetries) {
+				setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
+			}
+		} catch (err) {
+			console.error('保存草稿失败:', err);
+			if (retryCount < maxRetries) {
+				setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
+			}
+		}
+	}
 
-  function startAutoSave() {
-      if (autoSaveTimer) clearInterval(autoSaveTimer);
-      
-      // 每30秒自动保存
-      autoSaveTimer = setInterval(() => {
-          saveDraftWithRetry();
-      }, 30000);
-      
-      // 页面关闭前强制保存
-      window.addEventListener('beforeunload', () => {
-          saveDraftSync();
-      });
-      
-      // 每5分钟检查一次是否还有未保存的答案
-      setInterval(() => {
-          checkPendingSave();
-      }, 300000);
-  }
-  // 同步保存（用于页面关闭）
-  function saveDraftSync() {
-      const answers = collectAnswers();
-      if (Object.keys(answers).length === 0) return;
-      
-      // 使用 sendBeacon 确保页面关闭时也能发送
-      const blob = new Blob([JSON.stringify({
-          exam_id: {{ exam_id }},
-          answers: answers
-      })], { type: 'application/json' });
-      
-      navigator.sendBeacon('/api/exam/draft', blob);
-  }
-  
-  async function autoSaveDraft() {
-      // 避免重复保存
-      if (isSaving) return;
-      
-      isSaving = true;
-      try {
-          const answers = collectAnswers();
-          
-          // 只在有答案时才保存
-          if (Object.keys(answers).length === 0) {
-              return;
-          }
-          
-          const response = await fetch('/api/exam/draft', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                  exam_id: {{ exam_id }},
-                  answers: answers
-              })
-          });
-          
-          const result = await response.json();
-          if (result.success) {
-              console.log('✅ 草稿已自动保存');
-              showSaveIndicator();
-          }
-      } catch (err) {
-          console.error('自动保存失败:', err);
-      } finally {
-          isSaving = false;
-      }
-  }
+	function startAutoSave() {
+		if (autoSaveTimer) clearInterval(autoSaveTimer);
+		
+		// 每30秒自动保存
+		autoSaveTimer = setInterval(() => {
+			saveDraftWithRetry();
+		}, 30000);
+		
+		// 页面关闭前强制保存
+		window.addEventListener('beforeunload', () => {
+			saveDraftSync();
+		});
+		
+		// 每5分钟检查一次是否还有未保存的答案
+		setInterval(() => {
+			checkPendingSave();
+		}, 300000);
+	}
+	// 同步保存（用于页面关闭）
+	function saveDraftSync() {
+		const answers = collectAnswers();
+		if (Object.keys(answers).length === 0) return;
+		
+		// 使用 sendBeacon 确保页面关闭时也能发送
+		const blob = new Blob([JSON.stringify({
+			exam_id: {{ exam_id }},
+			answers: answers
+		})], { type: 'application/json' });
+		
+		navigator.sendBeacon('/api/exam/draft', blob);
+	}
+	
+	async function autoSaveDraft() {
+		// 避免重复保存
+		if (isSaving) return;
+		
+		isSaving = true;
+		try {
+			const answers = collectAnswers();
+			
+			// 只在有答案时才保存
+			if (Object.keys(answers).length === 0) {
+				return;
+			}
+			
+			const response = await fetch('/api/exam/draft', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					exam_id: {{ exam_id }},
+					answers: answers
+				})
+			});
+			
+			const result = await response.json();
+			if (result.success) {
+				console.log('✅ 草稿已自动保存');
+				showSaveIndicator();
+			}
+		} catch (err) {
+			console.error('自动保存失败:', err);
+		} finally {
+			isSaving = false;
+		}
+	}
 
-  // ========== 新增：显示保存提示 ==========
-  function showSaveIndicator() {
-      let indicator = document.getElementById('saveIndicator');
-      if (!indicator) {
-          indicator = document.createElement('div');
-          indicator.id = 'saveIndicator';
-          indicator.style.cssText = `
-              position: fixed;
-              bottom: 20px;
-              right: 20px;
-              background: #28a745;
-              color: white;
-              padding: 8px 16px;
-              border-radius: 4px;
-              opacity: 0;
-              transition: opacity 0.3s;
-              z-index: 9999;
-          `;
-          indicator.innerHTML = '<i class="bi bi-check-circle"></i> 草稿已保存';
-          document.body.appendChild(indicator);
-      }
-      
-      indicator.style.opacity = '1';
-      setTimeout(() => {
-          indicator.style.opacity = '0';
-      }, 2000);
-  }
+	// ========== 新增：显示保存提示 ==========
+	function showSaveIndicator() {
+		let indicator = document.getElementById('saveIndicator');
+		if (!indicator) {
+			indicator = document.createElement('div');
+			indicator.id = 'saveIndicator';
+			indicator.style.cssText = `
+				position: fixed;
+				bottom: 20px;
+				right: 20px;
+				background: #28a745;
+				color: white;
+				padding: 8px 16px;
+				border-radius: 4px;
+				opacity: 0;
+				transition: opacity 0.3s;
+				z-index: 9999;
+			`;
+			indicator.innerHTML = '<i class="bi bi-check-circle"></i> 草稿已保存';
+			document.body.appendChild(indicator);
+		}
+		
+		indicator.style.opacity = '1';
+		setTimeout(() => {
+			indicator.style.opacity = '0';
+		}, 2000);
+	}
 
-  // 页面关闭前保存
-  window.addEventListener('beforeunload', () => {
-      // 异步保存，不阻塞页面关闭
-      autoSaveDraft();
-  });
+	// 页面关闭前保存
+	window.addEventListener('beforeunload', () => {
+		// 异步保存，不阻塞页面关闭
+		autoSaveDraft();
+	});
 
-  // 停止自动保存（页面卸载时）
-  window.addEventListener('beforeunload', () => {
-      if (autoSaveTimer) {
-          clearInterval(autoSaveTimer);
-      }
-  });
+	// 停止自动保存（页面卸载时）
+	window.addEventListener('beforeunload', () => {
+		if (autoSaveTimer) {
+			clearInterval(autoSaveTimer);
+		}
+	});
 </script>
 
 <!-- 添加保存提示 -->

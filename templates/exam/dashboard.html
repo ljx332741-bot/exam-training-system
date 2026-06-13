@@ -110,20 +110,27 @@
               </tr>
             </thead>
             <tbody>
-              {% for r in results | default([]) %}
-              <tr>
-                <td>{{ r.exam_title }}</td>
-                <td><span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">{{ r.total_score }}</span></td>
-                <td class="text-muted small">
-                  <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at[:19].replace('T', ' ') if r.created_at else '-' }}</span>
-                </td>
-                <td>
-                  <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
-                  <a href="{{ url_for('exam_export_pdf', result_id=r.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a></td>
-              </tr>
-              {% else %}
-              <tr><td colspan="4" class="text-center text-muted py-4"><span data-i18n="no_records">暂无考试记录</span></td></tr>
-              {% endfor %}
+                {% for r in results | default([]) %}
+                    <tr>
+                        <td>{{ r.exam_title }}</td>
+                        <td>
+                            <span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">{{ r.total_score }}</span>
+                            {% if r.total_score >= 60 %}
+                                <span class="badge bg-success ms-1" data-i18n="pass">通过</span>
+                            {% else %}
+                                <span class="badge bg-secondary ms-1" data-i18n="failed">未通过</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-muted small">
+                        <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at[:19].replace('T', ' ') if r.created_at else '-' }}</span>
+                        </td>
+                        <td>
+                        <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
+                        <a href="{{ url_for('exam_export_pdf', result_id=r.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a></td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="4" class="text-center text-muted py-4"><span data-i18n="no_records">暂无考试记录</span></td></tr>
+                {% endfor %}
             </tbody>
           </table>
         </div>

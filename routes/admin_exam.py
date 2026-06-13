@@ -255,7 +255,8 @@ def admin_import():
                 exam_countries=defaults['exam_countries'],
                 from_binding=defaults['from_binding'],
                 training_id=defaults['training_id'],
-                training_country=defaults['training_country']
+                training_country=defaults['training_country'],
+                exam_pass_score=85  # ✅ 新增
             )
             
         except AttributeError as e:
@@ -297,7 +298,7 @@ def admin_import_save():
     exam_title = request.args.get('title', '未命名考试')
     is_draft = request.args.get('draft', 'false').lower() == 'true'
 
-    # ✅ 获取附加信息
+    # 获取附加信息
     countries = request.json.get('countries', [])
     duration = request.json.get('duration', 60)
     reviewer = request.json.get('reviewer', '')
@@ -344,7 +345,7 @@ def admin_import_save():
             else:
                 allowed = []
 
-    # ✅ 检查是否从培训绑定进入
+    # 检查是否从培训绑定进入
     from_binding = request.args.get('from_binding') == 'true'
     is_draft = request.args.get('draft', 'false').lower() == 'true'
 
@@ -369,16 +370,20 @@ def admin_import_save():
         logger.info(f"   countries: {countries}")
         logger.info(f"   start_time: {start_time}")
         logger.info(f"   end_time: {end_time}")
-        
-        # ✅ 创建考试记录（包含完整信息）
+
+        # ✅ 获取及格分数（默认85）
+        pass_score = request.json.get('pass_score', 85)
+    
+        # 创建考试记录（包含完整信息）
         exam_data = {
             "title": exam_title,
             "countries": json.dumps(countries) if countries else None,
             "duration": duration,
             "reviewer": reviewer,
+            "pass_score": pass_score,
             "is_active": not is_draft,  # 正常创建时激活，草稿时不激活
             "status": "active" if (not is_draft and start_time and end_time) else ("draft" if is_draft else "created"),
-            "is_binding_exam": from_binding  # ✅ 新增：标识这是绑定模式的考试
+            "is_binding_exam": from_binding  # 标识这是绑定模式的考试
         }
 
         logger.info(f"📌 准备插入的 exam_data: {exam_data}")
@@ -750,7 +755,8 @@ def copy_exam_preview(exam_id):
         exam_status='draft',
         exam_duration=exam.get('duration', 60),
         exam_reviewer=exam.get('reviewer', ''),
-        exam_countries=countries
+        exam_countries=countries,
+        exam_pass_score=exam.get('pass_score', 85)  # ✅ 新增
     )
 
 
@@ -787,7 +793,8 @@ def update_exam_full(exam_id):
         logger.info(f"更新考试阅卷人: {data['reviewer']}")
     if 'country_code' in data:
         update_data['country'] = data['country_code']
-    
+    if 'pass_score' in data:
+        update_data['pass_score'] = data['pass_score']
     # 有效期（只有草稿和未开始状态可更新）
     if current_status in ['draft', 'created']:
         if 'start_time' in data:
@@ -1181,7 +1188,7 @@ def save_exam_assignments():
 def api_admin_exam_update(exam_id):
     data = request.json
     update_data = {}
-    # ✅ 支持更新 status 和 is_active
+    # 支持更新 status 和 is_active
     if 'status' in data:
         update_data['status'] = data['status']
     if 'is_active' in data:
@@ -1193,7 +1200,8 @@ def api_admin_exam_update(exam_id):
         update_data['end_time'] = data['end_time'] if data['end_time'] else None
     if 'duration' in data:
         update_data['duration'] = data['duration']
-
+    if 'pass_score' in data:
+        update_data['pass_score'] = data['pass_score']
     # 根据是否有完整有效期，同步 is_active 和 status
     if update_data.get('start_time') and update_data.get('end_time'):
         update_data['is_active'] = True
