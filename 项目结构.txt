@@ -83,5 +83,5 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   ├── admin_user.py               # [新增] 管理员：用户管理
 │   ├── admin_training.py           # [新增] 管理员：培训管理
 │   ├── admin_inspection.py         # [新增] 管理员：访谈管理
-│   └── admin_export.py             # [新增] 管理员：导出模块 ,需重新拷贝代码+++
+│   └── admin_export.py             # [新增] 管理员：导出模块
 

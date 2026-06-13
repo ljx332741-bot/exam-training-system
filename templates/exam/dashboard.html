@@ -551,26 +551,34 @@
     // 初始化签名画板
     // 在模态框显示时初始化画板
     document.getElementById('signatureModal').addEventListener('shown.bs.modal', function () {
-      const canvas = document.getElementById('signatureCanvas');
-      // 关键：设置 canvas 的实际像素尺寸，避免模糊 
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = rect.width;
-      canvas.height = rect.height;
+        const submitBtn = document.getElementById('submitSignatureBtn');
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = t('submit_signature') || '提交签到';
+            submitBtn.classList.remove('btn-secondary', 'opacity-75');
+            submitBtn.classList.add('btn-primary');
+        }
+        const canvas = document.getElementById('signatureCanvas');
+        // 关键：设置 canvas 的实际像素尺寸，避免模糊 
+        const rect = canvas.getBoundingClientRect();
+        canvas.width = rect.width;
+        canvas.height = rect.height;
 
-      // 初始化或重新初始化 signaturePad
-      if (signaturePad) signaturePad.clear();
-      signaturePad = new SignaturePad(canvas, {
-        backgroundColor: 'rgb(255,255,255)',
-        penColor: 'rgb(0,0,0)',
-        velocityFilterWeight: 0.7,
-        minWidth: 1,
-        maxWidth: 3,
-        throttle: 16
-      });
-      // 确保鼠标/触摸可用
-      canvas.style.touchAction = 'none';
-      canvas.style.cursor = 'crosshair';
+        // 初始化或重新初始化 signaturePad
+        if (signaturePad) signaturePad.clear();
+        signaturePad = new SignaturePad(canvas, {
+            backgroundColor: 'rgb(255,255,255)',
+            penColor: 'rgb(0,0,0)',
+            velocityFilterWeight: 0.7,
+            minWidth: 1,
+            maxWidth: 3,
+            throttle: 16
+        });
+        // 确保鼠标/触摸可用
+        canvas.style.touchAction = 'none';
+        canvas.style.cursor = 'crosshair';
     });
+
     // 监听窗口大小变化，重新调整画板内容比例
     window.addEventListener('resize', () => {
       if (!signaturePad) return;
@@ -588,35 +596,77 @@
 
     // 提交签到
     document.getElementById('submitSignatureBtn').onclick = async () => {
+        // ✅ 防止重复提交
+        const submitBtn = document.getElementById('submitSignatureBtn');
+        if (submitBtn.disabled) return;
+        
         if (!signaturePad || signaturePad.isEmpty()) {
             alert(t('t_hand_write_sign_name'));
             return;
         }
-        // 从后端获取的用户名（确保在页面加载时已定义）
+        
         const userName = CURRENT_USER_NAME;
         if (!userName) {
             alert(t('t_sign_alert_tip'));
             return;
         }
+        
+        // ✅ 显示加载状态
+        const originalText = submitBtn.innerHTML;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> ' + (t('submitting') || '提交中...');
+        submitBtn.classList.remove('btn-primary');
+        submitBtn.classList.add('btn-secondary', 'opacity-75');
+        
         const dataURL = signaturePad.toDataURL('image/png');
         const apiUrl = currentSignAction === 'resign' ? '/api/training/resign' : '/api/training/sign';
-        const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                training_id: currentTrainingId,
-                signature: dataURL,
-                name: userName
-            })
-        });
-        const json = await res.json();
-        if (json.success) {
-            alert(currentSignAction === 'resign' ? t('t_re_sign_successful') : t('t_sign_in_successful'));
-            bootstrap.Modal.getInstance(document.getElementById('signatureModal')).hide();
-            loadTrainings();
-        } else {
-            // alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
-            apiAlert(json);   // 使用全局翻译函数
+        
+        try {
+            const res = await fetch(apiUrl, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    training_id: currentTrainingId,
+                    signature: dataURL,
+                    name: userName
+                })
+            });
+            const json = await res.json();
+            
+            if (json.success) {
+                // ✅ 显示成功提示
+                const successMsg = currentSignAction === 'resign' ? t('t_re_sign_successful') : t('t_sign_in_successful');
+                if (typeof showToast === 'function') {
+                    showToast(successMsg, 'success');
+                } else {
+                    alert(successMsg);
+                }
+                
+                // 关闭模态框
+                bootstrap.Modal.getInstance(document.getElementById('signatureModal')).hide();
+                
+                // 刷新培训列表
+                loadTrainings();
+            } else {
+                // 使用全局翻译函数显示错误
+                if (typeof apiAlert === 'function') {
+                    apiAlert(json);
+                } else {
+                    alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
+                }
+            }
+        } catch (error) {
+            console.error('签到失败:', error);
+            alert(t('t_operation_failure') + '，请重试');
+        } finally {
+            // ✅ 恢复按钮状态
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+            submitBtn.classList.remove('btn-secondary', 'opacity-75');
+            submitBtn.classList.add('btn-primary');
+            
+            // 清空签名画板
+            if (signaturePad) signaturePad.clear();
         }
     };
 

@@ -5,7 +5,7 @@ import re
 import random
 import logging
 from dateutil import parser
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from functools import wraps
 from flask import session, redirect, url_for, flash
 from services.db import get_supabase
@@ -148,6 +148,55 @@ def get_attendance_data(training_id, country=''):
         header_template = training.get('header_template', {})
     return {"training": training, "attendances": attendance_list, "header_template": header_template}
 
+
+def get_default_exam_values(request=None):
+    """
+    获取新建考试时的默认值（有效期和默认国家）
+    
+    Args:
+        request: Flask request 对象（用于获取 URL 参数）
+    
+    Returns:
+        dict: 包含 exam_start_time, exam_end_time, exam_countries, 
+              from_binding, training_id, training_country
+    """
+    # 1. 计算默认有效期（当前时间 至 7天后）
+    now = datetime.now()
+    default_start_time = now.strftime('%Y-%m-%dT%H:%M')
+    default_end_time = (now + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M')
+    
+    # 2. 获取当前管理员的权限范围，预填默认国家
+    allowed_countries = get_admin_allowed_countries()
+    default_countries = []
+    
+    if allowed_countries is not None:
+        if len(allowed_countries) > 0:
+            default_countries = [allowed_countries[0]]
+    else:
+        # 开发者或超管无权限限制，不预填国家（让用户自己选择）
+        default_countries = []
+    
+    # 3. 检查是否从培训绑定进入
+    from_binding = False
+    training_id = ''
+    training_country = ''
+    
+    if request:
+        from_binding = request.args.get('from_binding') == 'true'
+        training_id = request.args.get('training_id', '')
+        training_country = request.args.get('country', '')
+        
+        if from_binding and training_country:
+            default_countries = [training_country]
+    
+    return {
+        'exam_start_time': default_start_time,
+        'exam_end_time': default_end_time,
+        'exam_countries': default_countries,
+        'from_binding': from_binding,
+        'training_id': training_id,
+        'training_country': training_country
+    }
 
 # ================= 时区辅助函数 =================
 def local_to_utc(local_time_str, local_tz=None):

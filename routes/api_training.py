@@ -5,7 +5,7 @@ import pdfkit
 from datetime import datetime, timezone
 from flask import request, jsonify, render_template, session, flash
 from . import training_bp
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 from routes.helpers import login_required, upload_signature
 
 logger = logging.getLogger(__name__)
@@ -18,38 +18,40 @@ def api_available_trainings():
     user_id = session['user_id']
     now = datetime.now(timezone.utc).isoformat()
     
-    # ✅ 1. 获取当前学员的国家
+    # 获取当前学员的国家
     user_res = db.table("users").select("country").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify([])
-    
     user_country = user_res.data.get('country')
     if not user_country:
-        # 学员没有设置国家，返回空列表
         return jsonify([])
+
+    # 详细日志
+    logger.info(f"========== 学员请求培训列表 ==========")
+    logger.info(f"用户ID: {user_id}")
+    logger.info(f"用户国家: {user_country}")
     
-    # ✅ 2. 查询激活的培训
-    trainings_res = db.table("trainings") \
-        .select("*") \
-        .eq("is_active", True) \
-        .execute()
-
+    # 查询该用户被定点分配的培训ID
+    assigned_res = db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
+    assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
+    logger.info(f"用户被分配的培训ID: {assigned_training_ids}")
+    
+    # 查询激活的培训
+    trainings_res = db.table("trainings").select("*").eq("is_active", True).execute()
     trainings = trainings_res.data or []
-
-    # ✅ 3. 根据学员国家过滤培训
+    logger.info(f"所有激活的培训ID: {[t['id'] for t in trainings]}")
+    
+    # 根据学员国家过滤培训
     filtered_trainings = []
     for t in trainings:
         training_country = t.get('country')
-        
-        # 跳过没有国家配置的培训
         if not training_country:
             continue
         
-        # 解析国家（支持单个字符串或 JSON 数组）
+        # 解析国家列表
         country_list = []
         if isinstance(training_country, str):
             try:
-                # 尝试解析为 JSON 数组
                 parsed = json.loads(training_country)
                 if isinstance(parsed, list):
                     country_list = parsed
@@ -61,14 +63,28 @@ def api_available_trainings():
             country_list = training_country
         else:
             country_list = [str(training_country)]
+
+        # 正确判断是否有分配记录
+        assign_check = db.table("training_assignments").select("id").eq("training_id", t['id']).execute()
+        has_targeted_assignments = len(assign_check.data or []) > 0
         
-        # 检查学员国家是否在培训的目标国家中
-        if user_country in country_list:
+        show_training = False
+        
+        # 情况1：用户被定点分配了该培训
+        if t['id'] in assigned_training_ids:
+            show_training = True
+        
+        # 情况2：没有分配记录时，才按国家过滤（全国推送）
+        elif not has_targeted_assignments:
+            if user_country in country_list:
+                show_training = True
+        
+        # 情况3：有分配记录但用户未被分配 → 不显示
+        
+        if show_training:
             filtered_trainings.append(t)
     
-    # 如果没有符合条件的培训，直接返回空列表
-    if not filtered_trainings:
-        return jsonify([])
+    logger.info(f"过滤后培训数量: {len(filtered_trainings)}")
     
     # 查询用户已签到记录
     att_res = db.table("training_attendances") \
@@ -78,7 +94,6 @@ def api_available_trainings():
     signed_dict = {a['training_id']: a for a in (att_res.data or [])}
     
     result = []
-    # ✅ 关键修复：使用 filtered_trainings，而不是 trainings
     for t in filtered_trainings:
         start = t.get('start_time')
         end = t.get('end_time')
@@ -91,20 +106,17 @@ def api_available_trainings():
         signed = signed_info is not None
         needs_resign = False
         if signed:
-            # 如果已签到但签名URL为空，则需要重新签字
             if not signed_info.get('signature_url'):
                 needs_resign = True
         
         # 判断培训状态
-        is_future = now < start      # 未开始（未来）
-        is_active = start <= now <= end  # 进行中
-        is_expired = now > end       # 已过期
+        is_future = now < start
+        is_active = start <= now <= end
+        is_expired = now > end
         
-        # 显示条件：进行中 或 未开始（未来）都显示，已过期的不显示
         if is_expired:
             continue
         
-        # 确定状态文本和按钮状态
         if is_future:
             status_text = "未开始"
             status_badge = "bg-secondary"
@@ -142,6 +154,7 @@ def api_available_trainings():
             "button_html": button_html
         })
     
+    logger.info(f"最终返回培训数量: {len(result)}")
     return jsonify(result)
 
 @training_bp.route('/api/training/sign', methods=['POST'])

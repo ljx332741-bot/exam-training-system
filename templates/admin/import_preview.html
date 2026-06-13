@@ -3,1057 +3,1079 @@
 {% block title %}题库导入预览{% endblock %}
 {% block extra_css %}
 <style>
-  .edit-table td { padding: 0.5rem; }
-  .edit-table input, .edit-table select { width: 100%; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; }
-  .edit-table .q-content { min-height: 40px; }
-  .row-actions { white-space: nowrap; }
-  .row-actions button { margin: 0 2px; padding: 2px 6px; font-size: 12px; }
-  
-  /* 紧凑型状态提示 - 整行显示 */
-  .status-hint-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    font-size: 0.75rem;
-    padding: 6px 12px;
-    margin-top: 8px;
-    border-radius: 6px;
-    line-height: 1.4;
-  }
-  .status-hint-bar i {
-    font-size: 0.85rem;
-    flex-shrink: 0;
-  }
-  .status-hint-bar .hint-text {
-    flex: 1;
-  }
-  .status-hint-bar .hint-action {
-    flex-shrink: 0;
-    font-size: 0.7rem;
-    padding: 2px 8px;
-    border-radius: 4px;
-    background: rgba(0,0,0,0.05);
-    white-space: nowrap;
-  }
-  /* 手机端自动换行 */
-  @media (max-width: 768px) {
-    .status-hint-bar {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-    .status-hint-bar .hint-action {
-      white-space: normal;
-      align-self: flex-start;
-    }
-  }
-  
-  /* 不同状态的颜色 */
-  .status-hint-info {
-    background-color: #e7f3ff;
-    border-left: 3px solid #0d6efd;
-    color: #084298;
-  }
-  .status-hint-warning {
-    background-color: #fff3cd;
-    border-left: 3px solid #ffc107;
-    color: #856404;
-  }
-  .status-hint-secondary {
-    background-color: #e9ecef;
-    border-left: 3px solid #6c757d;
-    color: #495057;
-  }
-  .status-hint-success {
-    background-color: #d1e7dd;
-    border-left: 3px solid #198754;
-    color: #0f5132;
-  }
-  
-  /* 考试名称行 - 保持原有布局但让提示更紧凑 */
-  .exam-title-row {
-    margin-bottom: 0.5rem;
-  }
-  .exam-title-row .form-text {
-    margin-top: 2px;
-    font-size: 0.7rem;
-  }
-  .country-multi-select-wrapper {
-      position: relative;
-  }
-  .country-suggestions-dropdown {
-      position: absolute;
-      top: 100%;
-      left: 0;
-      right: 0;
-      max-height: 200px;
-      overflow-y: auto;
-      background: white;
-      border: 1px solid #ddd;
-      border-top: none;
-      z-index: 1000;
-      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-  }
-  .country-suggestions-dropdown .suggestion-item {
-      padding: 8px 12px;
-      cursor: pointer;
-      border-bottom: 1px solid #eee;
-  }
-  .country-suggestions-dropdown .suggestion-item:hover {
-      background-color: #f0f0f0;
-  }
-  .country-suggestions-dropdown .suggestion-item.selected {
-      background-color: #e7f3ff;
-  }
-  .selected-country-tag {
-      display: inline-flex;
-      align-items: center;
-      background-color: #0d6efd;
-      color: white;
-      padding: 4px 8px;
-      border-radius: 4px;
-      font-size: 13px;
-      margin: 2px;
-  }
-  .selected-country-tag .remove-tag {
-      margin-left: 6px;
-      cursor: pointer;
-      font-weight: bold;
-  }
-  .selected-country-tag .remove-tag:hover {
-      color: #ffcccc;
-  }
-  
-  /* ==================== 国家多选组件样式 ==================== */
-  .country-multiselect-wrapper { position: relative; }
-  
-  .search-suggestions {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    max-height: 250px;
-    overflow-y: auto;
-    background: white;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    z-index: 1000;
-  }
-  
-  .suggestion-item {
-    padding: 8px 12px;
-    cursor: pointer;
-    border-bottom: 1px solid #eee;
-    transition: background-color 0.2s;
-  }
-  
-  .suggestion-item:hover { background-color: #f0f0f0; }
-  
-  .suggestion-item .country-code {
-    color: #6c757d;
-    font-size: 0.85em;
-    margin-left: 8px;
-  }
-  
-  .selected-countries-container {
-    min-height: 60px;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
-    padding: 8px;
-    background-color: #fafafa;
-  }
-  
-  .country-tag {
-    display: inline-flex;
-    align-items: center;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 4px 12px;
-    margin: 4px;
-    border-radius: 20px;
-    font-size: 13px;
-    gap: 8px;
-    animation: fadeIn 0.2s ease;
-  }
-  
-  @keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.9); }
-    to { opacity: 1; transform: scale(1); }
-  }
-  
-  .country-tag .remove-tag {
-    cursor: pointer;
-    font-weight: bold;
-    margin-left: 4px;
-    padding: 0 4px;
-    border-radius: 50%;
-    transition: background 0.2s;
+	.edit-table td { padding: 0.5rem; }
+	.edit-table input, .edit-table select { width: 100%; border: 1px solid #dee2e6; border-radius: 4px; padding: 4px; }
+	.edit-table .q-content { min-height: 40px; }
+	.row-actions { white-space: nowrap; }
+	.row-actions button { margin: 0 2px; padding: 2px 6px; font-size: 12px; }
+	
+	/* 紧凑型状态提示 - 整行显示 */
+	.status-hint-bar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		flex-wrap: wrap;
+		font-size: 0.75rem;
+		padding: 6px 12px;
+		margin-top: 8px;
+		border-radius: 6px;
+		line-height: 1.4;
+	}
+	.status-hint-bar i {
+		font-size: 0.85rem;
+		flex-shrink: 0;
+	}
+	.status-hint-bar .hint-text {
+		flex: 1;
+	}
+	.status-hint-bar .hint-action {
+		flex-shrink: 0;
+		font-size: 0.7rem;
+		padding: 2px 8px;
+		border-radius: 4px;
+		background: rgba(0,0,0,0.05);
+		white-space: nowrap;
+	}
+	/* 手机端自动换行 */
+	@media (max-width: 768px) {
+		.status-hint-bar {
+		flex-direction: column;
+		align-items: flex-start;
+		}
+		.status-hint-bar .hint-action {
+		white-space: normal;
+		align-self: flex-start;
+		}
+	}
+	
+	/* 不同状态的颜色 */
+	.status-hint-info {
+		background-color: #e7f3ff;
+		border-left: 3px solid #0d6efd;
+		color: #084298;
+	}
+	.status-hint-warning {
+		background-color: #fff3cd;
+		border-left: 3px solid #ffc107;
+		color: #856404;
+	}
+	.status-hint-secondary {
+		background-color: #e9ecef;
+		border-left: 3px solid #6c757d;
+		color: #495057;
+	}
+	.status-hint-success {
+		background-color: #d1e7dd;
+		border-left: 3px solid #198754;
+		color: #0f5132;
+	}
+	
+	/* 考试名称行 - 保持原有布局但让提示更紧凑 */
+	.exam-title-row {
+		margin-bottom: 0.5rem;
+	}
+	.exam-title-row .form-text {
+		margin-top: 2px;
+		font-size: 0.7rem;
+	}
+	.country-multi-select-wrapper {
+		position: relative;
+	}
+	.country-suggestions-dropdown {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		max-height: 200px;
+		overflow-y: auto;
+		background: white;
+		border: 1px solid #ddd;
+		border-top: none;
+		z-index: 1000;
+		box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+	}
+	.country-suggestions-dropdown .suggestion-item {
+		padding: 8px 12px;
+		cursor: pointer;
+		border-bottom: 1px solid #eee;
+	}
+	.country-suggestions-dropdown .suggestion-item:hover {
+		background-color: #f0f0f0;
+	}
+	.country-suggestions-dropdown .suggestion-item.selected {
+		background-color: #e7f3ff;
+	}
+	.selected-country-tag {
+		display: inline-flex;
+		align-items: center;
+		background-color: #0d6efd;
+		color: white;
+		padding: 4px 8px;
+		border-radius: 4px;
+		font-size: 13px;
+		margin: 2px;
+	}
+	.selected-country-tag .remove-tag {
+		margin-left: 6px;
+		cursor: pointer;
+		font-weight: bold;
+	}
+	.selected-country-tag .remove-tag:hover {
+		color: #ffcccc;
+	}
+	
+	/* ==================== 国家多选组件样式 ==================== */
+	.country-multiselect-wrapper { position: relative; }
+	
+	.search-suggestions {
+		position: absolute;
+		top: 100%;
+		left: 0;
+		right: 0;
+		max-height: 250px;
+		overflow-y: auto;
+		background: white;
+		border: 1px solid #ddd;
+		border-radius: 4px;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+		z-index: 1000;
+	}
+	
+	.suggestion-item {
+		padding: 8px 12px;
+		cursor: pointer;
+		border-bottom: 1px solid #eee;
+		transition: background-color 0.2s;
+	}
+	
+	.suggestion-item:hover { background-color: #f0f0f0; }
+	
+	.suggestion-item .country-code {
+		color: #6c757d;
+		font-size: 0.85em;
+		margin-left: 8px;
+	}
+	
+	.selected-countries-container {
+		min-height: 60px;
+		border: 1px solid #e0e0e0;
+		border-radius: 4px;
+		padding: 8px;
+		background-color: #fafafa;
+	}
+	
+	.country-tag {
+		display: inline-flex;
+		align-items: center;
+		background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+		color: white;
+		padding: 4px 12px;
+		margin: 4px;
+		border-radius: 20px;
+		font-size: 13px;
+		gap: 8px;
+		animation: fadeIn 0.2s ease;
+	}
+	
+	@keyframes fadeIn {
+		from { opacity: 0; transform: scale(0.9); }
+		to { opacity: 1; transform: scale(1); }
+	}
+	
+	.country-tag .remove-tag {
+		cursor: pointer;
+		font-weight: bold;
+		margin-left: 4px;
+		padding: 0 4px;
+		border-radius: 50%;
+		transition: background 0.2s;
+	}
 </style>
 {% endblock %}
 {% block content %}
 <div class="card shadow-sm">
-  <div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap">
-    <h5 class="mb-0">
-      {% if edit_mode %}
-        📝 <span data-i18n="edit_exam">编辑考试</span>
-      {% else %}
-        📄 <span data-i18n="exam_preview">考试预览（可编辑）</span>
-      {% endif %}
-    </h5>
-    <div>
-      <!-- ✅ 新增：显示考试状态 -->
-      {% if exam_status %}
-      <span class="badge 
-        {% if exam_status == 'draft' %}bg-secondary
-        {% elif exam_status == 'created' %}bg-info
-        {% elif exam_status == 'active' %}bg-success
-        {% elif exam_status == 'closed' %}bg-danger
-        {% endif %} me-2">
-        {% if exam_status == 'draft' %}<span data-i18n="draft">草稿</span>
-        {% elif exam_status == 'created' %}<span data-i18n="not_started">未开始</span>
-        {% elif exam_status == 'active' %}<span data-i18n="ongoing">进行中</span>
-        {% elif exam_status == 'closed' %}<span data-i18n="closed">已关闭</span>
-        {% endif %}
-      </span>
-      {% endif %}
-      
-      <button class="btn btn-sm btn-outline-secondary ms-2" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
-      {% if edit_mode %}
-        <button type="button" class="btn btn-primary" id="updateBtn">💾 <span data-i18n="Save_modifications">保存修改</span></button>
-      {% else %}
-        <button type="button" class="btn btn-success" id="saveBtn">✅ <span data-i18n="confirm_to_import_data">确认导入数据库</span></button>
-        <button type="button" class="btn btn-info" id="saveDraftBtn">📝 <span data-i18n="save_draft">保存草稿</span></button>
-      {% endif %}
-    </div>
-  </div>
-  <div class="card-body">
-    <div class="row exam-title-row">
-      <div class="col-md-4">
-        <label class="form-label fw-bold" for="examTitleInput">📌 <span data-i18n="exam_name">考试名称</span></label>
-        <input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
-        <div class="form-text"><span data-i18n="editable_using_for_name_exam">可编辑，将作为考试的名称</span></div>
-      </div>
-      
-      <div class="col-md-3">
-        <label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
-        <input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
-      </div>
-      
-      <div class="col-md-3">
-        <label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
-        <input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
-      </div>
-      
-      <!-- 简洁版国家多选组件 - 完整代码 -->
-      <div class="mb-3">
-        <div class="d-flex justify-content-between align-items-center">
-          <label class="form-label fw-bold">
-              🌍 <span data-i18n="target_countries">目标国家</span> 
-              <span class="text-danger">*</span>
-          </label>
-          <button type="button" id="clearAllCountries" class="btn btn-sm btn-outline-danger">
-              <i class="bi bi-trash"></i> 清空全部
-          </button>
-        </div>
-          <div id="selectedCountriesContainer" class="selected-countries-container mt-2">
-              <div class="empty-tip">⚡ 点击搜索框选择目标国家支持</div>
-          </div>
-          <div class="country-multiselect-wrapper">
-              <div class="country-search-container">
-                  <input type="text" 
-                      id="countrySearchInput" 
-                      class="form-control" 
-                      data-i18n-placeholder="placeholder_coutry_search"
-                      placeholder="🔍 输入国家名称或代码搜索..." 
-                      autocomplete="off">
-              </div>
-              <div id="countrySearchSuggestions" class="search-suggestions" style="display: none;"></div>             
-          </div>
-          <input type="hidden" id="selectedCountries" value="">
-      </div>
-    </div>
+	<div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap">
+		<h5 class="mb-0">
+		{% if edit_mode %}
+			📝 <span data-i18n="edit_exam">编辑考试</span>
+		{% else %}
+			📄 <span data-i18n="exam_preview">考试预览（可编辑）</span>
+		{% endif %}
+		</h5>
+		<div>
+		<!-- ✅ 新增：显示考试状态 -->
+		{% if exam_status %}
+		<span class="badge 
+			{% if exam_status == 'draft' %}bg-secondary
+			{% elif exam_status == 'created' %}bg-info
+			{% elif exam_status == 'active' %}bg-success
+			{% elif exam_status == 'closed' %}bg-danger
+			{% endif %} me-2">
+			{% if exam_status == 'draft' %}<span data-i18n="draft">草稿</span>
+			{% elif exam_status == 'created' %}<span data-i18n="not_started">未开始</span>
+			{% elif exam_status == 'active' %}<span data-i18n="ongoing">进行中</span>
+			{% elif exam_status == 'closed' %}<span data-i18n="closed">已关闭</span>
+			{% endif %}
+		</span>
+		{% endif %}
+		
+		<button class="btn btn-sm btn-outline-secondary ms-2" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+		{% if edit_mode %}
+			<button type="button" class="btn btn-primary" id="updateBtn">💾 <span data-i18n="Save_modifications">保存修改</span></button>
+		{% else %}
+			<button type="button" class="btn btn-success" id="saveBtn">✅ <span data-i18n="confirm_to_import_data">确认导入数据库</span></button>
+			<button type="button" class="btn btn-info" id="saveDraftBtn">📝 <span data-i18n="save_draft">保存草稿</span></button>
+		{% endif %}
+		</div>
+	</div>
+	<div class="card-body">
+		<div class="row exam-title-row">
+			<div class="col-md-4">
+				<label class="form-label fw-bold" for="examTitleInput">📌 <span data-i18n="exam_name">考试名称</span></label>
+				<input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
+				<div class="form-text"><span data-i18n="editable_using_for_name_exam">可编辑，将作为考试的名称</span></div>
+			</div>
+			
+			<div class="col-md-3">
+				<label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
+				<input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
+			</div>
+			
+			<div class="col-md-3">
+				<label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
+				<input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
+			</div>
+			
+			<!-- 简洁版国家多选组件 - 完整代码 -->
+            <div class="mb-3">
+                <label class="form-label fw-bold">
+                    🌍 <span data-i18n="target_countries">目标国家</span>
+                    <span class="text-danger">*</span>
+                </label>
+                <div class="position-relative">
+                    <div id="countryTagsContainer" class="form-control d-flex flex-wrap align-items-start" 
+                        style="min-height: 60px; cursor: text; padding: 8px;" 
+                        onclick="document.getElementById('countrySearchInput').focus()">
+                        <!-- 已选国家标签会动态添加到这里 -->
+                        <input type="text" id="countrySearchInput" class="border-0 flex-grow-1" 
+                            style="outline: none; min-width: 120px;" 
+                            data-i18n-placeholder="placeholder_select_or_input" 
+                            placeholder="输入国家名称搜索..." autocomplete="off">
+                    </div>
+                    <ul id="countrySuggestions" class="country-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ddd; border-radius: 4px; z-index: 1000;"></ul>
+                </div>
+                <input type="hidden" id="selectedCountries" value="">
+                <small class="text-muted"><span data-i18n="multiple_select_method">输入国家名称搜索，点击添加。可添加多个国家。</span></small>
+            </div>
+		</div>
 
-    <!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
-    {% if not edit_mode or exam_status|default('') in ['draft', 'created'] %}
-    <div class="row mt-2">
-      <div class="col-md-6">
-        <label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
-        <input type="datetime-local" id="startTimeInput" class="form-control form-control-sm" value="{{ exam_start_time|default('') }}">
-      </div>
-      <div class="col-md-6">
-        <label class="form-label fw-bold small" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>  
-        <input type="datetime-local" id="endTimeInput" class="form-control form-control-sm" value="{{ exam_end_time|default('') }}">
-      </div>
-    </div>
-    {% endif %}
+		<!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
+		{% if not edit_mode or exam_status|default('') in ['draft', 'created'] or copy_mode %}
+		<div class="row mt-2">
+			<div class="col-md-6">
+				<label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
+				<input type="datetime-local" id="startTimeInput" class="form-control form-control-sm" value="{{ exam_start_time|default('') }}">
+			</div>
+			<div class="col-md-6">
+				<label class="form-label fw-bold small" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>  
+				<input type="datetime-local" id="endTimeInput" class="form-control form-control-sm" value="{{ exam_end_time|default('') }}">
+			</div>
+		</div>
+		{% endif %}
 
-    <!-- ✅ 紧凑型状态提示 - 整行显示，不占用太多空间 -->
-    {% if edit_mode %}
-      {% if exam_status == 'active' %}
-      <div class="status-hint-bar status-hint-warning">
-        <i class="bi bi-exclamation-triangle-fill"></i>
-        <span class="hint-text"><span data-i18n="active_exam_hint">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span></span>
-        {% if not can_edit_questions %}
-        <span class="hint-action"><span data-i18n="need_reset_status">如需修改题目，请先重置考试状态</span></span>
-        {% endif %} 
-      </div>
-      {% endif %}
-      
-      {% if exam_status == 'created' and not can_edit_questions %}
-      <div class="status-hint-bar status-hint-warning">
-        <i class="bi bi-exclamation-triangle-fill"></i>
-        <span class="hint-text"><span data-i18n="created_exam_hint">考试尚未开始，除题目外其他信息均可编辑。如需修改题目，请先重置考试状态。</span></span>
-      </div>
-      {% endif %}
-      
-      {% if exam_status == 'draft' %}
-      <div class="status-hint-bar status-hint-info">
-        <i class="bi bi-pencil-square"></i>
-        <span class="hint-text">📝 <span data-i18n="draft_exam_hint">考试为草稿状态，所有内容均可编辑。</span></span>
-        <span class="hint-action"><span data-i18n="can_set_time">可设置开始/结束时间</span></span>
-      </div>
-      {% endif %}
-      
-      {% if exam_status == 'closed' %}
-      <div class="status-hint-bar status-hint-secondary">
-        <i class="bi bi-lock-fill"></i>
-        <span class="hint-text">🔒 <span data-i18n="closed_exam_hint">考试已结束，所有内容均为只读状态，无法修改。</span></span>
-      </div>
-      {% endif %}
-    {% else %}
-      <!-- 导入模式提示 -->
-      <div class="status-hint-bar status-hint-info">
-        <i class="bi bi-info-circle-fill"></i>
-        <span class="hint-text">📋 <span data-i18n="import_mode_hint">导入模式：可编辑考试名称、时长、阅卷人、国家及所有题目。</span></span>
-        <span class="hint-action"><span data-i18n="save_hint">点击"保存草稿"或"确认导入"完成</span></span>
-      </div>
-    {% endif %}
-    
-  </div>
+		<!-- ✅ 紧凑型状态提示 - 整行显示，不占用太多空间 -->
+		{% if edit_mode %}
+		{% if exam_status == 'active' %}
+		<div class="status-hint-bar status-hint-warning">
+			<i class="bi bi-exclamation-triangle-fill"></i>
+			<span class="hint-text"><span data-i18n="active_exam_hint">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span></span>
+			{% if not can_edit_questions %}
+			<span class="hint-action"><span data-i18n="need_reset_status">如需修改题目，请先重置考试状态</span></span>
+			{% endif %} 
+		</div>
+		{% endif %}
+		
+		{% if exam_status == 'created' and not can_edit_questions %}
+		<div class="status-hint-bar status-hint-warning">
+			<i class="bi bi-exclamation-triangle-fill"></i>
+			<span class="hint-text"><span data-i18n="created_exam_hint">考试尚未开始，除题目外其他信息均可编辑。如需修改题目，请先重置考试状态。</span></span>
+		</div>
+		{% endif %}
+		
+		{% if exam_status == 'draft' %}
+		<div class="status-hint-bar status-hint-info">
+			<i class="bi bi-pencil-square"></i>
+			<span class="hint-text">📝 <span data-i18n="draft_exam_hint">考试为草稿状态，所有内容均可编辑。</span></span>
+			<span class="hint-action"><span data-i18n="can_set_time">可设置开始/结束时间</span></span>
+		</div>
+		{% endif %}
+		
+		{% if exam_status == 'closed' %}
+		<div class="status-hint-bar status-hint-secondary">
+			<i class="bi bi-lock-fill"></i>
+			<span class="hint-text">🔒 <span data-i18n="closed_exam_hint">考试已结束，所有内容均为只读状态，无法修改。</span></span>
+		</div>
+		{% endif %}
+		{% else %}
+		<!-- 导入模式提示 -->
+		<div class="status-hint-bar status-hint-info">
+			<i class="bi bi-info-circle-fill"></i>
+			<span class="hint-text">📋 <span data-i18n="import_mode_hint">导入模式：可编辑考试名称、时长、阅卷人、国家及所有题目。</span></span>
+			<span class="hint-action"><span data-i18n="save_hint">点击"保存草稿"或"确认导入"完成</span></span>
+		</div>
+		{% endif %}
+	</div>
 
-  <!-- 题目表格（根据权限显示） -->
-  <div class="card-body p-0 table-responsive">
-    <table class="table table-bordered edit-table mb-0">
-      <thead class="table-dark">
-        <tr>
-          {% if can_edit_questions and exam_status != 'closed' %}
-          <th style="width:40px"><span data-i18n="actions">操作</span></th>
-          {% endif %}
-          <th style="width:50px"><span data-i18n="question_no">题号</span></th>
-          <th style="width:80px"><span data-i18n="question_type">题型</span></th>
-          <th><span data-i18n="question_stem">题干</span></th>
-          <th><span data-i18n="option">选项</span>A</th>
-          <th><span data-i18n="option">选项</span>B</th>
-          <th><span data-i18n="option">选项</span>C</th>
-          <th><span data-i18n="option">选项</span>D</th>
-          <th><span data-i18n="option">选项</span>E</th>
-          <th><span data-i18n="option">选项</span>F</th>
-          <th><span data-i18n="option">选项</span>G</th>
-          <th><span data-i18n="option">选项</span>H</th>
-          <th><span data-i18n="option">选项</span>I</th>
-          <th><span data-i18n="standard_answer">标准答案</span></th>
-          <th style="width:60px"><span data-i18n="str score">分值</span></th>
-        </tr>
-      </thead>
-      <tbody id="qTableBody">
-        {% for q in questions %}
-        <tr data-index="{{ loop.index0 }}">
-          {% if can_edit_questions and exam_status != 'closed' %}
-          <td class="row-actions">
-            <button class="btn btn-xs btn-secondary insert-above" data-i18n-title="title_insert_above" title="在上方插入">▲</button>
-            <button class="btn btn-xs btn-secondary insert-below" data-i18n-title="title_insert_below" title="在下方插入">▼</button>
-            <button class="btn btn-xs btn-danger delete-row" data-i18n-title="title_delete" title="删除">✖</button>
-          </td>
-          {% endif %}
-          <td class="q-num">{{ q.num }}</td>
-          <td>
-            <select class="form-select form-select-sm q-type" {% if not can_edit_questions or exam_status == 'closed' %}disabled{% endif %}>
-              <option value="single" {% if q.type=='single' %}selected{% endif %} data-i18n="single">单选</option>
-              <option value="multi" {% if q.type=='multi' %}selected{% endif %} data-i18n="multi">多选</option>
-              <option value="judge" {% if q.type=='judge' %}selected{% endif %} data-i18n="judge">判断</option>
-            </select>
-          </td>
-          <td><textarea class="form-control form-control-sm q-content" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}>{{ q.content }}</textarea></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-          <td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% if can_edit_questions and exam_status != 'closed' %}
-  <div class="card-footer text-center">
-    <button type="button" class="btn btn-secondary" id="addRowBtn">➕ <span data-i18n="new_question">新增题目（末尾）</span></button>
-  </div>
-  {% endif %}
+	<!-- 题目表格（根据权限显示） -->
+	<div class="card-body p-0 table-responsive">
+		<table class="table table-bordered edit-table mb-0">
+			<thead class="table-dark">
+				<tr>
+				{% if can_edit_questions and exam_status != 'closed' %}
+				<th style="width:40px"><span data-i18n="actions">操作</span></th>
+				{% endif %}
+				<th style="width:50px"><span data-i18n="question_no">题号</span></th>
+				<th style="width:80px"><span data-i18n="question_type">题型</span></th>
+				<th><span data-i18n="question_stem">题干</span></th>
+				<th><span data-i18n="option">选项</span>A</th>
+				<th><span data-i18n="option">选项</span>B</th>
+				<th><span data-i18n="option">选项</span>C</th>
+				<th><span data-i18n="option">选项</span>D</th>
+				<th><span data-i18n="option">选项</span>E</th>
+				<th><span data-i18n="option">选项</span>F</th>
+				<th><span data-i18n="option">选项</span>G</th>
+				<th><span data-i18n="option">选项</span>H</th>
+				<th><span data-i18n="option">选项</span>I</th>
+				<th><span data-i18n="standard_answer">标准答案</span></th>
+				<th style="width:60px"><span data-i18n="str score">分值</span></th>
+				</tr>
+			</thead>
+			<tbody id="qTableBody">
+				{% for q in questions %}
+				<tr data-index="{{ loop.index0 }}">
+				{% if can_edit_questions and exam_status != 'closed' %}
+				<td class="row-actions">
+					<button class="btn btn-xs btn-secondary insert-above" data-i18n-title="title_insert_above" title="在上方插入">▲</button>
+					<button class="btn btn-xs btn-secondary insert-below" data-i18n-title="title_insert_below" title="在下方插入">▼</button>
+					<button class="btn btn-xs btn-danger delete-row" data-i18n-title="title_delete" title="删除">✖</button>
+				</td>
+				{% endif %}
+				<td class="q-num">{{ q.num }}</td>
+				<td>
+					<select class="form-select form-select-sm q-type" {% if not can_edit_questions or exam_status == 'closed' %}disabled{% endif %}>
+					<option value="single" {% if q.type=='single' %}selected{% endif %} data-i18n="single">单选</option>
+					<option value="multi" {% if q.type=='multi' %}selected{% endif %} data-i18n="multi">多选</option>
+					<option value="judge" {% if q.type=='judge' %}selected{% endif %} data-i18n="judge">判断</option>
+					</select>
+				</td>
+				<td><textarea class="form-control form-control-sm q-content" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}>{{ q.content }}</textarea></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="A" value="{{ q.options.get('A', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="B" value="{{ q.options.get('B', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="C" value="{{ q.options.get('C', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="D" value="{{ q.options.get('D', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="E" value="{{ q.options.get('E', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="F" value="{{ q.options.get('F', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="G" value="{{ q.options.get('G', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="H" value="{{ q.options.get('H', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-opt" data-key="I" value="{{ q.options.get('I', '') }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input class="form-control form-control-sm q-ans" value="{{ q.answer }}" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				<td><input type="number" class="form-control form-control-sm q-score" value="{{ q.score }}" min="1" {% if not can_edit_questions or exam_status == 'closed' %}readonly{% endif %}></td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% if can_edit_questions and exam_status != 'closed' %}
+	<div class="card-footer text-center">
+		<button type="button" class="btn btn-secondary" id="addRowBtn">➕ <span data-i18n="new_question">新增题目（末尾）</span></button>
+	</div>
+	{% endif %}
 </div>
 
 <!-- 如果考试已结束，显示全局禁用提示 -->
 {% if edit_mode and exam_status == 'closed' %}
 <div class="alert alert-secondary text-center mt-3">
-  <i class="bi bi-lock-fill"></i> 
-  🔒 <span data-i18n="exam_closed_full_info">本考试已结束，所有内容均为只读状态，无法进行任何修改。</span>
+	<i class="bi bi-lock-fill"></i> 
+	🔒 <span data-i18n="exam_closed_full_info">本考试已结束，所有内容均为只读状态，无法进行任何修改。</span>
 </div>
 {% endif %}
 {% endblock %}
 
 {% block extra_js %}
 <script>
-  // ==================== 获取模板变量 ====================
-  const isEditMode = {{ edit_mode | default(false) | tojson }};
-  const examId = {{ original_exam_id | default(0) }};
-  const canEditQuestions = {{ can_edit_questions | default(true) | tojson }};
-  const examStatus = '{{ exam_status | default("") }}';
-  let returnUrl = "{{ return_url | default(url_for('admin_dashboard')) }}";
+	// ==================== 获取模板变量 ====================
+	const isEditMode = {{ edit_mode | default(false) | tojson }};
+	const examId = {{ original_exam_id | default(0) }};
+	const canEditQuestions = {{ can_edit_questions | default(true) | tojson }};
+	const examStatus = '{{ exam_status | default("") }}';
+	let returnUrl = "{{ return_url | default(url_for('admin_dashboard')) }}";
 
-  // ==================== 辅助函数：重新编号题号 ====================
-  function renumberRows() {
-    document.querySelectorAll('#qTableBody tr').forEach((tr, idx) => {
-      const numCell = tr.querySelector('.q-num');
-      if (numCell) numCell.innerText = idx + 1;
-    });
-  }
+    // ✅ 新增：接收默认值
+    const defaultStartTime = "{{ exam_start_time | default('') }}";
+    const defaultEndTime = "{{ exam_end_time | default('') }}";
+    const defaultCountries = {{ exam_countries | tojson | default('[]') }};
+    
+	// 检测是否从绑定模态框进入
+	const urlParams = new URLSearchParams(window.location.search);
+	const fromBinding = urlParams.get('from_binding') === 'true';
+	const trainingId = urlParams.get('training_id');
+	const trainingCountry = urlParams.get('country');
 
-  // ==================== 简洁的国家多选组件 ====================
-  let allCountryList = [];
-  let selectedCountryList = [];
+	// ==================== 辅助函数 ====================
+	function renumberRows() {
+		document.querySelectorAll('#qTableBody tr').forEach((tr, idx) => {
+			const numCell = tr.querySelector('.q-num');
+			if (numCell) numCell.innerText = idx + 1;
+		});
+	}
 
-  // 加载国家列表
-  async function loadCountryListForMultiSelect() {
-      try {
-          const response = await fetch('/api/countries');
-          let allCountries = await response.json();
-          
+	function escapeHtml(str) {
+		if (!str) return '';
+		return str.replace(/[&<>]/g, function(m) {
+			if (m === '&') return '&amp;';
+			if (m === '<') return '&lt;';
+			if (m === '>') return '&gt;';
+			return m;
+		});
+	}
 
-          // ✅ 获取当前管理员的权限范围
-          let allowedCountries = null;
-          try {
-              const permRes = await fetch('/api/admin/refresh_permissions');
-              if (permRes.ok) {
-                  const permData = await permRes.json();
-                  allowedCountries = permData.admin_countries;
-              }
-          } catch(e) {
-              console.warn('获取权限范围失败', e);
-          }
-          
-          // ✅ 根据权限过滤国家
-          if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
-              allCountryList = allCountries.filter(c => allowedCountries.includes(c.code));
-              
-              // ✅ 编辑时：过滤掉没有权限的国家
-              if (selectedCountryList.length > 0) {
-                  selectedCountryList = selectedCountryList.filter(code => allowedCountries.includes(code));
-                  renderSelectedCountries();
-              }
-          } else if (CURRENT_USER_ROLE === 'super_admin') {
-              // 超管可以看到所有国家
-              allCountryList = allCountries;
-          } else {
-              // 普通管理员但没有权限范围，显示空
-              allCountryList = [];
-          }
-          
-          // 如果过滤后没有国家，显示提示
-          if (allCountryList.length === 0) {
-              console.warn('当前账号没有可管理的国家权限');
-              const container = document.getElementById('selectedCountriesContainer');
-              if (container) {
-                  container.innerHTML = '<div class="empty-tip text-danger">⚠️ 当前账号没有可管理的国家权限，请联系超管分配</div>';
-              }
-          }
-      } catch (error) {
-          console.error('加载国家列表失败:', error);
-          allCountryList = [];
-      }
-  }
+	function debounce(fn, delay) {
+		let timer;
+		return function(...args) {
+			clearTimeout(timer);
+			timer = setTimeout(() => fn.apply(this, args), delay);
+		};
+	}
+	
+	// ==================== 国家多选组件 ====================
+	let selectedCountryCodes = [];
+	let allCountries = [];
 
-  // 渲染搜索建议
-  function renderSearchSuggestions(searchText) {
-    const suggestionsDiv = document.getElementById('countrySearchSuggestions');
-    if (!searchText || !searchText.trim()) {
-      suggestionsDiv.style.display = 'none';
-      return;
-    }
-    
-    const lowerSearch = searchText.toLowerCase().trim();
-    const filtered = allCountryList.filter(c => 
-      (c.name_zh && c.name_zh.toLowerCase().includes(lowerSearch)) ||
-      (c.name_en && c.name_en.toLowerCase().includes(lowerSearch)) ||
-      (c.code && c.code.toLowerCase().includes(lowerSearch))
-    ).filter(c => !selectedCountryList.includes(c.code)).slice(0, 15);
-    
-    if (filtered.length === 0) {
-      suggestionsDiv.style.display = 'none';
-      return;
-    }
-    
-    suggestionsDiv.innerHTML = filtered.map(c => `
-      <div class="suggestion-item" data-code="${c.code}">
-        <strong>${escapeHtml(c.name_zh)}</strong> / ${escapeHtml(c.name_en)}
-        <span class="country-code">(${c.code})</span>
-      </div>
-    `).join('');
-    
-    suggestionsDiv.style.display = 'block';
-    
-    // 绑定点击事件
-    suggestionsDiv.querySelectorAll('.suggestion-item').forEach(item => {
-      item.addEventListener('click', () => {
-        const code = item.dataset.code;
-        if (!selectedCountryList.includes(code)) {
-          selectedCountryList.push(code);
-          renderSelectedCountries();
-          // 清空搜索输入框和关闭建议
-          const searchInput = document.getElementById('countrySearchInput');
-          if (searchInput) searchInput.value = '';
-          suggestionsDiv.style.display = 'none';
-        }
-      });
-    });
-  }
+	async function loadCountries() {
+		try {
+			const response = await fetch('/api/countries');
+			allCountries = await response.json();
+			const permRes = await fetch('/api/admin/refresh_permissions');
+			if (permRes.ok) {
+				const permData = await permRes.json();
+				const allowedCountries = permData.admin_countries;
+				if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
+					allCountries = allCountries.filter(c => allowedCountries.includes(c.code));
+				}
+			}
+		} catch (e) {
+			console.error('加载国家列表失败:', e);
+			allCountries = [];
+		}
+	}
 
-  // 渲染已选国家标签
-  function renderSelectedCountries() {
-    const container = document.getElementById('selectedCountriesContainer');
-    const hiddenInput = document.getElementById('selectedCountries');
-    
-    if (!container) return;
-    
-    hiddenInput.value = JSON.stringify(selectedCountryList);
-    
-    if (selectedCountryList.length === 0) {
-      container.innerHTML = `
-        <div class="empty-tip">⚡ ${t('t_target_country_hint')}<br>
-          <small class="text-muted">
-              <i class="bi bi-info-circle"></i> ${t('t_supports_fuzzy_search')}
-          </small>
-        </div>`;
-      return;
-    }
-    
-    container.innerHTML = '';
-    selectedCountryList.forEach(code => {
-      const country = allCountryList.find(c => c.code === code);
-      const displayName = country ? `${country.name_zh} (${code})` : code;
-      
-      const tag = document.createElement('span');
-      tag.className = 'country-tag';
-      tag.innerHTML = `
-        ${escapeHtml(displayName)}
-        <span class="remove-tag" data-code="${code}">✕</span>
-      `;
-      container.appendChild(tag);
-    });
-    
-    // 绑定删除事件
-    document.querySelectorAll('.remove-tag').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const code = btn.dataset.code;
-        selectedCountryList = selectedCountryList.filter(c => c !== code);
-        renderSelectedCountries();
-      });
-    });
-  }
+	function renderSelectedCountryTags() {
+		const container = document.getElementById('countryTagsContainer');
+		const input = document.getElementById('countrySearchInput');
+		const hiddenInput = document.getElementById('selectedCountries');
+		if (!container) return;
+	
+		const tags = container.querySelectorAll('.country-tag');
+		tags.forEach(tag => tag.remove());
+		
+		const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
+		
+		selectedCountryCodes.forEach(code => {
+			const country = allCountries.find(c => c.code === code);
+			const displayName = country ? (lang === 'zh' ? country.name_zh : country.name_en) : code;
+			const tag = document.createElement('span');
+			tag.className = 'country-tag';
+			tag.style.cssText = 'display: inline-flex; align-items: center; background: #0d6efd; color: white; padding: 4px 12px; margin: 4px; border-radius: 20px; font-size: 13px; gap: 8px;';
+			tag.innerHTML = `${escapeHtml(displayName)} (${code}) <span class="remove-tag" data-code="${code}" style="cursor: pointer; font-weight: bold;">&times;</span>`;
+			container.insertBefore(tag, input);
+		});
+		
+		hiddenInput.value = JSON.stringify(selectedCountryCodes);
+		
+		document.querySelectorAll('.remove-tag').forEach(btn => {
+			btn.addEventListener('click', (e) => {
+				e.stopPropagation();
+				const code = btn.dataset.code;
+				selectedCountryCodes = selectedCountryCodes.filter(c => c !== code);
+				renderSelectedCountryTags();
+			});
+		});
+	}
 
-  // 初始化已选国家
-  function initSelectedCountries(savedCountries) {
-    if (savedCountries) {
-      try {
-        selectedCountryList = typeof savedCountries === 'string' 
-          ? JSON.parse(savedCountries) 
-          : savedCountries;
-      } catch(e) {
-        selectedCountryList = [];
-      }
-    } else {
-      selectedCountryList = [];
-    }
-    renderSelectedCountries();
-  }
+	async function initCountrySelector(initialCodes = []) {
+		await loadCountries();
+	
+		console.log('🌍 initCountrySelector 开始, window.pendingCountries:', window.pendingCountries);  // ✅ 调试
 
-  // 清空所有国家
-  function clearAllCountries() {
-    selectedCountryList = [];
-    renderSelectedCountries();
-    const searchInput = document.getElementById('countrySearchInput');
-    if (searchInput) searchInput.value = '';
-    const suggestionsDiv = document.getElementById('countrySearchSuggestions');
-    if (suggestionsDiv) suggestionsDiv.style.display = 'none';
-  }
+		// ✅ 优先使用 pendingCountries（来自复制配置）
+		if (window.pendingCountries && window.pendingCountries.length > 0) {
+			console.log('🌍 使用 pendingCountries:', window.pendingCountries);  // ✅ 调试
+			selectedCountryCodes = [...window.pendingCountries];
+			window.pendingCountries = null;
+		} else {
+			selectedCountryCodes = [...initialCodes];
+		}
+		
+		renderSelectedCountryTags();
+		
+		const input = document.getElementById('countrySearchInput');
+		const suggestions = document.getElementById('countrySuggestions');
+		if (!input) return;
+		
+		input.addEventListener('input', debounce(async function() {
+			const q = this.value.trim().toLowerCase();
+			if (!q) {
+				suggestions.style.display = 'none';
+				return;
+			}
+			const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
+			const matched = allCountries.filter(c => 
+				(c.name_zh && c.name_zh.toLowerCase().includes(q)) ||
+				(c.name_en && c.name_en.toLowerCase().includes(q)) ||
+				(c.code && c.code.toLowerCase().includes(q))
+			).filter(c => !selectedCountryCodes.includes(c.code)).slice(0, 10);
+			
+			if (matched.length === 0) {
+				suggestions.style.display = 'none';
+				return;
+			}
+			
+			suggestions.innerHTML = matched.map(c => {
+				const display = lang === 'zh' ? c.name_zh : c.name_en;
+				return `<li data-code="${c.code}" style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">${escapeHtml(display)} (${c.code})</li>`;
+			}).join('');
+			suggestions.style.display = 'block';
+		}, 200));
+		
+		suggestions.addEventListener('click', (e) => {
+			const li = e.target.closest('li');
+			if (!li) return;
+			const code = li.dataset.code;
+			if (code && !selectedCountryCodes.includes(code)) {
+				selectedCountryCodes.push(code);
+				renderSelectedCountryTags();
+				input.value = '';
+				suggestions.style.display = 'none';
+			}
+		});
+		
+		document.addEventListener('click', (e) => {
+			if (!input.contains(e.target) && !suggestions.contains(e.target)) {
+				suggestions.style.display = 'none';
+			}
+		});
+		
+		input.addEventListener('focus', () => {
+			if (input.value) input.dispatchEvent(new Event('input'));
+		});
+	}
 
-  // 绑定国家选择器事件
-  function bindCountrySelectorEvents() {
-    const searchInput = document.getElementById('countrySearchInput');
-    if (!searchInput) return;
-    
-    // 输入事件
-    searchInput.addEventListener('input', (e) => {
-      renderSearchSuggestions(e.target.value);
-    });
-    
-    // 聚焦事件
-    searchInput.addEventListener('focus', () => {
-      if (searchInput.value && searchInput.value.trim()) {
-        renderSearchSuggestions(searchInput.value);
-      }
-    });
-    
-    // 点击其他地方关闭建议
-    document.addEventListener('click', (e) => {
-      const wrapper = document.querySelector('.country-multiselect-wrapper');
-      if (wrapper && !wrapper.contains(e.target)) {
-        const suggestionsDiv = document.getElementById('countrySearchSuggestions');
-        if (suggestionsDiv) suggestionsDiv.style.display = 'none';
-      }
-    });
-    
-    // 清空按钮
-    const clearBtn = document.getElementById('clearAllCountries');
-    if (clearBtn) {
-      clearBtn.addEventListener('click', clearAllCountries);
-    }
-  }
+	function getSelectedCountries() {
+		return selectedCountryCodes;
+	}
 
-  // 初始化国家多选组件
-  async function initCountryMultiSelect(savedCountries = null) {
-    await loadCountryListForMultiSelect();
-    bindCountrySelectorEvents();
-    
-    if (savedCountries) {
-      initSelectedCountries(savedCountries);
-    } else {
-      const hiddenInput = document.getElementById('selectedCountries');
-      if (hiddenInput && hiddenInput.value) {
-        initSelectedCountries(hiddenInput.value);
-      } else {
-        initSelectedCountries([]);
-      }
-    }
-  }
+	// ==================== 题目表格操作 ====================
+	function createEmptyRow() {
+		return `<td class="row-actions">
+			<button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
+			<button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
+			<button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
+		<\/td>
+		<td class="q-num"><\/td>
+		<td><select class="form-select form-select-sm q-type">
+			<option value="single" selected data-i18n="single">单选</option>
+			<option value="multi" data-i18n="multi">多选</option>
+			<option value="judge" data-i18n="judge">判断</option>
+		<\/select><\/td>
+		<td><textarea class="form-control form-control-sm q-content"><\/textarea><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="A" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="B" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="C" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="D" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="E" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="F" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="G" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="H" value=""><\/td>
+		<td><input class="form-control form-control-sm q-opt" data-key="I" value=""><\/td>
+		<td><input class="form-control form-control-sm q-ans" value=""><\/td>
+		<td><input type="number" class="form-control form-control-sm q-score" value="5" min="1"><\/td>`;
+	}
 
-  // ==================== 题目表格操作 ====================
-  // 创建空白行 HTML
-  function createEmptyRow() {
-    return `
-      <td class="row-actions">
-        <button class="btn btn-xs btn-secondary insert-above" title="在上方插入">▲</button>
-        <button class="btn btn-xs btn-secondary insert-below" title="在下方插入">▼</button>
-        <button class="btn btn-xs btn-danger delete-row" title="删除">✖</button>
-      </td>
-      <td class="q-num"></td>
-      <td>
-        <select class="form-select form-select-sm q-type">
-          <option value="single" selected data-i18n="single">单选</option>
-          <option value="multi" data-i18n="multi">多选</option>
-          <option value="judge" data-i18n="judge">判断</option>
-        </select>
-      </td>
-      <td><textarea class="form-control form-control-sm q-content"></textarea></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="A" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="B" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="C" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="D" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="E" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="F" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="G" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="H" value=""></td>
-      <td><input class="form-control form-control-sm q-opt" data-key="I" value=""></td>
-      <td><input class="form-control form-control-sm q-ans" value=""></td>
-      <td><input type="number" class="form-control form-control-sm q-score" value="5" min="1"></td>
-    `;
-  }
+	function insertRow(targetRow, position) {
+		if (!canEditQuestions || examStatus === 'closed') {
+			alert(t('t_cannot_edit_questions') || '当前状态下无法编辑题目');
+			return;
+		}
+		const newRow = document.createElement('tr');
+		newRow.innerHTML = createEmptyRow();
+		if (position === 'above') targetRow.before(newRow);
+		else targetRow.after(newRow);
+		renumberRows();
+		attachRowEvents(newRow);
+	}
 
-  // 插入新行
-  function insertRow(targetRow, position) {
-    if (!canEditQuestions || examStatus === 'closed') {
-      alert(t('t_cannot_edit_questions') || '当前状态下无法编辑题目');
-      return;
-    }
-    
-    const newRow = document.createElement('tr');
-    newRow.innerHTML = createEmptyRow();
-    if (position === 'above') {
-      targetRow.before(newRow);
-    } else if (position === 'below') {
-      targetRow.after(newRow);
-    }
-    renumberRows();
-    attachRowEvents(newRow);
-  }
+	function deleteRow(row) {
+		if (!canEditQuestions || examStatus === 'closed') {
+			alert(t('t_cannot_edit_questions') || '当前状态下无法编辑题目');
+			return;
+		}
+		if (document.querySelectorAll('#qTableBody tr').length === 1) {
+			alert('至少需要保留一道题目');
+			return;
+		}
+		row.remove();
+		renumberRows();
+	}
 
-  // 删除行
-  function deleteRow(row) {
-    if (!canEditQuestions || examStatus === 'closed') {
-      alert(t('t_cannot_edit_questions') || '当前状态下无法编辑题目');
-      return;
-    }
-    
-    if (document.querySelectorAll('#qTableBody tr').length === 1) {
-      alert('至少需要保留一道题目');
-      return;
-    }
-    row.remove();
-    renumberRows();
-  }
+	function attachRowEvents(row) {
+		if (!canEditQuestions || examStatus === 'closed') return;
+		const insertAboveBtn = row.querySelector('.insert-above');
+		const insertBelowBtn = row.querySelector('.insert-below');
+		const deleteRowBtn = row.querySelector('.delete-row');
+		if (insertAboveBtn) insertAboveBtn.addEventListener('click', (e) => { e.stopPropagation(); insertRow(row, 'above'); });
+		if (insertBelowBtn) insertBelowBtn.addEventListener('click', (e) => { e.stopPropagation(); insertRow(row, 'below'); });
+		if (deleteRowBtn) deleteRowBtn.addEventListener('click', (e) => { e.stopPropagation(); deleteRow(row); });
+	}
 
-  // 绑定行内按钮事件
-  function attachRowEvents(row) {
-    if (!canEditQuestions || examStatus === 'closed') return;
-    
-    const insertAboveBtn = row.querySelector('.insert-above');
-    const insertBelowBtn = row.querySelector('.insert-below');
-    const deleteRowBtn = row.querySelector('.delete-row');
-    
-    if (insertAboveBtn) {
-      insertAboveBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        insertRow(row, 'above');
-      });
-    }
-    
-    if (insertBelowBtn) {
-      insertBelowBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        insertRow(row, 'below');
-      });
-    }
-    
-    if (deleteRowBtn) {
-      deleteRowBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        deleteRow(row);
-      });
-    }
-  }
+	function bindAllRowEvents() {
+		document.querySelectorAll('#qTableBody tr').forEach(row => attachRowEvents(row));
+	}
 
-  // 为所有现有行绑定事件
-  function bindAllRowEvents() {
-    document.querySelectorAll('#qTableBody tr').forEach(row => attachRowEvents(row));
-  }
+	function collectQuestionsData() {
+		if (!canEditQuestions || examStatus === 'closed') return [];
+		const data = [];
+		document.querySelectorAll('#qTableBody tr').forEach(tr => {
+			let options = {};
+			tr.querySelectorAll('.q-opt').forEach(input => {
+				const key = input.getAttribute('data-key');
+				const value = input.value.trim();
+				if (value) options[key] = value;
+			});
+			data.push({
+				num: parseInt(tr.querySelector('.q-num').innerText),
+				type: tr.querySelector('.q-type').value,
+				content: tr.querySelector('.q-content').value,
+				options: options,
+				answer: tr.querySelector('.q-ans').value.toUpperCase(),
+				score: parseInt(tr.querySelector('.q-score').value) || 5
+			});
+		});
+		return data;
+	}
 
-  // 收集题目数据
-  function collectQuestionsData() {
-    if (!canEditQuestions || examStatus === 'closed') {
-      return [];
-    }
-    
-    const data = [];
-    document.querySelectorAll('#qTableBody tr').forEach(tr => {
-      let options = {};
-      
-      const optInputs = tr.querySelectorAll('.q-opt');
-      optInputs.forEach(input => {
-        const key = input.getAttribute('data-key');
-        const value = input.value.trim();
-        if (value) {
-          options[key] = value;
-        }
-      });
-      
-      data.push({
-        num: parseInt(tr.querySelector('.q-num').innerText),
-        type: tr.querySelector('.q-type').value,
-        content: tr.querySelector('.q-content').value,
-        options: options,
-        answer: tr.querySelector('.q-ans').value.toUpperCase(),
-        score: parseInt(tr.querySelector('.q-score').value) || 5
-      });
-    });
-    return data;
-  }
+	function validate(examTitle) {
+		if (!examTitle) { alert('请填写考试名称'); return false; }
+		const selectedCountries = getSelectedCountries();
+		if (selectedCountries.length === 0) { alert('请至少选择一个目标国家'); return false; }
+		if (canEditQuestions && examStatus !== 'closed') {
+			const questions = collectQuestionsData();
+			if (questions.length === 0) { alert('至少需要添加一道题目'); return false; }
+		}
+		return true;
+	}
 
-  // 获取选中的国家列表
-  function getSelectedCountries() {
-    return selectedCountryList;
-  }
+	// ==================== 保存和更新函数 ====================
+	async function saveExam(isDraft = true) {
+		const examTitle = document.getElementById('examTitleInput').value.trim();
+		if (!validate(examTitle)) {
+			throw new Error(t('validation_failed') || '验证失败');
+		}
+		
+		const selectedCountries = getSelectedCountries();
+		let questions = [];
+		
+		if (canEditQuestions && examStatus !== 'closed') {
+			questions = collectQuestionsData();
+		} else if (examId) {
+			try {
+				const res = await fetch(`/api/admin/exam/${examId}/questions`);
+				const data = await res.json();
+				questions = data.questions || [];
+			} catch (e) { console.error('获取现有题目失败', e); }
+		}
 
-  // 通用校验
-  function validate(examTitle) {
-    if (!examTitle) {
-      alert('请填写考试名称');
-      return false;
-    }
-    
-    const selectedCountries = getSelectedCountries();
-    if (selectedCountries.length === 0) {
-      alert('请至少选择一个目标国家');
-      return false;
-    }
-    
-    if (canEditQuestions && examStatus !== 'closed') {
-      const questions = collectQuestionsData();
-      if (questions.length === 0) {
-        alert('至少需要添加一道题目');
-        return false;
-      }
-    }
-    
-    return true;
-  }
+		const duration = parseInt(document.getElementById('durationInput')?.value || 60);
+		const reviewer = document.getElementById('reviewerInput')?.value || '';
+		
+		let startTime = null, endTime = null;
+		if (!isDraft) {
+			const startTimeInput = document.getElementById('startTimeInput');
+			const endTimeInput = document.getElementById('endTimeInput');
+			if (startTimeInput && startTimeInput.value) startTime = startTimeInput.value;
+			if (endTimeInput && endTimeInput.value) endTime = endTimeInput.value;
+		}
+		
+		const requestData = {
+			questions: questions,
+			countries: selectedCountries,
+			duration: duration,
+			reviewer: reviewer
+		};
+		if (!isDraft) {
+			if (startTime) requestData.start_time = startTime;
+			if (endTime) requestData.end_time = endTime;
+		}
+		
+		const url = `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=${isDraft}`;
+		const res = await fetch(url, { 
+			method: 'POST', 
+			headers: { 'Content-Type': 'application/json' }, 
+			body: JSON.stringify(requestData) 
+		});
+		const json = await res.json();
+		
+		if (!json.success) {
+			throw new Error(json.message || (isDraft ? '草稿保存失败' : '导入失败'));
+		}
 
-  // 保存为草稿（导入模式）
-  async function saveAsDraft(isDraft = true) {
-    const examTitle = document.getElementById('examTitleInput').value.trim();
-    if (!validate(examTitle)) return;
-    
-    // ✅ 确保 selectedCountryList 是最新的
-    const hiddenInput = document.getElementById('selectedCountries');
-    if (hiddenInput && hiddenInput.value) {
-        try {
-            selectedCountryList = JSON.parse(hiddenInput.value);
-        } catch(e) {}
-    }
-    
-    const selectedCountries = getSelectedCountries();
-    let questions = [];
-    
-    if (canEditQuestions && examStatus !== 'closed') {
-      questions = collectQuestionsData();
-    } else if (examId) {
-      try {
-        const res = await fetch(`/api/admin/exam/${examId}/questions`);
-        const data = await res.json();
-        questions = data.questions || [];
-      } catch (e) {
-        console.error('获取现有题目失败', e);
-      }
-    }
-    
-    const url = isDraft ? `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=true` 
-                        : `/admin/import/save?title=${encodeURIComponent(examTitle)}`;
-    
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        questions: questions, 
-        countries: selectedCountries
-      })
-    });
-    
-    const json = await res.json();
-    if (json.success) {
-      alert(isDraft ? '草稿保存成功' : '导入成功');
-      window.location.href = returnUrl;
-    } else {
-      alert('操作失败：' + (json.message || ''));
-    }
-  }
+		// 从绑定模态框进入且非草稿时，自动绑定考试
+		if (fromBinding && trainingId && !isDraft && json.exam_id) {
+			const bindRes = await fetch('/api/admin/training/bind_exam', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					training_id: parseInt(trainingId),
+					exam_id: json.exam_id,
+					pass_score: 85,
+					is_auto_assign: true,
+					is_required: true
+				})
+			});
+			if (bindRes.ok) {
+				if (typeof showToast === 'function') {
+					showToast(t('exam_created_and_bound') || '考试创建并绑定成功！', 'success');
+				} else {
+					alert('考试创建并绑定成功！');
+				}
+				window.close();
+				return;
+			}
+		}
+	
+		// ✅ 非草稿且不是从绑定进入：弹出推送选择对话框
+		if (!isDraft && !fromBinding) {
+			// 存储新创建的考试信息
+			sessionStorage.setItem('new_exam_id', json.exam_id);
+			sessionStorage.setItem('new_exam_title', examTitle);
+			sessionStorage.setItem('new_exam_country', selectedCountries[0] || '');
+			sessionStorage.setItem('pending_exam_push', 'true');
+			
+			// 跳转到仪表盘
+			window.location.href = returnUrl;
+        	return;
+		} else {// 成功提示
+			const successMsg = isDraft ? (t('draft_saved') || '草稿保存成功') : (t('import_success') || '导入成功');
+			if (typeof showToast === 'function') {
+				showToast(successMsg, 'success');
+			} else {
+				alert(successMsg);
+			}
+			
+			window.location.href = returnUrl;
+		}
+	}
 
-  // 编辑模式：保存修改
-  async function updateExam() {
-    if (examStatus === 'closed') {
-      alert('考试已结束，无法修改');
-      return;
-    }
-    
-    const examTitle = document.getElementById('examTitleInput').value.trim();
-    const duration = parseInt(document.getElementById('durationInput')?.value || 60);
-    const reviewer = document.getElementById('reviewerInput')?.value || '';
+	async function saveAsDraft() { await saveExam(true); }
+	async function saveAndPublish() { await saveExam(false); }
 
-    // ✅ 确保 selectedCountryList 是最新的
-    const hiddenInput = document.getElementById('selectedCountries');
-    if (hiddenInput && hiddenInput.value) {
-        try {
-            selectedCountryList = JSON.parse(hiddenInput.value);
-        } catch(e) {}
-    }
+	async function updateExam() {
+		if (examStatus === 'closed') {
+        	throw new Error(t('exam_closed_cannot_edit') || '考试已结束，无法修改');
+    	}
+		
+		const examTitle = document.getElementById('examTitleInput').value.trim();
+		const duration = parseInt(document.getElementById('durationInput')?.value || 60);
+		const reviewer = document.getElementById('reviewerInput')?.value || '';
+		const selectedCountries = getSelectedCountries();
+		
+		if (!validate(examTitle)) {
+        	throw new Error(t('validation_failed') || '验证失败');
+    	}
+		
+		const updateData = { title: examTitle, duration: duration, reviewer: reviewer, countries: selectedCountries };
+		
+		if (examStatus === 'draft' || examStatus === 'created') {
+			const startTimeInput = document.getElementById('startTimeInput');
+			const endTimeInput = document.getElementById('endTimeInput');
+			if (startTimeInput && startTimeInput.value) updateData.start_time = startTimeInput.value;
+			if (endTimeInput && endTimeInput.value) updateData.end_time = endTimeInput.value;
+		}
+		
+		if (canEditQuestions && examStatus !== 'closed') {
+			const questions = collectQuestionsData();
+			if (questions.length === 0) {
+				throw new Error(t('at_least_one_question') || '至少需要一道题目');
+			}
+			updateData.questions = questions;
+		} else {
+			updateData.skip_questions = true;
+		}
+		
+		const res = await fetch(`/admin/exam/${examId}/update_full`, { 
+			method: 'PUT', 
+			headers: { 'Content-Type': 'application/json' }, 
+			body: JSON.stringify(updateData) 
+		});
+		const json = await res.json();
+		if (!json.success) {
+			throw new Error(json.message || t('update_failed') || '更新失败');
+		}
 
-    const selectedCountries = getSelectedCountries();
-    
-    if (!validate(examTitle)) return;
-    
-    const updateData = {
-      title: examTitle,
-      duration: duration,
-      reviewer: reviewer,
-      countries: selectedCountries
-    };
-    
-    if (examStatus === 'draft' || examStatus === 'created') {
-      const startTimeInput = document.getElementById('startTimeInput');
-      const endTimeInput = document.getElementById('endTimeInput');
-      if (startTimeInput && startTimeInput.value) {
-        updateData.start_time = startTimeInput.value;
-      }
-      if (endTimeInput && endTimeInput.value) {
-        updateData.end_time = endTimeInput.value;
-      }
-    }
-    
-    if (canEditQuestions && examStatus !== 'closed') {
-      const questions = collectQuestionsData();
-      if (questions.length === 0) {
-        alert('至少需要一道题目');
-        return;
-      }
-      updateData.questions = questions;
-    } else {
-      updateData.skip_questions = true;
-    }
-    
-    const res = await fetch(`/admin/exam/${examId}/update_full`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updateData)
-    });
-    
-    const json = await res.json();
-    if (json.success) {
-      alert('保存成功');
-      window.location.href = returnUrl;
-    } else {
-      alert('更新失败：' + (json.message || ''));
-    }
-  }
+		if (typeof showToast === 'function') {
+			showToast(t('save_success') || '保存成功', 'success');
+		} else {
+			alert('保存成功');
+		}
+		window.location.href = returnUrl;
+	}
 
-  // 防XSS辅助函数
-  function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
-      if (m === '&') return '&amp;';
-      if (m === '<') return '&lt;';
-      if (m === '>') return '&gt;';
-      return m;
-    });
-  }
+	// ==================== 预填培训有效期 ====================
+	async function prefetchTrainingDates(trainingId) {
+		try {
+			const res = await fetch(`/api/admin/trainings?id=${trainingId}`);
+			const data = await res.json();
+			const training = Array.isArray(data) ? data[0] : data.data?.[0];
+			if (training && training.start_time && training.end_time) {
+				const startTimeInput = document.getElementById('startTimeInput');
+				const endTimeInput = document.getElementById('endTimeInput');
+				if (startTimeInput) startTimeInput.value = utcToLocalDatetimeLocal(training.start_time);
+				if (endTimeInput) endTimeInput.value = utcToLocalDatetimeLocal(training.end_time);
+			}
+		} catch(e) { console.error('获取培训有效期失败:', e); }
+	}
 
-  // ==================== 页面初始化 ====================
-  document.addEventListener('DOMContentLoaded', async () => {
-    // 如果是编辑模式，先获取考试详情
-    if (isEditMode && examId) {
-        try {
-            const res = await fetch(`/api/admin/exam/${examId}`);
-            if (res.ok) {
-                const examData = await res.json();
+	// 在页面初始化时，检查是否有复制的考试配置
+	const copyConfigStr = sessionStorage.getItem('copy_exam_config');
 
-                // 设置国家选择
-                let savedCountries = [];
-                if (examData.countries) {
-                    try {
-                        savedCountries = typeof examData.countries === 'string' 
-                            ? JSON.parse(examData.countries) 
-                            : examData.countries;
-                    } catch(e) {
-                        savedCountries = examData.country ? [examData.country] : [];
-                    }
-                } else if (examData.country) {
-                    savedCountries = [examData.country];
-                }
-                
-                // ✅ 获取当前用户权限，过滤掉没有权限的国家
-                try {
-                    const permRes = await fetch('/api/admin/refresh_permissions');
-                    if (permRes.ok) {
-                        const permData = await permRes.json();
-                        const allowedCountries = permData.admin_countries;
-                        if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
-                            // 只保留有权限的国家
-                            savedCountries = savedCountries.filter(c => allowedCountries.includes(c));
-                        }
-                    }
-                } catch(e) {
-                    console.warn('获取权限范围失败', e);
-                }
-                
-                // 设置标题、时长、阅卷人等
-                const titleInput = document.getElementById('examTitleInput');
-                if (titleInput && examData.title) titleInput.value = examData.title;
-                
-                const durationInput = document.getElementById('durationInput');
-                if (durationInput && examData.duration) durationInput.value = examData.duration;
-                
-                const reviewerInput = document.getElementById('reviewerInput');
-                if (reviewerInput && examData.reviewer) reviewerInput.value = examData.reviewer;
-                
-                // ✅ 先加载国家列表（会应用权限过滤），再初始化已选国家
-                await loadCountryListForMultiSelect();
-                bindCountrySelectorEvents();
-                initSelectedCountries(savedCountries);
-            }
-        } catch(e) {
-            console.error('获取考试详情失败:', e);
-        }
-    }
-    
-    // 初始化国家多选组件（新建模式）
-    if (!isEditMode) {
-      const savedCountriesHidden = document.getElementById('selectedCountries');
-      if (savedCountriesHidden && savedCountriesHidden.value) {
-          await initCountryMultiSelect(savedCountriesHidden.value);
-      } else {
-          await initCountryMultiSelect(null);
-      }
-    }
-    
-    // 初始化国家多选组件（新建模式）
-    if (!isEditMode) {
-        const savedCountriesHidden = document.getElementById('selectedCountries');
-        if (savedCountriesHidden && savedCountriesHidden.value) {
-            await initCountryMultiSelect(savedCountriesHidden.value);
-        } else {
-            await initCountryMultiSelect(null);
-        }
-    }
-    // 初始化国家多选组件
-    const savedCountriesHidden = document.getElementById('selectedCountries');
-    if (savedCountriesHidden && savedCountriesHidden.value) {
-      await initCountryMultiSelect(savedCountriesHidden.value);
-    } else {
-      await initCountryMultiSelect(null);
-    }
-    
-    // 只有可编辑题目且考试未结束时才绑定行操作和添加按钮
-    if (canEditQuestions && examStatus !== 'closed') {
-      bindAllRowEvents();
-      
-      const addRowBtn = document.getElementById('addRowBtn');
-      if (addRowBtn) {
-        addRowBtn.addEventListener('click', () => {
-          const tbody = document.getElementById('qTableBody');
-          const newRow = document.createElement('tr');
-          newRow.innerHTML = createEmptyRow();
-          tbody.appendChild(newRow);
-          renumberRows();
-          attachRowEvents(newRow);
-        });
-      }
-    }
-    
-    // 根据模式绑定不同保存按钮
-    if (isEditMode) {
-      const updateBtn = document.getElementById('updateBtn');
-      if (updateBtn) {
-        updateBtn.addEventListener('click', updateExam);
-      }
-    } else {
-      const saveBtn = document.getElementById('saveBtn');
-      const saveDraftBtn = document.getElementById('saveDraftBtn');
-      if (saveBtn) saveBtn.addEventListener('click', () => saveAsDraft(false));
-      if (saveDraftBtn) saveDraftBtn.addEventListener('click', () => saveAsDraft(true));
-    }
-    
-    // 如果不可编辑题目或考试已结束，禁用所有输入框
-    if (!canEditQuestions || examStatus === 'closed') {
-      const questionInputs = document.querySelectorAll('#qTableBody input, #qTableBody select, #qTableBody textarea');
-      questionInputs.forEach(input => {
-        input.disabled = true;
-        input.style.backgroundColor = '#e9ecef';
-        input.style.cursor = 'not-allowed';
-      });
-    }
-  });
+	if (copyConfigStr) {
+		try {
+			const copyConfig = JSON.parse(copyConfigStr);
+			console.log('📋 复制配置读取:', copyConfig);  // ✅ 调试
+			
+			// 预填考试名称
+			const titleInput = document.getElementById('examTitleInput');
+			if (titleInput && copyConfig.title) titleInput.value = copyConfig.title;
+			
+			// 预填时长
+			const durationInput = document.getElementById('durationInput');
+			if (durationInput && copyConfig.duration) durationInput.value = copyConfig.duration;
+			
+			// 预填阅卷人
+			const reviewerInput = document.getElementById('reviewerInput');
+			if (reviewerInput && copyConfig.reviewer) reviewerInput.value = copyConfig.reviewer;
+			
+			// ✅ 存储国家到独立变量（不依赖 sessionStorage）
+			if (copyConfig.countries && copyConfig.countries.length > 0) {
+				console.log('🌍 设置 pendingCountries:', copyConfig.countries);  // ✅ 调试
+				window.pendingCountries = copyConfig.countries;
+			}
+			
+			// 预填有效期
+			const startTimeInput = document.getElementById('startTimeInput');
+			const endTimeInput = document.getElementById('endTimeInput');
+			if (startTimeInput && copyConfig.start_time) {
+				startTimeInput.value = copyConfig.start_time;
+			}
+			if (endTimeInput && copyConfig.end_time) {
+				endTimeInput.value = copyConfig.end_time;
+			}
+			
+			// ✅ 不清除 sessionStorage，让编辑模式也能读取？
+			// sessionStorage.removeItem('copy_exam_config');  // 延迟到国家设置完成后再清除
+		} catch(e) {
+			console.error('读取复制配置失败:', e);
+		}
+	}
+	
+	// ==================== 页面初始化（重写确保顺序正确）====================
+	document.addEventListener('DOMContentLoaded', async () => {
+		// 1. 先初始化国家选择器（加载国家列表）
+		await initCountrySelector([]);  // 先初始化空列表
+		
+		// ✅ 2. 如果是新建考试（非编辑、非复制模式），使用默认值
+		const copyConfigStr = sessionStorage.getItem('copy_exam_config');
+		const isCopyMode = !!copyConfigStr;
+		
+		if (!isEditMode && !isCopyMode && !fromBinding) {
+			// 预填有效期
+			const startTimeInput = document.getElementById('startTimeInput');
+			const endTimeInput = document.getElementById('endTimeInput');
+			if (startTimeInput && defaultStartTime) {
+				startTimeInput.value = defaultStartTime;
+			}
+			if (endTimeInput && defaultEndTime) {
+				endTimeInput.value = defaultEndTime;
+			}
+			
+			// 预填国家
+			if (defaultCountries && defaultCountries.length > 0) {
+				for (const code of defaultCountries) {
+					if (!selectedCountryCodes.includes(code)) {
+						selectedCountryCodes.push(code);
+					}
+				}
+				renderSelectedCountryTags();
+				console.log('使用默认预填国家:', defaultCountries);
+			}
+		}
+		
+		if (window.pendingCountries && window.pendingCountries.length > 0) {
+			// ✅ 再次过滤：只保留权限范围内的国家
+			try {
+				const permRes = await fetch('/api/admin/refresh_permissions');
+				const permData = await permRes.json();
+				const allowedCountries = permData.admin_countries || [];
+				const role = permData.role;
+				
+				let filteredPending = window.pendingCountries;
+				if (allowedCountries && allowedCountries.length > 0) {
+					filteredPending = window.pendingCountries.filter(c => allowedCountries.includes(c));
+					console.log('🔄 再次过滤国家:', { original: window.pendingCountries, filtered: filteredPending });
+				}
+				
+				if (filteredPending.length === 0) {
+					console.warn('没有权限范围内的国家可预填');
+				}
+				
+				for (const code of filteredPending) {
+					if (!selectedCountryCodes.includes(code)) {
+						selectedCountryCodes.push(code);
+					}
+				}
+			} catch(e) {
+				// 获取权限失败，直接使用原值
+				for (const code of window.pendingCountries) {
+					if (!selectedCountryCodes.includes(code)) {
+						selectedCountryCodes.push(code);
+					}
+				}
+			}
+			renderSelectedCountryTags();
+			window.pendingCountries = null;
+		}
+ 
+		// 3. 如果是编辑模式，加载考试信息（会覆盖国家选择）
+		if (isEditMode && examId) {
+			try {
+				const res = await fetch(`/api/admin/exam/${examId}`);
+				if (res.ok) {
+					const examData = await res.json();
+					
+					// 设置基本信息
+					const titleInput = document.getElementById('examTitleInput');
+					const durationInput = document.getElementById('durationInput');
+					const reviewerInput = document.getElementById('reviewerInput');
+					if (titleInput) titleInput.value = examData.title || '';
+					if (durationInput) durationInput.value = examData.duration || 60;
+					if (reviewerInput) reviewerInput.value = examData.reviewer || '';
+					
+					// 设置有效期
+					const startTimeInput = document.getElementById('startTimeInput');
+					const endTimeInput = document.getElementById('endTimeInput');
+					if (startTimeInput && examData.start_time) {
+						startTimeInput.value = utcToLocalDatetimeLocal(examData.start_time);
+					}
+					if (endTimeInput && examData.end_time) {
+						endTimeInput.value = utcToLocalDatetimeLocal(examData.end_time);
+					}
+					
+					// 设置国家（编辑模式优先使用考试的国家）
+					let countries = [];
+					if (examData.countries) {
+						countries = typeof examData.countries === 'string' 
+							? JSON.parse(examData.countries) 
+							: examData.countries;
+					} else if (examData.country) {
+						countries = [examData.country];
+					}
+					
+					if (countries.length > 0) {
+						// 清空现有国家，设置为考试的国家
+						selectedCountryCodes = [...countries];
+						renderSelectedCountryTags();
+					}
+				}
+			} catch(e) {
+				console.error('加载考试信息失败:', e);
+			}
+		}
+		
+		// 4. 如果是从培训绑定进入，添加培训国家
+		if (fromBinding && trainingCountry && trainingCountry !== 'null') {
+			if (!selectedCountryCodes.includes(trainingCountry)) {
+				selectedCountryCodes.push(trainingCountry);
+				renderSelectedCountryTags();
+			}
+		}
+		
+		// 5. 预填培训有效期（从绑定模态框进入时）
+		if (fromBinding && trainingId) {
+			await prefetchTrainingDates(trainingId);
+		}
+		
+		// 6. 处理按钮显示（绑定模式）
+		if (fromBinding && trainingId) {
+			const saveDraftBtn = document.getElementById('saveDraftBtn');
+			const saveBtn = document.getElementById('saveBtn');
+			if (saveDraftBtn) saveDraftBtn.style.display = 'none';
+			if (saveBtn) {
+				saveBtn.innerHTML = '✅ 保存并绑定';
+				saveBtn.classList.remove('btn-success');
+				saveBtn.classList.add('btn-primary');
+			}
+		}
+		
+		// 7. 初始化题目表格操作
+		if (canEditQuestions && examStatus !== 'closed') {
+			bindAllRowEvents();
+			const addRowBtn = document.getElementById('addRowBtn');
+			if (addRowBtn) {
+				addRowBtn.addEventListener('click', () => {
+					const tbody = document.getElementById('qTableBody');
+					const newRow = document.createElement('tr');
+					newRow.innerHTML = createEmptyRow();
+					tbody.appendChild(newRow);
+					renumberRows();
+					attachRowEvents(newRow);
+				});
+			}
+		}
+		
+		// 8. 绑定保存按钮
+		if (isEditMode) {
+			const updateBtn = document.getElementById('updateBtn');
+			if (updateBtn) {
+				updateBtn.addEventListener('click', withLoading(updateBtn, updateExam, t('saving') || '保存中...'));
+			}
+		} else {
+			const saveBtn = document.getElementById('saveBtn');
+			const saveDraftBtn = document.getElementById('saveDraftBtn');
+
+			if (saveBtn) {
+				// 根据是否从绑定进入，修改按钮文字
+				if (fromBinding && trainingId) {
+					saveBtn.innerHTML = '✅ ' + (t('save_and_bind') || '保存并绑定');
+				} else {
+					saveBtn.innerHTML = '✅ ' + (t('confirm_import') || '确认导入数据库');
+				}
+				saveBtn.addEventListener('click', withLoading(saveBtn, () => saveExam(false), t('importing') || '导入中...'));
+			}
+
+			if (saveDraftBtn) {
+				saveDraftBtn.addEventListener('click', withLoading(saveDraftBtn, () => saveExam(true), t('saving_draft') || '保存草稿中...'));
+			}
+		}
+		
+		// 9. 禁用只读模式的输入框
+		if (!canEditQuestions || examStatus === 'closed') {
+			const questionInputs = document.querySelectorAll('#qTableBody input, #qTableBody select, #qTableBody textarea');
+			questionInputs.forEach(input => {
+				input.disabled = true;
+				input.style.backgroundColor = '#e9ecef';
+				input.style.cursor = 'not-allowed';
+			});
+		}
+		sessionStorage.removeItem('copy_exam_config');
+	});
 </script>
 {% endblock %}

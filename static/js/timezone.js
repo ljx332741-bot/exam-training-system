@@ -12,8 +12,6 @@ async function initUserTimezone() {
         return;
     }
     
-    console.log('检测到用户时区:', timezone);
-    
     // 检查是否需要更新
     const savedTimezone = localStorage.getItem('user_timezone');
     const sessionTimezone = sessionStorage.getItem('user_timezone');

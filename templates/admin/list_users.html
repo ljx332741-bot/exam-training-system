@@ -4,6 +4,14 @@
 {% block extra_head %}
 /* 在 extra_head 中添加 */
 <style>
+    /* 复制按钮样式 */
+    .user-id-code {
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .user-id-code:hover {
+        background: #e0e0e0 !important;
+    }
     #userTable th {
         position: relative;
         background-clip: padding-box;
@@ -154,6 +162,7 @@
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="country" id="fieldCountry" checked><label class="form-check-label" for="fieldCountry"><span data-i18n="country">国家</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="name_en" id="fieldName" checked><label class="form-check-label" for="fieldName"><span data-i18n="name_en">姓名</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="email" id="fieldEmail" checked><label class="form-check-label" for="fieldEmail"><span data-i18n="email">邮箱</span></label></div></li>
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="id" id="fieldId"><label class="form-check-label" for="fieldId">userid</label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_id" id="fieldWhId" checked><label class="form-check-label" for="fieldWhId"><span data-i18n="wh_id">库房编码</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_name_en" id="fieldWhName" checked><label class="form-check-label" for="fieldWhName"><span data-i18n="wh_name_en">库房名称</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="user_status" id="fieldStatus" checked><label class="form-check-label" for="fieldStatus"><span data-i18n="user_status">用户状态</span></label></div></li>
@@ -166,7 +175,6 @@
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="wh_type" id="fieldWhType"><label class="form-check-label" for="fieldWhType"><span data-i18n="wh_type">库房类型</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="birthday" id="fieldBirthday"><label class="form-check-label" for="fieldBirthday"><span data-i18n="birthday">生日</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="created_by" id="fieldCreatedBy"><label class="form-check-label" for="fieldCreatedBy"><span data-i18n="created_by">创建人</span></label></div></li>
-                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="id" id="fieldId"><label class="form-check-label" for="fieldId">ID</label></div></li>
             </ul>
         </div>
         <button class="btn btn-sm btn-outline-secondary" id="resetFieldsBtn"><span data-i18n="reset_fields">重置字段</span></button>
@@ -946,10 +954,10 @@
         document.getElementById('resetFieldsBtn')?.addEventListener('click', () => {
             // 重置为默认值
             visibleFields = {
-                country: true, name_en: true, email: true, wh_id: true, wh_name_en: true,
+                country: true, name_en: true, email: true, id: false, wh_id: true, wh_name_en: true,
                 role: true, is_partner: true, user_status: true, employee_id: false,
                 company: false, department: false, wh_type: false, birthday: false,
-                created_by: false, id: false, power_scope: true
+                created_by: false, power_scope: true
             };
             saveFieldConfig();
             // 同步复选框
@@ -972,7 +980,7 @@
         if (CURRENT_USER_ROLE !== 'super_admin') {
             displayUsers = users.filter(u => u.role !== 'super_admin');
         }
-        
+
         if (!displayUsers.length) {
             document.getElementById('userTableBody').innerHTML = `<tr><td colspan="18" class="text-center">${t('no_data')}</td></tr>`;
             return;
@@ -980,14 +988,15 @@
 
         // ==================== 动态构建表头 ====================
         const fieldOrder = [
-            'country', 'name_en', 'email', 'wh_id', 'wh_name_en', 'role', 
+            'country', 'name_en', 'email', 'id', 'wh_id', 'wh_name_en', 'role', 
             'is_partner', 'user_status', 'employment_status', 'employee_id', 
-            'company', 'department', 'wh_type', 'birthday', 'created_by', 'id'
+            'company', 'department', 'wh_type', 'birthday', 'created_by'
         ];
         const labels = {
             country: t('country'), 
             name_en: t('name_en'), 
             email: t('mail'), 
+            id: 'ID',
             wh_id: t('wh_id'),
             wh_name_en: t('wh_name_en'), 
             role: t('role'), 
@@ -999,8 +1008,7 @@
             department: t('department'), 
             wh_type: t('wh_type'),
             birthday: t('birthday'), 
-            created_by: t('created_by'), 
-            id: 'ID'
+            created_by: t('created_by')
         };
         
         // 构建表头HTML
@@ -1036,6 +1044,19 @@
                             break;
                         case 'email':
                             cellValue = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
+                            break;
+                        case 'id':
+                            const userIdFull = u.id;
+                            const userIdDisplay = u.id.slice(0, 8) + '...';
+                            cellValue = `<div class="d-flex align-items-center gap-2">
+                                <span title="${escapeHtml(userIdFull)}" style="cursor: help;">${escapeHtml(userIdDisplay)}</span>
+                                <button class="btn btn-sm btn-outline-secondary copy-id-btn" 
+                                    style="padding: 0px 4px; font-size: 0.7rem;" 
+                                    onclick="window.copyToClipboard('${escapeHtml(userIdFull)}', this)" 
+                                    title="复制完整ID">
+                                    <i class="bi bi-files"></i>
+                                </button>
+                            </div>`;
                             break;
                         case 'wh_id':
                             cellValue = escapeHtml(u.wh_id || '-');
@@ -1083,11 +1104,6 @@
                             break;
                         case 'created_by':
                             cellValue = escapeHtml(u.created_by_name || u.created_by?.slice(0,8) || '-');
-                            break;
-                        case 'id':
-                            const userIdFull = u.id;
-                            const userIdDisplay = u.id.slice(0, 8) + '...';
-                            cellValue = `<span title="${escapeHtml(userIdFull)}" style="cursor: help;">${escapeHtml(userIdDisplay)}</span>`;
                             break;
                     }
                     bodyHtml += `<td>${cellValue}</td>`;
@@ -1275,6 +1291,48 @@
             return m;
         });
     }
+
+    // 复制到剪贴板函数
+    window.copyToClipboard = async function(text, element) {
+        try {
+            await navigator.clipboard.writeText(text);
+           
+            const isButton = element.tagName === 'BUTTON';
+            const originalHtml = element.innerHTML;
+           
+            if (isButton) {
+                element.innerHTML = '<i class="bi bi-check"></i>';
+                element.classList.add('btn-success');
+                element.classList.remove('btn-outline-secondary');
+                setTimeout(() => {
+                    element.innerHTML = originalHtml;
+                    element.classList.remove('btn-success');
+                    element.classList.add('btn-outline-secondary');
+                }, 1500);
+            } else {
+                const originalBg = element.style.background;
+                element.style.background = '#d4edda';
+                element.innerText = '已复制!';
+                setTimeout(() => {
+                    element.style.background = originalBg;
+                    element.innerText = originalHtml;
+                }, 1500);
+            }
+           
+            // 可选：显示提示
+            console.log('复制成功:', text);
+        } catch (err) {
+            console.error('复制失败:', err);
+            // 降级方案
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            alert('ID已复制到剪贴板');
+        }
+    };
 
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
@@ -1811,12 +1869,12 @@
         renderRoleSelect(targetUserRole);
     }
 
-// 辅助函数：从库房ID提取国家代码
-function extractCountryFromWhId(whId) {
-    if (!whId) return '';
-    const match = whId.match(/^([A-Z]{2})/);
-    return match ? match[1] : '';
-}
+    // 辅助函数：从库房ID提取国家代码
+    function extractCountryFromWhId(whId) {
+        if (!whId) return '';
+        const match = whId.match(/^([A-Z]{2})/);
+        return match ? match[1] : '';
+    }
 
     // 监听模态框关闭事件，确保清理状态
     document.getElementById('addUserModal').addEventListener('hidden.bs.modal', function() {
