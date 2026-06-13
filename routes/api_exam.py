@@ -5,7 +5,7 @@ from . import exam_bp
 import os
 import re
 from dateutil import parser
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, timedelta
 from flask import (
     Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file
@@ -100,6 +100,20 @@ def dashboard():
             any_assign = db.table("exam_assignments").select("id").eq("exam_id", exam_id).limit(1).execute()
             if any_assign.data and exam_id not in assigned_exam_ids:
                 continue
+
+            # ✅ 关键修复：绑定模式的考试处理
+            is_binding_exam = ex.get('is_binding_exam', False)
+            
+            if is_binding_exam:
+                # 绑定模式的考试：只有被分配到 exam_assignments 的学员才能看到
+                # 如果用户没有被分配，即使考试是 active 状态，也不显示
+                if exam_id not in assigned_exam_ids:
+                    continue
+                # 如果被分配了，强制设置为 active 状态（如果尚未激活）
+                if not ex.get('is_active'):
+                    db.table("exams").update({"is_active": True, "status": "active"}).eq("id", exam_id).execute()
+                    ex['is_active'] = True
+                    ex['status'] = 'active'
             
             # 获取该用户的考试状态
             user_status = status_map.get(exam_id, {})

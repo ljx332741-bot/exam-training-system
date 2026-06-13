@@ -10,7 +10,7 @@
             <button class="btn btn-success me-2" id="exportExcelBtn">
                 <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
             </button>
-            <button class="btn btn-outline-secondary" onclick="closePageBtn">
+            <button class="btn btn-outline-secondary" id="closePageBtn">
                 <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
             </button>
         </div>
@@ -645,15 +645,6 @@
         });
     }
 
-    // ==================== 关闭按钮 ====================
-    const closePageBtn = document.getElementById('closePageBtn');
-    if (closePageBtn) {
-        closePageBtn.addEventListener('click', () => {
-            // 直接跳转到培训列表页面
-            window.location.href = '/admin/trainings';
-        });
-    }
-
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
@@ -663,7 +654,16 @@
         await waitForI18n();
         window.i18n.applyTranslations();  // 处理静态文本
         loadData();
-        
+
+        // 关闭按钮
+        const closePageBtn = document.getElementById('closePageBtn');
+        if (closePageBtn) {
+            closePageBtn.addEventListener('click', () => {
+                // 直接跳转到培训列表页面
+                window.location.href = '/admin/trainings';
+            });
+        }
+
         // ✅ 语言切换时重新加载列表
         if (window.i18n && window.i18n.subscribe) {
             window.i18n.subscribe(() => {

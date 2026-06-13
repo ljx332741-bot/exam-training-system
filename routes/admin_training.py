@@ -1861,6 +1861,10 @@ def bind_exam_to_training():
     is_auto_assign = data.get('is_auto_assign', True)
     is_required = data.get('is_required', True)
     sort_order = data.get('sort_order', 0)
+
+    logger.info(f"========== 绑定考试到培训 ==========")
+    logger.info(f"training_id: {training_id}, exam_id: {exam_id}")
+    logger.info(f"is_auto_assign: {is_auto_assign}, pass_score: {pass_score}")
     
     if not training_id or not exam_id:
         return jsonify({"success": False, "message": "参数不完整"}), 400
@@ -1886,6 +1890,9 @@ def bind_exam_to_training():
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "updated_by": session.get('user_id')
         }).eq("id", soft_deleted.data[0]['id']).execute()
+
+        logger.info(f"绑定创建成功: binding_id={result.data[0]['id'] if result.data else 'None'}")
+        logger.info(f"绑定记录: training_id={training_id}, exam_id={exam_id}, is_auto_assign={is_auto_assign}")
         
         if result.data:
             return jsonify({"success": True, "binding_id": result.data[0]['id'], "restored": True})

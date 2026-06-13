@@ -2,7 +2,7 @@
 import logging
 import json
 import pdfkit
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from flask import request, jsonify, render_template, session, flash
 from . import training_bp
 from services.db import get_supabase, get_supabase_admin
@@ -166,24 +166,84 @@ def api_training_sign():
     name = data.get('name', '').strip()
     if not training_id or not sig: return jsonify({"success": False, "message": "缺少必要参数"}), 400
     db = get_supabase()
+    admin_db = get_supabase_admin()
     user_id = session['user_id']
+
+    # 1. 验证用户状态
     user_res = db.table("users").select("is_active, user_status").eq("id", user_id).maybe_single().execute()
     if not user_res.data or not user_res.data.get('is_active') or user_res.data.get('user_status') != 'registered':
         return jsonify({"success": False, "message": "用户未完成注册"}), 400
+
+    # 2. 检查是否重复签到
     try:
         exist = db.table("training_attendances").select("id").eq("training_id", training_id).eq("user_id", user_id).maybe_single().execute()
         if exist and exist.data: return jsonify({"success": False, "message": "您已签到过本培训"}), 400
     except: pass
+
+    # 3. 检查培训有效期
     now = datetime.now(timezone.utc).isoformat()
     tr = db.table("trainings").select("start_time, end_time").eq("id", training_id).maybe_single().execute()
     if not tr or not tr.data: return jsonify({"success": False, "message": "培训不存在"}), 404
     if now < tr.data['start_time']: return jsonify({"success": False, "message": "签到尚未开始"}), 400
     if now > tr.data['end_time']: return jsonify({"success": False, "message": "签到已结束"}), 400
+
+    # 4. 保存签名
     try: url = upload_signature(sig, training_id, user_id)
     except: return jsonify({"success": False, "message": "签名保存失败"}), 500
+
+    # 5. 保存签到记录
     try:
         db.table("training_attendances").insert({"training_id": training_id, "user_id": user_id, "signature_url": url, "signed_name": name, "sign_time": now}).execute()
     except Exception as e: return jsonify({"success": False, "message": "数据保存失败"}), 500
+    
+    # ========== 6. 签到成功后自动分配绑定的考试 ==========
+
+    # 签到成功后
+    logger.info(f"========== 用户签到成功 ==========")
+    logger.info(f"用户: {user_id}, 培训: {training_id}")
+    try:
+        # 查询该培训绑定的考试
+        bindings_res = db.table("training_exam_bindings").select("exam_id, pass_score")\
+            .eq("training_id", training_id)\
+            .eq("is_auto_assign", True)\
+            .eq("deleted_at", None)\
+            .execute()
+        
+        for binding in (bindings_res.data or []):
+            exam_id = binding['exam_id']
+            
+            # 检查是否已分配
+            existing = db.table("exam_assignments").select("id")\
+                .eq("exam_id", exam_id)\
+                .eq("user_id", user_id)\
+                .execute()
+            
+            if not existing.data:
+                # 分配考试
+                db.table("exam_assignments").insert({
+                    "exam_id": exam_id,
+                    "user_id": user_id,
+                    "created_by": user_id
+                }).execute()
+                logger.info(f"培训签到后自动分配考试: user={user_id}, exam={exam_id}")
+                
+                # ✅ 激活绑定模式的考试（如果尚未激活）
+                exam_res = db.table("exams").select("is_active, is_binding_exam").eq("id", exam_id).maybe_single().execute()
+                if exam_res.data and exam_res.data.get('is_binding_exam') and not exam_res.data.get('is_active'):
+                    # 设置默认有效期
+                    now = datetime.now(timezone.utc).isoformat()
+                    end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+                    db.table("exams").update({
+                        "is_active": True,
+                        "status": "active",
+                        "start_time": now,
+                        "end_time": end_time
+                    }).eq("id", exam_id).execute()
+                    logger.info(f"绑定考试 {exam_id} 已激活")
+        
+    except Exception as e:
+        logger.error(f"自动分配考试失败: {e}")
+    
     return jsonify({"success": True, "sign_time": now})
 
 @training_bp.route('/api/training/resign', methods=['POST'])

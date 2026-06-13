@@ -716,7 +716,7 @@
 			if (endTime) requestData.end_time = endTime;
 		}
 		
-		const url = `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=${isDraft}`;
+		const url = `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=${isDraft}&from_binding=${fromBinding}`;
 		const res = await fetch(url, { 
 			method: 'POST', 
 			headers: { 'Content-Type': 'application/json' }, 
@@ -730,6 +730,27 @@
 
 		// 从绑定模态框进入且非草稿时，自动绑定考试
 		if (fromBinding && trainingId && !isDraft && json.exam_id) {
+			console.log('🔍========== 绑定模式考试创建 ==========');
+			console.log('🔍 fromBinding:', fromBinding);
+			console.log('🔍 trainingId:', trainingId);
+			console.log('🔍 isDraft:', isDraft);
+			console.log('🔍 exam_id:', json.exam_id);
+			console.log('🔍 exam_title:', examTitle);
+
+			// 先更新考试状态为 draft（不激活），不推送任何人
+			console.log('🔍 [绑定模式] 设置考试为 draft 状态');
+			const updateRes = await fetch(`/api/admin/exam/${json.exam_id}/update`, {
+				method: 'PUT',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ 
+					status: 'draft',
+					is_active: false
+				})
+			});
+			const updateResult = await updateRes.json();
+			console.log('🔍 [绑定模式] 考试状态更新结果:', updateResult);
+
+			console.log('🔍 [绑定模式] 开始绑定考试到培训');
 			const bindRes = await fetch('/api/admin/training/bind_exam', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -741,7 +762,11 @@
 					is_required: true
 				})
 			});
+			const bindResult = await bindRes.json();
+			console.log('🔍 [绑定模式] 绑定结果:', bindResult);
+
 			if (bindRes.ok) {
+				console.log('✅ [绑定模式] 绑定成功，准备关闭窗口');
 				if (typeof showToast === 'function') {
 					showToast(t('exam_created_and_bound') || '考试创建并绑定成功！', 'success');
 				} else {

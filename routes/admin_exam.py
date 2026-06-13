@@ -343,7 +343,11 @@ def admin_import_save():
                 allowed = [user_country]
             else:
                 allowed = []
-    
+
+    # ✅ 检查是否从培训绑定进入
+    from_binding = request.args.get('from_binding') == 'true'
+    is_draft = request.args.get('draft', 'false').lower() == 'true'
+
     # 权限检查：管理员创建的所有国家必须在允许范围内
     if current_role == 'admin':
         if not allowed or len(allowed) == 0:
@@ -357,16 +361,28 @@ def admin_import_save():
                 return jsonify({"success": False, "message": f"无权创建国家 {c} 的考试"}), 403
 
     try:
+        logger.info("=" * 60)
+        logger.info(f"📌 导入保存请求:")
+        logger.info(f"   from_binding: {from_binding}")
+        logger.info(f"   is_draft: {is_draft}")
+        logger.info(f"   exam_title: {exam_title}")
+        logger.info(f"   countries: {countries}")
+        logger.info(f"   start_time: {start_time}")
+        logger.info(f"   end_time: {end_time}")
+        
         # ✅ 创建考试记录（包含完整信息）
         exam_data = {
             "title": exam_title,
-            "is_active": not is_draft,
             "countries": json.dumps(countries) if countries else None,
-            "status": "active" if (not is_draft and start_time and end_time) else ("draft" if is_draft else "created"),
             "duration": duration,
-            "reviewer": reviewer
+            "reviewer": reviewer,
+            "is_active": not is_draft,  # 正常创建时激活，草稿时不激活
+            "status": "active" if (not is_draft and start_time and end_time) else ("draft" if is_draft else "created"),
+            "is_binding_exam": from_binding  # ✅ 新增：标识这是绑定模式的考试
         }
-        
+
+        logger.info(f"📌 准备插入的 exam_data: {exam_data}")
+    
         # 非草稿模式时添加起止时间
         if not is_draft and start_time and end_time:
             exam_data["start_time"] = start_time
@@ -1165,6 +1181,12 @@ def save_exam_assignments():
 def api_admin_exam_update(exam_id):
     data = request.json
     update_data = {}
+    # ✅ 支持更新 status 和 is_active
+    if 'status' in data:
+        update_data['status'] = data['status']
+    if 'is_active' in data:
+        update_data['is_active'] = data['is_active']
+
     if 'start_time' in data:
         update_data['start_time'] = data['start_time'] if data['start_time'] else None
     if 'end_time' in data:
