@@ -70,38 +70,67 @@
     <!-- 统计汇总卡片 -->
     <div class="row g-3 mb-4" id="summaryCards">
         <div class="col-md-3">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h6 class="card-title"><span data-i18n="total_users">总学员数</span></h6>
-                    <h2 class="mb-0" id="totalUsers">0</h2>
+            <div class="card bg-primary text-white border-0 shadow-sm" style="border-radius: 10px;">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="total_users">总学员数</span></h6>
+                            <h3 class="mb-0 fw-bold" id="totalUsers">0</h3>
+                        </div>
+                        <div class="fs-3 opacity-50">
+                            <i class="bi bi-people-fill"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-info text-white">
-                <div class="card-body">
-                    <h6 class="card-title"><span data-i18n="signed_count">已签到人数</span></h6>
-                    <h2 class="mb-0" id="totalSigned">0</h2>
+            <div class="card bg-info text-white border-0 shadow-sm" style="border-radius: 10px;">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="signed_count">已签到人数</span></h6>
+                            <h3 class="mb-0 fw-bold" id="totalSigned">0</h3>
+                        </div>
+                        <div class="fs-3 opacity-50">
+                            <i class="bi bi-check-circle-fill"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-warning text-white">
-                <div class="card-body">
-                    <h6 class="card-title"><span data-i18n="completed_count">已完成考试人数</span></h6>
-                    <h2 class="mb-0" id="totalCompleted">0</h2>
+            <div class="card bg-warning text-white border-0 shadow-sm" style="border-radius: 10px;">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="completed_count">已完成考试人数</span></h6>
+                            <h3 class="mb-0 fw-bold" id="totalCompleted">0</h3>
+                        </div>
+                        <div class="fs-3 opacity-50">
+                            <i class="bi bi-clipboard-check-fill"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <h6 class="card-title"><span data-i18n="pass_rate">及格率</span></h6>
-                    <h2 class="mb-0" id="passRate">0%</h2>
+            <div class="card bg-success text-white border-0 shadow-sm" style="border-radius: 10px;">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="pass_rate">及格率</span></h6>
+                            <h3 class="mb-0 fw-bold" id="passRate">0%</h3>
+                        </div>
+                        <div class="fs-3 opacity-50">
+                            <i class="bi bi-percent"></i>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
+
 
     <!-- 详细数据表格 -->
     <div class="card shadow-sm">
@@ -167,52 +196,55 @@
 
     // 3. 分离培训列表加载（只在初始化时加载一次）
     let trainingsLoaded = false;
+    let cachedTrainings = [];
+    let cachedReportData = [];
+    let currentReportData = [];
 
+    // 数据加载函数（只加载一次）
     async function loadTrainingsList() {
-        if (trainingsLoaded) return;
+        if (cachedTrainings.length > 0) return;
         try {
             const res = await fetch('/api/admin/trainings?per_page=500');
             const data = await res.json();
-            const select = document.getElementById('filterTrainingId');
-            select.innerHTML = `<option value="">${t('all_training')}</option>`;
-            (data.data || []).forEach(t => {
-                select.innerHTML += `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
-            });
-            trainingsLoaded = true;
+            cachedTrainings = data.data || [];
+            renderTrainingSelect(cachedTrainings);
         } catch (err) {
             console.error('加载培训列表失败:', err);
         }
     }
 
+    function renderTrainingSelect(trainings) {
+        const select = document.getElementById('filterTrainingId');
+        if (!select) return;
+        select.innerHTML = `<option value="">${t('all_training')}</option>`;
+        trainings.forEach(t => {
+            select.innerHTML += `<option value="${t.id}">${escapeHtml(t.name)}</option>`;
+        });
+    }
+
     // 4. 修改 loadReport 函数
-    async function loadReport() {
-        if (isLoading) return;
-        
+    async function loadReportData() {
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
             name: filters.name,
             country: filters.country,
             training_name: filters.training_name,
-            training_id: filters.training_id || '',  // 新增
+            training_id: filters.training_id || '',
             exam_name: filters.exam_name,
             status: filters.status,
             start_date: filters.start_date,
             end_date: filters.end_date
         });
 
-        isLoading = true;
-        
-        // 显示加载状态
-        const tbody = document.getElementById('reportTableBody');
-        tbody.innerHTML = `<tr><td colspan="14" class="text-center">
-            <div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}<\/td><\/tr>`;
-        
         try {
             const res = await fetch(`/api/admin/training/completion_report?${params}`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
-            renderTable(data.data);
+            // 缓存原始数据
+            cachedReportData = data.data || [];
+            currentReportData = [...cachedReportData];
+            renderTable(currentReportData);
             document.getElementById('totalCount').innerText = data.total;
             renderPagination(data.page, Math.ceil(data.total / data.per_page));
             
@@ -224,9 +256,73 @@
             }
         } catch (err) {
             console.error(t('load_report_failed'), err);
-            tbody.innerHTML = `<tr><td colspan="14" class="text-center text-danger">${t('load_failed')}<\/td><\/tr>`;
-        } finally {
-            isLoading = false;
+            document.getElementById('reportTableBody').innerHTML = 
+                `<tr><td colspan="14" class="text-center text-danger">${t('load_failed')}<\/td><\/tr>`;
+        }
+    }
+
+    // 刷新筛选后的数据（不重新请求API，只在前端过滤）
+    function applyFilters() {
+        let filtered = [...cachedReportData];
+        
+        if (filters.name) {
+            const nameLower = filters.name.toLowerCase();
+            filtered = filtered.filter(item => 
+                (item.user_name && item.user_name.toLowerCase().includes(nameLower)) ||
+                (item.user_email && item.user_email.toLowerCase().includes(nameLower))
+            );
+        }
+        
+        if (filters.country) {
+            filtered = filtered.filter(item => item.training_country === filters.country);
+        }
+        
+        if (filters.training_name) {
+            const nameLower = filters.training_name.toLowerCase();
+            filtered = filtered.filter(item => 
+                item.training_name && item.training_name.toLowerCase().includes(nameLower)
+            );
+        }
+        
+        if (filters.training_id) {
+            filtered = filtered.filter(item => item.training_id == filters.training_id);
+        }
+        
+        if (filters.exam_name) {
+            const nameLower = filters.exam_name.toLowerCase();
+            filtered = filtered.filter(item => 
+                item.exam_name && item.exam_name.toLowerCase().includes(nameLower)
+            );
+        }
+        
+        if (filters.status) {
+            filtered = filtered.filter(item => {
+                if (filters.status === 'completed') return item.is_passed;
+                if (filters.status === 'incomplete') return !item.is_completed && !item.is_passed;
+                if (filters.status === 'failed') return item.is_completed && !item.is_passed;
+                if (filters.status === 'not_signed') return !item.is_signed;
+                if (filters.status === 'not_exam') return item.is_signed && !item.is_completed;
+                return true;
+            });
+        }
+        
+        currentReportData = filtered;
+        currentPage = 1;
+        renderTable(currentReportData);
+        renderPagination();
+    }
+
+    // 语言切换时只重新渲染表格，不重新请求数据
+    function refreshUILanguage() {
+        if (cachedReportData.length > 0) {
+            renderTable(currentReportData);
+        }
+        if (cachedTrainings.length > 0) {
+            renderTrainingSelect(cachedTrainings);
+        }
+        // 重新应用静态文本翻译
+        if (window.i18n && window.i18n.applyTranslations) {
+            window.i18n.applyTranslations();
         }
     }
 
@@ -257,17 +353,40 @@
         }
 
         tbody.innerHTML = rows.map((r, idx) => {
-            let signedBadge = r.is_signed ? 
-                `<span class="badge bg-success">${t('signed')}</span>` : 
-                `<span class="badge bg-secondary">${t('not_signed')}</span>`;
-            
-            let examBadge = '';
-            if (r.is_completed) {
-                examBadge = `<span class="badge bg-success">${t('completed')}</span>`;
-            } else if (r.is_signed) {
-                examBadge = `<span class="badge bg-warning text-dark">${t('t_pending_exam')}</span>`;
-            } else {
-                examBadge = `<span class="badge bg-secondary">${t('t_not_started')}</span>`;
+            function getTrainingStatusText(status) {
+                const map = {
+                    'signed': t('signed'),
+                    'pending': t('pending_sign'),
+                    'not_assigned': t('not_pushed')
+                };
+                return map[status] || status;
+            }
+
+            function getTrainingStatusBadge(status) {
+                const map = {
+                    'signed': 'bg-success',
+                    'pending': 'bg-warning text-dark',
+                    'not_assigned': 'bg-secondary'
+                };
+                return map[status] || 'bg-secondary';
+            }
+
+            function getExamStatusText(status) {
+                const map = {
+                    'completed': t('completed'),
+                    'pending': t('t_pending_exam'),
+                    'not_assigned': t('not_pushed')
+                };
+                return map[status] || status;
+            }
+
+            function getExamStatusBadge(status) {
+                const map = {
+                    'completed': 'bg-success',
+                    'pending': 'bg-warning text-dark',
+                    'not_assigned': 'bg-secondary'
+                };
+                return map[status] || 'bg-secondary';
             }
             
             let passedBadge = '';
@@ -307,8 +426,16 @@
                     <td>${escapeHtml(r.wh_id || '-')}</td>
                     <td>${escapeHtml(r.exam_name)}</td>
                     <td>${escapeHtml(r.exam_id)}</td>
-                    <td>${signedBadge}</td>
-                    <td>${examBadge}</td>
+                    <td>
+                        <span class="badge ${getTrainingStatusBadge(r.training_status)}">
+                            ${getTrainingStatusText(r.training_status)}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="badge ${getExamStatusBadge(r.exam_status)}">
+                            ${getExamStatusText(r.exam_status)}
+                        </span>
+                    </td>
                     <td class="fw-bold ${r.score >= r.pass_score ? 'text-success' : 'text-danger'}">${r.score || '-'}</td>
                     <td>${passedBadge}</td>
                 </tr>
@@ -429,10 +556,42 @@
         window.open(`/api/admin/training/completion_report/export?${params}`, '_blank');
     });
 
+    // 等待 i18n 就绪工具函数
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
     // 页面初始化
     document.addEventListener('DOMContentLoaded', () => {
+        waitForI18n();
+        window.i18n.applyTranslations();
+        
+        // 加载数据
         loadTrainingsList();
-        loadReport();
+        loadReportData();
+        
+        // ✅ 语言切换时只刷新UI，不重新加载数据
+        if (window.i18n && window.i18n.subscribe) {
+            window.i18n.subscribe(() => {
+                refreshUILanguage();  // 只重新渲染，不请求数据
+            });
+        }
+        
+        // 监听自定义事件
+        window.addEventListener('app:languageChanged', () => {
+            refreshUILanguage();
+        });
     });
 </script>
 {% endblock %}

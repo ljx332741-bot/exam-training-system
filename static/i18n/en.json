@@ -870,7 +870,7 @@
 "sign_in_status": "Sign status",
 "exam_status": "Exam status",
 "exam_result": "Exam result",
-"completed_count": "Completed count",
+"completed_count": "Completed examination count",
 "pass_rate": "Pass rate",
 "signed_count": "Signed count",
 "total_users": "Total users",
@@ -888,5 +888,13 @@
 "draft_saved": "Draft safed",
 "jsonify_no_permmission_delete_item_created_by_others": "No permission to delete project created by others",
 "jsonify_permission_denied": "Permission denied",
-"jsonify_no_authorith_delete_project": "No authority to delete this project"
+"jsonify_no_authorith_delete_project": "No authority to delete this project",
+"title_view_signature_handwriting": "View the signature handwriting",
+"handwriting_is_loading": "Handwriting is loading...",
+"student_signature": "Signature",
+"no_have_at_moment": "No have at this moment",
+"not_yet_completed_signature": "Not yet completed the signature.",
+"name_signature": "Signature name",
+"deleted_exams": "Deleted exams",
+"not_pushed": "Not pushed"
 }

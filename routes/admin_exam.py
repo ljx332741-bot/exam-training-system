@@ -1943,6 +1943,249 @@ def api_admin_batch_delete_exam_results():
         "errors": errors[:10]
     })
 
+@admin_exam_bp.route('/api/admin/exams/deleted')
+@login_required
+@admin_required
+def api_admin_deleted_exams():
+    """获取已软删除的考试列表"""
+    db = get_supabase_admin()
+    
+    # 获取筛选参数
+    search = request.args.get('search', '').strip()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    # 查询已删除的考试
+    query = db.table("exams").select("*").not_.is_("deleted_at", "null")
+    
+    if search:
+        query = query.ilike("title", f"%{search}%")
+    
+    # 分页
+    total_res = query.execute()
+    total = len(total_res.data or [])
+    
+    start = (page - 1) * per_page
+    end = start + per_page - 1
+    res = query.range(start, end).order("deleted_at", desc=True).execute()
+    exams = res.data or []
+    
+    # 获取删除人姓名和创建人姓名
+    user_ids = set()
+    for exam in exams:
+        if exam.get('deleted_by'):
+            user_ids.add(exam['deleted_by'])
+        if exam.get('created_by'):
+            user_ids.add(exam['created_by'])
+    
+    user_names = {}
+    if user_ids:
+        users_res = db.table("users").select("id, name_en").in_("id", list(user_ids)).execute()
+        for u in (users_res.data or []):
+            user_names[u['id']] = u.get('name_en', '')
+    
+    # 获取每个考试的考试记录数量
+    exam_ids = [e['id'] for e in exams]
+    result_counts = {}
+    if exam_ids:
+        for exam_id in exam_ids:
+            count_res = db.table("exam_results").select("id", count="exact").eq("exam_id", exam_id).execute()
+            result_counts[exam_id] = count_res.count or 0
+    
+    # ✅ 辅助函数：格式化国家显示
+    def format_countries_display(countries_data):
+        if not countries_data:
+            return '-'
+        try:
+            # 如果是字符串，尝试解析 JSON
+            if isinstance(countries_data, str):
+                import json
+                countries_list = json.loads(countries_data)
+            # 如果是列表，直接使用
+            elif isinstance(countries_data, list):
+                countries_list = countries_data
+            else:
+                return '-'
+            
+            # 如果是空列表
+            if not countries_list:
+                return '-'
+            
+            # 转换为逗号分隔的字符串
+            return ', '.join(countries_list)
+        except:
+            return str(countries_data) if countries_data else '-'
+    
+    # 组装返回数据
+    result = []
+    for exam in exams:
+        result.append({
+            "id": exam['id'],
+            "title": exam.get('title', ''),
+            "countries": format_countries_display(exam.get('countries')),  # ✅ 格式化显示
+            "created_at": exam.get('created_at'),
+            "created_by": exam.get('created_by'),
+            "created_by_name": user_names.get(exam.get('created_by'), ''),
+            "deleted_at": exam.get('deleted_at'),
+            "deleted_by": exam.get('deleted_by'),
+            "deleted_by_name": user_names.get(exam.get('deleted_by'), ''),
+            "result_count": result_counts.get(exam['id'], 0)
+        })
+    
+    return jsonify({
+        "data": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
+
+@admin_exam_bp.route('/api/admin/exams/<int:exam_id>/restore', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_restore_exam(exam_id):
+    """恢复软删除的考试"""
+    db = get_supabase_admin()
+    
+    # 权限检查：只有超管或开发者可以恢复
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    try:
+        db.table("exams").update({
+            "deleted_at": None,
+            "deleted_by": None
+        }).eq("id", exam_id).execute()
+        
+        logger.info(f"考试 {exam_id} 已恢复")
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"恢复考试失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exams/batch_restore', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_restore_exams():
+    """批量恢复软删除的考试"""
+    data = request.json
+    exam_ids = data.get('ids', [])
+    
+    if not exam_ids:
+        return jsonify({"success": False, "message": "请选择要恢复的考试"}), 400
+    
+    # 权限检查
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    db = get_supabase_admin()
+    success_count = 0
+    fail_count = 0
+    
+    for exam_id in exam_ids:
+        try:
+            db.table("exams").update({
+                "deleted_at": None,
+                "deleted_by": None
+            }).eq("id", exam_id).execute()
+            success_count += 1
+        except Exception:
+            fail_count += 1
+    
+    return jsonify({
+        "success": True,
+        "success_count": success_count,
+        "fail_count": fail_count
+    })
+
+@admin_exam_bp.route('/api/admin/exams/<int:exam_id>/permanent', methods=['DELETE'])
+@login_required
+@admin_required
+def api_admin_permanent_delete_exam(exam_id):
+    """永久删除考试（硬删除）"""
+    db = get_supabase_admin()
+    
+    # 权限检查
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    try:
+        # 检查是否有考试记录
+        result_count = db.table("exam_results").select("id", count="exact").eq("exam_id", exam_id).execute()
+        if result_count.count > 0:
+            return jsonify({
+                "success": False, 
+                "message": "该考试已有成绩记录，无法永久删除。建议先删除成绩记录或保持软删除状态。"
+            }), 400
+        
+        # 永久删除考试及相关数据
+        tables_to_delete = [
+            "questions",
+            "exam_assignments", 
+            "user_exam_status",
+            "user_exam_drafts",
+            "training_exam_bindings"
+        ]
+        
+        for table_name in tables_to_delete:
+            db.table(table_name).delete().eq("exam_id", exam_id).execute()
+        
+        db.table("exams").delete().eq("id", exam_id).execute()
+        
+        logger.info(f"考试 {exam_id} 已永久删除")
+        return jsonify({"success": True})
+    except Exception as e:
+        logger.error(f"永久删除考试失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exams/batch_permanent', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_batch_permanent_delete_exams():
+    """批量永久删除考试"""
+    data = request.json
+    exam_ids = data.get('ids', [])
+    
+    if not exam_ids:
+        return jsonify({"success": False, "message": "请选择要删除的考试"}), 400
+    
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    db = get_supabase_admin()
+    success_count = 0
+    fail_count = 0
+    errors = []
+    
+    for exam_id in exam_ids:
+        try:
+            # 检查是否有考试记录
+            result_count = db.table("exam_results").select("id", count="exact").eq("exam_id", exam_id).execute()
+            if result_count.count > 0:
+                fail_count += 1
+                errors.append(f"考试 {exam_id} 已有成绩记录，跳过")
+                continue
+            
+            tables_to_delete = [
+                "questions", "exam_assignments", "user_exam_status",
+                "user_exam_drafts", "training_exam_bindings"
+            ]
+            
+            for table_name in tables_to_delete:
+                db.table(table_name).delete().eq("exam_id", exam_id).execute()
+            
+            db.table("exams").delete().eq("id", exam_id).execute()
+            success_count += 1
+        except Exception as e:
+            fail_count += 1
+            errors.append(f"考试 {exam_id}: {str(e)}")
+    
+    return jsonify({
+        "success": True,
+        "success_count": success_count,
+        "fail_count": fail_count,
+        "errors": errors[:10]
+    })
+
 @admin_exam_bp.route('/api/common/quarters')
 def api_quarters():
     """根据数据库中考试的有效期动态生成季度选项列表"""

@@ -885,5 +885,13 @@
 "draft_saved": "保存草稿",
 "jsonify_no_permmission_delete_item_created_by_others": "无权删除他人创建的项目",
 "jsonify_permission_denied": "权限不足",
-"jsonify_no_authorith_delete_project": "无权删除该项目"
+"jsonify_no_authorith_delete_project": "无权删除该项目",
+"title_view_signature_handwriting": "查看签名笔迹",
+"handwriting_is_loading": "签名加载中...",
+"student_signature": "学员图片",
+"no_have_at_moment": "暂无签名",
+"not_yet_completed_signature": "该学员尚未完成签名",
+"name_signature": "签名姓名",
+"deleted_exams": "已删除考试",
+"not_pushed": "未推送"
 }
