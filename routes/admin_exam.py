@@ -527,7 +527,24 @@ def admin_delete_exam(exam_id):
         exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
         if not exam_res.data:
             return jsonify({"success": False, "message": "考试不存在"}), 404
+
+        exam = exam_res.data
+        current_role = session.get('role')
+        is_dev = is_developer()
         
+        # ✅ 权限检查
+        if not is_dev:
+            # 超管可以删除任何考试
+            if current_role == 'super_admin':
+                pass  # 允许
+            elif current_role == 'admin':
+                # 管理员只能删除自己创建的考试
+                created_by = exam.get('created_by')
+                if created_by != session.get('user_id'):
+                    return jsonify({"success": False, "message": "jsonify_no_permmission_delete_item_created_by_others", "params": []}), 403
+            else:
+                return jsonify({"success": False, "message": "jsonify_permission_denied", "params": []}), 403
+
         exam_title = exam_res.data.get('title', f'ID {exam_id}')
         
         if permanent:

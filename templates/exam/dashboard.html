@@ -149,11 +149,18 @@
             </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label class="form-label"><span data-i18n="signature_name">姓名:</span>
-                    <span class="text-center text-muted py-4">{{ CURRENT_USER_NAME }}</span></label>
+                    <label class="form-label">
+                        <span data-i18n="signature_name">姓名</span>:
+                        <span class="text-center text-muted py-4">{{ user_name | default('') }}</span>
+                    </label>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label"><span data-i18n="signature_area">手写签名区</span></label>
+                    <label class="form-label">
+                        <span data-i18n="signature_area">手写签名区</span>
+                        <small class="form-text">
+                            <span data-i18n="write_signature_in_printed_letters">请使用正楷文字签名</span>
+                        </small>
+                    </label>
                     <canvas id="signatureCanvas" style="width:100%; height:200px; border:1px solid #ccc; background:#fff; touch-action: none;"></canvas>
                     <div class="mt-2">
                         <button type="button" class="btn btn-sm btn-secondary" id="clearSignatureBtn"><span data-i18n="clear_signature">清除重签</span></button>

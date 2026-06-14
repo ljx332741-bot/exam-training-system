@@ -414,17 +414,6 @@
         modal.show();
     }
 
-    /*
-    async function deleteExam(examId, permanent) {
-        const response = await fetch(`/admin/exam/delete/${examId}?permanent=${permanent}`, { method: 'POST' });
-        if (response.ok) {
-            alert(permanent ? t('t_permanently_deleted') : t('t_soft_deleted'));
-            loadExams();  // 刷新列表
-        } else {
-            alert(t('t_delete_failed'));
-        }
-    }
-    使用以下改善后的删除逻辑带动态提示*/
     // 执行删除
     async function deleteExam(examId, permanent) {
         if (isDeleting) return;
@@ -467,7 +456,25 @@
                 currentPage = 1;
                 await loadExams();
             } else {
-                throw new Error(result.message || t('t_delete_failed'));
+                // ✅ 使用 apiAlert 自动翻译错误消息
+                if (typeof apiAlert === 'function') {
+                    apiAlert(result, 't_delete_failed');
+                } else {
+                    // 降级方案：手动翻译
+                    const errorKey = result.message || 't_delete_failed';
+                    const errorParams = result.params || [];
+                    const errorMsg = t(errorKey, ...errorParams);
+                    if (typeof showToast === 'function') {
+                        showToast(errorMsg, 'error');
+                    } else {
+                        alert(errorMsg);
+                    }
+                }
+                // 恢复按钮状态（删除失败时）
+                if (btn) {
+                    btn.disabled = originalDisabled;
+                    btn.innerHTML = originalHtml;
+                }
             }
         } catch (err) {
             console.error('删除失败:', err);
@@ -477,7 +484,7 @@
             } else {
                 alert(errorMsg);
             }
-            // 恢复按钮状态（删除失败时）
+            // 恢复按钮状态（网络错误时）
             if (btn) {
                 btn.disabled = originalDisabled;
                 btn.innerHTML = originalHtml;

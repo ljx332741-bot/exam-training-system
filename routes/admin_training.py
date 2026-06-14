@@ -3,6 +3,7 @@ import logging
 import json
 import pdfkit
 import openpyxl
+import traceback
 from io import BytesIO
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from . import admin_training_bp
@@ -16,7 +17,7 @@ from routes.helpers import login_required, admin_required, get_attendance_data, 
 from flask import render_template, request, redirect, send_file, url_for, session, flash, jsonify, make_response
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
-from utils.permissions import get_admin_allowed_countries, get_allowed_countries
+from utils.permissions import get_admin_allowed_countries, get_allowed_countries, is_developer
 logger = logging.getLogger(__name__)
 
 
@@ -435,13 +436,22 @@ def api_admin_trainings():
         if not tid:
             return jsonify({"success": False, "message": "jsonify_lack_training_id", "params": []}), 400
         
-        # ✅ 删除前检查权限
-        original = db.table("trainings").select("country").eq("id", tid).maybe_single().execute()
+        # 删除前检查权限
+        original = db.table("trainings").select("country", created_by).eq("id", tid).maybe_single().execute()
         if original.data:
             allowed = get_admin_allowed_countries()
             original_country = original.data.get('country')
+            created_by = original.data.get('created_by')
+            current_user_id = session.get('user_id')
+            current_role = session.get('role')
+            is_dev = is_developer()
             if allowed is not None and original_country and original_country not in allowed:
                 return jsonify({"success": False, "message": "jsonify_no_authorith_delete_training", "params": []}), 403
+
+            # ✅ 创建者检查（非超管/开发者）
+            if not is_dev and current_role != 'super_admin':
+                if created_by != current_user_id:
+                    return jsonify({"success": False, "message": "jsonify_no_permmission_delete_item_created_by_others", "params": []}), 403
         
         db.table("trainings").delete().eq("id", tid).execute()
         logger.info(f"删除培训成功: id={tid}")
@@ -1240,10 +1250,6 @@ def completion_report_page():
 @admin_required
 def get_completion_report():
     """获取培训完成度报表数据"""
-    import traceback
-    from services.db import get_supabase_admin
-    from utils.permissions import get_admin_allowed_countries, is_developer
-    
     try:
         db = get_supabase_admin()
         
@@ -1260,6 +1266,7 @@ def get_completion_report():
         name = request.args.get('name', '').strip()
         country_filter = request.args.get('country', '').strip()
         training_name = request.args.get('training_name', '').strip()
+        training_id = request.args.get('training_id', '').strip()  # ✅ 移到顶部
         exam_name = request.args.get('exam_name', '').strip()
         status = request.args.get('status', '').strip()
         start_date = request.args.get('start_date', '')
@@ -1267,8 +1274,43 @@ def get_completion_report():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
         
-        # ========== 1. 批量获取所有绑定关系 ==========
+        # ========== 1. 获取培训和绑定关系（优化：先过滤培训）==========
+        
+        # 构建培训查询
+        trainings_query = db.table("trainings").select("*").is_("deleted_at", "null")
+        
+        # ✅ 培训ID精确筛选（优先）
+        if training_id:
+            trainings_query = trainings_query.eq("id", int(training_id))
+        elif training_name:
+            trainings_query = trainings_query.ilike("name", f"%{training_name}%")
+        
+        # 有效期筛选
+        if start_date:
+            trainings_query = trainings_query.gte("start_time", start_date)
+        if end_date:
+            trainings_query = trainings_query.lte("end_time", end_date)
+        
+        # 权限过滤
+        all_trainings = trainings_query.execute().data or []
+        
+        if not is_dev and allowed_countries:
+            filtered_trainings = []
+            for t in all_trainings:
+                training_country = t.get('country')
+                if training_country and training_country in allowed_countries:
+                    filtered_trainings.append(t)
+            all_trainings = filtered_trainings
+        
+        if not all_trainings:
+            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
+        
+        training_ids = [t['id'] for t in all_trainings]
+        trainings_dict = {t['id']: t for t in all_trainings}
+        
+        # ========== 2. 获取绑定关系（只获取当前培训的）==========
         bindings_result = db.table("training_exam_bindings").select("*")\
+            .in_("training_id", training_ids)\
             .is_("deleted_at", "null")\
             .execute()
         bindings = bindings_result.data if bindings_result else []
@@ -1276,33 +1318,42 @@ def get_completion_report():
         if not bindings:
             return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
         
-        # ========== 2. 批量获取所有相关培训和考试信息 ==========
-        training_ids = list(set([b.get('training_id') for b in bindings]))
+        # ========== 3. 批量获取考试信息 ==========
         exam_ids = list(set([b.get('exam_id') for b in bindings]))
-        
-        # 批量获取培训
-        trainings_result = db.table("trainings").select("*").in_("id", training_ids).is_("deleted_at", "null").execute()
-        trainings_dict = {t['id']: t for t in (trainings_result.data or [])}
-        
-        # 批量获取考试
         exams_result = db.table("exams").select("*").in_("id", exam_ids).is_("deleted_at", "null").execute()
         exams_dict = {e['id']: e for e in (exams_result.data or [])}
         
-        # ========== 3. 批量获取所有相关国家的用户 ==========
+        # 考试名称筛选
+        if exam_name:
+            filtered_bindings = []
+            for b in bindings:
+                exam = exams_dict.get(b['exam_id'])
+                if exam and exam_name.lower() in exam.get('title', '').lower():
+                    filtered_bindings.append(b)
+            bindings = filtered_bindings
+        
+        if not bindings:
+            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
+        
+        # ========== 4. 获取用户 ==========
         all_countries = set()
-        for t in trainings_dict.values():
+        for t in all_trainings:
             country = t.get('country')
             if country:
                 all_countries.add(country)
         
-        # 批量获取所有用户
-        users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
-            .in_("country", list(all_countries)) if all_countries else db.table("users").select("*")
-        users_query = users_query.eq("user_status", "registered").is_("deleted_at", "null")
-        
-        # 姓名筛选
-        if name:
-            users_query = users_query.or_(f"name_en.ilike.%{name}%,name_cn.ilike.%{name}%,email.ilike.%{name}%")
+        # ✅ 修复 users_query 定义
+        if all_countries:
+            users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
+                .in_("country", list(all_countries))\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)  # ✅ 排除离职人员
+        else:
+            users_query = db.table("users").select("*")\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)
         
         # 国家筛选
         if country_filter:
@@ -1310,8 +1361,20 @@ def get_completion_report():
         
         users_result = users_query.execute()
         all_users = users_result.data if users_result else []
-        
-        # 按国家分组用户
+
+        # 姓名模糊搜索（Python 层面 OR）
+        if name:
+            name_lower = name.lower()
+            filtered_users = []
+            for u in all_users:
+                name_en = (u.get('name_en') or '').lower()
+                name_cn = (u.get('name_cn') or '').lower()
+                email = (u.get('email') or '').lower()
+                if name_lower in name_en or name_lower in name_cn or name_lower in email:
+                    filtered_users.append(u)
+            all_users = filtered_users
+
+        # 按国家分组
         users_by_country = {}
         for u in all_users:
             country = u.get('country')
@@ -1319,56 +1382,33 @@ def get_completion_report():
                 users_by_country[country] = []
             users_by_country[country].append(u)
         
-        # ========== 4. 批量获取所有完成度数据 ==========
+        # ========== 5. 获取完成度数据 ==========
         summary_result = db.table("training_completion_summary").select("*")\
             .in_("training_id", training_ids)\
             .in_("exam_id", exam_ids)\
             .execute()
         summary_list = summary_result.data if summary_result else []
         
-        # 构建完成度索引 (training_id, exam_id, user_id) -> summary
         summary_index = {}
         for s in summary_list:
             key = (s.get('training_id'), s.get('exam_id'), s.get('user_id'))
             summary_index[key] = s
-
-        # ========== 5. 组装数据 ==========
+        
+        # ========== 6. 组装数据 ==========
         all_data = []
         
         for binding in bindings:
-            training_id = binding.get('training_id')
+            training_id_val = binding.get('training_id')
             exam_id = binding.get('exam_id')
             pass_score = binding.get('pass_score', 85)
             
-            training = trainings_dict.get(training_id)
+            training = trainings_dict.get(training_id_val)
             exam = exams_dict.get(exam_id)
             
             if not training or not exam:
                 continue
             
-            # 权限过滤：检查培训国家
             training_country = training.get('country', '')
-            if not is_dev:
-                if allowed_countries and training_country not in allowed_countries:
-                    continue
-                elif current_role == 'admin' and not allowed_countries:
-                    user_country = session.get('user_country')
-                    if training_country != user_country:
-                        continue
-            
-            # 筛选条件
-            if training_name and training_name.lower() not in training.get('name', '').lower():
-                continue
-            if exam_name and exam_name.lower() not in exam.get('title', '').lower():
-                continue
-            
-            training_start = training.get('start_time', '')[:10] if training.get('start_time') else ''
-            training_end = training.get('end_time', '')[:10] if training.get('end_time') else ''
-            if start_date and training_start < start_date:
-                continue
-            if end_date and training_end > end_date:
-                continue
-            
             if not training_country:
                 continue
             
@@ -1386,8 +1426,7 @@ def get_completion_report():
                 if not user_id:
                     continue
                 
-                # 从索引获取完成度
-                key = (training_id, exam_id, user_id)
+                key = (training_id_val, exam_id, user_id)
                 summary_data = summary_index.get(key, {})
                 
                 is_signed = summary_data.get('is_signed', False)
@@ -1407,14 +1446,9 @@ def get_completion_report():
                         continue
                     if status == 'not_exam' and (is_completed or not is_signed):
                         continue
-
-                # 在组装数据前添加
-                logger.info(f"培训 {training_id}: 培训国家={training_country}")
-                logger.info(f"培训 {training_id}: 找到用户数={len(users)}")
-                logger.info(f"培训 {training_id}: 用户列表={[u.get('name_en') for u in users]}")
                 
                 all_data.append({
-                    "training_id": training_id,
+                    "training_id": training_id_val,
                     "training_name": training.get('name', ''),
                     "training_country": training_country,
                     "training_start": training.get('start_time'),

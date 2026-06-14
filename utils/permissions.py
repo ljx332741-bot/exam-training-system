@@ -323,6 +323,47 @@ def exclude_resigned_users(query, table_alias='users'):
     # Supabase 的布尔字段过滤
     return query.eq('is_resign', False)
 
+# utils/permissions.py - 添加权限检查函数
+
+def can_resign_user(target_user, current_user):
+    """
+    检查当前用户是否有权标记目标用户为离职
+    """
+    # 开发者可以操作任何人
+    if is_developer():
+        return True
+    
+    current_role = current_user.get('role', 'user')
+    target_role = target_user.get('role', 'user')
+    target_id = target_user.get('id')
+    current_id = current_user.get('id')
+    
+    # 不能标记自己
+    if target_id == current_id:
+        return False
+    
+    # 不能标记受保护账号
+    if target_user.get('is_protected'):
+        return False
+    
+    # 超管不能标记开发者
+    if target_role == 'developer':
+        return False
+    
+    # 超管可以标记非开发者
+    if current_role == 'super_admin':
+        return True
+    
+    # 管理员只能标记普通用户
+    if current_role == 'admin':
+        return target_role == 'user'
+    
+    return False
+
+def can_rehire_user(target_user, current_user):
+    """检查当前用户是否有权复职目标用户"""
+    # 逻辑与 can_resign_user 相同
+    return can_resign_user(target_user, current_user)
 # ==================== 国家过滤（Supabase 查询）====================
 def apply_country_filter(query, table_alias='country'):
     """
