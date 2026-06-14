@@ -195,7 +195,19 @@ def api_training_sign():
     try:
         db.table("training_attendances").insert({"training_id": training_id, "user_id": user_id, "signature_url": url, "signed_name": name, "sign_time": now}).execute()
     except Exception as e: return jsonify({"success": False, "message": "数据保存失败"}), 500
-    
+
+    # 签到成功后，检查是否有分配记录，如果没有则创建（全国推送场景）
+    try:
+        assign_check = db.table("training_assignments").select("id").eq("training_id", training_id).eq("user_id", user_id).execute()
+        if not assign_check.data:
+            db.table("training_assignments").insert({
+                "training_id": training_id,
+                "user_id": user_id,
+                "created_by": user_id  # 由学员自己触发
+            }).execute()
+            logger.info(f"全国推送场景：为学员 {user_id} 自动创建分配记录")
+    except Exception as e:
+        logger.warning(f"创建分配记录失败: {e}")
     # ========== 6. 签到成功后自动分配绑定的考试 ==========
 
     # 签到成功后

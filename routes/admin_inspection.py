@@ -986,19 +986,25 @@ def api_admin_delete_interview_by_id(interview_id):
     operator_id = session['user_id']
     
     # 获取访谈信息（用于权限检查）
-    interview_res = db.table("interviews").select("*, exams(country)").eq("id", interview_id).execute()
+    interview_res = db.table("interviews").select("*, exams(country), created_by").eq("id", interview_id).execute()
     if not interview_res.data:
         return jsonify({"success": False, "message": "访谈不存在"}), 404
     
     interview = interview_res.data[0]
     exam_data = interview.get('exams', {})
+    created_by = interview.get('created_by')
     
     # 权限检查
     allowed = get_admin_allowed_countries()
     if allowed is not None:
         exam_country = exam_data.get('country') if isinstance(exam_data, dict) else None
         if exam_country and exam_country not in allowed:
-            return jsonify({"success": False, "message": "无权删除此访谈"}), 403
+            return jsonify({"success": False, "message": "jsonify_no_authorith_delete_project", "params": []}), 403
+
+    # ✅ 创建者检查（非超管/开发者）
+    if not is_dev and current_role != 'super_admin':
+        if created_by != current_user_id:
+            return jsonify({"success": False, "message": "jsonify_no_permmission_delete_item_created_by_others", "params": []}), 403
     
     try:
         now_utc = datetime.now(timezone.utc).isoformat()

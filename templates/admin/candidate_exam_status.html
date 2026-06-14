@@ -109,6 +109,10 @@
         country: ''
     };
 
+    // ✅ 新增：缓存原始数据
+    let cachedExamUsers = [];  // 缓存从服务器获取的原始数据
+    let isLoadingData = false;  // 防止重复加载
+
     // ==================== Toast 提示函数 ======================
     function showToast(message, type = 'success') {
         const toastEl = document.getElementById('globalToast');
@@ -327,6 +331,18 @@
 
     // ==================== 加载考生状态数据 ====================
     async function loadExamStatusData() {
+        // ✅ 如果已经有缓存数据，直接使用缓存
+        if (cachedExamUsers.length > 0) {
+            console.log('使用缓存数据，不重新请求');
+            currentExamUsers = [...cachedExamUsers];
+            applyFiltersAndRender();
+            return;
+        }
+        
+        // 防止重复加载
+        if (isLoadingData) return;
+        isLoadingData = true;
+        
         const container = document.getElementById('statusTableBody');
         if (!container) return;
         
@@ -337,6 +353,7 @@
             
             if (statusRes.status === 403) {
                 container.innerHTML = `<tr><td colspan="12" class="text-center text-warning">${t('no_permission_to_view_exam')}<\/td><\/tr>`;
+                isLoadingData = false;
                 return;
             }
             
@@ -345,12 +362,14 @@
 
             if (!statusData.length) {
                 container.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
+                isLoadingData = false;
                 return;
             }
 
             const userIds = statusData.map(item => item.user_id).filter(id => id);
             if (userIds.length === 0) {
                 container.innerHTML = `<td><td colspan="12" class="text-center">${t('t_no_data')}<\/td><\/tr>`;
+                isLoadingData = false;
                 return;
             }
 
@@ -378,12 +397,66 @@
                 });
             }
 
-            currentExamUsers = merged;
+            // ✅ 缓存原始数据
+            cachedExamUsers = merged;
+            currentExamUsers = [...cachedExamUsers];
             applyFiltersAndRender();
         } catch (err) {
             console.error('加载失败:', err);
             container.innerHTML = `<tr><td colspan="12" class="text-center text-danger">${t('load_failed')}<\/td><\/tr>`;
+        }finally {
+            isLoadingData = false;
         }
+    }
+
+    // ==================== 刷新UI（语言切换时调用） ====================
+    function refreshUILanguage() {
+        // 如果有缓存数据，只重新渲染表格，不重新请求服务器
+        if (cachedExamUsers.length > 0) {
+            console.log('语言切换，只刷新UI，不重新请求数据');
+            // 保持当前筛选条件，重新渲染
+            applyFiltersAndRender();
+        }
+        // 重新应用所有 data-i18n 属性的翻译
+        if (window.i18n && window.i18n.applyTranslations) {
+            window.i18n.applyTranslations();
+        }
+        // 刷新表格中的动态翻译内容
+        refreshTableTranslations();
+    }
+    
+    // ✅ 新增：刷新表格中的动态翻译内容
+    function refreshTableTranslations() {
+        // 刷新状态徽章的文本
+        document.querySelectorAll('.badge').forEach(badge => {
+            const text = badge.innerText;
+            // 根据当前语言重新设置文本
+            if (text === '未分配' || text === 'Not Assigned') {
+                badge.innerText = t('t_not_assigned');
+            } else if (text === '待考试' || text === 'Pending') {
+                badge.innerText = t('t_pending_exam');
+            } else if (text === '进行中' || text === 'In Progress') {
+                badge.innerText = t('t_in_progress');
+            } else if (text === '已提交' || text === 'Submitted') {
+                badge.innerText = t('t_submitted');
+            } else if (text === '是' || text === 'Yes') {
+                badge.innerText = t('t_yes');
+            } else if (text === '否' || text === 'No') {
+                badge.innerText = t('t_no');
+            }
+        });
+
+        // 刷新按钮文本
+        document.querySelectorAll('.reset-btn, .assign-single-btn, .remove-single-btn').forEach(btn => {
+            const originalText = btn.innerText;
+            if (originalText === '重置' || originalText === 'Reset') {
+                btn.innerText = t('reset');
+            } else if (originalText === '分配' || originalText === 'Assign') {
+                btn.innerText = t('assign');
+            } else if (originalText === '移除' || originalText === 'Remove') {
+                btn.innerText = t('unassign');
+            }
+        });
     }
 
     // ==================== 应用筛选并渲染 ====================
@@ -699,12 +772,18 @@
         
         // ✅ 语言切换时重新加载列表
         if (window.i18n && window.i18n.subscribe) {
+            let isFirstCall = true;
             window.i18n.subscribe(() => {
-            loadExamStatusData();  // 重新加载列表，会触发使用新的翻译
+                if (isFirstCall) {
+                    isFirstCall = false;
+                    return;
+                }
+                // 只刷新UI，不重新请求数据
+                refreshUILanguage();
             });
         }
         window.addEventListener('app:languageChanged', function() {
-            loadWhList();
+            refreshUILanguage();
         });
     });
 </script>

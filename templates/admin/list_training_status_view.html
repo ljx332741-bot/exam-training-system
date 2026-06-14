@@ -1,7 +1,246 @@
 ﻿<!-- templates/admin/list_training_status_view.html -->
 {% extends "base.html" %}
 {% block title %}培训签到人员状态{% endblock %}
-
+{% block extra_css %}
+<style>
+    /* 签名模态框美化样式 */
+    .signature-modal .modal-content {
+        border: none;
+        border-radius: 20px;
+        overflow: hidden;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        animation: modalFadeInUp 0.4s cubic-bezier(0.21, 1.11, 0.35, 1.05);
+    }
+    
+    @keyframes modalFadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(50px) scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+    
+    .signature-modal .modal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 20px 25px;
+    }
+    
+    .signature-modal .modal-header .btn-close {
+        filter: brightness(0) invert(1);
+        opacity: 0.8;
+        transition: all 0.3s ease;
+    }
+    
+    .signature-modal .modal-header .btn-close:hover {
+        opacity: 1;
+        transform: rotate(90deg);
+    }
+    
+    .signature-modal .modal-body {
+        padding: 30px;
+        background: linear-gradient(145deg, #f8f9fa 0%, #ffffff 100%);
+    }
+    
+    /* 签名图片容器 */
+    .signature-container {
+        position: relative;
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    
+    .signature-container:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 20px 35px -8px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* 签名图片动画 */
+    .signature-image {
+        max-width: 100%;
+        max-height: 200px;
+        border-radius: 12px;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .signature-image:hover {
+        transform: scale(1.02);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+    
+    /* 信息卡片样式 */
+    .signature-info-card {
+        background: white;
+        border-radius: 16px;
+        padding: 20px;
+        margin-top: 20px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+    
+    .signature-info-card:hover {
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+    
+    .info-row {
+        display: flex;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid #e9ecef;
+        transition: background 0.2s ease;
+    }
+    
+    .info-row:last-child {
+        border-bottom: none;
+    }
+    
+    .info-row:hover {
+        background: #f8f9fa;
+        padding-left: 8px;
+    }
+    
+    .info-icon {
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        margin-right: 15px;
+        color: white;
+        font-size: 1.1rem;
+    }
+    
+    .info-label {
+        font-weight: 600;
+        color: #495057;
+        width: 100px;
+        font-size: 0.9rem;
+    }
+    
+    .info-value {
+        flex: 1;
+        color: #212529;
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+    
+    /* 眼睛按钮美化 */
+    .view-attendance-btn {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+    
+    .view-attendance-btn:hover {
+        transform: scale(1.1);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-color: transparent;
+        color: white;
+    }
+    
+    /* 无签名占位符 */
+    .no-signature-placeholder {
+        background: linear-gradient(145deg, #f1f3f5, #e9ecef);
+        border-radius: 16px;
+        padding: 40px;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+    
+    .no-signature-placeholder i {
+        font-size: 4rem;
+        color: #adb5bd;
+        margin-bottom: 15px;
+        animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+        0%, 100% { opacity: 0.6; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.05); }
+    }
+    
+    /* 加载动画 */
+    .signature-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+    }
+    
+    .signature-loading .spinner {
+        width: 50px;
+        height: 50px;
+        border: 3px solid #e9ecef;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    /* 图片放大预览（点击图片全屏查看） */
+    .image-preview-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.9);
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.3s ease;
+        cursor: zoom-out;
+    }
+    
+    .image-preview-overlay.active {
+        opacity: 1;
+        visibility: visible;
+    }
+    
+    .image-preview-overlay img {
+        max-width: 90%;
+        max-height: 90%;
+        border-radius: 8px;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        transform: scale(0.95);
+        transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+    
+    .image-preview-overlay.active img {
+        transform: scale(1);
+    }
+    
+    .preview-close {
+        position: absolute;
+        top: 20px;
+        right: 30px;
+        color: white;
+        font-size: 2rem;
+        cursor: pointer;
+        transition: transform 0.3s ease;
+    }
+    
+    .preview-close:hover {
+        transform: rotate(90deg);
+    }
+</style>
+{% endblock %}
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -139,30 +378,65 @@
     </div>
 </div>
 
-
-<!-- 查看签到详情模态框 -->
-<div class="modal fade" id="attendanceModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-dialog-centered">
+<!-- 查看签到详情模态框 - 美化版 -->
+<div class="modal fade signature-modal" id="attendanceModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="true">
+    <div class="modal-dialog modal-dialog-centered modal-md">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title"><i class="bi bi-calendar-check"></i> <span data-i18n="sign_in_details">签到详情</span></h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <h5 class="modal-title">
+                    <i class="bi bi-pen-fill me-2"></i>
+                    <span data-i18n="sign_in_details">签到详情</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <div class="text-center mb-3">
-                    <div id="modalSignature" class="mb-2">
-                        <img id="signatureImage" src="" style="max-width: 200px; max-height: 100px; display: none;">
-                        <div id="noSignature" class="text-muted" style="display: none;"><span data-i18n="no_data">暂无数据</span></div>
+                <!-- 签名图片区域 -->
+                <div class="signature-container text-center" id="signatureContainer">
+                    <div id="signatureLoading" class="signature-loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p class="mt-3 text-muted" data-i18n="handwriting_is_loading">签名加载中...</p>
                     </div>
-                    <p><strong><span data-i18n="sign_time">签到时间</span>：</strong><span id="modalSignTime"></span></p>
-                    <p><strong><span data-i18n="signature_name">签名姓名</span>：</strong><span id="modalSignedName"></span></p>
+                    <div id="signatureContent">
+                        <img id="signatureImage" class="signature-image" src="" alt="" data-i18n-alt="student_signature" style="display: none; cursor: pointer;">
+                        <div id="noSignature" class="no-signature-placeholder" style="display: none;">
+                            <i class="bi bi-pencil-slash"></i>
+                            <h6 class="mt-2"><span data-i18n="no_have_at_moment">暂无签名</span></h6>
+                            <p class="text-muted small mb-0" data-i18n="not_yet_completed_signature">该学员尚未完成签名</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 签到信息卡片 -->
+                <div class="signature-info-card">
+                    <div class="info-row">
+                        <div class="info-icon">
+                            <i class="bi bi-person-fill"></i>
+                        </div>
+                        <div class="info-label"><span data-i18n="name_signature">签名姓名</span>:</div>
+                        <div class="info-value" id="modalSignedName">-</div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-icon">
+                            <i class="bi bi-calendar-check-fill"></i>
+                        </div>
+                        <div class="info-label"><span data-i18n="sign_in_period">签到时间</span>:</div>
+                        <div class="info-value" id="modalSignTime">-</div>
+                    </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i> <span data-i18n="close">关闭</span>
+                </button>
             </div>
         </div>
     </div>
+</div>
+
+<!-- 图片全屏预览模态框 -->
+<div id="imagePreviewOverlay" class="image-preview-overlay" onclick="closeImagePreview()">
+    <span class="preview-close">&times;</span>
+    <img id="previewImage" src="" alt="签名大图">
 </div>
 {% endblock %}
 
@@ -333,8 +607,11 @@
                                     data-user-id="${item.user_id}" 
                                     data-signed-name="${escapeHtml(item.signed_name || '')}"
                                     data-sign-time="${item.sign_time || ''}"
-                                    data-signature-url="${item.signature_url || ''}">
-                                <i class="bi bi-eye"></i>
+                                    data-signature-url="${item.signature_url || ''}"
+                                    data-bs-toggle="tooltip"
+                                    data-i18n-title="title_view_signature_handwriting"
+                                    title="查看签名笔迹">
+                                <i class="bi  bi-eye-fill"></i>
                             </button>`;
             }
 
@@ -503,26 +780,126 @@
                 const signTime = btn.dataset.signTime;
                 const signatureUrl = btn.dataset.signatureUrl;
                 
+                // 获取模态框元素
+                const modalElement = document.getElementById('attendanceModal');
+                const signatureImg = document.getElementById('signatureImage');
+                const noSignature = document.getElementById('noSignature');
+                const signatureLoading = document.getElementById('signatureLoading');
+                const signatureContent = document.getElementById('signatureContent');
+                
+                // 先清空并显示加载状态
+                signatureImg.style.display = 'none';
+                noSignature.style.display = 'none';
+                signatureLoading.style.display = 'block';
+                signatureContent.style.opacity = '0.5';
+                
+                // 更新文本信息
                 document.getElementById('modalSignedName').innerText = signedName || '-';
                 document.getElementById('modalSignTime').innerText = signTime ? new Date(signTime).toLocaleString() : '-';
                 
-                const signatureImg = document.getElementById('signatureImage');
-                const noSignature = document.getElementById('noSignature');
-                
-                if (signatureUrl && signatureUrl !== 'null' && signatureUrl !== '') {
-                    signatureImg.src = signatureUrl;
-                    signatureImg.style.display = 'inline-block';
-                    noSignature.style.display = 'none';
-                } else {
-                    signatureImg.style.display = 'none';
-                    noSignature.style.display = 'block';
+                // 获取 Bootstrap 模态框实例
+                let modal = bootstrap.Modal.getInstance(modalElement);
+                if (!modal) {
+                    modal = new bootstrap.Modal(modalElement, {
+                        backdrop: 'static',
+                        keyboard: true
+                    });
                 }
                 
-                new bootstrap.Modal(document.getElementById('attendanceModal')).show();
+                // 显示模态框
+                modal.show();
+                
+                // 加载签名图片（带延迟动画效果）
+                setTimeout(() => {
+                    if (signatureUrl && signatureUrl !== 'null' && signatureUrl !== '') {
+                        // 预加载图片
+                        const img = new Image();
+                        img.onload = function() {
+                            signatureImg.src = signatureUrl;
+                            signatureImg.style.display = 'block';
+                            signatureLoading.style.display = 'none';
+                            signatureContent.style.opacity = '1';
+                            
+                            // 添加淡入动画
+                            signatureImg.style.animation = 'none';
+                            signatureImg.offsetHeight; // 触发重绘
+                            signatureImg.style.animation = 'fadeInUp 0.5s ease';
+                            
+                            // 绑定图片点击放大事件
+                            signatureImg.onclick = (e) => {
+                                e.stopPropagation();
+                                showImagePreview(signatureUrl);
+                            };
+                        };
+                        img.onerror = function() {
+                            signatureLoading.style.display = 'none';
+                            noSignature.style.display = 'block';
+                            signatureContent.style.opacity = '1';
+                        };
+                        img.src = signatureUrl;
+                    } else {
+                        signatureLoading.style.display = 'none';
+                        noSignature.style.display = 'block';
+                        signatureContent.style.opacity = '1';
+                    }
+                }, 200);
             };
             btn.addEventListener('click', btn._viewHandler);
         });
     }
+
+    // 图片全屏预览函数
+    function showImagePreview(imageUrl) {
+        const overlay = document.getElementById('imagePreviewOverlay');
+        const previewImg = document.getElementById('previewImage');
+        
+        previewImg.src = imageUrl;
+        overlay.classList.add('active');
+        
+        // 添加滑入动画
+        previewImg.style.animation = 'none';
+        previewImg.offsetHeight;
+        previewImg.style.animation = 'zoomIn 0.3s ease';
+    }
+
+    function closeImagePreview() {
+        const overlay = document.getElementById('imagePreviewOverlay');
+        overlay.classList.remove('active');
+    }
+
+    // 添加动画关键帧（动态添加到页面）
+    const styleSheet = document.createElement("style");
+    styleSheet.textContent = `
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        @keyframes zoomIn {
+            from {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+    `;
+    document.head.appendChild(styleSheet);
+
+    // ESC 键关闭预览
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeImagePreview();
+        }
+    });
 
     // 分页
     function renderPagination() {

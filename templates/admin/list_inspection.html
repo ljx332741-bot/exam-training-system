@@ -1,6 +1,54 @@
 <!-- templates/admin/list_inspection.html -->
 {% extends "base.html" %}
 {% block title %}访谈管理{% endblock %}
+{% block extra_css %}
+{{ super() }}
+<style>
+    .exam-dropdown-item {
+        padding: 10px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.2s ease;
+    }
+    .exam-dropdown-item:hover {
+        background-color: #e7f3ff;
+    }
+    .exam-dropdown-item .exam-title {
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+    .exam-dropdown-item .exam-meta {
+        font-size: 0.7rem;
+        color: #6c757d;
+        margin-top: 4px;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .exam-dropdown-item .exam-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .exam-dropdown-item.selected {
+        background-color: #0d6efd;
+        color: white;
+    }
+    .exam-dropdown-item.selected .exam-meta {
+        color: rgba(255,255,255,0.7);
+    }
+    .exam-search-highlight {
+        background-color: #ffeb3b;
+        font-weight: bold;
+    }
+    .dropdown-header {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 1;
+    }
+</style>
+{% endblock %}
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -82,11 +130,31 @@
             <div class="modal-body">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label" for="examSearch"><span data-i18n="exam_name">考试名称</span></label>
-                        <input type="text" id="examSearch" class="form-control" list="examDatalist" 
-                        data-i18n-placeholder="placeholder_exam_name" placeholder="考试名称">
-                        <datalist id="examDatalist"></datalist>
+                        <label class="form-label" for="examSelect">
+                            <span data-i18n="exam_name">选择考试</span>
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="position-relative">
+                            <input type="text" id="examSelect" class="form-control" 
+                                placeholder="点击选择考试或输入搜索..." 
+                                data-i18n-placeholder="placeholder_click_or_search"
+                                autocomplete="off">
+                            <!-- 下拉建议面板 -->
+                            <div id="examDropdown" class="exam-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1050; background: white; border: 1px solid #ddd; border-radius: 4px; max-height: 280px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                                <div class="dropdown-header p-2 bg-light fw-bold border-bottom">
+                                    <i class="bi bi-clock-history me-1"></i> 最近创建的考试
+                                </div>
+                                <div id="examListContainer"></div>
+                                <div id="examSearch" class="p-2 text-center text-muted" style="display: none;">
+                                    <div class="spinner-border spinner-border-sm me-1"></div> 搜索中...
+                                </div>
+                                <div id="examNoResult" class="p-3 text-center text-muted" style="display: none;">
+                                    未找到匹配的考试
+                                </div>
+                            </div>
+                        </div>
                         <input type="hidden" id="selectedExamId">
+                        <div id="selectedExamInfo" class="mt-1 small text-muted"></div>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label" for="questionCount"><span data-i18n="interview_check_number">抽查数量（每人）</span></label>
@@ -247,6 +315,225 @@
         });
     }
 
+    // ==================== 考试选择增强功能 ====================
+    let allExamsList = [];      // 所有可用的考试列表
+    let isSearching = false;    // 搜索状态标志
+
+    // 1从创建日期计算季度（复用后端逻辑）
+    function getQuarterFromDate(dateStr) {
+        if (!dateStr) return '-';
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return '-';
+            const year = date.getFullYear();
+            const month = date.getMonth() + 1;
+            const quarter = Math.ceil(month / 3);
+            return `${year}Q${quarter}`;
+        } catch(e) {
+            return '-';
+        }
+    }
+
+    // 2格式化日期为 YYYY-MM-DD
+    function formatDateOnly(dateStr) {
+        if (!dateStr) return '-';
+        try {
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return '-';
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        } catch(e) {
+            return '-';
+        }
+    }
+
+    // 3加载最近的考试（按创建时间倒序，取前8个）
+    async function loadRecentExams() {
+        try {
+            const res = await fetch('/api/admin/exams/list?per_page=8&sort=created_at&order=desc');
+            const data = await res.json();
+            allExamsList = data.data || [];
+            return allExamsList;
+        } catch (err) {
+            console.error('加载考试列表失败:', err);
+            allExamsList = [];
+            return [];
+        }
+    }
+
+    // 4搜索考试（按名称模糊匹配）
+    async function searchExams(keyword) {
+        if (!keyword.trim()) {
+            return allExamsList;
+        }
+        try {
+            const res = await fetch(`/api/admin/exams/list?per_page=20&name=${encodeURIComponent(keyword)}`);
+            const data = await res.json();
+            return data.data || [];
+        } catch (err) {
+            console.error('搜索考试失败:', err);
+            return [];
+        }
+    }
+
+    // 5渲染考试下拉面板
+    async function renderExamDropdown(searchTerm = '') {
+        const container = document.getElementById('examListContainer');
+        const dropdown = document.getElementById('examDropdown');
+        const loadingEl = document.getElementById('examSearch');
+        const noResultEl = document.getElementById('examNoResult');
+        
+        if (!container) return;
+        
+        // 显示加载状态
+        if (searchTerm) {
+            loadingEl.style.display = 'block';
+            container.innerHTML = '';
+            noResultEl.style.display = 'none';
+        }
+        
+        let exams;
+        if (searchTerm) {
+            // 有搜索词：调用搜索API
+            exams = await searchExams(searchTerm);
+            loadingEl.style.display = 'none';
+        } else {
+            // 无搜索词：显示最近创建的8个考试
+            exams = allExamsList;
+        }
+        
+        if (exams.length === 0) {
+            if (searchTerm) {
+                noResultEl.style.display = 'block';
+            } else {
+                container.innerHTML = '<div class="p-3 text-center text-muted">暂无可用考试</div>';
+            }
+            return;
+        }
+        
+        noResultEl.style.display = 'none';
+        
+        // 高亮搜索词
+        const highlightText = (text, keyword) => {
+            if (!keyword || !text) return escapeHtml(text);
+            const regex = new RegExp(`(${escapeRegex(keyword)})`, 'gi');
+            return escapeHtml(text).replace(regex, '<mark class="bg-warning">$1</mark>');
+        };
+        
+        let html = '';
+        exams.forEach(exam => {
+            const createdDate = formatDateOnly(exam.created_at);
+            const quarter = getQuarterFromDate(exam.created_at);
+            const countriesDisplay = exam.countries_display || exam.country || '-';
+            
+            let titleHtml = exam.title;
+            if (searchTerm) {
+                titleHtml = highlightText(exam.title, searchTerm);
+            } else {
+                titleHtml = escapeHtml(exam.title);
+            }
+            
+            html += `
+                <div class="exam-dropdown-item" data-id="${exam.id}" data-title="${escapeHtml(exam.title)}">
+                    <div class="exam-title">${titleHtml}</div>
+                    <div class="exam-meta">
+                        <span><i class="bi bi-calendar3"></i> 创建: ${createdDate}</span>
+                        <span><i class="bi bi-calendar-week"></i> 季度: ${quarter}</span>
+                        <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
+                        <span><i class="bi bi-question-circle"></i> ${exam.question_count || 0}题</span>
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        
+        // 绑定点击事件
+        container.querySelectorAll('.exam-dropdown-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const examId = item.dataset.id;
+                const examTitle = item.dataset.title;
+                selectExam(examId, examTitle);
+            });
+        });
+        
+        // 显示下拉面板
+        dropdown.style.display = 'block';
+    }
+
+    // 6转义正则表达式特殊字符
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // 7选择考试
+    function selectExam(examId, examTitle) {
+        document.getElementById('examSelect').value = examTitle;
+        document.getElementById('selectedExamId').value = examId;
+        document.getElementById('selectedExamInfo').innerHTML = `<i class="bi bi-check-circle-fill text-success"></i> 已选择: ${escapeHtml(examTitle)}`;
+        
+        // 关闭下拉面板
+        document.getElementById('examDropdown').style.display = 'none';
+    }
+
+    // 8初始化考试选择器
+    async function initExamSelector() {
+        const examInput = document.getElementById('examSelect');
+        const dropdown = document.getElementById('examDropdown');
+        
+        if (!examInput) return;
+        
+        // 加载最近的考试列表
+        await loadRecentExams();
+        
+        // 防抖搜索
+        let searchTimeout;
+        examInput.addEventListener('input', (e) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(async () => {
+                const searchTerm = e.target.value.trim();
+                await renderExamDropdown(searchTerm);
+            }, 300);
+        });
+        
+        // 点击输入框显示下拉面板（显示最近考试）
+        examInput.addEventListener('click', async () => {
+            if (allExamsList.length === 0) {
+                await loadRecentExams();
+            }
+            renderExamDropdown('');
+        });
+        
+        // 点击其他地方关闭下拉面板
+        document.addEventListener('click', (e) => {
+            if (!examInput.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+    }
+
+    // 9预填日期（当前时间 + 5天）
+    function getDefaultInterviewDates() {
+        const now = new Date();
+        const endDate = new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000);
+        
+        const formatDateTime = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            const hours = String(date.getHours()).padStart(2, '0');
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        };
+        
+        return {
+            start: formatDateTime(now),
+            end: formatDateTime(endDate)
+        };
+    }
+
     // ========== 初始化 ==========
     document.addEventListener('DOMContentLoaded', async () => {
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
@@ -254,6 +541,12 @@
         window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
         loadInterviews();
 
+        // ✅ 初始化考试选择增强
+        await initExamSelector();
+        
+        // ✅ 为新增访谈模态框中的国家选择器添加自动完成
+        await setupCountryAutocomplete('countryFilter', 'countryDatalist', 'countryCodeForInterview');
+        
         // 语言切换时重新加载列表，实现实时翻译
         let isInitialSubscribe = true;
         window.i18n.subscribe(async () => {
@@ -261,6 +554,8 @@
                 isInitialSubscribe = false;
                 return;
             }
+        await loadInterviews();
+        await loadRecentExams();
         });
     });
 
@@ -398,28 +693,43 @@
     });
 
     // ========== 新增访谈模态框 ==========
-    document.getElementById('newInterviewBtn').addEventListener('click', () => {
+    document.getElementById('newInterviewBtn').addEventListener('click', async () => {
         // 重置表单
-        document.getElementById('examSearch').value = '';
+        document.getElementById('examSelect').value = '';
         document.getElementById('selectedExamId').value = '';
+        document.getElementById('selectedExamInfo').innerHTML = '';
         document.getElementById('questionCount').value = 5;
-        document.getElementById('startTime').value = '';
-        document.getElementById('endTime').value = '';
         document.getElementById('reviewerInput').value = '';
+        document.getElementById('feedbackInput').value = '';
         document.getElementById('userSearch').value = '';
         document.getElementById('whIdFilter').value = '';
         document.getElementById('isPartnerFilter').value = '';
         document.getElementById('countryFilter').value = '';
-        document.getElementById('userListBody').innerHTML = '';
+        document.getElementById('countryCodeForInterview').value = '';
+
+        // ✅ 预填日期（当前时间 + 5天）
+        const defaultDates = getDefaultInterviewDates();
+        document.getElementById('startTime').value = defaultDates.start;
+        document.getElementById('endTime').value = defaultDates.end;
+        
         // 清空预览相关
         editMode = false;
-        resetInterviewForm();
         previewData = [];
         pendingSaveData = null;
+        
+        // ✅ 自动加载学员列表
+        await loadUserListForInterview();
+        
+        // ✅ 确保考试列表已加载
+        if (allExamsList.length === 0) {
+            await loadRecentExams();
+        }
+        
         new bootstrap.Modal(document.getElementById('newInterviewModal')).show();
     });
 
     // 考试名称模糊搜索
+    /*
     document.getElementById('examSearch').addEventListener('input', async function () {
         const q = this.value.trim();
         const datalist = document.getElementById('examDatalist');
@@ -450,6 +760,7 @@
             console.error(e);
         }
     });
+    */
 
     // 加载学员列表
     document.getElementById('loadUsersBtn').addEventListener('click', loadUserListForInterview);

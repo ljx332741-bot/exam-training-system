@@ -15,7 +15,7 @@ from services.db import get_supabase
 from services.auth import hash_password
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.permissions import (is_developer, apply_country_filter, can_view_user, get_admin_allowed_countries, 
-    can_modify_user, parse_countries_input, filter_users_by_permission
+    can_modify_user, parse_countries_input, filter_users_by_permission, can_resign_user, can_rehire_user
 )
 from routes.helpers import login_required, admin_required, get_current_user
 from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, generate_import_template, format_import_result
@@ -1235,17 +1235,37 @@ def api_admin_resign_user(user_id):
     """标记用户为离职"""
     db = get_supabase()
     operator_id = session['user_id']
+    current_role = session.get('role')
+
+    # 获取目标用户信息
+    target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    if not target_user_res.data:
+        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
+    
+    target_user = target_user_res.data
+    
+    # ✅ 使用权限检查函数
+    if not can_resign_user(target_user, current_user):
+        return jsonify({"success": False, "message": "no_permission_to_resign", "params": []}), 403
+    
+    # ✅ 新增：不能标记自己离职
+    if user_id == operator_id:
+        return jsonify({"success": False, "message": "cannot_resign_self", "params": []}), 400
     
     # 检查用户是否存在
-    user_res = db.table("users").select("id, user_status").eq("id", user_id).maybe_single().execute()
+    user_res = db.table("users").select("id, user_status, role, is_protected").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
-        return jsonify({"success": False, "message": "用户不存在"}), 404
+        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
     
     user = user_res.data
-    
+
+    # ✅ 新增：超管不能标记离职（除非是开发者）
+    if user.get('role') == 'super_admin' and not is_developer():
+        return jsonify({"success": False, "message": "cannot_resign_super_admin", "params": []}), 403
+  
     # 只有已注册用户才能标记离职
     if user.get('user_status') != 'registered':
-        return jsonify({"success": False, "message": "只有已注册用户才能标记离职"}), 400
+        return jsonify({"success": False, "message": "only_registered_users_can_resign", "params": []}), 400
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -1257,7 +1277,7 @@ def api_admin_resign_user(user_id):
     }).eq("id", user_id).execute()
     
     logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "用户已标记为离职"})
+    return jsonify({"success": True, "message": "user_resigned_success", "params": []})
 
 
 @admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
@@ -1267,17 +1287,25 @@ def api_admin_rehire_user(user_id):
     """恢复用户为在职状态（复职）"""
     db = get_supabase()
     operator_id = session['user_id']
-    
+
+    # ✅ 新增：不能给自己复职（虽然已离职的自己理论上无法操作，但增加检查）
+    if user_id == operator_id:
+        return jsonify({"success": False, "message": "cannot_rehire_self", "params": []}), 400
+  
     # 检查用户是否存在
-    user_res = db.table("users").select("id, user_status").eq("id", user_id).maybe_single().execute()
+    user_res = db.table("users").select("id, user_status, is_resign, role").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
-        return jsonify({"success": False, "message": "用户不存在"}), 404
+        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
     
     user = user_res.data
-    
+
+    # ✅ 新增：只有已离职的用户才能复职
+    if not user.get('is_resign'):
+        return jsonify({"success": False, "message": "user_not_resigned", "params": []}), 400
+  
     # 只有已注册用户才能复职
     if user.get('user_status') != 'registered':
-        return jsonify({"success": False, "message": "只有已注册用户才能复职"}), 400
+        return jsonify({"success": False, "message": "only_registered_users_can_rehire", "params": []}), 400
     
     now = datetime.now(timezone.utc).isoformat()
     
@@ -1289,7 +1317,7 @@ def api_admin_rehire_user(user_id):
     }).eq("id", user_id).execute()
     
     logger.info(f"用户 {user_id} 已复职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "用户已恢复在职状态"})
+    return jsonify({"success": True, "message": "user_rehired_success", "params": []})
 
 # routes/admin_user.py - 添加离职人员管理接口
 

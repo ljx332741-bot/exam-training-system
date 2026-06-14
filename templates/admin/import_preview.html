@@ -230,27 +230,22 @@
 	</div>
 	<div class="card-body">
 		<div class="row exam-title-row">
-			<div class="col-md-4">
+			<div class="col-md-6">
 				<label class="form-label fw-bold" for="examTitleInput">📌 <span data-i18n="exam_name">考试名称</span></label>
 				<input type="text" id="examTitleInput" class="form-control" value="{{ exam_title }}">
 				<div class="form-text"><span data-i18n="editable_using_for_name_exam">可编辑，将作为考试的名称</span></div>
 			</div>
 			
-			<div class="col-md-3">
+			<div class="col-md-4">
 				<label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
 				<input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
 			</div>
 			
-			<div class="col-md-2">
-				<label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
-				<input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
-			</div>
-
 			<!-- ✅ 新增：及格分数 -->
 			<div class="col-md-2">
 				<label class="form-label fw-bold" for="passScoreInput">🎯 <span data-i18n="pass_score">及格分数</span></label>
 				<input type="number" id="passScoreInput" class="form-control" value="{{ exam_pass_score|default(85) }}" min="0" max="100">
-				<div class="form-text">默认85分，学员需达到此分数才算及格</div>
+				<div class="form-text"><span data-i18n="default_pass_score_85">默认85分，学员需达到此分数才算及格</span></div>
 			</div>
 			<!-- 简洁版国家多选组件 - 完整代码 -->
             <div class="mb-3">
@@ -265,26 +260,30 @@
                         <!-- 已选国家标签会动态添加到这里 -->
                         <input type="text" id="countrySearchInput" class="border-0 flex-grow-1" 
                             style="outline: none; min-width: 120px;" 
-                            data-i18n-placeholder="placeholder_select_or_input" 
+                            data-i18n-placeholder="placeholder_input_country_to_search" 
                             placeholder="输入国家名称搜索..." autocomplete="off">
                     </div>
                     <ul id="countrySuggestions" class="country-suggestions" style="display: none; position: absolute; top: 100%; left: 0; right: 0; max-height: 200px; overflow-y: auto; background: white; border: 1px solid #ddd; border-radius: 4px; z-index: 1000;"></ul>
                 </div>
                 <input type="hidden" id="selectedCountries" value="">
-                <small class="text-muted"><span data-i18n="multiple_select_method">输入国家名称搜索，点击添加。可添加多个国家。</span></small>
+                <small class="text-muted"><span data-i18n="multiple_select_method">允许多项选择</span></small>
             </div>
 		</div>
 
 		<!-- ✅ 有效期设置（仅草稿和未开始状态可编辑）- 保持原有位置，但更紧凑 -->
 		{% if not edit_mode or exam_status|default('') in ['draft', 'created'] or copy_mode %}
 		<div class="row mt-2">
-			<div class="col-md-6">
+			<div class="col-md-5">
 				<label class="form-label fw-bold small" for="startTimeInput">📅 <span data-i18n="start_time">开始时间</span></label>
 				<input type="datetime-local" id="startTimeInput" class="form-control form-control-sm" value="{{ exam_start_time|default('') }}">
 			</div>
-			<div class="col-md-6">
+			<div class="col-md-5">
 				<label class="form-label fw-bold small" for="endTimeInput">📅 <span data-i18n="end_time">结束时间</span></label>  
 				<input type="datetime-local" id="endTimeInput" class="form-control form-control-sm" value="{{ exam_end_time|default('') }}">
+			</div>
+			<div class="col-md-2">
+				<label class="form-label fw-bold" for="durationInput">⏱️ <span data-i18n="duration_minutes">考试时长（分钟）</span></label>
+				<input type="number" id="durationInput" class="form-control" value="{{ exam_duration|default(60) }}" min="1" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
 			</div>
 		</div>
 		{% endif %}

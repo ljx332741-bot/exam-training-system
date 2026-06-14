@@ -835,6 +835,39 @@
         });
     }
 
+    // ==================== 权限判断函数 ====================
+    function canResignUser(targetUser, currentUserId, currentUserRole, isDeveloper) {
+        // 开发者可以操作任何人
+        if (isDeveloper) return true;
+        
+        // 不能标记自己
+        if (targetUser.id === currentUserId) return false;
+        
+        // 不能标记保护账号
+        if (targetUser.is_protected) return false;
+        
+        // 管理员不能标记超管和开发者
+        if (currentUserRole === 'admin') {
+            if (targetUser.role === 'super_admin' || targetUser.role === 'developer') {
+                return false;
+            }
+            // 管理员只能标记普通用户
+            return targetUser.role === 'user' && targetUser.user_status === 'registered';
+        }
+        
+        // 超管可以标记除了开发者以外的任何人
+        if (currentUserRole === 'super_admin') {
+            return targetUser.role !== 'developer';
+        }
+        
+        return false;
+    }
+
+    function canRehireUser(targetUser, currentUserId, currentUserRole, isDeveloper) {
+        // 复用离职权限逻辑
+        return canResignUser(targetUser, currentUserId, currentUserRole, isDeveloper);
+    }
+
     // ==================== 主列表功能 ====================    
     async function loadUsers() {
         const params = new URLSearchParams({
@@ -972,6 +1005,9 @@
     }
 
     function renderUserTable(users) {
+        const currentUserId = CURRENT_USER_ID;
+        const currentUserRole = CURRENT_USER_ROLE;
+        const isDev = IS_DEVELOPER;
         const table = document.getElementById('userTable');
         if (!table) return;
         
@@ -1116,14 +1152,18 @@
             const isRehired = u.is_resign && u.is_rehire && u.user_status === 'registered';
             const isImported = u.user_status === 'imported';
 
+            // ✅ 使用权限判断函数
+            const canResign = canResignUser(u, currentUserId, currentUserRole, isDev);
+            const canRehire = canRehireUser(u, currentUserId, currentUserRole, isDev);
+
             let resignBtn = '';
             let rehireBtn = '';
 
-            if (isActive) {
+            if (isActive && canResign) {
                 resignBtn = `<button class="btn btn-sm btn-outline-warning resign-btn" data-id="${u.id}" data-name="${escapeHtml(u.name_en)}" title="标记为离职">
                                 <i class="bi bi-person-x"></i> ${t('resign')}
                             </button>`;
-            } else if (isResigned) {
+            } else if (isResigned && canRehire) {
                 rehireBtn = `<button class="btn btn-sm btn-outline-success rehire-btn" data-id="${u.id}" data-name="${escapeHtml(u.name_en)}" title="恢复在职状态">
                                 <i class="bi bi-person-check"></i> ${t('rehire')}
                             </button>`;
