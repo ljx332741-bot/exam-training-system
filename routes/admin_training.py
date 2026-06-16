@@ -242,7 +242,10 @@ def api_admin_trainings():
         
         # 计算允许的国家列表
         allowed = None
-        if current_role == 'super_admin':
+        if current_role == 'developer':
+            # ✅ developer 无限制
+            allowed = None
+        elif current_role == 'super_admin':
             admin_countries = user_data.get('admin_countries')
             if admin_countries:
                 try:
@@ -1149,31 +1152,132 @@ def export_training_attendance_status():
         download_name=filename
     )
 
-# routes/admin_training_bp - 修复后的搜索接口
-
 @admin_training_bp.route('/api/search/trainings')
 @login_required
 @admin_required
 def search_trainings():
-    """模糊搜索培训名称（带权限过滤）"""
+    """模糊搜索培训名称（带权限过滤 + 级联筛选 + 绑定标记）"""
     q = request.args.get('q', '').strip()
-    if not q:
-        return jsonify([])
+    country = request.args.get('country', '').strip()
+    warehouse = request.args.get('warehouse', '').strip()
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    exam_id = request.args.get('exam_id', '').strip()  # ✅ 新增：用于标记绑定关系
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    if not q and not country and not warehouse and not start_date and not end_date:
+        per_page = 8
     
     db = get_supabase()
     allowed_countries = get_allowed_countries()
     
     # 基础查询
-    query = db.table("trainings").select("name").is_("deleted_at", "null").ilike("name", f"%{q}%")
+    query = db.table("trainings").select("*").is_("deleted_at", "null")
     
-    # ✅ 权限过滤：只返回权限范围内的培训
-    if allowed_countries is not None and allowed_countries:
+    if q:
+        query = query.ilike("name", f"%{q}%")
+    
+    if country:
+        query = query.eq("country", country)
+    elif allowed_countries is not None and allowed_countries:
         query = query.in_("country", allowed_countries)
     
-    res = query.limit(10).execute()
-    names = [row['name'] for row in (res.data or [])]
-    return jsonify(names)
+    if start_date:
+        query = query.gte("end_time", start_date)
+    if end_date:
+        query = query.lte("start_time", end_date)
+    
+    if warehouse:
+        users_res = db.table("users").select("id").eq("wh_id", warehouse).execute()
+        user_ids = [u['id'] for u in (users_res.data or [])]
+        if user_ids:
+            assign_res = db.table("training_assignments").select("training_id").in_("user_id", user_ids).execute()
+            training_ids = list(set([a['training_id'] for a in (assign_res.data or [])]))
+            if training_ids:
+                query = query.in_("id", training_ids)
+            else:
+                return jsonify([])
+        else:
+            return jsonify([])
+    
+    query = query.order("created_at", desc=True)
+    res = query.range((page-1)*per_page, page*per_page-1).execute()
+    trainings = res.data or []
+    
+    # ✅ 获取考试绑定的培训ID（用于标记）
+    bound_training_ids = set()
+    if exam_id:
+        try:
+            exam_id_int = int(exam_id)
+            bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).execute()
+            bound_training_ids = set([b['training_id'] for b in (bindings_res.data or [])])
+        except ValueError:
+            bound_training_ids = set()
+    else:
+        bound_training_ids = set()
+    
+    # 添加额外信息
+    for t in trainings:
+        t['created_date'] = t.get('created_at', '')[:10] if t.get('created_at') else ''
+        t['quarter'] = _get_quarter_from_date(t.get('created_at'))
+        t['is_bound'] = t['id'] in bound_training_ids  # ✅ 标记是否已绑定
+        t['bound_training_ids'] = list(bound_training_ids)  # 可选：返回所有绑定的培训ID
+    
+    # ✅ 排序：绑定的培训排在前面
+    trainings.sort(key=lambda x: (not x['is_bound'], x.get('name', '')))
+    
+    return jsonify(trainings)
 
+def _get_quarter_from_date(date_str):
+    """从日期字符串提取季度（格式：2026Q2）"""
+    if not date_str:
+        return ''
+    try:
+        from datetime import datetime
+        if isinstance(date_str, str):
+            if 'T' in date_str:
+                date_str = date_str.split('T')[0]
+            elif ' ' in date_str:
+                date_str = date_str.split(' ')[0]
+        date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+        year = date.year
+        month = date.month
+        quarter = (month - 1) // 3 + 1
+        return f"{year}Q{quarter}"
+    except:
+        return ''
+
+@admin_training_bp.route('/api/admin/training/bindings/by_exam')
+@login_required
+@admin_required
+def get_training_bindings_by_exam():
+    """根据考试ID获取绑定的培训列表"""
+    exam_id = request.args.get('exam_id', '')
+    if not exam_id:
+        return jsonify({"bindings": [], "training_ids": []})
+    
+    try:
+        exam_id_int = int(exam_id)
+        db = get_supabase()
+        
+        # 查询该考试绑定的培训
+        bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).execute()
+        training_ids = list(set([b['training_id'] for b in (bindings_res.data or [])]))
+        
+        # 获取培训详细信息（可选）
+        trainings = []
+        if training_ids:
+            trainings_res = db.table("trainings").select("id, name, country").in_("id", training_ids).execute()
+            trainings = trainings_res.data or []
+        
+        return jsonify({
+            "bindings": trainings,
+            "training_ids": training_ids
+        })
+    except Exception as e:
+        logger.error(f"获取考试绑定培训失败: {e}")
+        return jsonify({"bindings": [], "training_ids": []}), 500
 
 @admin_training_bp.route('/api/search/exams')
 @login_required
@@ -1257,6 +1361,33 @@ def search_warehouses():
             suggestions.append(label)
     
     return jsonify(suggestions[:10])
+
+# routes/admin_training.py - 添加获取单个培训的接口
+
+@admin_training_bp.route('/api/admin/trainings/<int:training_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_admin_training_detail(training_id):
+    """获取单个培训详情"""
+    from services.db import get_supabase_admin
+    from utils.permissions import get_admin_allowed_countries
+    
+    db = get_supabase_admin()
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取培训信息
+    res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
+    if not res.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
+    
+    training = res.data
+    
+    # 权限检查
+    training_country = training.get('country')
+    if allowed_countries is not None and training_country and training_country not in allowed_countries:
+        return jsonify({"success": False, "message": "无权访问此培训"}), 403
+    
+    return jsonify({"success": True, "data": training})
 
 # ==================== 正确注册到 admin_training_bp 蓝图中 ====================
 @admin_training_bp.route('/admin/training/completion_report')

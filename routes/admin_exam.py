@@ -188,6 +188,7 @@ def admin_exams_page():
 def edit_exam_preview(exam_id):
     db = get_supabase()
     exam = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute().data
+
     if not exam: flash("考试不存在", "danger"); return redirect(url_for('exam.dashboard'))
     status = get_exam_status(exam)
     if status == 'closed': flash("已关闭的考试不能编辑", "warning"); return redirect(url_for('admin_exams_page'))
@@ -196,7 +197,60 @@ def edit_exam_preview(exam_id):
         if isinstance(q.get('options'), str):
             try: q['options'] = json.loads(q['options'])
             except: q['options'] = {}
-    return render_template('admin/import_preview.html', questions=questions, exam_title=exam['title'], edit_mode=True, original_exam_id=exam_id, return_url=url_for('exam.dashboard'), exam_country=exam.get('country', ''), exam_country_name='', exam_status=status, can_edit_questions=status in ['draft', 'created'], exam_duration=exam.get('duration', 60), exam_reviewer=exam.get('reviewer', ''))
+
+    # ✅ 使用辅助函数解析国家
+    exam_countries = parse_exam_countries(exam)
+    
+    # 如果解析后为空，尝试使用 country 字段
+    if not exam_countries and exam.get('country'):
+        exam_countries = [exam.get('country')]
+    
+    # 安全获取字段值，避免 undefined
+    exam_country = exam.get('country', '')
+    exam_country_name = ''
+    exam_duration = exam.get('duration', 60)
+    exam_reviewer = exam.get('reviewer', '')
+    exam_pass_score = exam.get('pass_score', 85)
+    
+    # 获取有效期（可能为 None）
+    start_time = exam.get('start_time')
+    end_time = exam.get('end_time')
+    
+    # 转换为本地时间格式用于 datetime-local 输入框
+    start_time_local = ''
+    end_time_local = ''
+    if start_time:
+        try:
+            # 转换为本地时间格式 YYYY-MM-DDThh:mm
+            dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+            start_time_local = dt.strftime('%Y-%m-%dT%H:%M')
+        except:
+            start_time_local = ''
+    if end_time:
+        try:
+            dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+            end_time_local = dt.strftime('%Y-%m-%dT%H:%M')
+        except:
+            end_time_local = ''
+    
+    return render_template(
+        'admin/import_preview.html',
+        questions=questions,
+        exam_title=exam['title'],
+        edit_mode=True,
+        original_exam_id=exam_id,
+        return_url=url_for('admin_exam.admin_exams_page'),
+        exam_country=exam_country,
+        exam_country_name=exam_country_name,
+        exam_status=status,
+        can_edit_questions=status in ['draft', 'created'],
+        exam_duration=exam_duration,
+        exam_reviewer=exam_reviewer,
+        exam_pass_score=exam_pass_score,
+        exam_start_time=start_time_local,
+        exam_end_time=end_time_local,
+        exam_countries=exam_countries
+    )
 
 @admin_exam_bp.route('/admin/import', methods=['GET', 'POST'])
 @login_required
@@ -323,7 +377,10 @@ def admin_import_save():
     user_data = user_res.data if user_res and user_res.data else {}
     
     allowed = None
-    if current_role == 'super_admin':
+    if current_role == 'developer':
+        # ✅ developer 无限制
+        allowed = None
+    elif current_role == 'super_admin':
         admin_countries = user_data.get('admin_countries')
         if admin_countries:
             try:
@@ -350,8 +407,10 @@ def admin_import_save():
     is_draft = request.args.get('draft', 'false').lower() == 'true'
 
     # 权限检查：管理员创建的所有国家必须在允许范围内
-    if current_role == 'admin':
-        if not allowed or len(allowed) == 0:
+    # ✅ 权限检查：developer 和 super_admin（无权限范围）可以创建任何国家
+    if allowed is not None:
+        if not allowed:
+            logger.warning(f"管理员没有任何国家权限，禁止创建考试")
             return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
         
         if not countries:
@@ -662,7 +721,10 @@ def copy_exam(exam_id):
     user_data = user_res.data if user_res and user_res.data else {}
     
     allowed = None
-    if current_role == 'super_admin':
+    if current_role == 'developer':
+        # ✅ developer 无限制
+        allowed = None
+    elif current_role == 'super_admin':
         admin_countries = user_data.get('admin_countries')
         if admin_countries:
             try:
@@ -1461,15 +1523,23 @@ def admin_push_exam(exam_id):
 @login_required
 @admin_required
 def api_admin_exams_list():
+    """获取考试列表（支持原有所有筛选 + 级联筛选）"""
     db = get_supabase()
     include_deleted = request.args.get('include_deleted', 'false').lower() == 'true'
     
-    # 获取过滤参数
+    # 获取过滤参数（保留所有原有参数）
     name = request.args.get('name', '')
+    country = request.args.get('country', '')
     target_status = request.args.get('status', '')
     quarter = request.args.get('quarter', '')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
+    
+    # ✅ 新增：级联筛选参数
+    warehouse = request.args.get('warehouse', '').strip()
+    training_id = request.args.get('training_id', '')
     
     allowed_countries = get_admin_allowed_countries()
     is_super_admin = session.get('role') == 'super_admin' or is_developer()
@@ -1485,7 +1555,7 @@ def api_admin_exams_list():
         
         all_exams = query.execute().data or []
         
-        # ========== 2. 权限过滤 ==========
+        # ========== 2. 权限过滤（国家）==========
         if allowed_countries is not None and allowed_countries:
             filtered = []
             for exam in all_exams:
@@ -1496,11 +1566,15 @@ def api_admin_exams_list():
                     filtered.append(exam)
             all_exams = filtered
         
-        # ========== 3. 状态过滤 ==========
+        # ========== 3. 国家筛选 ==========
+        if country:
+            all_exams = [e for e in all_exams if country in parse_exam_countries(e)]
+        
+        # ========== 4. 状态过滤 ==========
         if target_status:
             all_exams = [e for e in all_exams if get_exam_status(e) == target_status]
         
-        # ========== 4. 季度过滤 ==========
+        # ========== 5. 季度过滤 ==========
         if quarter:
             q_start, q_end = quarter_to_date_range(quarter)
             if q_start and q_end:
@@ -1519,7 +1593,62 @@ def api_admin_exams_list():
                             pass
                 all_exams = temp
         
-        # ========== 5. ✅ 批量获取统计数据（关键修复）==========
+        # ========== 6. 日期范围筛选 ==========
+        if start_date:
+            all_exams = [e for e in all_exams if e.get('end_time') and e['end_time'] >= start_date]
+        if end_date:
+            all_exams = [e for e in all_exams if e.get('start_time') and e['start_time'] <= end_date]
+        
+        # ========== 7. ✅ 新增：库房筛选 ==========
+        if warehouse:
+            # 获取该库房下的用户ID
+            users_res = db.table("users").select("id").eq("wh_id", warehouse).execute()
+            user_ids = [u['id'] for u in (users_res.data or [])]
+            if user_ids:
+                # 获取这些用户被分配的考试ID
+                assign_res = db.table("exam_assignments").select("exam_id").in_("user_id", user_ids).execute()
+                exam_ids_from_assign = list(set([a['exam_id'] for a in (assign_res.data or [])]))
+                if exam_ids_from_assign:
+                    all_exams = [e for e in all_exams if e['id'] in exam_ids_from_assign]
+                else:
+                    all_exams = []
+            else:
+                all_exams = []
+        
+        # ========== 8. ✅ 新增：培训绑定筛选 ==========
+        # 在培训绑定筛选部分添加详细日志
+        if training_id:
+            try:
+                training_id_int = int(training_id)
+                logger.info(f"========== 培训绑定筛选 ==========")
+                logger.info(f"培训ID: {training_id_int}")
+                
+                # 查询绑定关系
+                bindings_res = db.table("training_exam_bindings").select("*").eq("training_id", training_id_int).execute()
+                bindings = bindings_res.data or []
+                
+                logger.info(f"查询到绑定记录数: {len(bindings)}")
+                for b in bindings:
+                    logger.info(f"  绑定记录: exam_id={b.get('exam_id')}, is_auto_assign={b.get('is_auto_assign')}")
+                
+                bound_exam_ids = list(set([b['exam_id'] for b in bindings]))
+                logger.info(f"绑定的考试ID列表: {bound_exam_ids}")
+                
+                if bound_exam_ids:
+                    # 获取绑定的考试详情
+                    exams_res = db.table("exams").select("id, title").in_("id", bound_exam_ids).execute()
+                    for e in (exams_res.data or []):
+                        logger.info(f"  绑定的考试: id={e['id']}, title={e['title']}")
+                    
+                    all_exams = [e for e in all_exams if e['id'] in bound_exam_ids]
+                    logger.info(f"筛选后考试数量: {len(all_exams)}")
+                else:
+                    all_exams = []
+                    logger.info(f"培训 {training_id_int} 没有绑定任何考试，返回空列表")
+            except ValueError:
+                logger.warning(f"training_id 参数无效: {training_id}")
+        
+        # ========== 9. 批量获取统计数据 ==========
         if all_exams:
             exam_ids = [exam['id'] for exam in all_exams]
             
@@ -1555,12 +1684,12 @@ def api_admin_exams_list():
         else:
             questions_counts = assigned_counts = submitted_counts = {}
         
-        # ========== 6. 构建返回数据 ==========
+        # ========== 10. 构建返回数据 ==========
         exams_with_status = []
         for exam in all_exams:
             exam_id = exam['id']
     
-            # ✅ 获取该考试分配的考生（只统计在职人员）
+            # 获取该考试分配的考生（只统计在职人员）
             assign_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
             assign_user_ids = [a['user_id'] for a in (assign_res.data or [])]
             
@@ -1571,7 +1700,7 @@ def api_admin_exams_list():
             else:
                 assigned_count = 0
             
-            # ✅ 获取已提交的考生（只统计在职人员）
+            # 获取已提交的考生（只统计在职人员）
             submitted_res = db.table("exam_results").select("user_id").eq("exam_id", exam_id).execute()
             submitted_user_ids = [r['user_id'] for r in (submitted_res.data or [])]
             
@@ -1581,12 +1710,6 @@ def api_admin_exams_list():
                 submitted_count = len(active_submitted.data or [])
             else:
                 submitted_count = 0
-            
-            exam['assigned_count'] = assigned_count
-            exam['submitted_count'] = submitted_count
-
-            # 从缓存中获取统计数据
-            q_count = questions_counts.get(exam_id, 0)
             
             # 解析国家
             exam_countries = parse_exam_countries(exam)
@@ -1603,16 +1726,23 @@ def api_admin_exams_list():
             status = get_exam_status(exam)
             can_show_debug_push = is_super_admin and debug_mode and status == 'closed'
             
+            # ✅ 新增：为前端添加格式化字段
+            created_date = exam.get('created_at', '')[:10] if exam.get('created_at') else ''
+            quarter_val = _get_quarter_from_date(exam.get('created_at'))
+            
             exams_with_status.append({
                 "id": exam_id,
                 "title": exam.get('title', ''),
                 "status": status,
                 "created_at": exam.get('created_at'),
+                "created_date": created_date,
+                "quarter": quarter_val,
                 "countries_display": countries_display,
+                "countries": exam_countries,
                 "start_time": exam.get('start_time'),
                 "end_time": exam.get('end_time'),
                 "duration": exam.get('duration', 60),
-                "question_count": q_count,
+                "question_count": questions_counts.get(exam_id, 0),
                 "assigned_count": assigned_count,
                 "submitted_count": submitted_count,
                 "max_score": None,
@@ -1639,6 +1769,123 @@ def api_admin_exams_list():
     except Exception as e:
         logger.error(f"api_admin_exams_list 错误: {e}", exc_info=True)
         return jsonify({"data": [], "total": 0, "error": str(e)}), 500
+
+
+def _get_quarter_from_date(date_str):
+    """从日期字符串提取季度（格式：2026Q2）"""
+    if not date_str:
+        return ''
+    try:
+        from datetime import datetime
+        if isinstance(date_str, str):
+            if 'T' in date_str:
+                date_str = date_str.split('T')[0]
+            elif ' ' in date_str:
+                date_str = date_str.split(' ')[0]
+        date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+        year = date.year
+        month = date.month
+        quarter = (month - 1) // 3 + 1
+        return f"{year}Q{quarter}"
+    except:
+        return ''
+
+@admin_exam_bp.route('/api/admin/exams/list_light')
+@login_required
+@admin_required
+def api_admin_exams_list_light():
+    """轻量级考试列表API（返回所有考试，标记绑定关系）"""
+    db = get_supabase()
+    
+    name = request.args.get('name', '')
+    country = request.args.get('country', '')
+    warehouse = request.args.get('warehouse', '').strip()
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    training_id = request.args.get('training_id', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 基础查询
+    query = db.table("exams").select("*").is_("deleted_at", "null")
+    if name:
+        query = query.ilike("title", f"%{name}%")
+    
+    all_exams = query.execute().data or []
+    
+    # 权限过滤
+    if allowed_countries is not None and allowed_countries:
+        filtered = []
+        for exam in all_exams:
+            exam_countries = parse_exam_countries(exam)
+            if any(c in allowed_countries for c in exam_countries):
+                filtered.append(exam)
+        all_exams = filtered
+    
+    # 国家筛选
+    if country:
+        all_exams = [e for e in all_exams if country in parse_exam_countries(e)]
+    
+    # 库房筛选
+    if warehouse:
+        users_res = db.table("users").select("id").eq("wh_id", warehouse).execute()
+        user_ids = [u['id'] for u in (users_res.data or [])]
+        if user_ids:
+            assign_res = db.table("exam_assignments").select("exam_id").in_("user_id", user_ids).execute()
+            exam_ids = list(set([a['exam_id'] for a in (assign_res.data or [])]))
+            all_exams = [e for e in all_exams if e['id'] in exam_ids] if exam_ids else []
+        else:
+            all_exams = []
+    
+    # 日期筛选
+    if start_date:
+        all_exams = [e for e in all_exams if e.get('end_time') and e['end_time'] >= start_date]
+    if end_date:
+        all_exams = [e for e in all_exams if e.get('start_time') and e['start_time'] <= end_date]
+    
+    # ✅ 获取培训绑定的考试ID（用于标记）
+    bound_exam_ids = set()
+    if training_id:
+        try:
+            training_id_int = int(training_id)
+            bindings_res = db.table("training_exam_bindings").select("exam_id").eq("training_id", training_id_int).execute()
+            bound_exam_ids = set([b['exam_id'] for b in (bindings_res.data or [])])
+        except ValueError:
+            pass
+    
+    # 分页
+    total = len(all_exams)
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated = all_exams[start_idx:end_idx]
+    
+    # 构建返回数据
+    result = []
+    for exam in paginated:
+        exam_countries = parse_exam_countries(exam)
+        result.append({
+            "id": exam['id'],
+            "title": exam.get('title', ''),
+            "countries_display": ', '.join(exam_countries) if exam_countries else '-',
+            "countries": exam_countries,
+            "created_at": exam.get('created_at'),
+            "start_time": exam.get('start_time'),
+            "end_time": exam.get('end_time'),
+             "status": exam.get('status', ''),
+            "is_bound": exam['id'] in bound_exam_ids  # ✅ 关键：标记是否已绑定
+        })
+    
+    # ✅ 排序：绑定的考试排在前面
+    result.sort(key=lambda x: (not x['is_bound'], x['title']))
+    
+    return jsonify({
+        "data": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
 
 @admin_exam_bp.route('/api/admin/exams/stats')
 @login_required
@@ -2621,4 +2868,3 @@ def reopen_exam_for_testing(exam_id):
     except Exception as e:
         logger.error(f"重新打开考试失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
-

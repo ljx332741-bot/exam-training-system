@@ -867,51 +867,76 @@
             }
         }
 
-        // 国家参数（复用已有逻辑）
+        // ✅ 构建URL参数（使用 exam_id 参数，让后端处理考试国家过滤）
+        const url = new URL('/api/admin/users', window.location.origin);
+        url.searchParams.append('search', search);
+        url.searchParams.append('status', 'registered');
+        url.searchParams.append('page', '1');
+        url.searchParams.append('per_page', '100');
+        
+        // ✅ 传递考试ID，让后端根据考试国家过滤
+        if (examId) {
+            url.searchParams.append('exam_id', examId);
+        }
+        
+        // 可选：手动指定的国家（优先级高于考试国家）
         let countryParam = document.getElementById('countryCodeForSetting')?.value;
         if (!countryParam) {
             const countryText = document.getElementById('countryInput').value;
             countryParam = resolveCountryParam(countryText);
         }
-
-        const params = new URLSearchParams({
-            search: search,
-            country: countryParam,
-            status: 'registered',
-            page: 1,
-            per_page: 100
-        });
-        const res = await fetch(`/api/admin/users?${params.toString()}`);
-        const data = await res.json();
-        let users = data.data || [];
-
-        // 前端二次过滤
-        users = users.filter(u => u.user_status === 'registered');
-        // 库房筛选
-        if (whFilter) {
-            users = users.filter(u => 
-                (u.wh_id && u.wh_id.toLowerCase().includes(whFilter)) ||
-                (u.wh_name_en && u.wh_name_en.toLowerCase().includes(whFilter))
-            );
+        if (countryParam) {
+            url.searchParams.append('country', countryParam);
         }
-        // 合作方筛选
-        if (isPartner) {
-            users = users.filter(u => u.is_partner === (isPartner === 'Y'));
-        }
+        
+        console.log('考试推送请求URL:', url.toString());
+        
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            let users = data.data || [];
 
-        const tbody = document.getElementById('userListBody');
-        tbody.innerHTML = users.map(u => `
-            <tr>
-                <td><input type="checkbox" class="user-checkbox" value="${u.id}" ${assignedUsers.includes(u.id) ? 'checked' : ''}></td>
-                <td>${escapeHtml(u.name_cn || u.name_en || '-')}</td>
-                <td>${escapeHtml(u.email)}</td>
-                <td>${escapeHtml(u.country || '-')}</td>
-                <td>${escapeHtml(u.wh_id || '-')}</td>
-            </tr>
-        `).join('');
-        document.getElementById('selectAllUsers').onclick = (e) => {
-            document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
-        };
+            // 前端二次过滤
+            users = users.filter(u => u.user_status === 'registered');
+            
+            // 库房筛选
+            if (whFilter) {
+                users = users.filter(u => 
+                    (u.wh_id && u.wh_id.toLowerCase().includes(whFilter)) ||
+                    (u.wh_name_en && u.wh_name_en.toLowerCase().includes(whFilter))
+                );
+            }
+            // 合作方筛选
+            if (isPartner) {
+                users = users.filter(u => u.is_partner === (isPartner === 'Y'));
+            }
+
+            const tbody = document.getElementById('userListBody');
+            if (users.length === 0) {
+                tbody.innerHTML = '<td><td colspan="5" class="text-center text-muted">暂无符合条件的人员<\/td><\/tr>';
+            } else {
+                tbody.innerHTML = users.map(u => `
+                    <tr>
+                        <td><input type="checkbox" class="user-checkbox" value="${u.id}" ${assignedUsers.includes(u.id) ? 'checked' : ''}></td>
+                        <td>${escapeHtml(u.name_cn || u.name_en || '-')}</td>
+                        <td>${escapeHtml(u.email)}</td>
+                        <td>${escapeHtml(u.country || '-')}</td>
+                        <td>${escapeHtml(u.wh_id || '-')}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            const selectAll = document.getElementById('selectAllUsers');
+            if (selectAll) {
+                selectAll.onclick = (e) => {
+                    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
+                };
+            }
+        } catch (err) {
+            console.error('加载用户列表失败:', err);
+            const tbody = document.getElementById('userListBody');
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败，请重试<\/td><\/tr>';
+        }
     }
 
     document.getElementById('loadUsersBtn')?.addEventListener('click', async () => {

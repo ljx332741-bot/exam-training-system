@@ -786,3 +786,155 @@ def get_latest_result_id(exam_id, user_id):
     res = db.table("exam_results").select("id").eq("exam_id", exam_id).eq("user_id", user_id).order("created_at", desc=True).limit(1).execute()
     return res.data[0]['id'] if res.data else None
 
+# ==================导出API参数0615==================
+@admin_export_bp.route('/api/admin/export/quarters')
+@login_required
+@admin_required
+def api_get_quarters_for_export():
+    """获取季度列表（基于权限范围内的培训签到日期和考试提交日期）"""
+    db = get_supabase()
+    allowed_countries = get_admin_allowed_countries()
+    
+    quarters = set()
+    
+    try:
+        # 1. 从培训签到记录中提取日期
+        trainings_query = db.table("trainings").select("start_time, end_time")
+        if allowed_countries is not None and allowed_countries:
+            trainings_query = trainings_query.in_("country", allowed_countries)
+        trainings_res = trainings_query.execute()
+        
+        for t in (trainings_res.data or []):
+            for time_field in ['start_time', 'end_time']:
+                time_str = t.get(time_field)
+                if time_str:
+                    quarter = _get_quarter_from_date(time_str)
+                    if quarter:
+                        quarters.add(quarter)
+        
+        # 2. 从考试成绩提交日期中提取季度
+        # ✅ 修复：先获取所有考试，再在 Python 中过滤权限
+        exams_res = db.table("exams").select("id, countries").is_("deleted_at", "null").execute()
+        all_exams = exams_res.data or []
+        
+        # 在 Python 中过滤权限范围内的考试
+        filtered_exam_ids = []
+        for exam in all_exams:
+            exam_countries = exam.get('countries')
+            if not exam_countries:
+                continue
+            
+            # 解析 JSONB 数组
+            if isinstance(exam_countries, str):
+                try:
+                    import json
+                    exam_countries = json.loads(exam_countries)
+                except:
+                    exam_countries = []
+            elif not isinstance(exam_countries, list):
+                exam_countries = []
+            
+            # 检查是否有交集
+            if allowed_countries is not None and allowed_countries:
+                if any(c in allowed_countries for c in exam_countries):
+                    filtered_exam_ids.append(exam['id'])
+            else:
+                filtered_exam_ids.append(exam['id'])
+        
+        if filtered_exam_ids:
+            # 查询这些考试的考试成绩
+            results_res = db.table("exam_results").select("created_at").in_("exam_id", filtered_exam_ids).execute()
+            for r in (results_res.data or []):
+                quarter = _get_quarter_from_date(r.get('created_at'))
+                if quarter:
+                    quarters.add(quarter)
+        
+        # 3. 排序并返回（最近12个季度）
+        sorted_quarters = sorted(list(quarters), key=lambda x: (int(x[:4]), int(x[5])))
+        return jsonify(sorted_quarters[-12:])
+        
+    except Exception as e:
+        logger.error(f"获取季度列表失败: {e}")
+        return jsonify([])
+
+def _get_quarter_from_date(date_str):
+    """从日期字符串提取季度（格式：2026Q2）"""
+    if not date_str:
+        return None
+    try:
+        if isinstance(date_str, str):
+            # 处理 ISO 格式
+            if 'T' in date_str:
+                date_str = date_str.split('T')[0]
+            elif ' ' in date_str:
+                date_str = date_str.split(' ')[0]
+        from datetime import datetime
+        date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+        year = date.year
+        month = date.month
+        quarter = (month - 1) // 3 + 1
+        return f"{year}Q{quarter}"
+    except:
+        return None
+
+@admin_export_bp.route('/api/admin/export/recent_countries')
+@login_required
+@admin_required
+def api_get_recent_countries_for_export():
+    """获取最近使用的国家列表（基于权限范围内的培训和考试）"""
+    db = get_supabase()
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取权限范围内的国家列表
+    if allowed_countries is not None and allowed_countries:
+        # 如果管理员有权限范围限制，只返回这些国家
+        countries_res = db.table("countries").select("code, name_zh, name_en").in_("code", allowed_countries).execute()
+    else:
+        # 无限制，返回所有国家
+        countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+    
+    countries = countries_res.data or []
+    
+    # 按中文名称排序
+    countries.sort(key=lambda x: x.get('name_zh', ''))
+    
+    return jsonify(countries[:100])  # 返回所有权限范围内的国家
+
+@admin_export_bp.route('/api/admin/export/recent_warehouses')
+@login_required
+@admin_required
+def api_get_recent_warehouses_for_export():
+    """获取最近使用的库房列表（基于有培训签到的用户）"""
+    db = get_supabase()
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取有培训签到的用户ID
+    attend_res = db.table("training_attendances").select("user_id").execute()
+    user_ids = list(set([a['user_id'] for a in (attend_res.data or [])]))
+    
+    if not user_ids:
+        return jsonify([])
+    
+    # 获取这些用户的库房信息
+    users_query = db.table("users").select("wh_id, wh_name_en, country").in_("id", user_ids)
+    
+    if allowed_countries is not None and allowed_countries:
+        users_query = users_query.in_("country", allowed_countries)
+    
+    users_res = users_query.execute()
+    
+    # 去重
+    seen = set()
+    warehouses = []
+    for u in (users_res.data or []):
+        wh_id = u.get('wh_id')
+        if wh_id and wh_id not in seen:
+            seen.add(wh_id)
+            warehouses.append({
+                "wh_id": wh_id,
+                "wh_name_en": u.get('wh_name_en', ''),
+                "display": f"{wh_id} ({u.get('wh_name_en', '')})" if u.get('wh_name_en') else wh_id
+            })
+    
+    return jsonify(warehouses[:20])
+

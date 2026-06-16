@@ -843,7 +843,6 @@
         const whFilter = document.getElementById('pushWhFilter').value.toLowerCase();
         const isPartner = document.getElementById('pushIsPartner').value;
         
-        // ✅ 关键修改：根据当前培训的国家过滤，而不是管理员的权限范围
         const trainingId = currentTrainingId;
         if (!trainingId) {
             console.warn('没有选中培训');
@@ -853,10 +852,13 @@
         }
         
         try {
-            // 获取培训的国家信息
-            const trainingRes = await fetch(`/api/admin/trainings?id=${trainingId}`);
+            // ✅ 修复1：使用正确的API获取培训详情
+            const trainingRes = await fetch(`/api/admin/trainings/${trainingId}`);
+            if (!trainingRes.ok) {
+                throw new Error(`HTTP ${trainingRes.status}`);
+            }
             const trainingData = await trainingRes.json();
-            const training = Array.isArray(trainingData) ? trainingData[0] : trainingData.data?.[0];
+            const training = trainingData.data || trainingData;
             
             if (!training) {
                 console.warn('培训不存在');
@@ -865,19 +867,44 @@
                 return;
             }
             
-            // ✅ 获取培训的国家（支持多国家，优先使用 countries 字段）
+            // ✅ 修复2：正确解析培训的国家列表
             let trainingCountries = [];
+            
+            // 优先使用 countries 字段（JSON数组）
             if (training.countries) {
                 try {
                     trainingCountries = typeof training.countries === 'string' 
                         ? JSON.parse(training.countries) 
                         : training.countries;
+                    // 确保是数组
+                    if (!Array.isArray(trainingCountries)) {
+                        trainingCountries = [trainingCountries];
+                    }
                 } catch(e) {
                     trainingCountries = [];
                 }
             }
+            
+            // 兼容旧的 country 字段
             if (trainingCountries.length === 0 && training.country) {
                 trainingCountries = [training.country];
+            }
+            
+            // 如果还是没有国家，尝试从签到记录中获取
+            if (trainingCountries.length === 0) {
+                try {
+                    const attRes = await fetch(`/api/training/attendance/${trainingId}`);
+                    const attData = await attRes.json();
+                    const attendances = attData.attendances || [];
+                    // 从签到记录中提取国家
+                    const countrySet = new Set();
+                    attendances.forEach(att => {
+                        if (att.country) countrySet.add(att.country);
+                    });
+                    trainingCountries = Array.from(countrySet);
+                } catch(e) {
+                    console.warn('从签到记录获取国家失败:', e);
+                }
             }
             
             if (trainingCountries.length === 0) {
@@ -886,27 +913,42 @@
                 return;
             }
             
-            // ✅ 显示培训国家信息
             console.log('培训国家:', trainingCountries);
             
-            // ✅ 根据培训国家获取用户（使用 in 查询多个国家）
-            const params = new URLSearchParams({
-                search: search,
-                status: 'registered',
-                page: 1,
-                per_page: 100
+            // ✅ 修复3：使用正确的API参数获取用户
+            const url = new URL('/api/admin/users', window.location.origin);
+            url.searchParams.append('search', search);
+            url.searchParams.append('status', 'registered');
+            url.searchParams.append('page', '1');
+            url.searchParams.append('per_page', '100');
+            url.searchParams.append('exclude_resigned', 'true');
+            
+            // ✅ 为每个国家添加 country 参数（支持多国家）
+            trainingCountries.forEach(c => {
+                url.searchParams.append('country', c);
             });
             
-            // 添加国家过滤（支持多国家）
-            if (trainingCountries.length === 1) {
-                params.append('country', trainingCountries[0]);
-            } else if (trainingCountries.length > 1) {
-                params.append('countries', trainingCountries.join(','));
+            // 可选：手动指定的国家（用户额外筛选）
+            const countryFilterInput = document.getElementById('pushCountryFilter');
+            const countryCodeHidden = document.getElementById('pushCountryCode');
+            if (countryCodeHidden && countryCodeHidden.value) {
+                url.searchParams.append('country', countryCodeHidden.value);
+            } else if (countryFilterInput && countryFilterInput.value) {
+                // 尝试解析国家
+                const countryText = countryFilterInput.value;
+                const resolved = resolveCountryParam(countryText);
+                if (resolved) {
+                    url.searchParams.append('country', resolved);
+                }
             }
             
-            const res = await fetch(`/api/admin/users?${params}`);
+            console.log('请求URL:', url.toString());
+            
+            const res = await fetch(url);
             const data = await res.json();
             let users = (data.data || []).filter(u => u.user_status === 'registered');
+            
+            console.log(`返回用户数: ${users.length}`);
             
             // 前端额外过滤：库房编码/名称
             if (whFilter) {
@@ -927,7 +969,7 @@
                 tbody.innerHTML = users.map(u => `
                     <tr>
                         <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
-                        <td>${escapeHtml(u.name_en || '')}</td>
+                        <td>${escapeHtml(u.name_en || u.name_cn || '')}</td>
                         <td>${escapeHtml(u.email)}</td>
                         <td class="country-cell">${escapeHtml(u.country || '-')}</td>
                         <td>${escapeHtml(u.wh_id || '-')}</td>
@@ -938,7 +980,9 @@
             // 绑定全选事件
             const selectAllCheckbox = document.getElementById('pushSelectAll');
             if (selectAllCheckbox) {
-                selectAllCheckbox.onclick = (e) => {
+                const newSelectAll = selectAllCheckbox.cloneNode(true);
+                selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
+                newSelectAll.onclick = (e) => {
                     document.querySelectorAll('.push-user-checkbox').forEach(cb => cb.checked = e.target.checked);
                 };
             }
@@ -946,10 +990,49 @@
         } catch (err) {
             console.error('加载用户列表失败', err);
             const tbody = document.getElementById('pushUserListBody');
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败，请重试</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败: ' + escapeHtml(err.message) + '</td></tr>';
         }
     }
 
+    // ==================== 辅助函数 ====================
+
+    // 解析国家参数（将中文/英文名转换为国家代码）
+    function resolveCountryParam(text) {
+        if (!text) return '';
+        
+        // 先尝试直接匹配国家代码
+        const upperText = text.toUpperCase();
+        if (upperText.length === 2) {
+            // 可能是国家代码
+            const countries = window.countryList || [];
+            const matched = countries.find(c => c.code === upperText);
+            if (matched) return matched.code;
+        }
+        
+        // 尝试通过名称匹配
+        const countries = window.countryList || [];
+        const lowerText = text.toLowerCase();
+        const matched = countries.find(c => 
+            c.name_zh?.toLowerCase().includes(lowerText) ||
+            c.name_en?.toLowerCase().includes(lowerText)
+        );
+        return matched ? matched.code : '';
+    }
+
+    // 加载国家列表（如果未加载）
+    async function ensureCountryList() {
+        if (window.countryList && window.countryList.length > 0) {
+            return window.countryList;
+        }
+        try {
+            const res = await fetch('/api/admin/export/recent_countries');
+            window.countryList = await res.json();
+            return window.countryList;
+        } catch (err) {
+            console.error('加载国家列表失败:', err);
+            return [];
+        }
+    }
 
     // 绑定刷新按钮
     document.getElementById('pushLoadUsersBtn')?.addEventListener('click', loadPushUserList);

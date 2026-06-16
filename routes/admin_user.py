@@ -21,6 +21,7 @@ from routes.helpers import login_required, admin_required, get_current_user
 from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, generate_import_template, format_import_result
 from utils.i18n_messages import I18nMessages
 
+        
 logger = logging.getLogger(__name__)
 
 @admin_user_bp.route('/admin/users')
@@ -61,6 +62,7 @@ def api_admin_user_detail(user_id):
         logger.error(f"获取用户详情失败: {e}")
         return jsonify({"error": "查询失败"}), 500
 
+'''
 @admin_user_bp.route('/api/admin/users')
 @login_required
 @admin_required
@@ -167,6 +169,200 @@ def api_admin_users():
         if 'is_rehire' in user:
             user['is_rehire'] = user.get('is_rehire', False)
         # 日期字段保持原样
+
+    return jsonify({
+        "data": paginated,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
+'''
+
+@admin_user_bp.route('/api/admin/users')
+@login_required
+@admin_required
+def api_admin_users():
+    """获取用户列表（带完整权限控制 + 国家名称模糊匹配）"""
+    db = get_supabase()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '').strip()
+    country = request.args.get('country', '').strip()
+    countries_param = request.args.get('countries', '').strip()
+    training_id = request.args.get('training_id', '').strip()
+    exam_id = request.args.get('exam_id', '').strip()
+    wh_id = request.args.get('wh_id', '').strip()
+    user_status = request.args.get('status', '')
+    
+    allowed_countries = get_admin_allowed_countries()
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    is_dev = is_developer()
+
+    # ========== 1. 从考试/培训获取国家列表 ==========
+    exam_countries = []
+    if exam_id:
+        try:
+            exam_res = db.table("exams").select("countries, country").eq("id", int(exam_id)).execute()
+            if exam_res.data:
+                exam = exam_res.data[0]
+                if exam.get('countries'):
+                    countries_data = exam.get('countries')
+                    if isinstance(countries_data, str):
+                        try:
+                            exam_countries = json.loads(countries_data)
+                        except:
+                            exam_countries = []
+                    elif isinstance(countries_data, list):
+                        exam_countries = countries_data
+                if not exam_countries and exam.get('country'):
+                    exam_countries = [exam.get('country')]
+        except:
+            pass
+
+    training_countries = []
+    if training_id:
+        try:
+            training_res = db.table("trainings").select("country, countries").eq("id", int(training_id)).execute()
+            if training_res.data:
+                training = training_res.data[0]
+                if training.get('countries'):
+                    countries_data = training.get('countries')
+                    if isinstance(countries_data, str):
+                        try:
+                            training_countries = json.loads(countries_data)
+                        except:
+                            training_countries = []
+                    elif isinstance(countries_data, list):
+                        training_countries = countries_data
+                if not training_countries and training.get('country'):
+                    training_countries = [training.get('country')]
+        except:
+            pass
+
+    # ========== 2. 国家模糊匹配：将输入的文本转换为匹配的国家代码列表 ==========
+    matched_country_codes = []
+    country_search_term = country or countries_param
+    
+    if country_search_term:
+        # 获取所有国家列表
+        countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+        all_countries = countries_res.data or []
+        
+        search_lower = country_search_term.lower().strip()
+        
+        for c in all_countries:
+            code = (c.get('code') or '').lower()
+            name_zh = (c.get('name_zh') or '').lower()
+            name_en = (c.get('name_en') or '').lower()
+            
+            # ✅ 模糊匹配：中英文名称或代码包含搜索词
+            if (search_lower in name_zh or 
+                search_lower in name_en or 
+                search_lower in code):
+                matched_country_codes.append(c['code'])
+        
+        logger.info(f"国家模糊匹配: 搜索词='{country_search_term}', 匹配到 {len(matched_country_codes)} 个国家: {matched_country_codes}")
+        
+        # 如果没有匹配到任何国家，返回空结果
+        if not matched_country_codes:
+            return jsonify({
+                "data": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page
+            })
+    
+    # ========== 3. 确定最终国家过滤列表 ==========
+    final_countries = []
+    
+    # 优先使用模糊匹配的国家代码
+    if matched_country_codes:
+        final_countries = matched_country_codes
+    elif exam_countries:
+        final_countries = exam_countries
+    elif training_countries:
+        final_countries = training_countries
+    
+    # 与管理员权限范围取交集
+    if allowed_countries is not None and final_countries:
+        final_countries = [c for c in final_countries if c in allowed_countries]
+    
+    # 如果管理员有权限范围但没有指定国家筛选，使用权限范围
+    if not final_countries and allowed_countries is not None and allowed_countries:
+        final_countries = allowed_countries
+    
+    logger.info(f"用户列表请求 - 最终国家过滤: {final_countries}")
+
+    # ========== 4. 基础查询 ==========
+    query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
+
+    if not is_dev:
+        query = query.eq("is_protected", False)
+    
+    if current_role != 'super_admin' and not is_dev:
+        query = query.neq("role", "super_admin").neq("role", "developer")
+    
+    if user_status:
+        query = query.eq("user_status", user_status)
+    
+    # 获取所有数据
+    all_res = query.execute()
+    all_users = all_res.data or []
+
+    # ========== 5. 内存过滤 ==========
+    exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
+    
+    filtered = []
+    for user in all_users:
+        # 姓名/邮箱/工号搜索
+        if search:
+            search_lower = search.lower()
+            name = (user.get('name_en') or '').lower()
+            email = (user.get('email') or '').lower()
+            emp_id = (user.get('employee_id') or '').lower()
+            if search_lower not in name and search_lower not in email and search_lower not in emp_id:
+                continue
+
+        # ✅ 国家筛选：使用匹配的国家代码列表
+        if final_countries:
+            user_country = user.get('country') or ''
+            if user_country not in final_countries:
+                continue
+        
+        # 库房模糊匹配
+        if wh_id:
+            wh_lower = wh_id.lower()
+            user_wh_id = (user.get('wh_id') or '').lower()
+            user_wh_name = (user.get('wh_name_en') or '').lower()
+            if wh_lower not in user_wh_id and wh_lower not in user_wh_name:
+                continue
+        
+        filtered.append(user)
+
+    # 离职过滤
+    if exclude_resigned:
+        filtered = [u for u in filtered if not u.get('is_resign', False)]
+        logger.info(f"排除离职人员后剩余 {len(filtered)} 人")
+    
+    # 权限过滤
+    filtered_users = filter_users_by_permission(filtered, allowed_countries, current_user_id)
+    
+    # 按创建时间倒序排序
+    filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    # 内存分页
+    total = len(filtered_users)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = filtered_users[start:end]
+
+    # 确保字段存在
+    for user in paginated:
+        if 'is_resign' in user:
+            user['is_resign'] = user.get('is_resign', False)
+        if 'is_rehire' in user:
+            user['is_rehire'] = user.get('is_rehire', False)
 
     return jsonify({
         "data": paginated,
@@ -1022,22 +1218,51 @@ def refresh_permissions():
 def export_users_to_excel():
     """导出用户清单到Excel（简化版）"""
     try:
-        from io import BytesIO
-        import openpyxl
-        from datetime import datetime
-        
         # ✅ 权限检查：只有超管或开发者可以导出
-        if not is_developer() and session.get('role') != 'super_admin':
+        current_role = session.get('role')
+        if current_role not in ['admin', 'super_admin', 'developer']:
             logger.warning(f"用户 {session.get('user_id')} 尝试导出用户清单但权限不足")
-            return jsonify({"success": False, "message": "权限不足，仅超级管理员可导出"}), 403
+            return jsonify({"success": False, "message": "权限不足"}), 403
         
         db = get_supabase()
+        allowed_countries = get_admin_allowed_countries()
+        current_role = session.get('role')
+        current_user_id = session.get('user_id')
+        is_dev = is_developer()
         
-        # 获取用户数据
-        all_res = db.table("users").select("*").is_("deleted_at", "null").range(0, 10000).execute()
-        users = all_res.data or []
+        # ✅ 基础查询：获取所有未删除用户
+        query = db.table("users").select("*").is_("deleted_at", "null")
         
-        logger.info(f"查询到用户数量: {len(users)}")
+        # ✅ 角色过滤
+        if not is_dev:
+            query = query.eq("is_protected", False)
+        
+        if current_role != 'super_admin' and not is_dev:
+            query = query.neq("role", "super_admin").neq("role", "developer")
+        
+        all_res = query.execute()
+        all_users = all_res.data or []
+        
+        # ✅ 应用国家权限过滤（复用 filter_users_by_permission）
+        filtered_users = filter_users_by_permission(all_users, allowed_countries, current_user_id)
+        
+        logger.info(f"导出用户: 原始 {len(all_users)} 人，权限过滤后 {len(filtered_users)} 人")
+        
+        # 如果没有用户，返回空Excel
+        if not filtered_users:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "用户清单"
+            ws.cell(row=1, column=1, value="无权限范围内的用户数据")
+            buffer = BytesIO()
+            wb.save(buffer)
+            buffer.seek(0)
+            return send_file(
+                buffer,
+                mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                as_attachment=True,
+                download_name=f"用户清单_空_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            )
         
         # 创建工作簿
         wb = openpyxl.Workbook()
@@ -1045,14 +1270,14 @@ def export_users_to_excel():
         ws.title = "用户清单"
         
         # ✅ 表头（添加用户ID字段）
-        headers = ['序号', '用户ID', '姓名', '邮箱', '国家', '角色', '状态']
+        headers = ['序号', '用户ID', '姓名', '邮箱', '国家', '角色', '状态', '在职状态']
         
         # 写入表头
         for col, header in enumerate(headers, 1):
             ws.cell(row=1, column=col, value=header)
         
         # 写入数据
-        for row_idx, user in enumerate(users, 2):
+        for row_idx, user in enumerate(filtered_users, 2):
             ws.cell(row=row_idx, column=1, value=row_idx - 1)                    # 序号
             ws.cell(row=row_idx, column=2, value=user.get('id', ''))             # ✅ 用户ID
             ws.cell(row=row_idx, column=3, value=user.get('name_en', ''))        # 姓名
@@ -1060,15 +1285,21 @@ def export_users_to_excel():
             ws.cell(row=row_idx, column=5, value=user.get('country', ''))        # 国家
             ws.cell(row=row_idx, column=6, value=user.get('role', ''))           # 角色
             ws.cell(row=row_idx, column=7, value=user.get('user_status', ''))    # 状态
+            ws.cell(row=row_idx, column=8, value='已离职' if user.get('is_resign') else '在职')  # 在职状态
         
-        logger.info(f"实际写入 {len(users)} 条数据")
+        logger.info(f"实际写入 {len(filtered_users)} 条数据")
+
+        # 调整列宽
+        column_widths = [8, 38, 15, 25, 12, 12, 12, 12]
+        for col, width in enumerate(column_widths, 1):
+            ws.column_dimensions[get_column_letter(col)].width = width
         
         # 保存文件
         buffer = BytesIO()
         wb.save(buffer)
         buffer.seek(0)
         
-        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(users)}人.xlsx"
+        filename = f"用户清单_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{len(filtered_users)}人.xlsx"
         
         return send_file(
             buffer,
@@ -1236,6 +1467,7 @@ def api_admin_resign_user(user_id):
     db = get_supabase()
     operator_id = session['user_id']
     current_role = session.get('role')
+    is_dev = is_developer()
 
     # 获取目标用户信息
     target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
@@ -1243,12 +1475,18 @@ def api_admin_resign_user(user_id):
         return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
     
     target_user = target_user_res.data
-    
-    # ✅ 使用权限检查函数
+
+    # ✅ 修复：构建 current_user 对象
+    current_user = {
+        'id': operator_id,
+        'role': current_role,
+        'is_developer': is_dev
+    }
+    # 使用权限检查函数
     if not can_resign_user(target_user, current_user):
         return jsonify({"success": False, "message": "no_permission_to_resign", "params": []}), 403
     
-    # ✅ 新增：不能标记自己离职
+    # 能标记自己离职
     if user_id == operator_id:
         return jsonify({"success": False, "message": "cannot_resign_self", "params": []}), 400
     
@@ -1259,7 +1497,7 @@ def api_admin_resign_user(user_id):
     
     user = user_res.data
 
-    # ✅ 新增：超管不能标记离职（除非是开发者）
+    # 超管不能标记离职（除非是开发者）
     if user.get('role') == 'super_admin' and not is_developer():
         return jsonify({"success": False, "message": "cannot_resign_super_admin", "params": []}), 403
   
@@ -1288,7 +1526,7 @@ def api_admin_rehire_user(user_id):
     db = get_supabase()
     operator_id = session['user_id']
 
-    # ✅ 新增：不能给自己复职（虽然已离职的自己理论上无法操作，但增加检查）
+    # 不能给自己复职（虽然已离职的自己理论上无法操作，但增加检查）
     if user_id == operator_id:
         return jsonify({"success": False, "message": "cannot_rehire_self", "params": []}), 400
   
@@ -1299,7 +1537,7 @@ def api_admin_rehire_user(user_id):
     
     user = user_res.data
 
-    # ✅ 新增：只有已离职的用户才能复职
+    # 只有已离职的用户才能复职
     if not user.get('is_resign'):
         return jsonify({"success": False, "message": "user_not_resigned", "params": []}), 400
   
