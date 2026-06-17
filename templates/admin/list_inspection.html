@@ -554,6 +554,7 @@
                 isInitialSubscribe = false;
                 return;
             }
+        await loadCountryList();
         await loadInterviews();
         await loadRecentExams();
         });
@@ -728,80 +729,75 @@
         new bootstrap.Modal(document.getElementById('newInterviewModal')).show();
     });
 
-    // 考试名称模糊搜索
-    /*
-    document.getElementById('examSearch').addEventListener('input', async function () {
-        const q = this.value.trim();
-        const datalist = document.getElementById('examDatalist');
-        if (!q) { datalist.innerHTML = ''; return; }
-        try {
-            const res = await fetch(`/api/search/exams?q=${encodeURIComponent(q)}`);
-            const names = await res.json();
-            datalist.innerHTML = names.map(name => `<option value="${escapeHtml(name)}">`).join('');
-        } catch (e) {
-            console.error(t('t_search_examination_failed'), e);
-        }
-    });
-
-    // 当考试名称选定后，获取考试ID (通过匹配 exam 名称)
-    document.getElementById('examSearch').addEventListener('change', async function () {
-        const selectedTitle = this.value.trim();
-        if (!selectedTitle) return;
-        try {
-            const res = await fetch('/api/admin/exams/list?per_page=1&name=' + encodeURIComponent(selectedTitle));
-            const data = await res.json();
-            if (data.data.length > 0) {
-                document.getElementById('selectedExamId').value = data.data[0].id;
-                console.log(t('t_select_exam'), data.data[0].id);
-            } else {
-                alert(t('t_no_matching_exam'));
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    });
-    */
-
     // 加载学员列表
     document.getElementById('loadUsersBtn').addEventListener('click', loadUserListForInterview);
-    
-    async function loadUserListForInterview() {
+    async function loadUserListForInterview(examId = null) {
         const search = document.getElementById('userSearch').value;
         const countryText = document.getElementById('countryFilter').value;
         const countryCode = document.getElementById('countryCodeForInterview').value || resolveCountryParam(countryText);
         const whId = document.getElementById('whIdFilter').value;
         const isPartner = document.getElementById('isPartnerFilter').value;
-        // 构建查询参数（后端暂时只支持 search 和 country，其余前端过滤）
-        const params = new URLSearchParams({
-            search: search,
-            country: countryCode,
-            page: 1,
-            per_page: 100   // 一次加载足够多
-        });
-        const res = await fetch(`/api/admin/users?${params}`);
-        const data = await res.json();
-        // 在获取用户列表后过滤
-        let users = data.data.filter(u => u.user_status === 'registered');
-        // 前端额外过滤
-        if (whId) {
-            users = users.filter(u => u.wh_id && u.wh_id.toLowerCase().includes(whId.toLowerCase()));
+        
+        // ✅ 如果没有传入 examId，从表单中获取
+        const effectiveExamId = examId || document.getElementById('selectedExamId').value;
+        
+        // ✅ 构建URL参数
+        const url = new URL('/api/admin/users', window.location.origin);
+        url.searchParams.append('search', search);
+        url.searchParams.append('status', 'registered');
+        url.searchParams.append('page', '1');
+        url.searchParams.append('per_page', '100');
+        url.searchParams.append('exclude_resigned', 'true');
+        
+        // ✅ 如果指定了考试ID，添加 exam_id 参数让后端根据考试国家过滤
+        if (effectiveExamId) {
+            url.searchParams.append('exam_id', effectiveExamId);
+            console.log('根据考试ID过滤用户:', effectiveExamId);
         }
-        if (isPartner) {
-            users = users.filter(u => u.is_partner === (isPartner === 'Y'));
+        
+        // 如果手动指定了国家，作为额外过滤（优先级高于考试国家）
+        if (countryCode) {
+            url.searchParams.append('country', countryCode);
         }
-        const tbody = document.getElementById('userListBody');
-        tbody.innerHTML = users.map(u => `
-            <tr>
-                <td><input type="checkbox" class="user-checkbox" value="${u.id}"></td>
-                <td>${escapeHtml(u.name_en || '')}</td>
-                <td>${escapeHtml(u.email)}</td>
-                <td>${escapeHtml(u.country || '-')}</td>
-                <td>${escapeHtml(u.wh_id || '-')}</td>
-            </tr>
-        `).join('');
-        document.getElementById('selectAllUsers').onclick = (e) => {
-            document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
-        };
+        
+        console.log('请求URL:', url.toString());
+        
+        try {
+            const res = await fetch(url);
+            const data = await res.json();
+            let users = data.data.filter(u => u.user_status === 'registered');
+            
+            // 前端额外过滤
+            if (whId) {
+                users = users.filter(u => u.wh_id && u.wh_id.toLowerCase().includes(whId.toLowerCase()));
+            }
+            if (isPartner) {
+                users = users.filter(u => u.is_partner === (isPartner === 'Y'));
+            }
+            
+            const tbody = document.getElementById('userListBody');
+            if (users.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">${t('t_no_matching_people')}</td></tr>`;
+            } else {
+                tbody.innerHTML = users.map(u => `
+                    <tr>
+                        <td><input type="checkbox" class="user-checkbox" value="${u.id}"></td>
+                        <td>${escapeHtml(u.name_en || '')}</td>
+                        <td>${escapeHtml(u.email)}</td>
+                        <td>${escapeHtml(u.country || '-')}</td>
+                        <td>${escapeHtml(u.wh_id || '-')}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            document.getElementById('selectAllUsers').onclick = (e) => {
+                document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
+        } catch (err) {
+            console.error('加载用户列表失败:', err);
+            const tbody = document.getElementById('userListBody');
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${t('t_loading_failed')}</td></tr>`;
+        }
     }
 
     // ========== 预览按钮 ==========
@@ -975,8 +971,7 @@
             const minutes = String(date.getMinutes()).padStart(2, '0');
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         }
-        // 获取访谈完整数据（需要后端提供返回现有人员ID的接口，或从详情接口获取）
-        // 这里通过 GET 单个访谈的详情（需新增简单接口，或从列表缓存中提取）
+        // 获取访谈完整数据
         let interview;
         // 尝试从列表数据中获取（如果页面已加载）
         const res = await fetch(`/api/admin/interviews?per_page=100`);

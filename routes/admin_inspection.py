@@ -6,8 +6,9 @@ from flask import request, jsonify, render_template, session, flash, redirect, u
 from . import admin_inspection_bp
 from services.db import get_supabase
 from utils.common import get_reviewer_by_country
-from routes.helpers import login_required, admin_required, random_pick_questions, get_allowed_countries
+from routes.helpers import login_required, admin_required, random_pick_questions, get_allowed_countries, parse_exam_countries, can_access_exam
 from utils.permissions import get_admin_allowed_countries, is_developer
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ def admin_interviews_page():
 @admin_required
 def api_admin_interviews():
     """访谈列表查询、创建、更新"""
+    print("=" * 60)
+    print("🔥 api_admin_interviews 被调用！")
+
     db = get_supabase()
     if request.method == 'GET':
         name = request.args.get('name', '')
@@ -29,76 +33,67 @@ def api_admin_interviews():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
 
-        # ✅ 获取管理员权限范围
         allowed = get_allowed_countries()
-        
-        # 基础查询
+        print(f"🔍 管理员权限范围: {allowed}")
+
         query = db.table("interviews").select("*", count="exact").is_("deleted_at", "null")
         if name:
             query = query.ilike("title", f"%{name}%")
         query = query.order("created_at", desc=True)
-        
-        # 获取所有访谈
+
         res = query.execute()
         all_interviews = res.data or []
-        
+        print(f"📋 查询到 {len(all_interviews)} 条访谈记录")
+
+        # ✅ 打印每个访谈的 exam_id
+        for inv in all_interviews:
+            print(f"  访谈 ID={inv['id']}, exam_id={inv.get('exam_id')}")
+
         # ✅ 根据权限过滤访谈
         if allowed is not None and allowed:
-            # 收集所有考试ID
+            print(f"🔒 应用权限过滤，允许国家: {allowed}")
             exam_ids = set()
             for inv in all_interviews:
                 if inv.get('exam_id'):
                     exam_ids.add(inv['exam_id'])
-            
-            # 批量获取考试的国家信息
+
+            print(f"📚 涉及的考试ID: {exam_ids}")
+
             exam_country_map = {}
             if exam_ids:
                 exams_res = db.table("exams").select("id, country, countries").in_("id", list(exam_ids)).execute()
                 for exam in (exams_res.data or []):
-                    # 解析国家列表
-                    exam_countries = []
-                    countries_data = exam.get('countries')
-                    if isinstance(countries_data, str) and countries_data:
-                        try:
-                            exam_countries = json.loads(countries_data)
-                        except:
-                            exam_countries = []
-                    elif isinstance(countries_data, list):
-                        exam_countries = countries_data
-                    if not exam_countries and exam.get('country'):
-                        exam_countries = [exam.get('country')]
-                    exam_country_map[exam['id']] = exam_countries
-            
-            # 过滤访谈
+                    exam_country_map[exam['id']] = parse_exam_countries(exam)
+                    print(f"  考试 ID={exam['id']}, countries={exam.get('countries')}, 解析后={exam_country_map[exam['id']]}")
+
             filtered = []
             for inv in all_interviews:
                 exam_countries = exam_country_map.get(inv.get('exam_id'), [])
-                # 检查是否有交集
+                print(f"  访谈 {inv['id']}: exam_countries={exam_countries}, 是否在权限内={any(c in allowed for c in exam_countries)}")
                 if any(c in allowed for c in exam_countries):
                     filtered.append(inv)
             all_interviews = filtered
-        
-        # 分页
+            print(f"📋 过滤后剩余 {len(all_interviews)} 条访谈")
+
         total = len(all_interviews)
         start = (page - 1) * per_page
         end = start + per_page
         interviews = all_interviews[start:end]
-        
-        # 收集当前页所有访谈涉及的用户ID，用于批量查询国家
+
+        # 收集用户ID用于统计
         all_user_ids = set()
         for inv in interviews:
             user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
             all_user_ids.update(r['user_id'] for r in (user_res.data or []))
-        
-        # 批量查询用户国家
+
         user_country_map = {}
         if allowed is not None and all_user_ids:
             users_res = db.table("users").select("id, country").in_("id", list(all_user_ids)).execute()
             user_country_map = {u['id']: u.get('country') for u in (users_res.data or [])}
-        
+
         now = datetime.now(timezone.utc)
         for inv in interviews:
-            # 动态计算状态
+            # 计算状态
             start_time = inv.get('start_time')
             end_time = inv.get('end_time')
             if not start_time or not end_time:
@@ -115,13 +110,11 @@ def api_admin_interviews():
                         inv['status'] = 'active'
                 except:
                     inv['status'] = 'draft'
-            
-            # 统计去重人数（应用国家权限过滤）
-            # ✅ 只保留在职用户
+
+            # 统计人数
             user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
             user_ids = [r['user_id'] for r in (user_res.data or [])]
 
-            # ✅ 先过滤离职人员
             if user_ids:
                 active_users = db.table("users").select("id").in_("id", user_ids).eq("is_resign", False).execute()
                 active_user_ids = [u['id'] for u in (active_users.data or [])]
@@ -133,14 +126,35 @@ def api_admin_interviews():
                 inv['interviewee_count'] = len(set(filtered_ids))
             else:
                 inv['interviewee_count'] = len(set(active_user_ids))
-            
-            # 附加考试信息
+
+            # ✅ 附加考试信息 - 使用 parse_exam_countries 解析国家
             if inv.get('exam_id'):
-                exam_res = db.table("exams").select("title, country").eq("id", inv['exam_id']).maybe_single().execute()
+                exam_res = db.table("exams").select("title, country, countries").eq("id", inv['exam_id']).maybe_single().execute()
                 if exam_res.data:
                     inv['exam_title'] = exam_res.data.get('title', '')
-                    inv['country'] = exam_res.data.get('country', '')
-        
+
+                    # ✅ 使用 parse_exam_countries 解析多国家字段
+                    exam_countries = parse_exam_countries(exam_res.data)
+
+                    # ✅ 添加调试日志
+                    logger.info(f"访谈 {inv['id']}: exam_id={inv['exam_id']}, exam_countries={exam_countries}")
+
+                    # 根据管理员权限过滤国家显示
+                    if allowed is not None and allowed:
+                        filtered_countries = [c for c in exam_countries if c in allowed]
+                        inv['country'] = ', '.join(filtered_countries) if filtered_countries else ''
+                        logger.info(f"  权限过滤后: {filtered_countries}")
+                    else:
+                        inv['country'] = ', '.join(exam_countries) if exam_countries else ''
+                        logger.info(f"  最终国家: {inv['country']}")
+
+                    inv['exam_countries'] = exam_countries
+
+        for inv in interviews:
+            print(f"📤 返回访谈 {inv['id']}: country={inv.get('country')}")
+
+        print("=" * 60)
+
         return jsonify({"data": interviews, "total": total, "page": page, "per_page": per_page})
 
     elif request.method == 'POST':
@@ -839,8 +853,6 @@ def api_admin_delete_interview_user_result(interview_id, user_id):
     exam_id = interview.get('exam_id')
     
     # ✅ 修复：检查考试的国家权限（支持多国家）
-    from routes.helpers import parse_exam_countries
-    
     exam_data = None
     if exam_id:
         exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
@@ -915,7 +927,6 @@ def api_admin_batch_delete_interview_results(interview_id):
     exam_id = interview.get('exam_id')
     
     # ✅ 修复：检查考试的国家权限（支持多国家）
-    from routes.helpers import parse_exam_countries, can_access_exam
     
     # 先获取考试信息
     exam_data = None
@@ -1316,7 +1327,7 @@ def force_resample_interview(interview_id):
     if allowed is not None:
         exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
         if exam_res.data:
-            from routes.helpers import parse_exam_countries
+
             exam_countries = parse_exam_countries(exam_res.data)
             if not any(c in allowed for c in exam_countries):
                 return jsonify({"success": False, "message": "no_permission_for_interview", "params": []}), 403

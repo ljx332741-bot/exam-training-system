@@ -486,13 +486,15 @@
                             <label class="form-label fw-bold" for="filterQuarter">
                                 <span data-i18n="quarter">季度</span>
                             </label>
-                            <input type="text" id="filterQuarter" class="form-control" list="quarterDatalist"
-								title="示例:2026Q1"
-								data-i18n-title="title_quarter_example"
-								placeholder="选择或输入"
-								data-i18n-placeholder="placeholder_quarter"
-								autocomplete="off">
-                            <datalist id="quarterDatalist"></datalist>
+							<div class="position-relative">
+								<input type="text" id="filterQuarter" class="form-control" list="quarterDatalist"
+									title="示例:2026Q1"
+									data-i18n-title="title_quarter_example"
+									placeholder="选择或输入"
+									data-i18n-placeholder="placeholder_quarter"
+									autocomplete="off">
+								<datalist id="quarterDatalist"></datalist>
+							</div>
                         </div>
                         <div class="col-md-3">
                             <button type="button" id="clearQuarterBtn" class="btn btn-outline-secondary w-100">
@@ -827,10 +829,13 @@
             this._syncToDOM();
         },
         
-        // 同步状态到DOM
+        // 同步状态到DOM0617
         _syncToDOM() {
             const trainingNameInput = document.getElementById('filterTrainingName');
-            if (trainingNameInput) trainingNameInput.value = this.state.training.name;
+            if (trainingNameInput) {
+                trainingNameInput.value = this.state.training.name;
+                trainingNameInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+            }
             
             const selectedTrainingId = document.getElementById('selectedTrainingId');
             if (selectedTrainingId) selectedTrainingId.value = this.state.training.id;
@@ -842,7 +847,10 @@
             if (selectedTrainingEnd) selectedTrainingEnd.value = this.state.training.end;
             
             const examNameInput = document.getElementById('filterExamName');
-            if (examNameInput) examNameInput.value = this.state.exam.name;
+            if (examNameInput) {
+                examNameInput.value = this.state.exam.name;
+                examNameInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+            }
             
             const selectedExamId = document.getElementById('selectedExamId');
             if (selectedExamId) selectedExamId.value = this.state.exam.id;
@@ -854,13 +862,19 @@
             if (selectedExamEnd) selectedExamEnd.value = this.state.exam.end;
             
             const countryInput = document.getElementById('exportCountryInput');
-            if (countryInput) countryInput.value = this.state.country.display;
+            if (countryInput) {
+                countryInput.value = this.state.country.display;
+                countryInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+            }
             
             const countryCodeHidden = document.getElementById('exportCountryCode');
             if (countryCodeHidden) countryCodeHidden.value = this.state.country.code;
             
             const warehouseInput = document.getElementById('filterWhId');
-            if (warehouseInput) warehouseInput.value = this.state.warehouse;
+            if (warehouseInput) {
+                warehouseInput.value = this.state.warehouse;
+                warehouseInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+            }
             
             const startDateInput = document.getElementById('filterStartDate');
             if (startDateInput) startDateInput.value = this.state.startDate;
@@ -1651,36 +1665,62 @@
         const dropdown = document.getElementById('countryDropdown');
         if (!container) return;
         
-        const countries = ExportFilterStore.getCountries();
-        let filtered = countries;
+        // ✅ 收集培训中出现的国家
+        const trainingCountries = new Set();
+        const trainings = ExportFilterStore.cache.trainings || [];
+        trainings.forEach(t => {
+            if (t.country) trainingCountries.add(t.country);
+        });
         
+        // ✅ 收集考试中出现的国家
+        const examCountries = new Set();
+        const exams = ExportFilterStore.cache.exams || [];
+        exams.forEach(e => {
+            const countries = e.countries || [];
+            if (Array.isArray(countries)) {
+                countries.forEach(c => examCountries.add(c));
+            }
+        });
+        
+        // ✅ 合并所有出现的国家
+        const availableCountryCodes = new Set([...trainingCountries, ...examCountries]);
+        
+        // ✅ 从所有权限范围内的国家中，只保留有数据的
+        const allCountries = ExportFilterStore.getCountries();
+        let filtered = allCountries.filter(c => availableCountryCodes.has(c.code));
+        
+        // 如果有搜索词，进一步过滤
         if (searchTerm) {
             const term = searchTerm.toLowerCase();
-            filtered = countries.filter(c => 
+            filtered = filtered.filter(c => 
                 c.name_zh?.toLowerCase().includes(term) ||
                 c.name_en?.toLowerCase().includes(term) ||
                 c.code?.toLowerCase().includes(term)
             );
         }
         
+        // ✅ 按国家代码字母排序（A-Z）
+        filtered.sort((a, b) => a.code.localeCompare(b.code));
+        
         if (!filtered.length) {
-            container.innerHTML = '<div class="p-3 text-center text-muted">暂无国家数据</div>';
+            container.innerHTML = '<div class="p-3 text-center text-muted">暂无数据</div>';
+            if (dropdown) dropdown.style.display = 'block';
             return;
         }
         
-        const lang = window.i18n?.currentLang === 'en' ? 'en' : 'zh';
-        
         let html = '';
-        filtered.slice(0, 30).forEach(country => {
-            const displayName = lang === 'zh' ? country.name_zh : country.name_en;
+        filtered.forEach(country => {
+            // ✅ 显示格式：代码, 中文名称, 英文名称
+            const displayText = `${country.code}, ${country.name_zh}, ${country.name_en}`;
             html += `
                 <div class="export-dropdown-item" 
                     data-code="${country.code}" 
                     data-name-zh="${escapeHtml(country.name_zh)}"
                     data-name-en="${escapeHtml(country.name_en)}">
-                    <div class="item-title">${escapeHtml(displayName)}</div>
+                    <div class="item-title">${escapeHtml(displayText)}</div>
                     <div class="item-meta">
                         <span><i class="bi bi-tag"></i> ${escapeHtml(country.code)}</span>
+                        <span><i class="bi bi-file-text"></i> ${trainingCountries.has(country.code) ? '培训' : ''}${examCountries.has(country.code) ? ' 考试' : ''}</span>
                     </div>
                 </div>
             `;
@@ -1887,47 +1927,41 @@
         return true;
     }
 
-	// 初始化所有清空按钮
-	function initClearButtons() {
-		console.log('初始化清空按钮...');
-		
-		// 定义需要初始化的按钮配置
-		const clearButtonsConfig = [
-			{ inputId: 'filterTrainingName', targets: ['selectedTrainingId', 'selectedTrainingStart', 'selectedTrainingEnd'] },
-			{ inputId: 'filterExamName', targets: ['selectedExamId', 'selectedExamStart', 'selectedExamEnd'] },
-			{ inputId: 'exportCountryInput', targets: ['exportCountryCode'] },
-			{ inputId: 'filterWhId', targets: [] },
-			{ inputId: 'filterQuarter', targets: [] }
-		];
-		
-		// 尝试初始化所有按钮
-		function tryInit() {
-			let allFound = true;
-			
-			clearButtonsConfig.forEach(config => {
-				const input = document.getElementById(config.inputId);
-				const clearBtn = document.querySelector(`.input-clear-btn[data-target="${config.inputId}"]`);
-				
-				if (!input || !clearBtn) {
-					console.log(`等待元素加载: ${config.inputId}, input=${!!input}, btn=${!!clearBtn}`);
-					allFound = false;
-				} else {
-					setupClearButton(config.inputId, config.targets);
-				}
-			});
-			
-			// 如果有元素未找到，1秒后重试
-			if (!allFound) {
-				console.log('部分元素未找到，1秒后重试...');
-				setTimeout(tryInit, 1000);
-			} else {
-				console.log('所有清空按钮初始化完成');
-			}
-		}
-		
-		// 延迟500ms后开始尝试
-		setTimeout(tryInit, 500);
-	}
+	// 初始化所有清空按钮0617
+    function initClearButtons() {
+        console.log('初始化清空按钮...');
+        
+        const clearButtonsConfig = [
+            { inputId: 'filterTrainingName', targets: ['selectedTrainingId', 'selectedTrainingStart', 'selectedTrainingEnd'] },
+            { inputId: 'filterExamName', targets: ['selectedExamId', 'selectedExamStart', 'selectedExamEnd'] },
+            { inputId: 'exportCountryInput', targets: ['exportCountryCode'] },
+            { inputId: 'filterWhId', targets: [] }
+        ];
+        
+        clearButtonsConfig.forEach(config => {
+            const input = document.getElementById(config.inputId);
+            const clearBtn = document.querySelector(`.input-clear-btn[data-target="${config.inputId}"]`);
+            
+            if (input && clearBtn) {
+                setupClearButton(config.inputId, config.targets);
+                console.log(`✅ 初始化成功: ${config.inputId}`);
+            } else {
+                console.warn(`⚠️ 跳过: ${config.inputId}`);
+            }
+        });
+        
+        // ✅ 延迟检查所有输入框，显示已有值的删除按钮
+        setTimeout(() => {
+            document.querySelectorAll('.input-clear-btn').forEach(btn => {
+                const targetId = btn.dataset.target;
+                const input = document.getElementById(targetId);
+                if (input && input.value && input.value.trim() !== '') {
+                    btn.style.display = 'block';
+                    console.log(`🔄 延迟显示 ${targetId} 的删除按钮`);
+                }
+            });
+        }, 200);
+    }
 
 
 	// 绑定PDF批量导出按钮事件
@@ -2089,59 +2123,60 @@
 	let currentExamIdForSetting = null;
 
 	async function openSettingModal(examId) {
-	currentExamIdForSetting = examId;
+		currentExamIdForSetting = examId;
 
-	// ✅ 显示加载状态
-	const saveBtn = document.getElementById('saveSettingBtn');
-	const pushBtn = document.getElementById('confirmSettingBtn');
-	const originalSaveText = saveBtn ? saveBtn.innerHTML : '';
-	const originalPushText = pushBtn ? pushBtn.innerHTML : '';
-	if (saveBtn) {
-		saveBtn.disabled = true;
-		saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 加载中...';
-	}
-	if (pushBtn) {
-		pushBtn.disabled = true;
-		pushBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 加载中...';
-	}
-	
-	try {
-		const res = await fetch(`/api/admin/exam/${examId}`);
-		if (res.ok) {
-		const data = await res.json();
-			
-		document.getElementById('settingStartTime').value = formatLocalTime(data.start_time);
-		document.getElementById('settingEndTime').value = formatLocalTime(data.end_time);
-		document.getElementById('settingDuration').value = data.duration || 60;
-		document.getElementById('settingReviewer').value = data.reviewer || '';
-			
-		} else {
-		// 清空
-		document.getElementById('settingStartTime').value = '';
-		document.getElementById('settingEndTime').value = '';
-		document.getElementById('settingDuration').value = 60;
-		document.getElementById('settingReviewer').value = '';
-		}
-		await loadUserList();
-		new bootstrap.Modal(document.getElementById('settingModal')).show();
-	} catch(e) {
-		if (typeof showToast === 'function') {
-			showToast(t('load_failed'), 'error');
-		}
-	} finally {
-		// 恢复按钮状态
+		// ✅ 显示加载状态
+		const saveBtn = document.getElementById('saveSettingBtn');
+		const pushBtn = document.getElementById('confirmSettingBtn');
+		const originalSaveText = saveBtn ? saveBtn.innerHTML : '';
+		const originalPushText = pushBtn ? pushBtn.innerHTML : '';
 		if (saveBtn) {
-			saveBtn.disabled = false;
-			saveBtn.innerHTML = originalSaveText;
+			saveBtn.disabled = true;
+			saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 加载中...';
 		}
 		if (pushBtn) {
-			pushBtn.disabled = false;
-			pushBtn.innerHTML = originalPushText;
+			pushBtn.disabled = true;
+			pushBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 加载中...';
 		}
-	}
+		
+		try {
+			const res = await fetch(`/api/admin/exam/${examId}`);
+			if (res.ok) {
+			const data = await res.json();
+				
+			document.getElementById('settingStartTime').value = formatLocalTime(data.start_time);
+			document.getElementById('settingEndTime').value = formatLocalTime(data.end_time);
+			document.getElementById('settingDuration').value = data.duration || 60;
+			document.getElementById('settingReviewer').value = data.reviewer || '';
+				
+			} else {
+			// 清空
+			document.getElementById('settingStartTime').value = '';
+			document.getElementById('settingEndTime').value = '';
+			document.getElementById('settingDuration').value = 60;
+			document.getElementById('settingReviewer').value = '';
+			}
+			await loadUserList();
+			new bootstrap.Modal(document.getElementById('settingModal')).show();
+		} catch(e) {
+			if (typeof showToast === 'function') {
+				showToast(t('load_failed'), 'error');
+			}
+		} finally {
+			// 恢复按钮状态
+			if (saveBtn) {
+				saveBtn.disabled = false;
+				saveBtn.innerHTML = originalSaveText;
+			}
+			if (pushBtn) {
+				pushBtn.disabled = false;
+				pushBtn.innerHTML = originalPushText;
+			}
+		}
 	}
 
 	// 3.2 加载用户列表（修改原函数，增加勾选已有考生功能）
+
     async function loadUserList() {
         const search = document.getElementById('userSearch').value;
         const examId = currentExamIdForSetting;
@@ -2237,6 +2272,7 @@
             tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败，请重试</td></tr>';
         }
     }
+
 
 	// 3.3 刷新用户列表按钮
 	document.getElementById('loadUsersBtn')?.addEventListener('click', async () => {
