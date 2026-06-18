@@ -2519,7 +2519,7 @@ def update_training_binding(binding_id):
     
     result = db.table("training_exam_bindings").update(update_data)\
         .eq("id", binding_id)\
-        .eq("deleted_at", None)\
+        .is_("deleted_at", "null")\
         .execute()
     
     if result.data:
