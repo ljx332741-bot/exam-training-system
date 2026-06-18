@@ -1259,8 +1259,8 @@ def get_training_bindings_by_exam():
     
     try:
         exam_id_int = int(exam_id)
-        db = get_supabase()
-        
+        #db = get_supabase()
+        db = get_supabase_admin()
         # 查询该考试绑定的培训
         bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).execute()
         training_ids = list(set([b['training_id'] for b in (bindings_res.data or [])]))

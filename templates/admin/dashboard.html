@@ -90,6 +90,53 @@
 	.position-relative {
 		position: relative;
 	}
+	/* 锁定状态样式 */
+	.lockable-field.locked {
+		background-color: #e9ecef !important;
+		cursor: not-allowed !important;
+		opacity: 0.7;
+	}
+
+	.lockable-field.locked::placeholder {
+		color: #adb5bd;
+	}
+
+	/* 锁定时禁用下拉面板触发 */
+	.lockable-field.locked + .input-clear-btn {
+		display: none !important;
+	}
+	/* 综合筛选列表样式 */
+	#multiTrainingList .list-group-item.active,
+	#multiExamList .list-group-item.active {
+		background-color: #e7f3ff;
+		border-color: #b6d4fe;
+	}
+
+	#multiTrainingList .list-group-item:hover,
+	#multiExamList .list-group-item:hover {
+		background-color: #f8f9fa;
+	}
+
+	#multiTrainingList .list-group-item.active:hover,
+	#multiExamList .list-group-item.active:hover {
+		background-color: #d4e8ff;
+	}
+
+	/* 已选标签样式 */
+	.badge .remove-selection {
+		opacity: 0.7;
+		transition: opacity 0.2s;
+	}
+	.badge .remove-selection:hover {
+		opacity: 1;
+	}
+
+	/* Tab 切换样式 */
+	.nav-tabs .nav-link {
+		color: #495057;
+	}
+	.nav-tabs .nav-link.active {
+		font-weight: 600;
 	}
 </style>
 {% endblock %}
@@ -400,194 +447,351 @@
 	</div>
 </div>
 
-<!-- 导出Excel筛选模态框 - 优化版 -->
+<!-- 导出Excel筛选模态框 - 增强版（带Tab切换） -->
 <div class="modal fade" id="exportFilterModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><span data-i18n="exportfiltermodal">导出培训考试综合报告</span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="exportFilterForm">
-                    <!-- 第1行：培训名称 + 考试名称 -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold" for="filterTrainingName">
-                                <span data-i18n="training_name">培训名称</span>
-                            </label>
-                            <div class="position-relative">
-                                <input type="text" id="filterTrainingName" class="form-control" 
-									placeholder="点击选择培训或输入搜索..." 
-									data-i18n-placeholder="placeholder_click_or_search_training"
-									autocomplete="off">
-									<span class="input-clear-btn" data-target="filterTrainingName" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
-										<i class="bi bi-x-circle-fill"></i>
-									</span>
-                                <div id="trainingDropdown" class="export-dropdown" style="display: none;">
-                                    <div class="dropdown-header">📋 <span data-i18n="recent_training">最近创建的培训</span></div>
-                                    <div id="trainingListContainer"></div>
-                                    <div id="trainingSearchLoading" class="p-2 text-center text-muted" style="display: none;">
-                                        <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
-                                    </div>
-                                    <div id="trainingNoResult" class="p-3 text-center text-muted" style="display: none;">
-                                        <span data-i18n="no_matching_traing_was_found">未找到匹配的培训</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" id="selectedTrainingId">
-                            <input type="hidden" id="selectedTrainingStart" value="">
-                            <input type="hidden" id="selectedTrainingEnd" value="">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold" for="filterExamName">
-                                <span data-i18n="exam_name">考试名称</span>
-                            </label>
-                            <div class="position-relative">
-                                <input type="text" id="filterExamName" class="form-control" 
-									placeholder="点击选择考试或输入搜索..." 
-									data-i18n-placeholder="placeholder_click_or_search_exam"
-									autocomplete="off">
-									<span class="input-clear-btn" data-target="filterExamName" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
-										<i class="bi bi-x-circle-fill"></i>
-									</span>
-                                <div id="examDropdown" class="export-dropdown" style="display: none;">
-                                    <div class="dropdown-header">📋 <span data-i18n="recent_examination">最近创建的考试</span></div>
-                                    <div id="examListContainer"></div>
-                                    <div id="examSearchLoading" class="p-2 text-center text-muted" style="display: none;">
-                                        <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
-                                    </div>
-                                    <div id="examNoResult" class="p-3 text-center text-muted" style="display: none;">
-                                        <span data-i18n="no_matching_exam_was_found">未找到匹配的考试</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <input type="hidden" id="selectedExamId">
-                            <input type="hidden" id="selectedExamStart" value="">
-                            <input type="hidden" id="selectedExamEnd" value="">
-                        </div>
-                    </div>
+                <!-- ✅ Tab 切换 -->
+                <ul class="nav nav-tabs mb-3" id="exportTab" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="exact-tab" data-bs-toggle="tab" data-bs-target="#exact" type="button" role="tab">
+                            <i class="bi bi-target"></i> <span data-i18n="exact_filter">精确筛选</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="multi-tab" data-bs-toggle="tab" data-bs-target="#multi" type="button" role="tab">
+                            <i class="bi bi-list-check"></i> <span data-i18n="multi_filter">综合筛选</span>
+                            <span class="badge bg-primary ms-1" id="multiSelectedCount">0</span>
+                        </button>
+                    </li>
+                </ul>
 
-                    <!-- 第2行：开始日期 + 结束日期 + 季度条件 -->
-                    <div class="row g-3 mb-3 align-items-end">
-                        <div class="col-md-3">
-                            <label class="form-label fw-bold" for="filterStartDate">
-                                <span data-i18n="training_start">开始日期</span>
-                            </label>
-                            <input type="date" id="filterStartDate" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-bold" for="filterEndDate">
-                                <span data-i18n="training_end">结束日期</span>
-                            </label>
-                            <input type="date" id="filterEndDate" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label fw-bold" for="filterQuarter">
-                                <span data-i18n="quarter">季度</span>
-                            </label>
-							<div class="position-relative">
-								<input type="text" id="filterQuarter" class="form-control" list="quarterDatalist"
-									title="示例:2026Q1"
-									data-i18n-title="title_quarter_example"
-									placeholder="选择或输入"
-									data-i18n-placeholder="placeholder_quarter"
-									autocomplete="off">
-								<datalist id="quarterDatalist"></datalist>
-							</div>
-                        </div>
-                        <div class="col-md-3">
-                            <button type="button" id="clearQuarterBtn" class="btn btn-outline-secondary w-100">
-                                <i class="bi bi-x-circle"></i> <span data-i18n="clear_quarter">清空季度</span>
-                            </button>
-                        </div>
-                    </div>
-
-                    <!-- 第3行：日期范围单选按钮组 -->
-                    <div class="row g-3 mb-3">
-                        <div class="col-md-12">
-                            <div class="card bg-light">
-                                <div class="card-body py-2">
-                                    <label class="form-label fw-bold mb-2">
-                                        <span data-i18n="date_range_quick_setup">日期范围快速设置</span>
+                <!-- Tab 内容 -->
+                <div class="tab-content">
+                    <!-- ========== 精确筛选 Tab（现有内容） ========== -->
+                    <div class="tab-pane fade show active" id="exact" role="tabpanel">
+                        <form id="exportFilterForm">
+                            <!-- 第1行：培训名称 + 考试名称 -->
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="filterTrainingName">
+                                        <span data-i18n="training_name">培训名称</span>
                                     </label>
-                                    <div class="btn-group w-100" role="group">
-                                        <input type="radio" class="btn-check" name="dateRangeOption" id="dateRangeCurrent" value="current" autocomplete="off">
-                                        <label class="btn btn-outline-primary" for="dateRangeCurrent">
-                                            <i class="bi bi-calendar-week"></i> <span data-i18n="current_quarter">当前季度</span>
-                                        </label>
-                                        
-                                        <input type="radio" class="btn-check" name="dateRangeOption" id="dateRangePrevious" value="previous" autocomplete="off">
-                                        <label class="btn btn-outline-primary" for="dateRangePrevious">
-                                            <i class="bi bi-calendar-minus"></i> <span data-i18n="previous_quarter">上一季度</span>
-                                        </label>
-                                        
-                                        <input type="radio" class="btn-check" name="dateRangeOption" id="dateRangeAll" value="all" autocomplete="off">
-                                        <label class="btn btn-outline-primary" for="dateRangeAll">
-                                            <i class="bi bi-infinity"></i> <span data-i18n="all_time">全部</span>
-                                        </label>
+                                    <div class="position-relative">
+                                        <input type="text" id="filterTrainingName" class="form-control" 
+                                            placeholder="点击选择培训或输入搜索..." 
+                                            data-i18n-placeholder="placeholder_click_or_search_training"
+                                            autocomplete="off">
+                                        <span class="input-clear-btn" data-target="filterTrainingName" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </span>
+                                        <div id="trainingDropdown" class="export-dropdown" style="display: none;">
+                                            <div class="dropdown-header">📋 <span data-i18n="recent_training">最近创建的培训</span></div>
+                                            <div id="trainingListContainer"></div>
+                                            <div id="trainingSearchLoading" class="p-2 text-center text-muted" style="display: none;">
+                                                <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
+                                            </div>
+                                            <div id="trainingNoResult" class="p-3 text-center text-muted" style="display: none;">
+                                                <span data-i18n="no_matching_traing_was_found">未找到匹配的培训</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" id="selectedTrainingId">
+                                    <input type="hidden" id="selectedTrainingStart" value="">
+                                    <input type="hidden" id="selectedTrainingEnd" value="">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="filterExamName">
+                                        <span data-i18n="exam_name">考试名称</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text" id="filterExamName" class="form-control" 
+                                            placeholder="点击选择考试或输入搜索..." 
+                                            data-i18n-placeholder="placeholder_click_or_search_exam"
+                                            autocomplete="off">
+                                        <span class="input-clear-btn" data-target="filterExamName" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </span>
+                                        <div id="examDropdown" class="export-dropdown" style="display: none;">
+                                            <div class="dropdown-header">📋 <span data-i18n="recent_examination">最近创建的考试</span></div>
+                                            <div id="examListContainer"></div>
+                                            <div id="examSearchLoading" class="p-2 text-center text-muted" style="display: none;">
+                                                <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
+                                            </div>
+                                            <div id="examNoResult" class="p-3 text-center text-muted" style="display: none;">
+                                                <span data-i18n="no_matching_exam_was_found">未找到匹配的考试</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" id="selectedExamId">
+                                    <input type="hidden" id="selectedExamStart" value="">
+                                    <input type="hidden" id="selectedExamEnd" value="">
+                                </div>
+                            </div>
+
+                            <!-- 第2行：开始日期 + 结束日期 + 季度条件 -->
+                            <div class="row g-3 mb-3 align-items-end">
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold" for="filterStartDate">
+                                        <span data-i18n="training_start">开始日期</span>
+                                    </label>
+                                    <input type="date" id="filterStartDate" class="form-control lockable-field">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold" for="filterEndDate">
+                                        <span data-i18n="training_end">结束日期</span>
+                                    </label>
+                                    <input type="date" id="filterEndDate" class="form-control lockable-field">
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label fw-bold" for="filterQuarter">
+                                        <span data-i18n="quarter">季度</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text" id="filterQuarter" class="form-control lockable-field" list="quarterDatalist"
+                                            title="示例:2026Q1"
+                                            data-i18n-title="title_quarter_example"
+                                            placeholder="选择或输入"
+                                            data-i18n-placeholder="placeholder_quarter"
+                                            autocomplete="off">
+                                        <span class="input-clear-btn" data-target="filterQuarter" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999; z-index: 10; background: white; padding-left: 5px;">
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </span>
+                                        <div id="quarterDropdown" class="export-dropdown" style="display: none;">
+                                            <div class="dropdown-header">📋 选择季度</div>
+                                            <div id="quarterListContainer"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-md-3">
+                                    <button type="button" id="clearAllBtn" class="btn btn-outline-secondary w-100">
+                                        <i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空所有</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 第3行：日期范围单选按钮组 -->
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-12">
+                                    <div class="card bg-light">
+                                        <div class="card-body py-2">
+                                            <label class="form-label fw-bold mb-2">
+                                                <span data-i18n="date_range_quick_setup">日期范围快速设置</span>
+                                            </label>
+                                            <div class="btn-group w-100" role="group">
+                                                <input type="radio" class="btn-check" name="dateRangeOption" id="dateRangeCurrent" value="current" autocomplete="off">
+                                                <label class="btn btn-outline-primary" for="dateRangeCurrent">
+                                                    <i class="bi bi-calendar-week"></i> <span data-i18n="current_quarter">当前季度</span>
+                                                </label>
+                                                
+                                                <input type="radio" class="btn-check" name="dateRangeOption" id="dateRangePrevious" value="previous" autocomplete="off">
+                                                <label class="btn btn-outline-primary" for="dateRangePrevious">
+                                                    <i class="bi bi-calendar-minus"></i> <span data-i18n="previous_quarter">上一季度</span>
+                                                </label>
+                                                
+                                                <input type="radio" class="btn-check" name="dateRangeOption" id="dateRangeAll" value="all" autocomplete="off">
+                                                <label class="btn btn-outline-primary" for="dateRangeAll">
+                                                    <i class="bi bi-infinity"></i> <span data-i18n="all_time">全部</span>
+                                                </label>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
+
+                            <!-- 第4行：国家 + 库房 -->
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="exportCountryInput">
+                                        <span data-i18n="country">国家</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text" id="exportCountryInput" class="form-control lockable-field" 
+                                            placeholder="点击选择国家或输入搜索..." 
+                                            data-i18n-placeholder="placeholder_coutry_search"
+                                            autocomplete="off">
+                                        <span class="input-clear-btn" data-target="exportCountryInput" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </span>
+                                        <div id="countryDropdown" class="export-dropdown" style="display: none;">
+                                            <div class="dropdown-header">🌍 可选国家</div>
+                                            <div id="countryListContainer"></div>
+                                            <div id="countrySearchLoading" class="p-2 text-center text-muted" style="display: none;">
+                                                <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
+                                            </div>
+                                            <div id="countryNoResult" class="p-3 text-center text-muted" style="display: none;">
+                                                未找到匹配的国家
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <input type="hidden" id="exportCountryCode">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label fw-bold" for="filterWhId">
+                                        <span data-i18n="wh_id_name">库房编码/名称</span>
+                                    </label>
+                                    <div class="position-relative">
+                                        <input type="text" id="filterWhId" class="form-control lockable-field" 
+                                               placeholder="点击选择库房或输入搜索..." 
+                                               data-i18n-placeholder="placeholder_coutry_search_wh"
+                                               autocomplete="off">
+                                        <span class="input-clear-btn" data-target="filterWhId" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
+                                            <i class="bi bi-x-circle-fill"></i>
+                                        </span>
+                                        <div id="warehouseDropdown" class="export-dropdown" style="display: none;">
+                                            <div class="dropdown-header">🏢 <span data-i18n="recent_warehouse">最近使用的库房</span></div>
+                                            <div id="warehouseListContainer"></div>
+                                            <div id="warehouseSearchLoading" class="p-2 text-center text-muted" style="display: none;">
+                                                <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
+                                            </div>
+                                            <div id="warehouseNoResult" class="p-3 text-center text-muted" style="display: none;">
+                                                <span data-i18n="no_matching_wh_was_found">未找到匹配的库房</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
                     </div>
 
-                    <!-- 第4行：国家 + 库房 -->
-                    <div class="row g-3">
-						<div class="col-md-6">
-							<label class="form-label fw-bold" for="exportCountryInput">
-								<span data-i18n="country">国家</span>
-							</label>
-							<div class="position-relative">
-								<input type="text" id="exportCountryInput" class="form-control" 
-									placeholder="点击选择国家或输入搜索..." 
-									data-i18n-placeholder="placeholder_coutry_search"
-									autocomplete="off">
-								<span class="input-clear-btn" data-target="exportCountryInput" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
-									<i class="bi bi-x-circle-fill"></i>
-								</span>
-								<div id="countryDropdown" class="export-dropdown" style="display: none;">
-									<div class="dropdown-header">🌍 可选国家</div>
-									<div id="countryListContainer"></div>
-									<div id="countrySearchLoading" class="p-2 text-center text-muted" style="display: none;">
-										<div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
-									</div>
-									<div id="countryNoResult" class="p-3 text-center text-muted" style="display: none;">
-										未找到匹配的国家
-									</div>
-								</div>
-							</div>
-							<input type="hidden" id="exportCountryCode">
-						</div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-bold" for="filterWhId">
-                                <span data-i18n="wh_id_name">库房编码/名称</span>
-                            </label>
-                            <div class="position-relative">
-                                <input type="text" id="filterWhId" class="form-control" 
-                                       placeholder="点击选择库房或输入搜索..." 
-                                       data-i18n-placeholder="placeholder_coutry_search_wh"
-                                       autocomplete="off">
-								<span class="input-clear-btn" data-target="filterWhId" style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999;">
-									<i class="bi bi-x-circle-fill"></i>
-								</span>
-                                <div id="warehouseDropdown" class="export-dropdown" style="display: none;">
-                                    <div class="dropdown-header">🏢 <span data-i18n="recent_warehouse">最近使用的库房</span></div>
-                                    <div id="warehouseListContainer"></div>
-                                    <div id="warehouseSearchLoading" class="p-2 text-center text-muted" style="display: none;">
-                                        <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
+                    <!-- ========== 综合筛选 Tab（新内容） ========== -->
+                    <div class="tab-pane fade" id="multi" role="tabpanel">
+                        <!-- 筛选条件区域 -->
+                        <div class="card mb-3">
+                            <div class="card-body">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-bold" for="multiTrainingSearch">
+                                            <span data-i18n="training_name">培训名称</span>
+                                        </label>
+                                        <input type="text" id="multiTrainingSearch" class="form-control" 
+                                               placeholder="输入培训名称搜索..." data-i18n-placeholder="placeholder_multi_training_search">
                                     </div>
-                                    <div id="warehouseNoResult" class="p-3 text-center text-muted" style="display: none;">
-                                        <span data-i18n="no_matching_wh_was_found">未找到匹配的库房</span>
+                                    <div class="col-md-3">
+                                        <label class="form-label fw-bold" for="multiExamSearch">
+                                            <span data-i18n="exam_name">考试名称</span>
+                                        </label>
+                                        <input type="text" id="multiExamSearch" class="form-control" 
+                                               placeholder="输入考试名称搜索..." data-i18n-placeholder="placeholder_multi_exam_search">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold" for="multiCountry">
+                                            <span data-i18n="country">国家</span>
+                                        </label>
+                                        <input type="text" id="multiCountry" class="form-control" list="multiCountryDatalist"
+                                               placeholder="选择国家" data-i18n-placeholder="placeholder_country">
+                                        <datalist id="multiCountryDatalist"></datalist>
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold" for="multiWarehouse">
+                                            <span data-i18n="wh_id_name">库房</span>
+                                        </label>
+                                        <input type="text" id="multiWarehouse" class="form-control"
+                                               placeholder="库房编码/名称" data-i18n-placeholder="placeholder_wh_id">
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label fw-bold">&nbsp;</label>
+                                        <div class="d-flex gap-2">
+                                            <button id="multiSearchBtn" class="btn btn-primary flex-fill">
+                                                <i class="bi bi-search"></i> <span data-i18n="search">搜索</span>
+                                            </button>
+                                            <button id="multiResetBtn" class="btn btn-outline-secondary flex-fill">
+                                                <i class="bi bi-arrow-repeat"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 列表渲染区域 -->
+                        <div class="row g-3">
+                            <!-- 左侧：培训列表 -->
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                        <span><i class="bi bi-book"></i> <span data-i18n="training_list">培训列表</span></span>
+                                        <span class="badge bg-secondary" id="multiTrainingCount">0</span>
+                                    </div>
+                                    <div class="card-body p-0" style="max-height: 350px; overflow-y: auto;">
+                                        <div id="multiTrainingList" class="list-group list-group-flush">
+                                            <div class="list-group-item text-center text-muted py-3">
+                                                <i class="bi bi-search me-1"></i> <span data-i18n="enter_keyword_search">输入条件后搜索</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer bg-white py-1 d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">
+                                            <span data-i18n="selected">已选</span>: <span id="selectedTrainingCount">0</span>
+                                        </small>
+                                        <button class="btn btn-sm btn-outline-secondary select-all-trainings-btn">
+                                            <span data-i18n="select_all">全选</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 右侧：考试列表 -->
+                            <div class="col-md-6">
+                                <div class="card">
+                                    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                                        <span><i class="bi bi-file-text"></i> <span data-i18n="exam_list">考试列表</span></span>
+                                        <span class="badge bg-secondary" id="multiExamCount">0</span>
+                                    </div>
+                                    <div class="card-body p-0" style="max-height: 350px; overflow-y: auto;">
+                                        <div id="multiExamList" class="list-group list-group-flush">
+                                            <div class="list-group-item text-center text-muted py-3">
+                                                <i class="bi bi-search me-1"></i> <span data-i18n="enter_keyword_search">输入条件后搜索</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="card-footer bg-white py-1 d-flex justify-content-between align-items-center">
+                                        <small class="text-muted">
+                                            <span data-i18n="selected">已选</span>: <span id="selectedExamCount">0</span>
+                                        </small>
+                                        <button class="btn btn-sm btn-outline-secondary select-all-exams-btn">
+                                            <span data-i18n="select_all">全选</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 操作按钮区域 -->
+                        <div class="row g-3 mt-3">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-body py-2 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                                        <div class="d-flex flex-wrap align-items-center gap-2">
+                                            <span class="fw-bold"><span data-i18n="selected_training">已选培训</span>:</span>
+                                            <span id="selectedTrainingTags" class="text-muted"><span data-i18n="none">无</span></span>
+                                            <span class="text-muted">|</span>
+                                            <span class="fw-bold"><span data-i18n="selected_exam">已选考试</span>:</span>
+                                            <span id="selectedExamTags" class="text-muted"><span data-i18n="none">无</span></span>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-success" id="multiExportBtn">
+                                                <i class="bi bi-download"></i> <span data-i18n="export_multi_report">导出综合报告</span>
+                                            </button>
+                                            <button class="btn btn-outline-danger" id="multiClearSelectionBtn">
+                                                <i class="bi bi-x-circle"></i> <span data-i18n="clear_selection">清空选择</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </form>
-                
+                </div>
+
+                <!-- 提示信息 -->
                 <div class="form-text text-muted mt-3">
-                    <span data-i18n="exportfiltermodal_tip">提示：培训名称和考试名称支持点击选择或输入搜索。日期范围支持快捷选择，选中的项目会自动更新有效期。</span>
+                    <span data-i18n="exportfiltermodal_tip">提示：精确筛选支持单选，综合筛选支持多选培训/考试，可同时导出多份报告。</span>
                 </div>
             </div>
             <div class="modal-footer">
@@ -795,7 +999,15 @@
         }
     };
 
-    // 统一状态管理器
+	// 独立的删除按钮刷新函数
+	function refreshClearButton(inputId) {
+		const btn = document.querySelector(`.input-clear-btn[data-target="${inputId}"]`);
+		const input = document.getElementById(inputId);
+		if (!btn || !input) return;
+		btn.style.display = (input.value && input.value.trim() !== '') ? 'block' : 'none';
+	}
+
+    // ==================统一状态管理器======================
     const ExportFilterStore = {
         // 状态
         state: {
@@ -834,7 +1046,7 @@
             const trainingNameInput = document.getElementById('filterTrainingName');
             if (trainingNameInput) {
                 trainingNameInput.value = this.state.training.name;
-                trainingNameInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+				refreshClearButton('filterTrainingName');
             }
             
             const selectedTrainingId = document.getElementById('selectedTrainingId');
@@ -849,7 +1061,7 @@
             const examNameInput = document.getElementById('filterExamName');
             if (examNameInput) {
                 examNameInput.value = this.state.exam.name;
-                examNameInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+				refreshClearButton('filterExamName');
             }
             
             const selectedExamId = document.getElementById('selectedExamId');
@@ -864,7 +1076,7 @@
             const countryInput = document.getElementById('exportCountryInput');
             if (countryInput) {
                 countryInput.value = this.state.country.display;
-                countryInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+				refreshClearButton('exportCountryInput');
             }
             
             const countryCodeHidden = document.getElementById('exportCountryCode');
@@ -873,7 +1085,7 @@
             const warehouseInput = document.getElementById('filterWhId');
             if (warehouseInput) {
                 warehouseInput.value = this.state.warehouse;
-                warehouseInput.dispatchEvent(new Event('input'));  // ✅ 触发 input 事件
+				refreshClearButton('filterWhId');
             }
             
             const startDateInput = document.getElementById('filterStartDate');
@@ -883,7 +1095,10 @@
             if (endDateInput) endDateInput.value = this.state.endDate;
             
             const quarterInput = document.getElementById('filterQuarter');
-            if (quarterInput) quarterInput.value = this.state.quarter;
+			if (quarterInput) {
+				quarterInput.value = this.state.quarter;
+				refreshClearButton('filterQuarter');
+			}
             
             // 同步单选按钮
             const radioCurrent = document.getElementById('dateRangeCurrent');
@@ -893,6 +1108,11 @@
             if (radioCurrent) radioCurrent.checked = (this.state.dateRangeOption === 'current');
             if (radioPrevious) radioPrevious.checked = (this.state.dateRangeOption === 'previous');
             if (radioAll) radioAll.checked = (this.state.dateRangeOption === 'all');
+			
+			// ✅ 同步完成后，重新应用锁定状态
+			if (this.state.locked) {
+				this._applyLockState(true);
+			}
         },
         
         // 从DOM读取状态（用于初始化）
@@ -927,8 +1147,59 @@
             else if (radioAll?.checked) this.state.dateRangeOption = 'all';
             else this.state.dateRangeOption = '';
         },
-        
-        // 构建培训API参数
+
+		// ✅ ===================应用锁定状态到DOM（使用 CSS 类统一管理）===================
+		_applyLockState(locked) {
+			// ✅ 使用 CSS 类统一管理，而不是逐个字段硬编码
+			const lockableFields = document.querySelectorAll('.lockable-field');
+			lockableFields.forEach(element => {
+				element.disabled = locked;
+				element.classList.toggle('locked', locked);
+			});
+			
+			// ✅ 锁定/解锁清空所有按钮（保持可点击用于解锁，但改变样式提示）
+			const clearAllBtn = document.getElementById('clearAllBtn');
+			if (clearAllBtn) {
+				// 清空所有按钮保持可点击，但改变外观提示用户
+				if (locked) {
+					clearAllBtn.classList.add('btn-warning');
+					clearAllBtn.classList.remove('btn-outline-secondary');
+					clearAllBtn.innerHTML = '<i class="bi bi-lock"></i> 点击解锁并清空';
+				} else {
+					clearAllBtn.classList.remove('btn-warning');
+					clearAllBtn.classList.add('btn-outline-secondary');
+					clearAllBtn.innerHTML = '<i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空所有</span>';
+				}
+			}
+			
+			// ✅ 锁定/解锁下拉面板的触发（通过输入框的 disabled 状态自动阻止）
+			// 不需要额外处理，因为输入框 disabled 后无法触发 focus/click
+		},
+
+		// ✅ 检查是否应该锁定
+		_checkAndSetLock() {
+			const hasTraining = !!this.state.training.id;
+			const hasExam = !!this.state.exam.id;
+			
+			if (hasTraining && hasExam) {
+				this.state.locked = true;
+				this._applyLockState(true);
+				if (typeof showToast === 'function') {
+					showToast('培训和考试已同时选中，已锁定其他筛选条件', 'info');
+				}
+			} else {
+				this.state.locked = false;
+				this._applyLockState(false);
+			}
+		},
+
+		// ✅ 解锁方法（供清除操作调用）
+		_unlockFields() {
+			this.state.locked = false;
+			this._applyLockState(false);
+		},
+
+        // ==========================构建培训API参数=====================
         _buildTrainingParams(searchTerm = '') {
             const params = new URLSearchParams();
             if (searchTerm) params.append('q', searchTerm);
@@ -963,7 +1234,61 @@
             if (this.state.training.id) params.append('training_id', this.state.training.id);
             return params;
         },
-        
+
+		// 清空所有的辅助函数(cleanallbtn)
+		_syncToDOMWithoutTrigger() {
+			const trainingNameInput = document.getElementById('filterTrainingName');
+			if (trainingNameInput) trainingNameInput.value = this.state.training.name;
+			
+			const selectedTrainingId = document.getElementById('selectedTrainingId');
+			if (selectedTrainingId) selectedTrainingId.value = this.state.training.id;
+			
+			const selectedTrainingStart = document.getElementById('selectedTrainingStart');
+			if (selectedTrainingStart) selectedTrainingStart.value = this.state.training.start;
+			
+			const selectedTrainingEnd = document.getElementById('selectedTrainingEnd');
+			if (selectedTrainingEnd) selectedTrainingEnd.value = this.state.training.end;
+			
+			const examNameInput = document.getElementById('filterExamName');
+			if (examNameInput) examNameInput.value = this.state.exam.name;
+			
+			const selectedExamId = document.getElementById('selectedExamId');
+			if (selectedExamId) selectedExamId.value = this.state.exam.id;
+			
+			const selectedExamStart = document.getElementById('selectedExamStart');
+			if (selectedExamStart) selectedExamStart.value = this.state.exam.start;
+			
+			const selectedExamEnd = document.getElementById('selectedExamEnd');
+			if (selectedExamEnd) selectedExamEnd.value = this.state.exam.end;
+			
+			const countryInput = document.getElementById('exportCountryInput');
+			if (countryInput) countryInput.value = this.state.country.display;
+			
+			const countryCodeHidden = document.getElementById('exportCountryCode');
+			if (countryCodeHidden) countryCodeHidden.value = this.state.country.code;
+			
+			const warehouseInput = document.getElementById('filterWhId');
+			if (warehouseInput) warehouseInput.value = this.state.warehouse;
+			
+			const startDateInput = document.getElementById('filterStartDate');
+			if (startDateInput) startDateInput.value = this.state.startDate;
+			
+			const endDateInput = document.getElementById('filterEndDate');
+			if (endDateInput) endDateInput.value = this.state.endDate;
+			
+			const quarterInput = document.getElementById('filterQuarter');
+			if (quarterInput) quarterInput.value = this.state.quarter;
+			
+			// 同步单选按钮
+			const radioCurrent = document.getElementById('dateRangeCurrent');
+			const radioPrevious = document.getElementById('dateRangePrevious');
+			const radioAll = document.getElementById('dateRangeAll');
+			
+			if (radioCurrent) radioCurrent.checked = (this.state.dateRangeOption === 'current');
+			if (radioPrevious) radioPrevious.checked = (this.state.dateRangeOption === 'previous');
+			if (radioAll) radioAll.checked = (this.state.dateRangeOption === 'all');
+		},
+
         // 刷新培训列表
         async refreshTrainingListWithFilters(searchTerm = '') {
             const params = this._buildTrainingParams(searchTerm);
@@ -980,11 +1305,7 @@
 				if (this.state.exam.id && trainings.length > 0) {
 					try {
 						const examId = this.state.exam.id;
-						// ✅ 修正：查询考试绑定了哪些培训，正确的 API 路径
-						// 需要后端提供这个接口，或者使用已有的接口
 						const bindRes = await fetch(`/api/admin/training/bindings/by_exam?exam_id=${examId}`);
-						// 或者如果后端没有这个接口，可以使用已有的接口反向查询
-						// 先获取所有绑定关系，然后过滤
 						if (!bindRes.ok) {
 							console.warn(`获取绑定关系失败: ${bindRes.status}`);
 							trainings = trainings.map(t => ({ ...t, is_bound: false }));
@@ -992,6 +1313,9 @@
 							return trainings;
 						}
 						const bindData = await bindRes.json();
+						// ✅ 检查 bindData 的结构
+						console.log('绑定数据:', bindData);
+
 						const boundTrainingIds = new Set(bindData.training_ids || bindData.bindings?.map(b => b.training_id) || []);
 						
 						trainings = trainings.map(t => ({
@@ -1008,6 +1332,7 @@
 				}
 				
                 this.cache.trainings = trainings;
+        		console.log('培训列表已刷新，is_bound 标记:', trainings.map(t => ({ id: t.id, is_bound: t.is_bound })));
             } catch (err) {
                 console.error('刷新培训列表失败:', err);
                 this.cache.trainings = [];
@@ -1054,22 +1379,39 @@
         },
         
         // 刷新所有数据
-        async refreshAll(searchTerm = '') {
+        async refreshAll(searchTerm = '', skipRender = false) {
             if (this._isLoading) return;
             this._isLoading = true;
             try {
                 await Promise.all([
                     this.refreshTrainingListWithFilters(searchTerm),
-                    this.refreshExamListWithFilters(searchTerm)
+                    this.refreshExamListWithFilters(searchTerm),
+					this.refreshWarehouseList() 
                 ]);
-                this._renderAll();
+                this._validateCurrentSelections();
+				if (!skipRender) {
+					this._renderAll();
+				}
             } finally {
                 this._isLoading = false;
             }
         },
-        
+
+		// ✅ 新增：刷新库房列表
+		async refreshWarehouseList() {
+			try {
+				const res = await fetch('/api/admin/export/recent_warehouses');
+				this.cache.warehouses = await res.json();
+				return this.cache.warehouses;
+			} catch (err) {
+				console.error('加载库房列表失败:', err);
+				this.cache.warehouses = [];
+				return [];
+			}
+		},
+
         // 渲染培训下拉面板
-        _renderTrainingDropdown(searchTerm = '') {
+        _renderTrainingDropdown(searchTerm = '', showDropdown = false) {
             const container = document.getElementById('trainingListContainer');
             const dropdown = document.getElementById('trainingDropdown');
             if (!container) return;
@@ -1095,7 +1437,7 @@
 
             if (!trainings.length) {
                 container.innerHTML = '<div class="p-3 text-center text-muted">暂无培训数据</div>';
-                if (dropdown) dropdown.style.display = 'block';
+                if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
                 return;
             }
             
@@ -1133,11 +1475,11 @@
                 });
             });
             
-            if (dropdown) dropdown.style.display = 'block';
+            if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
         },
         
         // 渲染考试下拉面板
-        _renderExamDropdown(searchTerm = '') {
+        _renderExamDropdown(searchTerm = '', showDropdown = false) {
             const container = document.getElementById('examListContainer');
             const dropdown = document.getElementById('examDropdown');
             if (!container) return;
@@ -1164,10 +1506,10 @@
 
             if (!exams.length) {
                 container.innerHTML = '<div class="p-3 text-center text-muted">暂无考试数据</div>';
-                if (dropdown) dropdown.style.display = 'block';
+                if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
                 return;
             }
-            
+
             let html = '';
             exams.forEach(exam => {
                 const createdDate = DateUtils.formatDateOnly(exam.created_at);
@@ -1206,22 +1548,156 @@
                 });
             });
             
-            if (dropdown) dropdown.style.display = 'block';
+            if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
         },
-        
+
+		// 渲染季度下拉面板
+		_renderQuarterDropdown(searchTerm = '', showDropdown = false) {
+			const container = document.getElementById('quarterListContainer');
+			const dropdown = document.getElementById('quarterDropdown');
+			
+			if (!container) {
+				return;
+			}
+			
+			let quarters = window.allQuartersList || [];
+			
+			if (searchTerm) {
+				const term = searchTerm.toLowerCase();
+				quarters = quarters.filter(q => q.toLowerCase().includes(term));
+			}
+			
+			if (!quarters.length) {
+				container.innerHTML = '<div class="p-3 text-center text-muted">暂无季度数据</div>';
+				if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
+				return;
+			}
+			
+			let html = '';
+			quarters.forEach(q => {
+				html += `
+					<div class="export-dropdown-item" data-quarter="${q}">
+						<div class="item-title">${escapeHtml(q)}</div>
+					</div>
+				`;
+			});
+			container.innerHTML = html;
+			
+			container.querySelectorAll('.export-dropdown-item').forEach(item => {
+				item.addEventListener('click', () => {
+					const quarter = item.dataset.quarter;
+					const input = document.getElementById('filterQuarter');
+					if (input) {
+						input.value = quarter;
+						// ✅ 触发 input 事件，让删除按钮显示
+						input.dispatchEvent(new Event('input'));
+						input.dispatchEvent(new Event('change'));
+					}
+					ExportFilterStore.setQuarter(quarter);
+					if (dropdown) dropdown.style.display = 'none';
+				});
+			});
+			
+			if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
+		},
+
         // 渲染所有下拉面板
-        _renderAll() {
-            this._renderTrainingDropdown();
-            this._renderExamDropdown();
+        _renderAll(showDropdown = false) {
+            // ✅ 只有明确指定 showDropdown 才显示
+            this._renderTrainingDropdown('', showDropdown);
+            this._renderExamDropdown('', showDropdown);
+            this._renderQuarterDropdown('', showDropdown);
         },
-        
+
+        // 新增条件验证函数用于验证培训、考试、国家、库房在导出模态框里的选择
+        _invalidField: null,  // 记录失效的字段
+
+        _validateCurrentSelections() {
+            this._invalidField = null;
+            
+            // 验证培训
+            if (this.state.training.id) {
+                const exists = this.cache.trainings.some(
+                    t => String(t.id) === String(this.state.training.id)
+                );
+                if (!exists) {
+                    this.state.training = { id: '', name: '', start: '', end: '' };
+                    this._invalidField = 'training';
+                }
+            }
+            
+            // 验证考试
+            if (this.state.exam.id && !this._invalidField) {
+                const exists = this.cache.exams.some(
+                    e => String(e.id) === String(this.state.exam.id)
+                );
+                if (!exists) {
+                    this.state.exam = { id: '', name: '', start: '', end: '' };
+                    this._invalidField = 'exam';
+                }
+            }
+            
+            // 验证国家
+            if (this.state.country.code && !this._invalidField) {
+                const exists = this.cache.allCountries.some(
+                    c => c.code === this.state.country.code
+                );
+                if (!exists) {
+                    this.state.country = { code: '', display: '' };
+                    this._invalidField = 'country';
+                }
+            }
+            
+            // 验证库房
+            if (this.state.warehouse && !this._invalidField) {
+                const exists = this.cache.warehouses.some(
+                    w => w.wh_id === this.state.warehouse
+                );
+                if (!exists) {
+                    this.state.warehouse = '';
+                    this._invalidField = 'warehouse';
+                }
+            }
+            
+            // 同步到DOM（不触发事件）
+            this._syncToDOMWithoutTrigger();
+            
+            // 清除失效字段的删除按钮
+            if (this._invalidField) {
+                const fieldMap = {
+                    'training': 'filterTrainingName',
+                    'exam': 'filterExamName',
+                    'country': 'exportCountryInput',
+                    'warehouse': 'filterWhId',
+                    'quarter': 'filterQuarter'
+                };
+                const inputId = fieldMap[this._invalidField];
+                if (inputId) {
+                    const btn = document.querySelector(`.input-clear-btn[data-target="${inputId}"]`);
+                    if (btn) btn.style.display = 'none';
+                }
+            }
+            
+            return this._invalidField;
+        },
+
+		// 统一的关闭下拉函数
+		_closeDropdown(dropdownId) {
+			const dropdown = document.getElementById(dropdownId);
+			if (dropdown) dropdown.style.display = 'none';
+		},
+
         // 选择培训
         selectTraining(id, name, startTime, endTime) {
+			// ✅ 如果已锁定，不允许修改
+			if (this.state.locked) {
+				if (typeof showToast === 'function') {
+					showToast('其他条件已锁定，请先点击"清空所有"解锁', 'warning');
+				}
+				return;
+			}
             // 更新状态
             this.state.training = { id, name, start: startTime, end: endTime };
-            // ✅ 清空考试
-            this.state.exam = { id: '', name: '', start: '', end: '' };
-            this.cache.exams = [];  // 清空考试缓存
             
             // 联动：根据培训有效期更新日期范围
             const hasTraining = !!id;
@@ -1233,7 +1709,7 @@
                 this.state.quarter = '';
                 this.state.dateRangeOption = '';
                 if (typeof showToast === 'function') {
-                    showToast('已同时选择培训和考试，请手动选择日期范围', 'info');
+                    showToast('已精确选择培训和考试继续导出报告吧', 'info');
                 }
             } else if (startTime && endTime) {
                 this.state.startDate = DateUtils.formatDateOnly(startTime);
@@ -1243,19 +1719,28 @@
             }
             
             this._syncToDOM();
-            
-            // ✅ 刷新考试列表（根据培训绑定过滤）
-            this.refreshExamListWithFilters().then(() => {
-                this._renderExamDropdown();
-            });
-            
+
             // 关闭下拉面板
-            const dropdown = document.getElementById('trainingDropdown');
-            if (dropdown) dropdown.style.display = 'none';
+            this._closeDropdown('trainingDropdown');
+
+			// ✅ 检查是否需要锁定
+			this._checkAndSetLock();
+
+            // 刷新考试列表（根据培训绑定过滤）
+            this.refreshExamListWithFilters().then(() => {
+                this._renderExamDropdown('', false);
+            });
         },
         
         // 选择考试
         selectExam(id, name, startTime, endTime) {
+			// ✅ 如果已锁定，不允许修改
+			if (this.state.locked) {
+				if (typeof showToast === 'function') {
+					showToast('其他条件已锁定，请先点击"清空所有"解锁', 'warning');
+				}
+				return;
+			}
             // 更新状态
             this.state.exam = { id, name, start: startTime, end: endTime };
             
@@ -1269,7 +1754,7 @@
                 this.state.quarter = '';
                 this.state.dateRangeOption = '';
                 if (typeof showToast === 'function') {
-                    showToast('已同时选择培训和考试，请手动选择日期范围', 'info');
+                    showToast('已精确选择培训和考试继续导出报告吧', 'info');
                 }
             } else if (startTime && endTime) {
                 this.state.startDate = DateUtils.formatDateOnly(startTime);
@@ -1280,8 +1765,14 @@
             
             this._syncToDOM();
             
-            const dropdown = document.getElementById('examDropdown');
-            if (dropdown) dropdown.style.display = 'none';
+            this._closeDropdown('examDropdown');
+			// ✅ 检查是否需要锁定
+			this._checkAndSetLock();
+
+			// 刷新培训列表，标记绑定关系
+			this.refreshTrainingListWithFilters().then(() => {
+				this._renderTrainingDropdown('', false);
+			});
         },
         
         // 选择国家
@@ -1289,8 +1780,7 @@
             this.state.country = { code, display: displayName };
             this._syncToDOM();
             
-            const dropdown = document.getElementById('countryDropdown');
-            if (dropdown) dropdown.style.display = 'none';
+            this._closeDropdown('countryDropdown');
             
 			// ✅ 清空培训和考试选择（因为国家变了，之前的可能无效）
 			this.state.training = { id: '', name: '', start: '', end: '' };
@@ -1299,18 +1789,24 @@
 			
             // ✅ 刷新培训和考试
             this.refreshAll();
+			// 刷新完成后，确保下拉面板保持关闭状态
+			setTimeout(() => {
+				const d = document.getElementById('countryDropdown');
+				if (d) d.style.display = 'none';
+			}, 50);
         },
         
         // 选择库房
-        selectWarehouse(whId) {
-            this.state.warehouse = whId;
-            this._syncToDOM();
-            
-            const dropdown = document.getElementById('warehouseDropdown');
-            if (dropdown) dropdown.style.display = 'none';
-            
-            this.refreshAll();
-        },
+		selectWarehouse(whId) {
+			this.state.warehouse = whId;
+			this._syncToDOM();
+			
+			const dropdown = document.getElementById('warehouseDropdown');
+			if (dropdown) dropdown.style.display = 'none';
+			
+			// ✅ 刷新数据但不渲染
+			this.refreshAll(true);  // 传入参数 skipRender
+		},
         
         // 设置日期范围（手动或从季度计算）
         setDateRange(startDate, endDate, source = 'manual') {
@@ -1377,7 +1873,9 @@
                 endDate: '',
                 quarter: '',
                 dateRangeOption: '',
-                isInitialized: true
+                isInitialized: true,
+				locked: false,  // ✅ 解锁
+				isInitialized: true
             };
             this.cache = {
                 trainings: [],
@@ -1394,7 +1892,16 @@
                 this.state.endDate = currentDates.end;
             }
             
-            this._syncToDOM();
+    		this._applyLockState(false); // ✅ 解锁
+
+			// ✅ 使用不触发事件的同步方法
+			this._syncToDOMWithoutTrigger();
+			
+			// 清除所有删除按钮
+			document.querySelectorAll('.input-clear-btn').forEach(btn => {
+				btn.style.display = 'none';
+			});
+			
             await this.refreshAll();
             
             if (typeof showToast === 'function') {
@@ -1430,7 +1937,10 @@
                 this.state.startDate = currentDates.start;
                 this.state.endDate = currentDates.end;
             }
-            
+
+			this.state.locked = false;  // ✅ 初始解锁
+			this._applyLockState(false);
+
             this.state.isInitialized = true;
             this._syncToDOM();
             this.bindEvents();
@@ -1464,12 +1974,20 @@
                     clearTimeout(timeout);
                     timeout = setTimeout(async () => {
                         await this.refreshTrainingListWithFilters(e.target.value);
-                        this._renderTrainingDropdown(e.target.value);
+                        this._renderTrainingDropdown(e.target.value, true);
                     }, 300);
                 });
-                trainingInput.addEventListener('click', async () => {
+                // ✅ focus 替代 click
+                trainingInput.addEventListener('focus', async () => {
                     await this.refreshTrainingListWithFilters('');
-                    this._renderTrainingDropdown('');
+    				this._renderTrainingDropdown('', !this.state.training.id);
+                });
+                // ✅ 失焦延迟关闭
+                trainingInput.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        const dropdown = document.getElementById('trainingDropdown');
+                        if (dropdown) dropdown.style.display = 'none';
+                    }, 200);
                 });
             }
             
@@ -1481,12 +1999,18 @@
                     clearTimeout(timeout);
                     timeout = setTimeout(async () => {
                         await this.refreshExamListWithFilters(e.target.value);
-                        this._renderExamDropdown(e.target.value);
+                        this._renderExamDropdown(e.target.value, true);
                     }, 300);
                 });
-                examInput.addEventListener('click', async () => {
+                examInput.addEventListener('focus', async () => {
                     await this.refreshExamListWithFilters('');
-                    this._renderExamDropdown('');
+                    this._renderExamDropdown('', !this.state.exam.id);
+                });
+                examInput.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        const dropdown = document.getElementById('examDropdown');
+                        if (dropdown) dropdown.style.display = 'none';
+                    }, 200);
                 });
             }
             
@@ -1512,31 +2036,76 @@
                     clearTimeout(timeout);
                     timeout = setTimeout(() => {
                         const val = e.target.value.trim().toUpperCase();
+                        this._renderQuarterDropdown(val, true);
                         if (val.match(/^\d{4}Q[1-4]$/)) {
                             this.setQuarter(val);
+                            const dropdown = document.getElementById('quarterDropdown');
+                            if (dropdown) dropdown.style.display = 'none';
                         }
-                    }, 500);
+                    }, 300);
                 });
-				// ✅ 添加 click 事件，点击时显示下拉
-				quarterInput.addEventListener('click', async () => {
-					// 确保季度列表已加载
-					if (allQuartersList && allQuartersList.length > 0) {
-						const datalist = document.getElementById('quarterDatalist');
-						if (datalist) {
-							datalist.innerHTML = allQuartersList.map(q => `<option value="${q}">`).join('');
-						}
-					}
-				});
+                // ✅ 改为 focus
+                quarterInput.addEventListener('focus', async () => {
+                    if (window.allQuartersList && window.allQuartersList.length > 0) {
+                        this._renderQuarterDropdown('', !this.state.quarter);
+                    } else {
+                        try {
+                            const res = await fetch('/api/admin/export/quarters');
+                            window.allQuartersList = await res.json();
+                            this._renderQuarterDropdown('', !this.state.quarter);
+                        } catch (err) {
+                            console.error('加载季度列表失败:', err);
+                        }
+                    }
+                });
+                // ✅ 添加 blur 延迟关闭
+                quarterInput.addEventListener('blur', () => {
+                    setTimeout(() => {
+                        const dropdown = document.getElementById('quarterDropdown');
+                        if (dropdown) dropdown.style.display = 'none';
+                    }, 200);
+                });
             }
             
-            // 清空季度按钮
-            const clearQuarterBtn = document.getElementById('clearQuarterBtn');
-            if (clearQuarterBtn) {
-                clearQuarterBtn.addEventListener('click', () => {
-                    this.state.quarter = '';
-                    this._syncToDOM();
-                });
-            }
+            // 清空所有按钮
+			const clearAllBtn = document.getElementById('clearAllBtn');
+			if (clearAllBtn) {
+				clearAllBtn.addEventListener('click', () => {
+					// 清空所有状态
+					this.state.training = { id: '', name: '', start: '', end: '' };
+					this.state.exam = { id: '', name: '', start: '', end: '' };
+					this.state.country = { code: '', display: '' };
+					this.state.warehouse = '';
+					this.state.startDate = '';
+					this.state.endDate = '';
+					this.state.quarter = '';
+					this.state.dateRangeOption = '';
+
+					// ✅ 解锁
+					this.state.locked = false;
+					this._applyLockState(false);
+					
+					// 同步到 DOM（不触发 input 事件）
+					this._syncToDOMWithoutTrigger();
+					
+					// 清除所有删除按钮
+					document.querySelectorAll('.input-clear-btn').forEach(btn => {
+						btn.style.display = 'none';
+					});
+					
+					// 关闭所有下拉面板
+					document.querySelectorAll('.export-dropdown').forEach(dd => {
+						dd.style.display = 'none';
+					});
+					
+					// 刷新数据
+					this.refreshAll();
+					
+					if (typeof showToast === 'function') {
+						showToast('已清空所有筛选条件', 'info');
+					}
+				});
+			}
             
             // 重置按钮
             const resetBtn = document.getElementById('resetFiltersBtn');
@@ -1657,6 +2226,558 @@
         }
     };
 
+    // ==================== 综合筛选管理器 ====================
+    // 用于处理综合筛选（多选模式）的所有逻辑
+    const MultiSelectManager = {
+        // 状态
+        selectedTrainings: new Map(),  // { id: { name, country, ... } }
+        selectedExams: new Map(),      // { id: { title, country, ... } }
+        trainingData: [],
+        examData: [],
+        searchTimeout: null,
+        isInitialized: false,
+        
+        // ========== 初始化 ==========
+        init() {
+            if (this.isInitialized) return;
+            this.isInitialized = true;
+            this.bindEvents();
+            this.loadInitialData();
+        },
+        
+        // ========== 绑定事件 ==========
+        bindEvents() {
+            // 搜索按钮
+            document.getElementById('multiSearchBtn')?.addEventListener('click', () => {
+                this.search();
+            });
+            
+            // 重置按钮
+            document.getElementById('multiResetBtn')?.addEventListener('click', () => {
+                this.resetFilters();
+            });
+            
+            // 培训搜索框 - 输入即搜索（防抖 300ms）
+            const trainingSearch = document.getElementById('multiTrainingSearch');
+            if (trainingSearch) {
+                trainingSearch.addEventListener('input', () => {
+                    clearTimeout(this.searchTimeout);
+                    this.searchTimeout = setTimeout(() => this.search(), 300);
+                });
+            }
+            
+            // 考试搜索框 - 输入即搜索
+            const examSearch = document.getElementById('multiExamSearch');
+            if (examSearch) {
+                examSearch.addEventListener('input', () => {
+                    clearTimeout(this.searchTimeout);
+                    this.searchTimeout = setTimeout(() => this.search(), 300);
+                });
+            }
+            
+            // 国家变化时搜索
+            document.getElementById('multiCountry')?.addEventListener('change', () => this.search());
+            
+            // 库房输入时搜索（防抖）
+            document.getElementById('multiWarehouse')?.addEventListener('input', () => {
+                clearTimeout(this.searchTimeout);
+                this.searchTimeout = setTimeout(() => this.search(), 500);
+            });
+            
+            // 培训复选框变化（事件委托）
+            document.getElementById('multiTrainingList')?.addEventListener('change', (e) => {
+                if (e.target.classList.contains('training-checkbox')) {
+                    this.onTrainingCheckboxChange(e.target);
+                }
+            });
+            
+            // 考试复选框变化（事件委托）
+            document.getElementById('multiExamList')?.addEventListener('change', (e) => {
+                if (e.target.classList.contains('exam-checkbox')) {
+                    this.onExamCheckboxChange(e.target);
+                }
+            });
+            
+            // 培训全选按钮
+            document.querySelector('.select-all-trainings-btn')?.addEventListener('click', () => {
+                this.selectAllTrainings();
+            });
+            
+            // 考试全选按钮
+            document.querySelector('.select-all-exams-btn')?.addEventListener('click', () => {
+                this.selectAllExams();
+            });
+            
+            // 清空选择
+            document.getElementById('multiClearSelectionBtn')?.addEventListener('click', () => {
+                this.clearSelection();
+            });
+            
+            // 导出综合报告
+            document.getElementById('multiExportBtn')?.addEventListener('click', () => {
+                this.exportMultiReport();
+            });
+            
+            // 点击行切换复选框（事件委托）
+            document.getElementById('multiTrainingList')?.addEventListener('click', (e) => {
+                const item = e.target.closest('.list-group-item');
+                if (!item || e.target.type === 'checkbox') return;
+                const checkbox = item.querySelector('.training-checkbox');
+                if (checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            });
+            
+            document.getElementById('multiExamList')?.addEventListener('click', (e) => {
+                const item = e.target.closest('.list-group-item');
+                if (!item || e.target.type === 'checkbox') return;
+                const checkbox = item.querySelector('.exam-checkbox');
+                if (checkbox) {
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            });
+        },
+        
+        // ========== 搜索 ==========
+        async search() {
+            const trainingName = document.getElementById('multiTrainingSearch')?.value.trim() || '';
+            const examName = document.getElementById('multiExamSearch')?.value.trim() || '';
+            const country = document.getElementById('multiCountry')?.value.trim() || '';
+            const warehouse = document.getElementById('multiWarehouse')?.value.trim() || '';
+            
+            // 显示加载状态
+            const trainingList = document.getElementById('multiTrainingList');
+            const examList = document.getElementById('multiExamList');
+            if (trainingList) trainingList.innerHTML = '<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> 搜索中...</div>';
+            if (examList) examList.innerHTML = '<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> 搜索中...</div>';
+            
+            try {
+                // 并行查询培训和考试
+                const [trainings, exams] = await Promise.all([
+                    this.fetchTrainings(trainingName, country, warehouse),
+                    this.fetchExams(examName, country, warehouse)
+                ]);
+                
+                this.trainingData = trainings;
+                this.examData = exams;
+                
+                this.renderTrainingList(trainings);
+                this.renderExamList(exams);
+                
+                const trainingCount = document.getElementById('multiTrainingCount');
+                const examCount = document.getElementById('multiExamCount');
+                if (trainingCount) trainingCount.textContent = trainings.length;
+                if (examCount) examCount.textContent = exams.length;
+                
+            } catch (err) {
+                console.error('搜索失败:', err);
+                if (trainingList) trainingList.innerHTML = '<div class="list-group-item text-center text-danger py-3">加载失败</div>';
+                if (examList) examList.innerHTML = '<div class="list-group-item text-center text-danger py-3">加载失败</div>';
+            }
+        },
+        
+        // ========== 获取培训列表 ==========
+        async fetchTrainings(name, country, warehouse) {
+            const params = new URLSearchParams({ per_page: '100' });
+            if (name) params.append('q', name);
+            if (country) params.append('country', country);
+            if (warehouse) params.append('warehouse', warehouse);
+            
+            const res = await fetch(`/api/search/trainings?${params}`);
+            const data = await res.json();
+            return Array.isArray(data) ? data : (data.data || []);
+        },
+        
+        // ========== 获取考试列表 ==========
+        async fetchExams(name, country, warehouse) {
+            const params = new URLSearchParams({ per_page: '100' });
+            if (name) params.append('name', name);
+            if (country) params.append('country', country);
+            if (warehouse) params.append('warehouse', warehouse);
+            
+            const res = await fetch(`/api/admin/exams/list_light?${params}`);
+            const data = await res.json();
+            return data.data || [];
+        },
+        
+        // ========== 渲染培训列表 ==========
+        renderTrainingList(trainings) {
+            const container = document.getElementById('multiTrainingList');
+            if (!container) return;
+            
+            if (!trainings || trainings.length === 0) {
+                container.innerHTML = '<div class="list-group-item text-center text-muted py-3">暂无培训数据</div>';
+                return;
+            }
+            
+            let html = '';
+            trainings.forEach(t => {
+                const isChecked = this.selectedTrainings.has(t.id);
+                const createdDate = t.created_at ? t.created_at.slice(0, 10) : '-';
+                const quarter = this.getQuarterFromDate(t.created_at);
+                const bindingBadge = t.is_bound 
+                    ? '<span class="badge bg-success ms-1"><i class="bi bi-link"></i> 已绑定</span>' 
+                    : '';
+                
+                html += `
+                    <div class="list-group-item list-group-item-action ${isChecked ? 'active' : ''}" 
+                        data-id="${t.id}" style="cursor: pointer;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-start gap-2" style="flex: 1; min-width: 0;">
+                                <input type="checkbox" class="form-check-input mt-1 training-checkbox flex-shrink-0" 
+                                    data-id="${t.id}" ${isChecked ? 'checked' : ''}>
+                                <div style="min-width: 0;">
+                                    <div class="fw-bold text-truncate" title="${escapeHtml(t.name)}">
+                                        ${escapeHtml(t.name)} ${bindingBadge}
+                                    </div>
+                                    <div class="small text-muted">
+                                        <span><i class="bi bi-tag"></i> ${escapeHtml(t.country || '-')}</span>
+                                        <span class="mx-1">|</span>
+                                        <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
+                                        <span class="mx-1">|</span>
+                                        <span><i class="bi bi-calendar-week"></i> ${quarter}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // 恢复已选状态
+            container.querySelectorAll('.training-checkbox').forEach(cb => {
+                const id = parseInt(cb.dataset.id);
+                if (this.selectedTrainings.has(id)) {
+                    cb.checked = true;
+                    cb.closest('.list-group-item')?.classList.add('active');
+                }
+            });
+        },
+        
+        // ========== 渲染考试列表 ==========
+        renderExamList(exams) {
+            const container = document.getElementById('multiExamList');
+            if (!container) return;
+            
+            if (!exams || exams.length === 0) {
+                container.innerHTML = '<div class="list-group-item text-center text-muted py-3">暂无考试数据</div>';
+                return;
+            }
+            
+            let html = '';
+            exams.forEach(e => {
+                const isChecked = this.selectedExams.has(e.id);
+                const createdDate = e.created_at ? e.created_at.slice(0, 10) : '-';
+                const quarter = this.getQuarterFromDate(e.created_at);
+                const countriesDisplay = e.countries_display || e.country || '-';
+                const bindingBadge = e.is_bound 
+                    ? '<span class="badge bg-success ms-1"><i class="bi bi-link"></i> 已绑定</span>' 
+                    : '';
+                
+                html += `
+                    <div class="list-group-item list-group-item-action ${isChecked ? 'active' : ''}" 
+                        data-id="${e.id}" style="cursor: pointer;">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="d-flex align-items-start gap-2" style="flex: 1; min-width: 0;">
+                                <input type="checkbox" class="form-check-input mt-1 exam-checkbox flex-shrink-0" 
+                                    data-id="${e.id}" ${isChecked ? 'checked' : ''}>
+                                <div style="min-width: 0;">
+                                    <div class="fw-bold text-truncate" title="${escapeHtml(e.title)}">
+                                        ${escapeHtml(e.title)} ${bindingBadge}
+                                    </div>
+                                    <div class="small text-muted">
+                                        <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
+                                        <span class="mx-1">|</span>
+                                        <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
+                                        <span class="mx-1">|</span>
+                                        <span><i class="bi bi-calendar-week"></i> ${quarter}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+            
+            // 恢复已选状态
+            container.querySelectorAll('.exam-checkbox').forEach(cb => {
+                const id = parseInt(cb.dataset.id);
+                if (this.selectedExams.has(id)) {
+                    cb.checked = true;
+                    cb.closest('.list-group-item')?.classList.add('active');
+                }
+            });
+        },
+        
+        // ========== 复选框变化处理 ==========
+        onTrainingCheckboxChange(checkbox) {
+            const id = parseInt(checkbox.dataset.id);
+            const item = checkbox.closest('.list-group-item');
+            if (checkbox.checked) {
+                const data = this.trainingData.find(t => t.id === id);
+                if (data) {
+                    this.selectedTrainings.set(id, data);
+                    if (item) item.classList.add('active');
+                } else {
+                    // 如果数据不在当前列表中，从已选数据中获取
+                    const existing = Array.from(this.selectedTrainings.values()).find(t => t.id === id);
+                    if (existing) {
+                        this.selectedTrainings.set(id, existing);
+                    }
+                }
+            } else {
+                this.selectedTrainings.delete(id);
+                if (item) item.classList.remove('active');
+            }
+            this.updateSelectedCounts();
+        },
+        
+        onExamCheckboxChange(checkbox) {
+            const id = parseInt(checkbox.dataset.id);
+            const item = checkbox.closest('.list-group-item');
+            if (checkbox.checked) {
+                const data = this.examData.find(e => e.id === id);
+                if (data) {
+                    this.selectedExams.set(id, data);
+                    if (item) item.classList.add('active');
+                } else {
+                    const existing = Array.from(this.selectedExams.values()).find(e => e.id === id);
+                    if (existing) {
+                        this.selectedExams.set(id, existing);
+                    }
+                }
+            } else {
+                this.selectedExams.delete(id);
+                if (item) item.classList.remove('active');
+            }
+            this.updateSelectedCounts();
+        },
+        
+        // ========== 全选 ==========
+        selectAllTrainings() {
+            const checkboxes = document.querySelectorAll('#multiTrainingList .training-checkbox');
+            checkboxes.forEach(cb => {
+                if (!cb.checked) {
+                    cb.checked = true;
+                    cb.dispatchEvent(new Event('change'));
+                }
+            });
+        },
+        
+        selectAllExams() {
+            const checkboxes = document.querySelectorAll('#multiExamList .exam-checkbox');
+            checkboxes.forEach(cb => {
+                if (!cb.checked) {
+                    cb.checked = true;
+                    cb.dispatchEvent(new Event('change'));
+                }
+            });
+        },
+        
+        // ========== 更新选中计数 ==========
+        updateSelectedCounts() {
+            const trainingCount = this.selectedTrainings.size;
+            const examCount = this.selectedExams.size;
+            
+            const trainingCountEl = document.getElementById('selectedTrainingCount');
+            const examCountEl = document.getElementById('selectedExamCount');
+            const totalCountEl = document.getElementById('multiSelectedCount');
+            
+            if (trainingCountEl) trainingCountEl.textContent = trainingCount;
+            if (examCountEl) examCountEl.textContent = examCount;
+            if (totalCountEl) totalCountEl.textContent = trainingCount + examCount;
+            
+            this.updateSelectedTags();
+        },
+        
+        // ========== 更新已选标签 ==========
+        updateSelectedTags() {
+            // 培训标签
+            const trainingContainer = document.getElementById('selectedTrainingTags');
+            if (trainingContainer) {
+                if (this.selectedTrainings.size === 0) {
+                    trainingContainer.innerHTML = '<span class="text-muted">无</span>';
+                } else {
+                    trainingContainer.innerHTML = Array.from(this.selectedTrainings.values())
+                        .map(t => `<span class="badge bg-primary me-1">${escapeHtml(t.name)} <span class="remove-selection" data-type="training" data-id="${t.id}" style="cursor:pointer;">✕</span></span>`)
+                        .join('');
+                }
+            }
+            
+            // 考试标签
+            const examContainer = document.getElementById('selectedExamTags');
+            if (examContainer) {
+                if (this.selectedExams.size === 0) {
+                    examContainer.innerHTML = '<span class="text-muted">无</span>';
+                } else {
+                    examContainer.innerHTML = Array.from(this.selectedExams.values())
+                        .map(e => `<span class="badge bg-info me-1">${escapeHtml(e.title)} <span class="remove-selection" data-type="exam" data-id="${e.id}" style="cursor:pointer;">✕</span></span>`)
+                        .join('');
+                }
+            }
+            
+            // 绑定删除标签事件
+            document.querySelectorAll('.remove-selection').forEach(el => {
+                el.removeEventListener('click', this._removeSelectionHandler);
+                el._removeSelectionHandler = (e) => {
+                    e.stopPropagation();
+                    const type = el.dataset.type;
+                    const id = parseInt(el.dataset.id);
+                    if (type === 'training') {
+                        this.selectedTrainings.delete(id);
+                        const checkbox = document.querySelector(`.training-checkbox[data-id="${id}"]`);
+                        if (checkbox) {
+                            checkbox.checked = false;
+                            checkbox.dispatchEvent(new Event('change'));
+                        }
+                    } else {
+                        this.selectedExams.delete(id);
+                        const checkbox = document.querySelector(`.exam-checkbox[data-id="${id}"]`);
+                        if (checkbox) {
+                            checkbox.checked = false;
+                            checkbox.dispatchEvent(new Event('change'));
+                        }
+                    }
+                    this.updateSelectedCounts();
+                };
+                el.addEventListener('click', el._removeSelectionHandler);
+            });
+        },
+        
+        // ========== 清空选择 ==========
+        clearSelection() {
+            this.selectedTrainings.clear();
+            this.selectedExams.clear();
+            
+            document.querySelectorAll('#multiTrainingList .training-checkbox').forEach(cb => {
+                cb.checked = false;
+                cb.closest('.list-group-item')?.classList.remove('active');
+            });
+            document.querySelectorAll('#multiExamList .exam-checkbox').forEach(cb => {
+                cb.checked = false;
+                cb.closest('.list-group-item')?.classList.remove('active');
+            });
+            
+            this.updateSelectedCounts();
+        },
+        
+        // ========== 重置筛选条件 ==========
+        resetFilters() {
+            const trainingSearch = document.getElementById('multiTrainingSearch');
+            const examSearch = document.getElementById('multiExamSearch');
+            const country = document.getElementById('multiCountry');
+            const warehouse = document.getElementById('multiWarehouse');
+            
+            if (trainingSearch) trainingSearch.value = '';
+            if (examSearch) examSearch.value = '';
+            if (country) country.value = '';
+            if (warehouse) warehouse.value = '';
+            
+            // 清空选择
+            this.clearSelection();
+            
+            // 重新搜索
+            this.search();
+        },
+        
+        // ========== 导出综合报告 ==========
+        async exportMultiReport() {
+            if (this.selectedTrainings.size === 0 && this.selectedExams.size === 0) {
+                if (typeof showToast === 'function') {
+                    showToast('请至少选择一个培训或考试', 'warning');
+                }
+                return;
+            }
+            
+            const trainingIds = Array.from(this.selectedTrainings.keys());
+            const examIds = Array.from(this.selectedExams.keys());
+            
+            // 获取其他筛选条件
+            const country = document.getElementById('multiCountry')?.value.trim() || '';
+            const warehouse = document.getElementById('multiWarehouse')?.value.trim() || '';
+            const lang = window.i18n?.currentLang || 'zh';
+            
+            if (typeof showLoading === 'function') {
+                showLoading('正在导出综合报告...');
+            }
+            
+            try {
+                const response = await fetch('/api/admin/export_multi_excel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        training_ids: trainingIds,
+                        exam_ids: examIds,
+                        country: country,
+                        wh_id: warehouse,
+                        lang: lang
+                    })
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || '导出失败');
+                }
+                
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+                const fileName = lang === 'en' 
+                    ? `Multi_Report_${timestamp}.xlsx` 
+                    : `综合报告_${timestamp}.xlsx`;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                if (typeof showToast === 'function') {
+                    showToast('导出成功', 'success');
+                }
+                
+            } catch (err) {
+                console.error('导出失败:', err);
+                if (typeof showToast === 'function') {
+                    showToast('导出失败: ' + err.message, 'error');
+                }
+            } finally {
+                if (typeof hideLoading === 'function') {
+                    hideLoading();
+                }
+            }
+        },
+        
+        // ========== 工具函数 ==========
+        getQuarterFromDate(dateStr) {
+            if (!dateStr) return '-';
+            try {
+                const date = new Date(dateStr);
+                if (isNaN(date.getTime())) return '-';
+                const year = date.getFullYear();
+                const month = date.getMonth() + 1;
+                const quarter = Math.ceil(month / 3);
+                return `${year}Q${quarter}`;
+            } catch { return '-'; }
+        },
+        
+        // ========== 加载初始数据 ==========
+        async loadInitialData() {
+            // 加载国家列表
+            await populateCountryDatalist('multiCountryDatalist');
+            
+            // 自动搜索一次
+            setTimeout(() => this.search(), 300);
+        }
+    };
+
     // ==================== 国家/库房下拉面板渲染函数 ====================
 
     // 渲染国家下拉面板
@@ -1704,7 +2825,7 @@
         
         if (!filtered.length) {
             container.innerHTML = '<div class="p-3 text-center text-muted">暂无数据</div>';
-            if (dropdown) dropdown.style.display = 'block';
+            if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
             return;
         }
         
@@ -1825,14 +2946,18 @@
                     renderCountryDropdown(e.target.value.trim());
                 }, 300);
             });
-            countryInput.addEventListener('click', () => {
-                renderCountryDropdown('');
+            countryInput.addEventListener('focus', () => {
+                renderCountryDropdown('', true);
             });
             countryInput.addEventListener('blur', () => {
-                setTimeout(() => ExportFilterStore.validateCountry(), 200);
+                setTimeout(() => {
+                    const dropdown = document.getElementById('countryDropdown');
+                    if (dropdown) dropdown.style.display = 'none';
+                }, 200);
             });
+            // validateCountry 在 blur 中已处理，可移除单独的 blur 监听
         }
-        
+
         // 库房输入框
         const warehouseInput = document.getElementById('filterWhId');
         if (warehouseInput) {
@@ -1843,8 +2968,14 @@
                     renderWarehouseDropdown(e.target.value.trim());
                 }, 300);
             });
-            warehouseInput.addEventListener('click', () => {
-                renderWarehouseDropdown('');
+            warehouseInput.addEventListener('focus', () => {
+                renderWarehouseDropdown('', true);
+            });
+            warehouseInput.addEventListener('blur', () => {
+                setTimeout(() => {
+                    const dropdown = document.getElementById('warehouseDropdown');
+                    if (dropdown) dropdown.style.display = 'none';
+                }, 200);
             });
         }
         
@@ -1935,7 +3066,8 @@
             { inputId: 'filterTrainingName', targets: ['selectedTrainingId', 'selectedTrainingStart', 'selectedTrainingEnd'] },
             { inputId: 'filterExamName', targets: ['selectedExamId', 'selectedExamStart', 'selectedExamEnd'] },
             { inputId: 'exportCountryInput', targets: ['exportCountryCode'] },
-            { inputId: 'filterWhId', targets: [] }
+            { inputId: 'filterWhId', targets: [] }, 
+    		{ inputId: 'filterQuarter', targets: [] }
         ];
         
         clearButtonsConfig.forEach(config => {
@@ -1946,7 +3078,7 @@
                 setupClearButton(config.inputId, config.targets);
                 console.log(`✅ 初始化成功: ${config.inputId}`);
             } else {
-                console.warn(`⚠️ 跳过: ${config.inputId}`);
+                console.warn(`⚠️ 跳过: ${config.inputId}, input=${!!input}, btn=${!!clearBtn}`);
             }
         });
         
@@ -1960,7 +3092,7 @@
                     console.log(`🔄 延迟显示 ${targetId} 的删除按钮`);
                 }
             });
-        }, 200);
+        }, 300);
     }
 
 
@@ -2902,34 +4034,31 @@
 		
 		// 初始化导出模态框状态管理器
 		await ExportFilterStore.init();
-		
+
+		// ✅ 初始化综合筛选管理器
+		MultiSelectManager.init();
+
 		// 绑定额外的UI事件
 		bindExportModalEvents();
 		initClearButtons();
 		
 		// 点击其他地方关闭下拉面板
 		document.addEventListener('click', (e) => {
-			const trainingInput = document.getElementById('filterTrainingName');
-			const examInput = document.getElementById('filterExamName');
-			const countryInput = document.getElementById('exportCountryInput');
-			const warehouseInput = document.getElementById('filterWhId');
-			const trainingDropdown = document.getElementById('trainingDropdown');
-			const examDropdown = document.getElementById('examDropdown');
-			const countryDropdown = document.getElementById('countryDropdown');
-			const warehouseDropdown = document.getElementById('warehouseDropdown');
+			const dropdowns = [
+				{ input: 'filterTrainingName', dropdown: 'trainingDropdown' },
+				{ input: 'filterExamName', dropdown: 'examDropdown' },
+				{ input: 'exportCountryInput', dropdown: 'countryDropdown' },
+				{ input: 'filterWhId', dropdown: 'warehouseDropdown' },
+        		{ input: 'filterQuarter', dropdown: 'quarterDropdown' }
+			];
 			
-			if (trainingDropdown && !trainingInput?.contains(e.target) && !trainingDropdown.contains(e.target)) {
-				trainingDropdown.style.display = 'none';
-			}
-			if (examDropdown && !examInput?.contains(e.target) && !examDropdown.contains(e.target)) {
-				examDropdown.style.display = 'none';
-			}
-			if (countryDropdown && !countryInput?.contains(e.target) && !countryDropdown.contains(e.target)) {
-				countryDropdown.style.display = 'none';
-			}
-			if (warehouseDropdown && !warehouseInput?.contains(e.target) && !warehouseDropdown.contains(e.target)) {
-				warehouseDropdown.style.display = 'none';
-			}
+			dropdowns.forEach(({ input, dropdown }) => {
+				const inputEl = document.getElementById(input);
+				const dropdownEl = document.getElementById(dropdown);
+				if (dropdownEl && inputEl && !inputEl.contains(e.target) && !dropdownEl.contains(e.target)) {
+					dropdownEl.style.display = 'none';
+				}
+			});
 		});
 
 		// ===============初始化考试推送对话框==========

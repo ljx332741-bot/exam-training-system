@@ -912,5 +912,18 @@
 "placeholder_coutry_search_country": "Click country to select or input search...",
 "recent_warehouse": "Recent warehouse",
 "no_matching_wh_was_found": "No matching WH was found",
-"placeholder_coutry_search_wh": "Click WH to select or input search..."
+"placeholder_coutry_search_wh": "Click WH to select or input search...",
+    "exact_filter": "Exact filter",
+    "multi_filter": "Multi filter",
+    "multi_training_search": "Input training name search...",
+    "multi_exam_search": "Input exam name search...",
+    "enter_keyword_search": "Input condition after search",
+    "training_list": "Training list",
+    "exam_list": "Exam list",
+    "selected_training": "Selected training",
+    "selected_exam": "Selected exam",
+    "export_multi_report": "Export multi report",
+    "clear_selection": "Clear selection",
+    "none": "None",
+    "select_all": "Select all"
 }

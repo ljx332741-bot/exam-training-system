@@ -4,7 +4,15 @@
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_detail">访谈详情</span> - <span id="examTitle" data-i18n="loading">加载中...</span></h2>
+        <h2><i class="bi bi-chat-dots"></i> 
+            <span data-i18n="interview_detail">访谈详情</span> 
+            - 
+            <span id="examTitle" data-i18n="loading">加载中...</span> 
+            <span class="fs-6 text-muted">
+                iid:<span id="interViewID" class="ms-2"></span>
+                eid:<span id="examID" class="ms-2"></span>
+            </span>
+        </h2>
     </div>
     <div class="d-flex justify-content-between align-items-center">
         <div class="row g-3 align-items-end">
@@ -56,6 +64,7 @@
                             <th><input type="checkbox" id="selectAll"></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="name_en">姓名</span></th>
+                            <th>uid</th>
                             <th><span data-i18n="email">邮箱</span></th>
                             <th><span data-i18n="wh_id">库房编码</span></th>
                             <th><span data-i18n="interview_status">访谈状态</span></th>
@@ -67,7 +76,7 @@
                         </tr>
                     </thead>
                     <tbody id="detailsTableBody">
-                        <tr><td colspan="11" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="12" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -111,6 +120,8 @@
         const res = await fetch(`/api/admin/interview/${interviewId}/details?${params}`);
         const data = await res.json();
         document.getElementById('examTitle').innerText = data.interview?.exam_title || data.interview?.title || t('t_unknown_examination');
+        document.getElementById('interViewID').innerText = data.interview?.interview_id || data.interview?.id || '-';
+        document.getElementById('examID').innerText = data.interview?.exam_id || '-';
 
         // ✅ 更新访谈级别的检查人员和反馈人
         const reviewerSpan = document.getElementById('interviewReviewer');
@@ -127,7 +138,7 @@
         const tbody = document.getElementById('detailsTableBody');
 
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="11" class="text-center">暂无数据</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="12" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
 
@@ -154,6 +165,7 @@
                 <td><input type="checkbox" class="interview-checkbox" data-user-id="${r.user_id}"></td>
                 <td>${escapeHtml(r.country || '-')}</td>
                 <td>${escapeHtml(r.name)}</td>
+                <td>${r.user_id}</td>
                 <td>${escapeHtml(r.email)}</td>
                 <td>${escapeHtml(r.wh_id || '-')}</td>
                 <td>

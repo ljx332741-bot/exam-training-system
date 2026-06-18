@@ -909,5 +909,18 @@
 "placeholder_coutry_search_country": "点击选择国家或输入搜索...",
 "recent_warehouse": "最近使用的库房",
 "no_matching_wh_was_found": "未找到匹配的库房",
-"placeholder_coutry_search_wh": "点击选择库房或输入搜索..."
+"placeholder_coutry_search_wh": "点击选择库房或输入搜索...",
+    "exact_filter": "精确筛选",
+    "multi_filter": "综合筛选",
+    "multi_training_search": "输入培训名称搜索...",
+    "multi_exam_search": "输入考试名称搜索...",
+    "enter_keyword_search": "输入条件后搜索",
+    "training_list": "培训列表",
+    "exam_list": "考试列表",
+    "selected_training": "已选培训",
+    "selected_exam": "已选考试",
+    "export_multi_report": "导出综合报告",
+    "clear_selection": "清空选择",
+    "none": "无",
+    "select_all": "全选"
 }

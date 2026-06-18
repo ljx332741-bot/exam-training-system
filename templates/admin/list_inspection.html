@@ -93,9 +93,10 @@
                 <table class="table table-hover align-middle mb-0" style="min-width: 1000px; white-space: nowrap;">
                     <thead class="table-light">
                         <tr>
-                            <th>ID</th>
+                            <th>SQN</th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="interview_title">访谈名称</span></th>
+                            <th>iid</th>
                             <th><span data-i18n="created_at">创建时间</span></th>
                             <th><span data-i18n="interviewee_period">访谈有效期</span></th>
                             <th><span data-i18n="interviewee_number">访谈人数</span></th>
@@ -107,7 +108,7 @@
                         </tr>
                     </thead>
                     <tbody id="interviewTableBody">
-                        <tr><td colspan="9" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="12" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -591,10 +592,10 @@
     function renderInterviewTable(interviews) {
         const tbody = document.getElementById('interviewTableBody');
         if (!interviews.length) {
-            tbody.innerHTML = `<tr><td colspan="9" class="text-center">${t('t_no_data')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_data')}</td></tr>`;
             return;
         }
-        tbody.innerHTML = interviews.map(inv => {
+        tbody.innerHTML = interviews.map((inv, idx) => {
         const status = inv.status; // draft, created, active, closed
         const isSuperAdmin = CURRENT_USER_ROLE === 'super_admin';
         const isDeveloper = CURRENT_USER_ROLE === 'developer';
@@ -621,9 +622,10 @@
 
         return `
             <tr>
-                <td>${inv.id}</td>
+                <td>${(currentPage-1)*20 + idx + 1}</td>
                 <td>${escapeHtml(inv.country || '-')}</td>
                 <td><a href="/admin/interview/${inv.id}" class="text-decoration-none">${escapeHtml(inv.title)}</a></td>
+                <td>${inv.id}</td>
                 <td>${formatLocalTime(inv.created_at)}</td>
                 <td>${formatLocalTime(inv.start_time)} - ${formatLocalTime(inv.end_time)}</td>
                 <td>${inv.interviewee_count} ${t('t_people')}</td>

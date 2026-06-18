@@ -5,7 +5,6 @@ import openpyxl
 from datetime import datetime, timezone, timedelta, date
 from . import admin_export_bp
 from services.db import get_supabase
-from routes.helpers import login_required, admin_required, robust_parse_json, get_allowed_countries
 from dateutil import parser
 from apscheduler.schedulers.background import BackgroundScheduler
 from io import BytesIO
@@ -32,6 +31,7 @@ from utils.permissions import (
     parse_countries_input, developer_required, super_admin_required,
     filter_users_by_permission, apply_country_filter
 )
+from routes.helpers import login_required, admin_required, robust_parse_json, get_allowed_countries, parse_exam_countries
 from utils.training_helpers import get_training_country_templates_status
 
 logger = logging.getLogger(__name__)
@@ -938,3 +938,169 @@ def api_get_recent_warehouses_for_export():
     
     return jsonify(warehouses[:20])
 
+# =================生成综合报告=====================
+# routes/admin_export.py
+
+@admin_export_bp.route('/api/admin/export_multi_excel', methods=['POST'])
+@login_required
+@admin_required
+def export_multi_excel():
+    """
+    综合导出接口（支持多培训/多考试）
+    复用 generate_bilingual_excel_filtered 生成 Excel
+    """
+    try:
+        data = request.json
+        training_ids = data.get('training_ids', [])
+        exam_ids = data.get('exam_ids', [])
+        country = data.get('country', '')
+        wh_raw = data.get('wh_id', '').strip()
+        wh_id = wh_raw.split('(')[0].strip() if wh_raw else None
+        lang = data.get('lang', 'zh')
+        
+        db = get_supabase()
+        allowed_countries = get_admin_allowed_countries()
+        
+        # ========== 1. 获取用户ID（按国家或库房过滤） ==========
+        final_user_ids = None
+        
+        # 按国家过滤
+        user_ids_for_country = None
+        if country:
+            users_res = db.table("users").select("id").eq("country", country).execute()
+            user_ids_for_country = [u['id'] for u in (users_res.data or [])]
+            if not user_ids_for_country:
+                return _create_empty_excel(f"空报告_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        
+        # 按库房过滤
+        user_ids_for_wh = None
+        if wh_id:
+            users_in_wh = db.table("users").select("id").eq("wh_id", wh_id).execute()
+            user_ids_for_wh = [u['id'] for u in (users_in_wh.data or [])]
+            if not user_ids_for_wh:
+                return _create_empty_excel(f"空报告_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        
+        # 合并国家与库房的用户范围
+        if user_ids_for_country is not None and user_ids_for_wh is not None:
+            final_user_ids = list(set(user_ids_for_country) & set(user_ids_for_wh))
+        elif user_ids_for_country is not None:
+            final_user_ids = user_ids_for_country
+        elif user_ids_for_wh is not None:
+            final_user_ids = user_ids_for_wh
+        
+        # 管理员权限范围过滤
+        if allowed_countries is not None and final_user_ids is not None:
+            users_in_allowed = db.table("users").select("id").in_("id", final_user_ids).in_("country", allowed_countries).execute()
+            final_user_ids = [u['id'] for u in (users_in_allowed.data or [])]
+        elif allowed_countries is not None:
+            users_in_allowed = db.table("users").select("id").in_("country", allowed_countries).execute()
+            final_user_ids = [u['id'] for u in (users_in_allowed.data or [])]
+        
+        # ========== 2. 获取培训信息（根据 training_ids） ==========
+        trainings = []
+        if training_ids:
+            trainings_res = db.table("trainings").select("*").in_("id", training_ids).is_("deleted_at", "null").execute()
+            trainings = trainings_res.data or []
+        
+        # 如果 training_ids 为空，但 exam_ids 有值，从考试绑定关系获取培训
+        if not trainings and exam_ids:
+            bindings_res = db.table("training_exam_bindings").select("training_id")\
+                .in_("exam_id", exam_ids)\
+                .is_("deleted_at", "null")\
+                .execute()
+            bound_training_ids = list(set([b['training_id'] for b in (bindings_res.data or [])]))
+            if bound_training_ids:
+                trainings_res = db.table("trainings").select("*").in_("id", bound_training_ids).is_("deleted_at", "null").execute()
+                trainings = trainings_res.data or []
+        
+        # ========== 3. 获取考试信息（根据 exam_ids） ==========
+        exams = []
+        if exam_ids:
+            exams_res = db.table("exams").select("*").in_("id", exam_ids).is_("deleted_at", "null").execute()
+            exams = exams_res.data or []
+        
+        # 如果 exam_ids 为空，但 training_ids 有值，从培训绑定关系获取考试
+        if not exams and training_ids:
+            bindings_res = db.table("training_exam_bindings").select("exam_id")\
+                .in_("training_id", training_ids)\
+                .is_("deleted_at", "null")\
+                .execute()
+            bound_exam_ids = list(set([b['exam_id'] for b in (bindings_res.data or [])]))
+            if bound_exam_ids:
+                exams_res = db.table("exams").select("*").in_("id", bound_exam_ids).is_("deleted_at", "null").execute()
+                exams = exams_res.data or []
+        
+        # ========== 4. 权限过滤 ==========
+        if allowed_countries is not None:
+            # 过滤培训
+            filtered_trainings = []
+            for t in trainings:
+                training_country = t.get('country') or t.get('countries')
+                if training_country:
+                    # ✅ 使用 parse_exam_countries 解析国家列表（传入字典对象）
+                    country_list = parse_exam_countries(t)
+                    if any(c in allowed_countries for c in country_list):
+                        filtered_trainings.append(t)
+            trainings = filtered_trainings
+            
+            # 过滤考试
+            filtered_exams = []
+            for e in exams:
+                exam_country = e.get('country') or e.get('countries')
+                if exam_country:
+                    # ✅ 使用 parse_exam_countries 解析国家列表（传入字典对象）
+                    country_list = parse_exam_countries(e)
+                    if any(c in allowed_countries for c in country_list):
+                        filtered_exams.append(e)
+            exams = filtered_exams
+        
+        # 如果没有任何数据，返回空文件
+        if not trainings and not exams:
+            return _create_empty_excel(f"空报告_{datetime.now().strftime('%Y%m%d%H%M%S')}")
+        
+        # ========== 5. 调用 generate_bilingual_excel_filtered 生成 Excel ==========
+        buffer, filename = export.generate_bilingual_excel_filtered(
+            trainings=trainings,
+            exams=exams,
+            country=country,
+            start_date='',
+            end_date='',
+            user_ids=final_user_ids,
+            wh_id=wh_id,
+            lang=lang
+        )
+        
+        # 修改文件名，标识为综合报告
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        lang_suffix = 'en' if lang == 'en' else 'zh'
+        filename = f"综合报告_{timestamp}_{lang_suffix}.xlsx"
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"综合导出失败: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+def _create_empty_excel(filename):
+    """创建空 Excel 文件"""
+    from io import BytesIO
+    import openpyxl
+    
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "空报告"
+    ws.cell(row=1, column=1, value="没有匹配的数据")
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )

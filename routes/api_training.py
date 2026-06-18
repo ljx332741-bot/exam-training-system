@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 def api_available_trainings():
     """获取当前用户可签到的培训列表（显示有效期内的所有培训，包括未开始的）"""
     db = get_supabase()
+    #db = get_supabase_admin
+    admin_db = get_supabase_admin()
     user_id = session['user_id']
     now = datetime.now(timezone.utc).isoformat()
     
