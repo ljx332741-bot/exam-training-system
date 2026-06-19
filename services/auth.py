@@ -170,6 +170,11 @@ def _send_via_brevo(to_email: str, otp: str) -> bool:
     if not Config.BREVO_API_KEY:
         logger.error("❌ BREVO_API_KEY 未配置")
         return False
+
+    # ✅ 检查 API Key 格式
+    logger.info(f"📋 BREVO_API_KEY 前缀: {Config.BREVO_API_KEY[:10]}...")
+    logger.info(f"📋 FROM_EMAIL: {Config.FROM_EMAIL}")
+    logger.info(f"📋 FROM_NAME: {Config.FROM_NAME}")
     
     url = "https://api.brevo.com/v3/smtp/email"
     headers = {
@@ -180,47 +185,47 @@ def _send_via_brevo(to_email: str, otp: str) -> bool:
     
     # ✅ 使用更优雅的 HTML 模板（与邮件工具风格一致）
     html_content = f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-</head>
-<body style="margin: 0; padding: 0; background-color: #f4f6f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 560px; margin: 30px auto; background: #ffffff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
-        <!-- Header -->
-        <tr>
-            <td style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 24px 30px; text-align: center;">
-                <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600;">🔐 邮箱验证码 / Email Verification</h1>
-            </td>
-        </tr>
-        <!-- Content -->
-        <tr>
-            <td style="padding: 28px 32px; color: #333333; line-height: 1.6;">
-                <p style="margin: 0 0 12px; font-size: 16px;">您好，</p>
-                <p style="margin: 0 0 20px; font-size: 16px;">Dear user,</p>
-                
-                <p style="margin: 0 0 16px; font-size: 15px;">您的验证码是：</p>
-                <p style="margin: 0 0 20px; font-size: 15px;">Your verification code is:</p>
-                
-                <div style="text-align: center; margin: 20px 0;">
-                    <span style="display: inline-block; background: #e8f0fe; padding: 14px 28px; font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1e3c72; border-radius: 8px; font-family: monospace;">{otp}</span>
-                </div>
-                
-                <p style="margin: 0 0 12px; font-size: 14px; color: #666;">有效期：<strong>{Config.OTP_EXPIRE_MIN} 分钟</strong>，请勿泄露给他人。</p>
-                <p style="margin: 0 0 20px; font-size: 14px; color: #666;">Valid for <strong>{Config.OTP_EXPIRE_MIN} minutes</strong>. Please keep it confidential.</p>
-            </td>
-        </tr>
-        <!-- Footer -->
-        <tr>
-            <td style="background-color: #f8f9fa; padding: 16px 32px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee;">
-                <p style="margin: 0;">此邮件由系统自动发送，请勿回复。</p>
-                <p style="margin: 5px 0 0;">This is an automated message, please do not reply.</p>
-            </td>
-        </tr>
-    </table>
-</body>
-</html>
-    """
+    <!DOCTYPE html>
+    <html lang="zh-CN">
+        <head>
+            <meta charset="UTF-8">
+        </head>
+        <body style="margin: 0; padding: 0; background-color: #f4f6f8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width: 560px; margin: 30px auto; background: #ffffff; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); overflow: hidden;">
+                <!-- Header -->
+                <tr>
+                    <td style="background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%); padding: 24px 30px; text-align: center;">
+                        <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 600;">🔐 邮箱验证码 / Email Verification</h1>
+                    </td>
+                </tr>
+                <!-- Content -->
+                <tr>
+                    <td style="padding: 28px 32px; color: #333333; line-height: 1.6;">
+                        <p style="margin: 0 0 12px; font-size: 16px;">您好，</p>
+                        <p style="margin: 0 0 20px; font-size: 16px;">Dear user,</p>
+                        
+                        <p style="margin: 0 0 16px; font-size: 15px;">您的验证码是：</p>
+                        <p style="margin: 0 0 20px; font-size: 15px;">Your verification code is:</p>
+                        
+                        <div style="text-align: center; margin: 20px 0;">
+                            <span style="display: inline-block; background: #e8f0fe; padding: 14px 28px; font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #1e3c72; border-radius: 8px; font-family: monospace;">{otp}</span>
+                        </div>
+                        
+                        <p style="margin: 0 0 12px; font-size: 14px; color: #666;">有效期：<strong>{Config.OTP_EXPIRE_MIN} 分钟</strong>，请勿泄露给他人。</p>
+                        <p style="margin: 0 0 20px; font-size: 14px; color: #666;">Valid for <strong>{Config.OTP_EXPIRE_MIN} minutes</strong>. Please keep it confidential.</p>
+                    </td>
+                </tr>
+                <!-- Footer -->
+                <tr>
+                    <td style="background-color: #f8f9fa; padding: 16px 32px; text-align: center; font-size: 12px; color: #999; border-top: 1px solid #eee;">
+                        <p style="margin: 0;">此邮件由系统自动发送，请勿回复。</p>
+                        <p style="margin: 5px 0 0;">This is an automated message, please do not reply.</p>
+                    </td>
+                </tr>
+            </table>
+        </body>
+    </html>
+        """
     
     payload = {
         "sender": {"name": Config.FROM_NAME, "email": Config.FROM_EMAIL},
@@ -228,21 +233,29 @@ def _send_via_brevo(to_email: str, otp: str) -> bool:
         "subject": "🔐 邮箱验证码 / Email Verification Code - 在线考试系统",
         "htmlContent": html_content
     }
+
+    # ✅ 打印请求数据（不包含敏感信息）
+    logger.info(f"📤 请求数据: sender={Config.FROM_EMAIL}, to={to_email}")
     
     try:
         logger.debug(f"📤 POST {url}")
         with httpx.Client(timeout=30.0) as client:
             response = client.post(url, headers=headers, json=payload)
+
+        # ✅ 打印完整响应
+        logger.info(f"📥 响应状态码: {response.status_code}")
+        logger.info(f"📥 响应内容: {response.text}")
         
         if response.status_code in [200, 201]:
             logger.info(f"✅ Brevo 发送成功 → {to_email} | 状态码: {response.status_code}")
             return True
         else:
-            logger.error(f"❌ Brevo API 返回错误: {response.status_code} | {response.text}")
-            if response.status_code == 401:
-                logger.error("💡 提示: API Key 无效")
-            elif response.status_code == 403:
-                logger.error(f"💡 提示: 发件邮箱 '{Config.FROM_EMAIL}' 未验证")
+            # ✅ 解析错误详情
+            try:
+                error_data = response.json()
+                logger.error(f"❌ Brevo 错误详情: {error_data}")
+            except:
+                logger.error(f"❌ Brevo 原始错误: {response.text}")
             return False
     except Exception as e:
         logger.error(f"❌ Brevo 发送异常: {type(e).__name__}: {e}")

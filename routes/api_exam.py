@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 @exam_bp.route('/dashboard')
 @login_required
 def dashboard():
-    from services.db import get_supabase, get_supabase_admin
-    
     db = get_supabase()
     admin_db = get_supabase_admin()
     

@@ -141,7 +141,7 @@
                         <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
 
                         <!-- ✅ 新增：导出按钮 -->
-                        {% if session.get('role') in ['super_admin', 'developer'] %}
+                        {% if session.get('role') in ['admin', 'super_admin', 'developer'] %}
                         <button class="btn btn-outline-success me-2" id="exportUsersBtn">
                             <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
                         </button>
@@ -159,6 +159,7 @@
                 <i class="bi bi-table"></i> <span data-i18n="display_field">显示字段</span>
             </button>
             <ul class="dropdown-menu p-2" id="fieldSelector" style="max-height: 300px; overflow-y: auto;">
+                <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="index" id="fieldIndex" checked><label class="form-check-label" for="fieldIndex">#</label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="country" id="fieldCountry" checked><label class="form-check-label" for="fieldCountry"><span data-i18n="country">国家</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="name_en" id="fieldName" checked><label class="form-check-label" for="fieldName"><span data-i18n="name_en">姓名</span></label></div></li>
                 <li><div class="form-check"><input class="form-check-input toggle-field" type="checkbox" value="email" id="fieldEmail" checked><label class="form-check-label" for="fieldEmail"><span data-i18n="email">邮箱</span></label></div></li>
@@ -574,6 +575,7 @@
     const IS_DEVELOPER = {{ is_developer | tojson }};
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     const CURRENT_USER_ID = "{{ session.get('user_id') }}";
+    const CURRENT_USER_COUNTRY = "{{ session.get('user_country', '') }}";
     
     let currentPage = 1;
     let filters = { search: '', country: '', wh_id: '' };
@@ -870,21 +872,72 @@
 
     // ==================== 主列表功能 ====================    
     async function loadUsers() {
+
+        console.log('=== loadUsers 被调用 ===');
+        console.log('currentPage 当前值:', currentPage);
+
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
             search: filters.search,
-            country: filters.country,
+            //country: filters.country,
             wh_id: filters.wh_id
         });
-        
+
+        // ✅ 如果国家筛选不为空，前端过滤
+        const countryFilter = filters.country ? filters.country.trim().toLowerCase() : '';
+
         try {
             const res = await fetch(`/api/admin/users?${params}`);
             const data = await res.json();
-            currentUsersData = data.data || [];
+
+            let users = data.data || [];
+            
+            // ✅ 前端国家模糊匹配
+            if (countryFilter) {
+                // 加载国家列表用于名称匹配
+                const countries = await loadCountryList();
+                const countryMap = {};
+                countries.forEach(c => {
+                    countryMap[c.code] = c;
+                });
+                
+                users = users.filter(user => {
+                    const userCountry = user.country || '';
+                    if (!userCountry) return false;
+                    
+                    // 获取国家信息
+                    const countryInfo = countryMap[userCountry];
+                    if (!countryInfo) return false;
+                    
+                    // 检查中文名、英文名、代码是否包含搜索词
+                    const nameZh = (countryInfo.name_zh || '').toLowerCase();
+                    const nameEn = (countryInfo.name_en || '').toLowerCase();
+                    const code = (countryInfo.code || '').toLowerCase();
+                    const searchLower = countryFilter.toLowerCase();
+                    
+                    return nameZh.includes(searchLower) || 
+                        nameEn.includes(searchLower) || 
+                        code.includes(searchLower);
+                });
+            }
+            
+            // ✅ 更新显示数据
+            currentUsersData = users;
+            console.log('API 返回页码:', data.page);
+            console.log('currentPage 在渲染前:', currentPage);
+            
+            // ✅ 在渲染前打印 currentPage 确认值
+            console.log('loadUsers - currentPage:', currentPage);
+            
             renderUserTable(currentUsersData);
-            document.getElementById('totalCount').innerText = data.total;
-            renderPagination(data.page, Math.ceil(data.total / data.per_page));
+            document.getElementById('totalCount').innerText = users.length;
+
+            // ✅ 分页：如果数据少于20条，只显示1页
+            const totalPages = Math.ceil(users.length / 20);
+            renderPagination(1, Math.max(totalPages, 1));
+
+            renderPagination(data.page, totalPages);
             updateBatchDeleteButton();
             // ✅ 渲染完成后恢复列宽
             setTimeout(() => {
@@ -944,7 +997,7 @@
 
     // 字段可见性配置
     let visibleFields = {
-        country: true, name_en: true, email: true, wh_id: true, wh_name_en: true,
+        index: true, country: true, name_en: true, email: true, wh_id: true, wh_name_en: true,
         role: true, is_partner: true, user_status: true, employee_id: false,
         company: false, department: false, wh_type: false, birthday: false,
         created_by: false, id: false, power_scope: true  // 权限范围列
@@ -987,7 +1040,7 @@
         document.getElementById('resetFieldsBtn')?.addEventListener('click', () => {
             // 重置为默认值
             visibleFields = {
-                country: true, name_en: true, email: true, id: false, wh_id: true, wh_name_en: true,
+                index: true, country: true, name_en: true, email: true, id: false, wh_id: true, wh_name_en: true,
                 role: true, is_partner: true, user_status: true, employee_id: false,
                 company: false, department: false, wh_type: false, birthday: false,
                 created_by: false, power_scope: true
@@ -1005,18 +1058,44 @@
     }
 
     function renderUserTable(users) {
+        // ✅ 打印当前页码
+        console.log('renderUserTable - currentPage:', currentPage);
+        if (typeof currentPage === 'undefined') {
+            currentPage = 1;
+        }
         const currentUserId = CURRENT_USER_ID;
         const currentUserRole = CURRENT_USER_ROLE;
+        const currentUserCountry = CURRENT_USER_COUNTRY;
         const isDev = IS_DEVELOPER;
         const table = document.getElementById('userTable');
         if (!table) return;
         
         // 过滤超级管理员行（非超管看不到）
         let displayUsers = users;
-        if (CURRENT_USER_ROLE !== 'super_admin') {
-            displayUsers = users.filter(u => u.role !== 'super_admin');
-        }
 
+        if (isDev) {
+            // 开发者：显示所有用户（包括超管、开发者自己）
+            displayUsers = users;
+        } else if (currentUserRole === 'super_admin') {
+            // 超管：显示所有用户（排除开发者，但包括其他超管）
+            displayUsers = users.filter(u => u.role !== 'developer');
+        } else if (currentUserRole === 'admin') {
+            // ✅ 管理员：显示普通用户 + 管理员自己（以及其他相同国家的管理员）
+            // 如果管理员权限范围是国家，应该显示该国家下的所有用户（包括管理员自己）
+            // 但为了安全，只显示普通用户和管理员自己
+            displayUsers = users.filter(u => {
+                // 显示普通用户
+                if (u.role === 'user') return true;
+                // 显示自己
+                if (u.id === currentUserId) return true;
+                // ✅ 可选：显示同一国家的其他管理员（如果权限允许）
+                if (u.role === 'admin' && u.country === currentUserCountry) return true;
+                return false;
+            });
+        } else {
+            // 其他角色
+            displayUsers = users.filter(u => u.role === 'user');
+        }
         if (!displayUsers.length) {
             document.getElementById('userTableBody').innerHTML = `<tr><td colspan="18" class="text-center">${t('no_data')}</td></tr>`;
             return;
@@ -1024,11 +1103,12 @@
 
         // ==================== 动态构建表头 ====================
         const fieldOrder = [
-            'country', 'name_en', 'email', 'id', 'wh_id', 'wh_name_en', 'role', 
+            'index','country', 'name_en', 'email', 'id', 'wh_id', 'wh_name_en', 'role', 
             'is_partner', 'user_status', 'employment_status', 'employee_id', 
             'company', 'department', 'wh_type', 'birthday', 'created_by'
         ];
         const labels = {
+            index: '#',
             country: t('country'), 
             name_en: t('name_en'), 
             email: t('mail'), 
@@ -1064,6 +1144,11 @@
         
         // ==================== 构建数据行 ====================
         let bodyHtml = '<tbody>';
+        const perPage = 20;  // 每页显示数量，与后端一致
+        const page = typeof currentPage !== 'undefined' ? currentPage : 1;
+        const startIndex = (page - 1) * perPage + 1;
+        console.log('renderUserTable - startIndex:', startIndex);
+        let rowIndex = startIndex;
         for (const u of displayUsers) {
             bodyHtml += `<tr>
                 <td><input type="checkbox" class="user-checkbox" data-id="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''}>${'</td>'}`;
@@ -1072,6 +1157,9 @@
                 if (visibleFields && visibleFields[field]) {
                     let cellValue = '';
                     switch (field) {
+                        case 'index':
+                            cellValue = String(rowIndex);
+                            break;
                         case 'country':
                             cellValue = escapeHtml(u.country || '-');
                             break;
@@ -1192,6 +1280,9 @@
                 ${resignBtn}
                 ${rehireBtn}
             </td></tr>`;
+            
+            // ✅ 添加这一行：每行结束后序号 +1
+            rowIndex++;
         }
         bodyHtml += '</tbody>';
         
@@ -1376,22 +1467,58 @@
 
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
+        if (!pagination) {
+            console.error('分页容器不存在');
+            return;
+        }
+        
+        console.log('renderPagination - current:', current, 'totalPages:', totalPages);
+        
         if (totalPages <= 1) {
             pagination.innerHTML = '';
             return;
         }
+        
         let html = '';
+        // 上一页
+        html += `<li class="page-item ${current <= 1 ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${current - 1}" ${current <= 1 ? 'tabindex="-1"' : ''}>&laquo;</a>
+        </li>`;
+        
+        // 页码
         for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+            html += `<li class="page-item ${i === current ? 'active' : ''}">
+                <a class="page-link" href="#" data-page="${i}">${i}</a>
+            </li>`;
         }
+        
+        // 下一页
+        html += `<li class="page-item ${current >= totalPages ? 'disabled' : ''}">
+            <a class="page-link" href="#" data-page="${current + 1}" ${current >= totalPages ? 'tabindex="-1"' : ''}>&raquo;</a>
+        </li>`;
+        
         pagination.innerHTML = html;
+        
+        // ✅ 使用事件委托，避免重复绑定
         pagination.querySelectorAll('.page-link').forEach(link => {
-            link.addEventListener('click', (e) => {
+            // 移除旧事件
+            link.removeEventListener('click', pagination._clickHandler);
+            
+            link._clickHandler = function(e) {
                 e.preventDefault();
-                currentPage = parseInt(link.dataset.page);
+                const page = parseInt(this.dataset.page);
+                if (isNaN(page) || page < 1 || page > totalPages) return;
+                
+                console.log('分页点击 - 跳转到第', page, '页');
+                currentPage = page;
                 loadUsers();
-            });
+            };
+            
+            link.addEventListener('click', link._clickHandler);
         });
+        
+        // 存储 totalPages 供事件使用
+        pagination._totalPages = totalPages;
     }
 
     async function batchDeleteSelected() {

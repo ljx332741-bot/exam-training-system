@@ -63,6 +63,12 @@
                         <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
                     </button>
                 </div>
+                <div class="col-md-1">
+                    <button id="refreshDataBtn" class="btn btn-primary w-100" 
+                            title="刷新数据并同步">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -156,7 +162,7 @@
                         </tr>
                     </thead>
                     <tbody id="reportTableBody">
-                        <tr><td colspan="14" class="text-center"><span data-i18n="loading">加载中...</span><\/td><\/tr>
+                        <tr><td colspan="14" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -356,6 +362,7 @@
             function getTrainingStatusText(status) {
                 const map = {
                     'signed': t('signed'),
+                    'resign': t('resign'),
                     'pending': t('pending_sign'),
                     'not_assigned': t('not_pushed')
                 };
@@ -365,6 +372,7 @@
             function getTrainingStatusBadge(status) {
                 const map = {
                     'signed': 'bg-success',
+                    'resign': 'bg-danger',
                     'pending': 'bg-warning text-dark',
                     'not_assigned': 'bg-secondary'
                 };
@@ -548,6 +556,138 @@
         filters = { name: '', country: '', training_name: '', exam_name: '', status: '', start_date: '', end_date: '' };
         currentPage = 1;
         loadReport();
+    });
+
+    /**
+    * 显示同步结果详情
+    */
+    function showSyncResults(syncResults) {
+        if (!syncResults) return;
+        
+        // 计算总数（使用 || 避免 undefined）
+        const total = (syncResults.assigned_exams || 0) + 
+                    (syncResults.created_attendances || 0) + 
+                    (syncResults.created_assignments || 0);
+        
+        if (total === 0) {
+            return; // 没有需要同步的数据
+        }
+        
+        // 构建详情列表
+        let details = [];
+        if (syncResults.assigned_exams > 0) {
+            details.push(`📝 ${t('assigned_exams', '分配考试')}: ${syncResults.assigned_exams} ${t('people', '人')}`);
+        }
+        if (syncResults.created_attendances > 0) {
+            details.push(`✅ ${t('created_attendances', '创建签到')}: ${syncResults.created_attendances} ${t('people', '人')}`);
+        }
+        if (syncResults.created_assignments > 0) {
+            details.push(`📋 ${t('created_assignments', '创建培训分配')}: ${syncResults.created_assignments} ${t('people', '人')}`);
+        }
+        if (syncResults.synced_trainings) {
+            details.push(`📚 ${t('synced_trainings', '同步培训')}: ${syncResults.synced_trainings} ${t('count', '个')}`);
+        }
+        
+        // 创建提示框
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-success alert-dismissible fade show mb-3';
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <strong>${t('sync_completed', '数据同步完成')}</strong>
+            <ul class="mb-0 mt-1">
+                ${details.map(d => `<li>${d}</li>`).join('')}
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        // 插入到统计卡片前面
+        const summaryCards = document.getElementById('summaryCards');
+        if (summaryCards) {
+            summaryCards.parentNode.insertBefore(alertDiv, summaryCards);
+            
+            // 5秒后自动消失
+            setTimeout(() => {
+                alertDiv.classList.remove('show');
+                setTimeout(() => alertDiv.remove(), 300);
+            }, 5000);
+        }
+    }
+
+    /**
+    * 刷新数据（包含同步）
+    */
+    document.getElementById('refreshDataBtn').addEventListener('click', async () => {
+        const btn = document.getElementById('refreshDataBtn');
+        const originalHtml = btn.innerHTML;
+        
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> ' + (t('syncing', '同步中...'));
+        
+        showLoading(t('syncing_data', '正在同步数据...'));
+        
+        try {
+            // 获取当前筛选的培训ID
+            const trainingIdEl = document.getElementById('filterTrainingId');
+            const trainingId = trainingIdEl?.value || '';
+            
+            // 构建请求参数
+            const payload = {};
+            if (trainingId) {
+                payload.training_id = parseInt(trainingId);
+            }
+            
+            // 发送请求
+            const response = await fetch('/api/admin/training/refresh_cache', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // 获取同步结果
+                const syncResults = result.results?.sync_results || {};
+                
+                // 显示同步详情
+                showSyncResults(syncResults);
+                
+                // 构建 Toast 消息
+                const assigned = syncResults.assigned_exams || 0;
+                const attendances = syncResults.created_attendances || 0;
+                const assignments = syncResults.created_assignments || 0;
+                
+                let toastMsg = t('data_refreshed', '数据已刷新');
+                const parts = [];
+                if (assigned > 0) parts.push(`${t('assigned_exams', '分配考试')} ${assigned} ${t('people', '人')}`);
+                if (attendances > 0) parts.push(`${t('created_attendances', '创建签到')} ${attendances} ${t('people', '人')}`);
+                if (assignments > 0) parts.push(`${t('created_assignments', '创建培训分配')} ${assignments} ${t('people', '人')}`);
+                
+                if (parts.length > 0) {
+                    toastMsg += '，' + parts.join('，');
+                } else {
+                    toastMsg += '，' + (t('data_synced', '数据已同步'));
+                }
+                
+                // 显示 Toast
+                showToast(toastMsg, 'success');
+                
+                // 重新加载报表数据
+                await loadReportData();
+                
+            } else {
+                const errorMsg = result.message || t('sync_failed', '同步失败');
+                showToast(errorMsg, 'error');
+            }
+        } catch (err) {
+            console.error('刷新失败:', err);
+            showToast(t('network_error', '网络错误，请重试'), 'error');
+        } finally {
+            hideLoading();
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
     });
 
     // 导出Excel

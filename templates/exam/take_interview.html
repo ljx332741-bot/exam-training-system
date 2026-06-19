@@ -83,11 +83,25 @@
     }
 
     document.getElementById('submitInterviewBtn').addEventListener('click', async () => {
+        // 检查按钮是否存在
+        const submitBtn = document.getElementById('submitInterviewBtn');
+        if (!submitBtn) {
+            console.error('提交按钮不存在！');
+            return;
+        }
+        
+        // 检查是否有题目
+        const inputs = document.querySelectorAll('input:checked');
+        console.log('找到已选答案:', inputs.length);
+        
+        if (inputs.length === 0) {
+            alert('请至少回答一道题');
+            return;
+        }
         const answers = {};
         const interviewId = {{ interview.id }};
         
         // 显示加载状态
-        const submitBtn = document.getElementById('submitInterviewBtn');
         const originalText = submitBtn.innerHTML;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> ' + (t('submitting') || '提交中...');

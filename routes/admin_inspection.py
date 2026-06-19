@@ -4,10 +4,11 @@ import json
 from datetime import datetime, timezone, timedelta
 from flask import request, jsonify, render_template, session, flash, redirect, url_for
 from . import admin_inspection_bp
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 from utils.common import get_reviewer_by_country
-from routes.helpers import login_required, admin_required, random_pick_questions, get_allowed_countries
+from routes.helpers import login_required, admin_required, random_pick_questions, get_allowed_countries, parse_exam_countries, can_access_exam
 from utils.permissions import get_admin_allowed_countries, is_developer
+
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,9 @@ def admin_interviews_page():
 @admin_required
 def api_admin_interviews():
     """访谈列表查询、创建、更新"""
+    print("=" * 60)
+    print("🔥 api_admin_interviews 被调用！")
+
     db = get_supabase()
     if request.method == 'GET':
         name = request.args.get('name', '')
@@ -29,76 +33,67 @@ def api_admin_interviews():
         page = request.args.get('page', 1, type=int)
         per_page = request.args.get('per_page', 20, type=int)
 
-        # ✅ 获取管理员权限范围
         allowed = get_allowed_countries()
-        
-        # 基础查询
+        print(f"🔍 管理员权限范围: {allowed}")
+
         query = db.table("interviews").select("*", count="exact").is_("deleted_at", "null")
         if name:
             query = query.ilike("title", f"%{name}%")
         query = query.order("created_at", desc=True)
-        
-        # 获取所有访谈
+
         res = query.execute()
         all_interviews = res.data or []
-        
+        print(f"📋 查询到 {len(all_interviews)} 条访谈记录")
+
+        # ✅ 打印每个访谈的 exam_id
+        for inv in all_interviews:
+            print(f"  访谈 ID={inv['id']}, exam_id={inv.get('exam_id')}")
+
         # ✅ 根据权限过滤访谈
         if allowed is not None and allowed:
-            # 收集所有考试ID
+            print(f"🔒 应用权限过滤，允许国家: {allowed}")
             exam_ids = set()
             for inv in all_interviews:
                 if inv.get('exam_id'):
                     exam_ids.add(inv['exam_id'])
-            
-            # 批量获取考试的国家信息
+
+            print(f"📚 涉及的考试ID: {exam_ids}")
+
             exam_country_map = {}
             if exam_ids:
                 exams_res = db.table("exams").select("id, country, countries").in_("id", list(exam_ids)).execute()
                 for exam in (exams_res.data or []):
-                    # 解析国家列表
-                    exam_countries = []
-                    countries_data = exam.get('countries')
-                    if isinstance(countries_data, str) and countries_data:
-                        try:
-                            exam_countries = json.loads(countries_data)
-                        except:
-                            exam_countries = []
-                    elif isinstance(countries_data, list):
-                        exam_countries = countries_data
-                    if not exam_countries and exam.get('country'):
-                        exam_countries = [exam.get('country')]
-                    exam_country_map[exam['id']] = exam_countries
-            
-            # 过滤访谈
+                    exam_country_map[exam['id']] = parse_exam_countries(exam)
+                    print(f"  考试 ID={exam['id']}, countries={exam.get('countries')}, 解析后={exam_country_map[exam['id']]}")
+
             filtered = []
             for inv in all_interviews:
                 exam_countries = exam_country_map.get(inv.get('exam_id'), [])
-                # 检查是否有交集
+                print(f"  访谈 {inv['id']}: exam_countries={exam_countries}, 是否在权限内={any(c in allowed for c in exam_countries)}")
                 if any(c in allowed for c in exam_countries):
                     filtered.append(inv)
             all_interviews = filtered
-        
-        # 分页
+            print(f"📋 过滤后剩余 {len(all_interviews)} 条访谈")
+
         total = len(all_interviews)
         start = (page - 1) * per_page
         end = start + per_page
         interviews = all_interviews[start:end]
-        
-        # 收集当前页所有访谈涉及的用户ID，用于批量查询国家
+
+        # 收集用户ID用于统计
         all_user_ids = set()
         for inv in interviews:
             user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
             all_user_ids.update(r['user_id'] for r in (user_res.data or []))
-        
-        # 批量查询用户国家
+
         user_country_map = {}
         if allowed is not None and all_user_ids:
             users_res = db.table("users").select("id, country").in_("id", list(all_user_ids)).execute()
             user_country_map = {u['id']: u.get('country') for u in (users_res.data or [])}
-        
+
         now = datetime.now(timezone.utc)
         for inv in interviews:
-            # 动态计算状态
+            # 计算状态
             start_time = inv.get('start_time')
             end_time = inv.get('end_time')
             if not start_time or not end_time:
@@ -115,13 +110,11 @@ def api_admin_interviews():
                         inv['status'] = 'active'
                 except:
                     inv['status'] = 'draft'
-            
-            # 统计去重人数（应用国家权限过滤）
-            # ✅ 只保留在职用户
+
+            # 统计人数
             user_res = db.table("interview_results").select("user_id").eq("interview_id", inv['id']).execute()
             user_ids = [r['user_id'] for r in (user_res.data or [])]
 
-            # ✅ 先过滤离职人员
             if user_ids:
                 active_users = db.table("users").select("id").in_("id", user_ids).eq("is_resign", False).execute()
                 active_user_ids = [u['id'] for u in (active_users.data or [])]
@@ -133,14 +126,35 @@ def api_admin_interviews():
                 inv['interviewee_count'] = len(set(filtered_ids))
             else:
                 inv['interviewee_count'] = len(set(active_user_ids))
-            
-            # 附加考试信息
+
+            # ✅ 附加考试信息 - 使用 parse_exam_countries 解析国家
             if inv.get('exam_id'):
-                exam_res = db.table("exams").select("title, country").eq("id", inv['exam_id']).maybe_single().execute()
+                exam_res = db.table("exams").select("title, country, countries").eq("id", inv['exam_id']).maybe_single().execute()
                 if exam_res.data:
                     inv['exam_title'] = exam_res.data.get('title', '')
-                    inv['country'] = exam_res.data.get('country', '')
-        
+
+                    # ✅ 使用 parse_exam_countries 解析多国家字段
+                    exam_countries = parse_exam_countries(exam_res.data)
+
+                    # ✅ 添加调试日志
+                    logger.info(f"访谈 {inv['id']}: exam_id={inv['exam_id']}, exam_countries={exam_countries}")
+
+                    # 根据管理员权限过滤国家显示
+                    if allowed is not None and allowed:
+                        filtered_countries = [c for c in exam_countries if c in allowed]
+                        inv['country'] = ', '.join(filtered_countries) if filtered_countries else ''
+                        logger.info(f"  权限过滤后: {filtered_countries}")
+                    else:
+                        inv['country'] = ', '.join(exam_countries) if exam_countries else ''
+                        logger.info(f"  最终国家: {inv['country']}")
+
+                    inv['exam_countries'] = exam_countries
+
+        for inv in interviews:
+            print(f"📤 返回访谈 {inv['id']}: country={inv.get('country')}")
+
+        print("=" * 60)
+
         return jsonify({"data": interviews, "total": total, "page": page, "per_page": per_page})
 
     elif request.method == 'POST':
@@ -449,99 +463,18 @@ def interview_preview():
 @admin_inspection_bp.route('/interview/take/<int:interview_id>')
 @login_required
 def take_interview(interview_id):
-    """① 后端新增接口：学员进入访谈，检查是否在名单中，获取访谈基本信息和题目"""
-    user_id = session['user_id']
-    db = get_supabase()
-    # 检查用户是否属于该访谈
-    result = db.table("interview_results").select("interview_id").eq("interview_id", interview_id).eq("user_id", user_id).limit(1).execute()
-    if not result.data:
-        flash("您不在本次访谈名单中", "danger")
-        return redirect(url_for('dashboard'))
-
-    inv = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
-    if not inv.data:
-        flash("访谈不存在", "danger")
-        return redirect(url_for('dashboard'))
-
-    # ✅ 分步查询，避免外键歧义
-    # 第一步：获取该用户的所有访谈结果
-    interview_results = db.table("interview_results") \
-        .select("id, question_id, answer") \
-        .eq("interview_id", interview_id) \
-        .eq("user_id", user_id) \
-        .execute()
-    
-    if not interview_results.data:
-        questions = []
-    else:
-        # 第二步：收集所有 question_id
-        question_ids = list(set([row['question_id'] for row in interview_results.data]))
-        
-        # 第三步：批量查询题目信息
-        questions_data = db.table("questions") \
-            .select("*") \
-            .in_("id", question_ids) \
-            .execute()
-        
-        # 第四步：构建映射
-        question_map = {q['id']: q for q in (questions_data.data or [])}
-        
-        # 第五步：组装数据
-        questions = []
-        for row in interview_results.data:
-            q = question_map.get(row['question_id'], {})
-            
-            # 复制题目数据，避免修改原数据
-            q_copy = q.copy() if q else {}
-            
-            # 解析 options
-            opts = q_copy.get('options', {})
-            if isinstance(opts, str):
-                try:
-                    q_copy['options'] = json.loads(opts)
-                except:
-                    q_copy['options'] = {}
-            
-            # 判断题默认选项
-            if q_copy.get('type') == 'judge' and (not q_copy.get('options')):
-                q_copy['options'] = {"A": "正确 True", "B": "错误 False"}
-            
-            # 确保选项是字典
-            if not isinstance(q_copy.get('options'), dict):
-                q_copy['options'] = {}
-            
-            q_copy['interview_result_id'] = row['id']
-            q_copy['user_answer'] = row.get('answer') or ''
-            questions.append(q_copy)
-    
-    # ✅ 按 num 排序
-    questions.sort(key=lambda x: x.get('num', 0))
-    for idx, q in enumerate(questions, 1):
-        q['num'] = idx
-        if q.get('options'):
-            q['options'] = {k: v for k, v in q['options'].items() if v.strip()}
-        else:
-            q['options'] = {}
-
-    return render_template('exam/take_interview.html', interview=inv.data, questions=questions)
-'''
-
-# routes/admin_inspection.py - 完整整合后的 take_interview 函数
-
-@admin_inspection_bp.route('/interview/take/<int:interview_id>')
-@login_required
-def take_interview(interview_id):
     """学员进入访谈（支持普通访谈和强制访谈）"""
     user_id = session['user_id']
     db = get_supabase()
+    admin_db = get_supabase_admin()
     now = datetime.now(timezone.utc)
     
     # ========== 1. 检查是否是强制访谈 ==========
-    force_record = db.table("user_interview_force_records").select("*")\
+    force_record = admin_db.table("user_interview_force_records").select("*")\
         .eq("original_interview_id", interview_id)\
         .eq("user_id", user_id)\
         .is_("deleted_at", "null")\
-        .maybe_single()\
+        #.maybe_single()\
         .execute()
     
     is_force = force_record and force_record.data
@@ -583,7 +516,7 @@ def take_interview(interview_id):
                 # ✅ 只有真正过期才删除
                 if now_utc > end_dt:
                     logger.warning(f"强制访谈已过期，删除记录 {force_data['id']}")
-                    db.table("user_interview_force_records").update({
+                    admin_db.table("user_interview_force_records").update({
                         "deleted_at": now_utc.isoformat(),
                         "deleted_by": user_id
                     }).eq("id", force_data['id']).execute()
@@ -706,6 +639,196 @@ def take_interview(interview_id):
     # 为模板添加额外信息
     interview_data = inv if inv else {}
     if is_force:
+        # 强制访谈：覆盖标题和有效期显示
+        interview_data = interview_data.copy() if interview_data else {}
+        interview_data['title'] = force_data.get('title', interview_data.get('title', '强制访谈'))
+        interview_data['start_time'] = force_data.get('start_time')
+        interview_data['end_time'] = force_data.get('end_time')
+        interview_data['is_force'] = True
+
+    return render_template('exam/take_interview.html', interview=interview_data, questions=questions)
+'''
+@admin_inspection_bp.route('/interview/take/<int:interview_id>')
+@login_required
+def take_interview(interview_id):
+    """学员进入访谈（支持普通访谈和强制访谈）"""
+    user_id = session['user_id']
+    db = get_supabase()
+    admin_db = get_supabase_admin()
+    now = datetime.now(timezone.utc)
+    
+    # ========== 1. 检查是否是强制访谈 ==========
+    is_force = False
+    force_data = None
+    
+    try:
+        # ✅ 使用 execute() 代替 maybe_single()
+        force_result = admin_db.table("user_interview_force_records").select("*")\
+            .eq("original_interview_id", interview_id)\
+            .eq("user_id", user_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        # ✅ 关键修复：检查 result.data 是否有数据
+        if force_result.data and len(force_result.data) > 0:
+            is_force = True
+            force_data = force_result.data[0]  # 取第一条记录
+            logger.info(f"用户 {user_id} 进入强制访谈 {interview_id}")
+        else:
+            is_force = False
+            
+    except Exception as e:
+        logger.warning(f"查询强制访谈记录失败: {e}")
+        is_force = False
+    
+    inv = None
+    
+    if is_force and force_data:
+        # ========== 强制访谈逻辑 ==========
+        start_time = force_data.get('start_time')
+        end_time = force_data.get('end_time')
+        
+        # 检查有效期
+        if start_time:
+            try:
+                start_dt = datetime.fromisoformat(start_time)
+                if now < start_dt:
+                    flash("强制访谈尚未开始", "warning")
+                    return redirect(url_for('dashboard'))
+            except:
+                pass
+
+        if end_time:
+            try:
+                if isinstance(end_time, str):
+                    end_str = end_time.replace('Z', '+00:00')
+                    end_dt = datetime.fromisoformat(end_str)
+                else:
+                    end_dt = end_time
+                
+                now_utc = datetime.now(timezone.utc)
+                
+                if end_dt.tzinfo is None:
+                    end_dt = end_dt.replace(tzinfo=timezone.utc)
+                
+                logger.info(f"强制访谈时间检查: now={now_utc.isoformat()}, end={end_dt.isoformat()}")
+                
+                if now_utc > end_dt:
+                    logger.warning(f"强制访谈已过期，删除记录 {force_data['id']}")
+                    admin_db.table("user_interview_force_records").update({
+                        "deleted_at": now_utc.isoformat(),
+                        "deleted_by": user_id
+                    }).eq("id", force_data['id']).execute()
+                    flash("强制访谈已过期", "warning")
+                    return redirect(url_for('dashboard'))
+            except Exception as e:
+                logger.error(f"解析时间失败: {e}")
+        
+        # 获取原访谈信息
+        inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+        if not inv_res.data:
+            flash("访谈不存在", "danger")
+            return redirect(url_for('dashboard'))
+        inv = inv_res.data
+        
+        # 检查用户是否属于该访谈（强制访谈也需要检查）
+        result = db.table("interview_results").select("interview_id").eq("interview_id", interview_id).eq("user_id", user_id).limit(1).execute()
+        if not result.data:
+            flash("您不在本次访谈名单中", "danger")
+            return redirect(url_for('dashboard'))
+        
+        logger.info(f"用户 {user_id} 进入强制访谈 {interview_id}，有效期至 {end_time}")
+        
+    else:
+        # ========== 普通访谈逻辑 ==========
+        # 检查用户是否属于该访谈
+        result = db.table("interview_results").select("interview_id").eq("interview_id", interview_id).eq("user_id", user_id).limit(1).execute()
+        if not result.data:
+            flash("您不在本次访谈名单中", "danger")
+            return redirect(url_for('dashboard'))
+
+        inv = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+        if not inv.data:
+            flash("访谈不存在", "danger")
+            return redirect(url_for('dashboard'))
+        
+        inv = inv.data
+        
+        # 检查普通访谈有效期
+        start_time = inv.get('start_time')
+        end_time = inv.get('end_time')
+        
+        if start_time:
+            try:
+                start_dt = datetime.fromisoformat(start_time)
+                if now < start_dt:
+                    flash("访谈尚未开始", "warning")
+                    return redirect(url_for('dashboard'))
+            except:
+                pass
+        
+        if end_time:
+            try:
+                end_dt = datetime.fromisoformat(end_time)
+                if now > end_dt:
+                    flash("访谈已结束", "warning")
+                    return redirect(url_for('dashboard'))
+            except:
+                pass
+    
+    # ========== 2. 获取题目（普通访谈和强制访谈共用）==========
+    # 分步查询，避免外键歧义
+    interview_results = db.table("interview_results") \
+        .select("id, question_id, answer") \
+        .eq("interview_id", interview_id) \
+        .eq("user_id", user_id) \
+        .execute()
+    
+    if not interview_results.data:
+        questions = []
+    else:
+        question_ids = list(set([row['question_id'] for row in interview_results.data]))
+        
+        questions_data = db.table("questions") \
+            .select("*") \
+            .in_("id", question_ids) \
+            .execute()
+        
+        question_map = {q['id']: q for q in (questions_data.data or [])}
+        
+        questions = []
+        for row in interview_results.data:
+            q = question_map.get(row['question_id'], {})
+            q_copy = q.copy() if q else {}
+            
+            opts = q_copy.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    q_copy['options'] = json.loads(opts)
+                except:
+                    q_copy['options'] = {}
+            
+            if q_copy.get('type') == 'judge' and (not q_copy.get('options')):
+                q_copy['options'] = {"A": "正确 True", "B": "错误 False"}
+            
+            if not isinstance(q_copy.get('options'), dict):
+                q_copy['options'] = {}
+        
+            q_copy['interview_result_id'] = row['id']
+            q_copy['user_answer'] = row.get('answer') or ''
+            questions.append(q_copy)
+    
+    questions.sort(key=lambda x: x.get('num', 0))
+    for idx, q in enumerate(questions, 1):
+        q['num'] = idx
+        if q.get('options'):
+            q['options'] = {k: v for k, v in q['options'].items() if v.strip()}
+        else:
+            q['options'] = {}
+    
+    # 为模板添加额外信息
+    interview_data = inv if inv else {}
+    if is_force and force_data:
         # 强制访谈：覆盖标题和有效期显示
         interview_data = interview_data.copy() if interview_data else {}
         interview_data['title'] = force_data.get('title', interview_data.get('title', '强制访谈'))
@@ -839,8 +962,6 @@ def api_admin_delete_interview_user_result(interview_id, user_id):
     exam_id = interview.get('exam_id')
     
     # ✅ 修复：检查考试的国家权限（支持多国家）
-    from routes.helpers import parse_exam_countries
-    
     exam_data = None
     if exam_id:
         exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
@@ -915,7 +1036,6 @@ def api_admin_batch_delete_interview_results(interview_id):
     exam_id = interview.get('exam_id')
     
     # ✅ 修复：检查考试的国家权限（支持多国家）
-    from routes.helpers import parse_exam_countries, can_access_exam
     
     # 先获取考试信息
     exam_data = None
@@ -1141,6 +1261,7 @@ def api_interview_details(interview_id):
                     "id": interview_id,
                     "title": interview.get('title'),
                     "exam_title": exam_title,
+                    "exam_id": interview.get('exam_id'),
                     "reviewer": interview.get('reviewer', ''),
                     "feedback": interview_feedback  # ✅ 新增
                 },
@@ -1257,6 +1378,7 @@ def api_interview_details(interview_id):
             "id": interview_id,
             "title": interview.get('title'),
             "exam_title": exam_title,
+            "exam_id": interview.get('exam_id'),
             "reviewer": interview.get('reviewer', ''),
             "feedback": interview_feedback  # ✅ 新增
         },
@@ -1316,7 +1438,7 @@ def force_resample_interview(interview_id):
     if allowed is not None:
         exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
         if exam_res.data:
-            from routes.helpers import parse_exam_countries
+
             exam_countries = parse_exam_countries(exam_res.data)
             if not any(c in allowed for c in exam_countries):
                 return jsonify({"success": False, "message": "no_permission_for_interview", "params": []}), 403

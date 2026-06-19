@@ -419,6 +419,7 @@
     const defaultStartTime = "{{ exam_start_time | default('') }}";
     const defaultEndTime = "{{ exam_end_time | default('') }}";
     const defaultCountries = {{ exam_countries | tojson | default('[]') }};
+	const examPassScore = {{ exam_pass_score | default(85) }};
     
 	// 检测是否从绑定模态框进入
 	const urlParams = new URLSearchParams(window.location.search);

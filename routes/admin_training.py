@@ -5,21 +5,59 @@ import pdfkit
 import openpyxl
 import traceback
 from io import BytesIO
+from flask import render_template, request, redirect, send_file, url_for, session, flash, jsonify, make_response
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from functools import lru_cache
 from . import admin_training_bp
 from config import Config
+from datetime import datetime, timezone, timedelta
 from services.db import get_supabase, get_supabase_admin
 from services import auth
-from datetime import datetime, timezone, timedelta
 from services.export import find_wkhtmltopdf
-from utils.training_helpers import get_training_country_templates_status, _save_country_template
 from routes.helpers import login_required, admin_required, get_attendance_data, get_training_status, upload_signature, parse_exam_countries
-from flask import render_template, request, redirect, send_file, url_for, session, flash, jsonify, make_response
+from utils.training_helpers import get_training_country_templates_status, _save_country_template
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
-from utils.permissions import get_admin_allowed_countries, get_allowed_countries, is_developer
+from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, get_allowed_countries, is_developer
+from utils.cache_manager import cache_get, invalidate_cache_on_change, training_cache
+
 logger = logging.getLogger(__name__)
 
+
+# ==================== 缓存装饰器（通用） ====================
+def cache_result(seconds=300):
+    """缓存装饰器（兼容旧代码）"""
+    def decorator(func):
+        cache = {}
+        
+        def wrapper(*args, **kwargs):
+            print(f"📌 请求方法: {request.method}", flush=True)  # 应该是 GET
+            # 只缓存 GET 请求
+            if request.method != 'GET':
+                return func(*args, **kwargs)
+            
+            # 构建缓存键
+            user_id = session.get('user_id', '')
+            params = request.args.to_dict() if request.method == 'GET' else {}
+            param_str = json.dumps(params, sort_keys=True)
+            key = f"{user_id}_{request.path}_{param_str}"
+            if len(key) > 200:
+                import hashlib
+                key = hashlib.md5(key.encode()).hexdigest()
+            
+            now = datetime.now()
+            if key in cache:
+                result, timestamp = cache[key]
+                if now - timestamp < timedelta(seconds=seconds):
+                    return result
+            
+            result = func(*args, **kwargs)
+            cache[key] = (result, now)
+            return result
+        
+        wrapper.clear_cache = lambda: cache.clear()
+        return wrapper
+    return decorator
 
 @admin_training_bp.route('/admin/trainings')
 @login_required
@@ -27,435 +65,503 @@ logger = logging.getLogger(__name__)
 def admin_trainings():
     return render_template('admin/list_trainings.html')
 
+# ==================== 培训列表 API（使用缓存）开始 ====================
 @admin_training_bp.route('/api/admin/trainings', methods=['GET', 'POST', 'PUT', 'DELETE'])
 @login_required
 @admin_required
 def api_admin_trainings():
-    # 完整复制原 app.py api_admin_trainings 逻辑
-    # 注意：将 upload_signature 替换为 helpers.upload_signature
     db = get_supabase_admin()
     
     if request.method == 'GET':
-        # 获取过滤参数
-        country_filter = request.args.get('country', '')   # 前端选择的国家筛选
-        name = request.args.get('name', '')
-        quarter = request.args.get('quarter', '')
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-
-        # ✅ 添加调试日志
-        logger.info("=" * 50)
-        logger.info("调用 api_admin_trainings (GET)")
-        logger.info(f"当前用户: role={session.get('role')}, user_country={session.get('user_country')}")
-        logger.info(f"admin_countries={session.get('admin_countries')}")
-        
-        # ✅ 获取管理员的权限范围
-        
-        # 1. 获取所有培训（先不应用权限过滤，因为培训表的 country 字段可能为空）
-        query = db.table("trainings").select("*")
-        
-        if name:
-            query = query.ilike("name", f"%{name}%")
-
-        res = query.execute()
-        all_trainings = res.data or []
-        
-        logger.info(f"初始查询到 {len(all_trainings)} 条培训记录")
-        
-        # ✅ 2. 获取管理员允许的国家列表
-        allowed_countries = get_admin_allowed_countries()
-        logger.info(f"allowed_countries = {allowed_countries}")
-        
-        # ✅ 3. 根据权限范围过滤培训记录
-        if allowed_countries is not None:
-            if not allowed_countries:
-                # 没有权限，返回空
-                logger.warning("allowed_countries 为空，返回空列表")
-                filtered_trainings = []
-            else:
-                # 获取允许国家下的所有用户ID（用于通过学员签到关联的培训）
-                users_in_allowed = db.table("users").select("id").in_("country", allowed_countries).execute()
-                allowed_user_ids = [u['id'] for u in (users_in_allowed.data or [])] if users_in_allowed.data else []
-                logger.info(f"允许国家下的用户ID数量: {len(allowed_user_ids)}")
-                
-                # 查询存在允许国家学员签到的培训ID
-                allowed_training_ids = set()
-                if allowed_user_ids:
-                    attend_res = db.table("training_attendances").select("training_id").in_("user_id", allowed_user_ids).execute()
-                    allowed_training_ids = {a['training_id'] for a in (attend_res.data or [])}
-                    logger.info(f"通过学员签到关联的培训ID: {allowed_training_ids}")
-                
-                # 过滤：培训自身 country 在允许列表中 或 培训ID在 allowed_training_ids 中
-                filtered_trainings = []
-                for training in all_trainings:
-                    training_country = training.get('country')
-                    if training_country and training_country in allowed_countries:
-                        filtered_trainings.append(training)
-                    elif training['id'] in allowed_training_ids:
-                        filtered_trainings.append(training)
-                
-                logger.info(f"权限过滤后剩余 {len(filtered_trainings)} 条培训记录")
-        else:
-            # 无限制（开发者或超管）
-            filtered_trainings = all_trainings
-            logger.info("无权限限制，返回所有培训")
-        
-        # 4. 前端选择的额外国家筛选（与权限取交集）
-        if country_filter:
-            filter_country_code = match_country_code(country_filter) if country_filter else None
-            if filter_country_code:
-                # 获取该国家下的用户ID
-                users_in_filter = db.table("users").select("id").eq("country", filter_country_code).execute()
-                filter_user_ids = [u['id'] for u in (users_in_filter.data or [])] if users_in_filter.data else []
-                filter_training_ids = set()
-                if filter_user_ids:
-                    attend_filter = db.table("training_attendances").select("training_id").in_("user_id", filter_user_ids).execute()
-                    filter_training_ids = {a['training_id'] for a in (attend_filter.data or [])}
-                
-                # 过滤
-                temp_filtered = []
-                for training in filtered_trainings:
-                    if training.get('country') == filter_country_code or training['id'] in filter_training_ids:
-                        temp_filtered.append(training)
-                filtered_trainings = temp_filtered
-                logger.info(f"前端国家筛选后剩余 {len(filtered_trainings)} 条培训记录")
-
-        # 5. 季度过滤（内存中）
-        if quarter:
-            q_start, q_end = quarter_to_date_range(quarter)
-            if q_start and q_end:
-                q_start_dt = datetime.fromisoformat(q_start)
-                q_end_dt = datetime.fromisoformat(q_end)
-                temp_filtered = []
-                for training in filtered_trainings:
-                    start = training.get('start_time')
-                    end = training.get('end_time')
-                    if start and end:
-                        try:
-                            start_dt = datetime.fromisoformat(start)
-                            end_dt = datetime.fromisoformat(end)
-                            if start_dt <= q_end_dt and end_dt >= q_start_dt:
-                                temp_filtered.append(training)
-                        except:
-                            pass
-                filtered_trainings = temp_filtered
-                logger.info(f"季度过滤后剩余 {len(filtered_trainings)} 条培训记录")
-
-        # 6. 按创建时间倒序排序
-        filtered_trainings.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-
-        # 7. 手动分页
-        total = len(filtered_trainings)
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        paginated = filtered_trainings[start_idx:end_idx]
-
-        # 8. 补充签到人数和动态状态
-        now = datetime.now(timezone.utc)
-        for t in paginated:
-            # ✅ 修改：只统计在职人员的签到
-            signed_count = db.table("training_attendances") \
-                .select("id, user_id", count="exact") \
-                .eq("training_id", t['id']) \
-                .execute()
-            
-            # 获取签到用户的ID列表
-            signed_user_ids = [s['user_id'] for s in (signed_count.data or [])]
-            
-            # ✅ 只统计在职人员的签到
-            if signed_user_ids:
-                active_users = db.table("users").select("id").in_("id", signed_user_ids).eq("is_resign", False).execute()
-                active_user_ids = [u['id'] for u in (active_users.data or [])]
-                t['signed_count'] = len(active_user_ids)
-            else:
-                t['signed_count'] = 0
-
-            # ✅ 计算动态状态
-            start_time = t.get('start_time')
-            end_time = t.get('end_time')
-            
-            if not start_time or not end_time:
-                t['dynamic_status'] = 'draft'
-            else:
-                try:
-                    # 解析时间
-                    start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                    end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                    
-                    if now < start_dt:
-                        t['dynamic_status'] = 'pending'
-                    elif now > end_dt:
-                        t['dynamic_status'] = 'closed'
-                    else:
-                        t['dynamic_status'] = 'active'
-                except Exception as e:
-                    logger.warning(f"解析培训 {t['id']} 时间失败: {e}")
-                    t['dynamic_status'] = 'draft'
-            
-            # 检查是否有多个国家的模板（用于前端禁用表头录入按钮）
-            if not t.get('country'):
-                att_users = db.table("training_attendances").select("user_id").eq("training_id", t['id']).execute()
-                user_ids = [u['user_id'] for u in (att_users.data or [])] if att_users.data else []
-                countries = set()
-                if user_ids:
-                    users_res = db.table("users").select("country").in_("id", user_ids).execute()
-                    countries = {u['country'] for u in (users_res.data or []) if u.get('country')}
-                
-                if len(countries) > 1:
-                    t['has_inconsistent_templates'] = True
-                else:
-                    ct_res = db.table("training_country_templates").select("country, header_template").eq("training_id", t['id']).execute()
-                    templates = ct_res.data or []
-                    if not templates:
-                        t['has_inconsistent_templates'] = False
-                    else:
-                        unique_templates = set()
-                        for ct in templates:
-                            tpl = ct.get('header_template', {})
-                            unique_templates.add(json.dumps(tpl, sort_keys=True))
-                        t['has_inconsistent_templates'] = len(unique_templates) > 1
-            else:
-                t['has_inconsistent_templates'] = False
-
-        logger.info(f"最终返回 {len(paginated)} 条培训记录")
-        return jsonify({
-            "data": paginated,
-            "total": total,
-            "page": page,
-            "per_page": per_page
-        })
-
+        # ✅ 这里调用的是被缓存装饰的函数
+        result = _get_trainings_list(db)
+        print(f"📤 API 返回结果: {type(result)}, keys: {result.keys() if isinstance(result, dict) else 'not dict'}", flush=True)
+        return jsonify(result)
+    
     elif request.method == 'POST':
-        # 创建培训（也需要权限校验）
-        data = request.json
-        name = data.get('name')
-        if not name:
-            return jsonify({"success": False, "message": "jsonify_training_name_cannot_empty", "params": []}), 400
-        
-        # ✅ 从数据库实时获取管理员的权限范围，而不是依赖 session
-        current_user_id = session.get('user_id')
-        current_role = session.get('role')
-        
-        # 获取用户的权限范围（直接从数据库）
-        user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
-        user_data = user_res.data if user_res and user_res.data else {}
-        
-        # 计算允许的国家列表
-        allowed = None
-        if current_role == 'super_admin':
-            admin_countries = user_data.get('admin_countries')
-            if admin_countries:
-                try:
-                    allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
-                except:
-                    allowed = None
-            # 超管如果没有设置权限范围，则无限制
-        elif current_role == 'admin':
-            admin_countries = user_data.get('admin_countries')
-            if admin_countries:
-                try:
-                    allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
-                except:
-                    allowed = None
-            
-            # 如果没有设置权限范围，使用用户所在国家
-            if not allowed:
-                user_country = user_data.get('country')
-                if user_country:
-                    allowed = [user_country]
-                else:
-                    allowed = []
-        
-        training_country = data.get('country')
-        
-        # 详细日志
-        logger.info("=" * 50)
-        logger.info("创建培训 POST 请求")
-        logger.info(f"用户ID: {current_user_id}, 角色: {current_role}")
-        logger.info(f"数据库 admin_countries: {user_data.get('admin_countries')}")
-        logger.info(f"数据库 user_country: {user_data.get('country')}")
-        logger.info(f"计算后 allowed: {allowed}")
-        logger.info(f"请求中的 training_country: {training_country}")
-        
-        # # 权限检查
-        if allowed is not None:
-            if not allowed:
-                logger.warning(f"管理员没有任何国家权限，禁止创建培训")
-                return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
-            
-            # 检查指定的国家是否在允许范围内
-            if not training_country:
-                # 未指定国家，但管理员有权限范围，拒绝
-                logger.warning(f"未指定国家，但管理员权限范围={allowed}")
-                return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
-            
-            if training_country not in allowed:
-                logger.warning(f"权限拒绝: {training_country} 不在 {allowed} 中")
-                return jsonify({
-                    "success": False, 
-                    "message": "jsonify_no_authority_creat_training_this_county", "params": []
-                }), 403
-        else:
-            logger.info("无权限限制（超管或开发者）")
-
-        # 如果没有传递国家，且管理员有默认国家，则使用默认国家
-        if not training_country and allowed and len(allowed) == 1:
-            training_country = allowed[0]
-            logger.info(f"自动使用默认国家: {training_country}")
-        
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-
-        if not start_time:
-            start_time = datetime.now(timezone.utc).isoformat()
-        if not end_time:
-            end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
-            
-        res = db.table("trainings").insert({
-            "name": name,
-            "start_time": start_time,
-            "end_time": end_time,
-            "header_template": data.get('header_template', {}),
-            "country": training_country,
-            "quarter": data.get('quarter', ''),
-            "is_active": False
-        }).execute()
-        
-        logger.info(f"创建培训成功: id={res.data[0]['id']}, name={name}")
-        return jsonify({"success": True, "id": res.data[0]['id']})
+        result = _create_training(db)
+        # ✅ 创建成功后清除缓存
+        training_cache.clear('training_list')
+        return result
     
     elif request.method == 'PUT':
-        # 更新培训（需要权限校验）
-        logger.info(f"========== PUT 请求收到 ==========")
-        logger.info(f"请求数据: {request.json}")
-        data = request.json
-        tid = data.get('id')
-        if tid is None or tid == 'None' or str(tid).lower() == 'null':
-            return jsonify({"success": False, "message": "无效的培训ID"}), 400
-        
-        try:
-            tid = int(tid)
-        except (ValueError, TypeError):
-            return jsonify({"success": False, "message": "培训ID必须是整数"}), 400
-        
-        # ✅ 获取原培训信息，检查权限
-        original = db.table("trainings").select("country").eq("id", tid).maybe_single().execute()
-        if original.data:
-            allowed = get_admin_allowed_countries()
-            original_country = original.data.get('country')
-            if allowed is not None and original_country and original_country not in allowed:
-                return jsonify({"success": False, "message": "jsonify_no_authority_modify_training", "params": []}), 403
-        
-        # 处理 header_template 保存
-        country_code = data.get('country_code')
-        header_template = data.get('header_template')
-        if header_template is not None:
-            if country_code:
-                # 检查国家权限
-                allowed = get_admin_allowed_countries()
-                if allowed is not None and country_code not in allowed:
-                    return jsonify({"success": False, "message": "jsonify_no_authorith_set_up_header_template", "params": []}), 403
-                # ✅ 调用辅助函数保存模板
-                _save_country_template(db, tid, country_code, header_template)
-            else:
-                db.table("trainings").update({"header_template": header_template}).eq("id", tid).execute()
-            #return jsonify({"success": True})
-    
-        # ✅ 记录是否推送（用于发送邮件）
-        is_push = data.get('is_active', False)
-        start_time = data.get('start_time')
-        end_time = data.get('end_time')
-        user_ids = data.get('user_ids')  # 选中的用户ID列表
-        
-        update_data = {}
-        if 'name' in data:
-            update_data['name'] = data['name']
-        if 'header_template' in data:
-            update_data['header_template'] = data['header_template']
-        if 'start_time' in data and data['start_time'] is not None:
-            update_data['start_time'] = data['start_time']
-        if 'end_time' in data and data['end_time'] is not None:
-            update_data['end_time'] = data['end_time']
-        if 'is_active' in data:
-            update_data['is_active'] = data['is_active']
-        if 'country' in data:
-            # 检查新国家权限
-            new_country = data['country']
-            allowed = get_admin_allowed_countries()
-            if allowed is not None and new_country and new_country not in allowed:
-                return jsonify({"success": False, "message": "jsonify_no_authorith_transfer_training_to_country", "params": []}), 403
-            update_data['country'] = new_country
-        if 'quarter' in data:
-            update_data['quarter'] = data['quarter']
-        
-        if update_data:
-            db.table("trainings").update(update_data).eq("id", tid).execute()
-            logger.info(f"更新培训成功: id={tid}, 更新字段={list(update_data.keys())}")
-
-        # ✅ 新增：处理培训-学员分配关系（定点推送）
-        user_ids = data.get('user_ids')
-        if user_ids is not None:  # 注意：空数组表示清空所有分配
-            # 先删除该培训的所有现有分配
-            db.table("training_assignments").delete().eq("training_id", tid).execute()
-            
-            # 如果有指定用户，插入新的分配关系
-            if len(user_ids) > 0:
-                assignments = [{"training_id": tid, "user_id": uid, "created_by": session.get('user_id')} for uid in user_ids]
-                db.table("training_assignments").insert(assignments).execute()
-                logger.info(f"培训 {tid} 定点推送给 {len(user_ids)} 名学员")
-            else:
-                logger.info(f"培训 {tid} 清空了所有分配（推送给全国）")
-                        
-        # 在 PUT 方法中，处理 user_ids 的地方
-        logger.info(f"========== 培训推送 ==========")
-        logger.info(f"培训ID: {tid}")
-        logger.info(f"user_ids: {user_ids}")
-        logger.info(f"user_ids 类型: {type(user_ids)}")
-        logger.info(f"user_ids 长度: {len(user_ids) if user_ids else 0}")
-
-        # 如果只是保存表头（没有推送字段），可以提前返回
-        if not is_push and not start_time and not end_time and user_ids is None:
-            return jsonify({"success": True})
-        
-        # 发送培训推送邮件通知
-        if data.get('is_active') and start_time and end_time:
-            # 异步发送邮件，避免阻塞请求
-            import threading
-            thread = threading.Thread(
-                target=_send_training_notifications,
-                args=(tid, start_time, end_time, user_ids, request.host_url)
-            )
-            thread.daemon = True
-            thread.start()
-            logger.info(f"培训 {tid} 邮件通知已加入发送队列")
-        
-        return jsonify({"success": True})
+        result = _update_training(db)
+        # ✅ 更新成功后清除缓存
+        training_cache.clear('training_list')
+        return result
     
     elif request.method == 'DELETE':
-        tid = request.args.get('id')
-        if not tid:
-            return jsonify({"success": False, "message": "jsonify_lack_training_id", "params": []}), 400
-        
-        # 删除前检查权限
-        original = db.table("trainings").select("country", created_by).eq("id", tid).maybe_single().execute()
-        if original.data:
-            allowed = get_admin_allowed_countries()
-            original_country = original.data.get('country')
-            created_by = original.data.get('created_by')
-            current_user_id = session.get('user_id')
-            current_role = session.get('role')
-            is_dev = is_developer()
-            if allowed is not None and original_country and original_country not in allowed:
-                return jsonify({"success": False, "message": "jsonify_no_authorith_delete_training", "params": []}), 403
+        result = _delete_training(db)
+        # ✅ 删除成功后清除缓存
+        training_cache.clear('training_list')
+        return result
 
-            # ✅ 创建者检查（非超管/开发者）
-            if not is_dev and current_role != 'super_admin':
-                if created_by != current_user_id:
-                    return jsonify({"success": False, "message": "jsonify_no_permmission_delete_item_created_by_others", "params": []}), 403
+# ✅ 将 GET 逻辑抽取为独立函数，使用缓存装饰器
+@cache_get(ttl=300, prefix='training_list', include_user=True)
+def _get_trainings_list(db):
+    """获取培训列表（带缓存）"""
+    """获取培训列表（带缓存）"""
+    print("=" * 60, flush=True)
+    print("🔥🔥🔥 _get_trainings_list 被调用（应该是第一次或缓存过期）", flush=True)
+    print("=" * 60, flush=True)
+
+    # 获取过滤参数
+    country_filter = request.args.get('country', '')
+    name = request.args.get('name', '')
+    quarter = request.args.get('quarter', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    logger.info("=" * 50)
+    logger.info("调用 _get_trainings_list (缓存)")
+    logger.info(f"当前用户: role={session.get('role')}, user_country={session.get('user_country')}")
+    
+    # 1. 获取所有培训
+    query = db.table("trainings").select("*")
+    if name:
+        query = query.ilike("name", f"%{name}%")
+    res = query.execute()
+    all_trainings = res.data or []
+    
+    # 2. 权限过滤
+    allowed_countries = get_admin_allowed_countries()
+    if allowed_countries is not None:
+        if not allowed_countries:
+            return {"data": [], "total": 0, "page": page, "per_page": per_page}
         
-        db.table("trainings").delete().eq("id", tid).execute()
-        logger.info(f"删除培训成功: id={tid}")
+        users_in_allowed = db.table("users").select("id").in_("country", allowed_countries).execute()
+        allowed_user_ids = [u['id'] for u in (users_in_allowed.data or [])] if users_in_allowed.data else []
+        
+        allowed_training_ids = set()
+        if allowed_user_ids:
+            attend_res = db.table("training_attendances").select("training_id").in_("user_id", allowed_user_ids).execute()
+            allowed_training_ids = {a['training_id'] for a in (attend_res.data or [])}
+        
+        filtered_trainings = []
+        for training in all_trainings:
+            training_country = training.get('country')
+            if training_country and training_country in allowed_countries:
+                filtered_trainings.append(training)
+            elif training['id'] in allowed_training_ids:
+                filtered_trainings.append(training)
+    else:
+        filtered_trainings = all_trainings
+    
+    # 3. 国家过滤
+    if country_filter:
+        filter_country_code = match_country_code(country_filter) if country_filter else None
+        if filter_country_code:
+            users_in_filter = db.table("users").select("id").eq("country", filter_country_code).execute()
+            filter_user_ids = [u['id'] for u in (users_in_filter.data or [])] if users_in_filter.data else []
+            filter_training_ids = set()
+            if filter_user_ids:
+                attend_filter = db.table("training_attendances").select("training_id").in_("user_id", filter_user_ids).execute()
+                filter_training_ids = {a['training_id'] for a in (attend_filter.data or [])}
+            
+            temp_filtered = []
+            for training in filtered_trainings:
+                if training.get('country') == filter_country_code or training['id'] in filter_training_ids:
+                    temp_filtered.append(training)
+            filtered_trainings = temp_filtered
+
+    # 4. 季度过滤
+    if quarter:
+        q_start, q_end = quarter_to_date_range(quarter)
+        if q_start and q_end:
+            q_start_dt = datetime.fromisoformat(q_start)
+            q_end_dt = datetime.fromisoformat(q_end)
+            temp_filtered = []
+            for training in filtered_trainings:
+                start = training.get('start_time')
+                end = training.get('end_time')
+                if start and end:
+                    try:
+                        start_dt = datetime.fromisoformat(start)
+                        end_dt = datetime.fromisoformat(end)
+                        if start_dt <= q_end_dt and end_dt >= q_start_dt:
+                            temp_filtered.append(training)
+                    except:
+                        pass
+            filtered_trainings = temp_filtered
+
+    # 5. 排序
+    filtered_trainings.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+    # 6. 分页
+    total = len(filtered_trainings)
+    start_idx = (page - 1) * per_page
+    end_idx = start_idx + per_page
+    paginated = filtered_trainings[start_idx:end_idx]
+
+    # 7. 批量补充数据（优化：减少 N+1 查询）
+    now = datetime.now(timezone.utc)
+    training_ids = [t['id'] for t in paginated]
+    
+    # 7.1 批量获取签到数据
+    attendance_map = {}
+    if training_ids:
+        att_res = db.table("training_attendances") \
+            .select("training_id, user_id") \
+            .in_("training_id", training_ids) \
+            .execute()
+        for att in (att_res.data or []):
+            tid = att['training_id']
+            if tid not in attendance_map:
+                attendance_map[tid] = []
+            attendance_map[tid].append(att['user_id'])
+        
+        # 获取在职用户
+        all_user_ids = set()
+        for users in attendance_map.values():
+            all_user_ids.update(users)
+        
+        active_user_ids = set()
+        if all_user_ids:
+            active_users = db.table("users").select("id").in_("id", list(all_user_ids)).eq("is_resign", False).execute()
+            active_user_ids = {u['id'] for u in (active_users.data or [])}
+    
+    # 7.2 批量获取绑定数量
+    binding_counts = {}
+    if training_ids:
+        for tid in training_ids:
+            count_res = db.table("training_exam_bindings").select("id", count="exact").eq("training_id", tid).is_("deleted_at", "null").execute()
+            binding_counts[tid] = count_res.count or 0
+    
+    # 7.3 批量获取模板信息
+    templates_by_training = {}
+    if training_ids:
+        tpl_res = db.table("training_country_templates").select("training_id, country, header_template").in_("training_id", training_ids).execute()
+        for tpl in (tpl_res.data or []):
+            tid = tpl['training_id']
+            if tid not in templates_by_training:
+                templates_by_training[tid] = []
+            templates_by_training[tid].append(tpl)
+
+    # 8. 组装返回数据
+    for t in paginated:
+        tid = t['id']
+        
+        # 签到人数
+        user_ids = attendance_map.get(tid, [])
+        signed_count = len([uid for uid in user_ids if uid in active_user_ids])
+        t['signed_count'] = signed_count
+        
+        # 绑定数量
+        t['binding_count'] = binding_counts.get(tid, 0)
+        
+        # 动态状态
+        start_time = t.get('start_time')
+        end_time = t.get('end_time')
+        if not start_time or not end_time:
+            t['dynamic_status'] = 'draft'
+        else:
+            try:
+                start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                if now < start_dt:
+                    t['dynamic_status'] = 'pending'
+                elif now > end_dt:
+                    t['dynamic_status'] = 'closed'
+                else:
+                    t['dynamic_status'] = 'active'
+            except Exception as e:
+                logger.warning(f"解析培训 {tid} 时间失败: {e}")
+                t['dynamic_status'] = 'draft'
+        
+        # 模板不一致检查
+        templates = templates_by_training.get(tid, [])
+        if not t.get('country') and templates:
+            unique_templates = set()
+            for ct in templates:
+                tpl = ct.get('header_template', {})
+                unique_templates.add(json.dumps(tpl, sort_keys=True))
+            t['has_inconsistent_templates'] = len(unique_templates) > 1
+        else:
+            t['has_inconsistent_templates'] = False
+
+    print(f"📊 返回数据: {len(paginated)} 条培训记录", flush=True)
+    logger.info(f"最终返回 {len(paginated)} 条培训记录")
+    return {
+        "data": paginated,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    }
+
+def _create_training(db):
+    """创建培训"""
+    data = request.json
+    name = data.get('name')
+    if not name:
+        return jsonify({"success": False, "message": "jsonify_training_name_cannot_empty", "params": []}), 400
+
+    # 创建培训（也需要权限校验）
+    data = request.json
+    name = data.get('name')
+    if not name:
+        return jsonify({"success": False, "message": "jsonify_training_name_cannot_empty", "params": []}), 400
+    
+    # ✅ 从数据库实时获取管理员的权限范围，而不是依赖 session
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    
+    # 获取用户的权限范围（直接从数据库）
+    user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
+    user_data = user_res.data if user_res and user_res.data else {}
+    
+    # 计算允许的国家列表
+    allowed = None
+    if current_role == 'developer':
+        # ✅ developer 无限制
+        allowed = None
+    elif current_role == 'super_admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+        # 超管如果没有设置权限范围，则无限制
+    elif current_role == 'admin':
+        admin_countries = user_data.get('admin_countries')
+        if admin_countries:
+            try:
+                allowed = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+            except:
+                allowed = None
+        
+        # 如果没有设置权限范围，使用用户所在国家
+        if not allowed:
+            user_country = user_data.get('country')
+            if user_country:
+                allowed = [user_country]
+            else:
+                allowed = []
+    
+    training_country = data.get('country')
+    
+    # 详细日志
+    logger.info("=" * 50)
+    logger.info("创建培训 POST 请求")
+    logger.info(f"用户ID: {current_user_id}, 角色: {current_role}")
+    logger.info(f"数据库 admin_countries: {user_data.get('admin_countries')}")
+    logger.info(f"数据库 user_country: {user_data.get('country')}")
+    logger.info(f"计算后 allowed: {allowed}")
+    logger.info(f"请求中的 training_country: {training_country}")
+    
+    # # 权限检查
+    if allowed is not None:
+        if not allowed:
+            logger.warning(f"管理员没有任何国家权限，禁止创建培训")
+            return jsonify({"success": False, "message": "jsonify_no_country_permission", "params": []}), 403
+        
+        # 检查指定的国家是否在允许范围内
+        if not training_country:
+            # 未指定国家，但管理员有权限范围，拒绝
+            logger.warning(f"未指定国家，但管理员权限范围={allowed}")
+            return jsonify({"success": False, "message": "jsonify_country_required", "params": []}), 400
+        
+        if training_country not in allowed:
+            logger.warning(f"权限拒绝: {training_country} 不在 {allowed} 中")
+            return jsonify({
+                "success": False, 
+                "message": "jsonify_no_authority_creat_training_this_county", "params": []
+            }), 403
+    else:
+        logger.info("无权限限制（超管或开发者）")
+
+    # 如果没有传递国家，且管理员有默认国家，则使用默认国家
+    if not training_country and allowed and len(allowed) == 1:
+        training_country = allowed[0]
+        logger.info(f"自动使用默认国家: {training_country}")
+    
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+
+    if not start_time:
+        start_time = datetime.now(timezone.utc).isoformat()
+    if not end_time:
+        end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+        
+    res = db.table("trainings").insert({
+        "name": name,
+        "start_time": start_time,
+        "end_time": end_time,
+        "header_template": data.get('header_template', {}),
+        "country": training_country,
+        "quarter": data.get('quarter', ''),
+        "is_active": False
+    }).execute()
+    
+    logger.info(f"创建培训成功: id={res.data[0]['id']}, name={name}")
+    return jsonify({"success": True, "id": res.data[0]['id']})
+    
+    # 创建成功后清除缓存
+    training_cache.clear('training_list')
+    
+    return jsonify({"success": True, "id": res.data[0]['id']})
+
+def _update_training(db):
+    """更新培训"""
+    # 更新培训（需要权限校验）
+    logger.info(f"========== PUT 请求收到 ==========")
+    logger.info(f"请求数据: {request.json}")
+    data = request.json
+    tid = data.get('id')
+    if tid is None or tid == 'None' or str(tid).lower() == 'null':
+        return jsonify({"success": False, "message": "无效的培训ID"}), 400
+    
+    try:
+        tid = int(tid)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "message": "培训ID必须是整数"}), 400
+    
+    # ✅ 获取原培训信息，检查权限
+    original = db.table("trainings").select("country").eq("id", tid).maybe_single().execute()
+    if original.data:
+        allowed = get_admin_allowed_countries()
+        original_country = original.data.get('country')
+        if allowed is not None and original_country and original_country not in allowed:
+            return jsonify({"success": False, "message": "jsonify_no_authority_modify_training", "params": []}), 403
+    
+    # 处理 header_template 保存
+    country_code = data.get('country_code')
+    header_template = data.get('header_template')
+    if header_template is not None:
+        if country_code:
+            # 检查国家权限
+            allowed = get_admin_allowed_countries()
+            if allowed is not None and country_code not in allowed:
+                return jsonify({"success": False, "message": "jsonify_no_authorith_set_up_header_template", "params": []}), 403
+            # ✅ 调用辅助函数保存模板
+            _save_country_template(db, tid, country_code, header_template)
+        else:
+            db.table("trainings").update({"header_template": header_template}).eq("id", tid).execute()
+        #return jsonify({"success": True})
+
+    # ✅ 记录是否推送（用于发送邮件）
+    is_push = data.get('is_active', False)
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+    user_ids = data.get('user_ids')  # 选中的用户ID列表
+    
+    update_data = {}
+    if 'name' in data:
+        update_data['name'] = data['name']
+    if 'header_template' in data:
+        update_data['header_template'] = data['header_template']
+    if 'start_time' in data and data['start_time'] is not None:
+        update_data['start_time'] = data['start_time']
+    if 'end_time' in data and data['end_time'] is not None:
+        update_data['end_time'] = data['end_time']
+    if 'is_active' in data:
+        update_data['is_active'] = data['is_active']
+    if 'country' in data:
+        # 检查新国家权限
+        new_country = data['country']
+        allowed = get_admin_allowed_countries()
+        if allowed is not None and new_country and new_country not in allowed:
+            return jsonify({"success": False, "message": "jsonify_no_authorith_transfer_training_to_country", "params": []}), 403
+        update_data['country'] = new_country
+    if 'quarter' in data:
+        update_data['quarter'] = data['quarter']
+    
+    if update_data:
+        db.table("trainings").update(update_data).eq("id", tid).execute()
+        logger.info(f"更新培训成功: id={tid}, 更新字段={list(update_data.keys())}")
+
+    # ✅ 新增：处理培训-学员分配关系（定点推送）
+    user_ids = data.get('user_ids')
+    if user_ids is not None:  # 注意：空数组表示清空所有分配
+        # 先删除该培训的所有现有分配
+        db.table("training_assignments").delete().eq("training_id", tid).execute()
+        
+        # 如果有指定用户，插入新的分配关系
+        if len(user_ids) > 0:
+            assignments = [{"training_id": tid, "user_id": uid, "created_by": session.get('user_id')} for uid in user_ids]
+            db.table("training_assignments").insert(assignments).execute()
+            logger.info(f"培训 {tid} 定点推送给 {len(user_ids)} 名学员")
+        else:
+            logger.info(f"培训 {tid} 清空了所有分配（推送给全国）")
+                    
+    # 在 PUT 方法中，处理 user_ids 的地方
+    logger.info(f"========== 培训推送 ==========")
+    logger.info(f"培训ID: {tid}")
+    logger.info(f"user_ids: {user_ids}")
+    logger.info(f"user_ids 类型: {type(user_ids)}")
+    logger.info(f"user_ids 长度: {len(user_ids) if user_ids else 0}")
+
+    # 如果只是保存表头（没有推送字段），可以提前返回
+    if not is_push and not start_time and not end_time and user_ids is None:
         return jsonify({"success": True})
+    
+    # 发送培训推送邮件通知
+    if data.get('is_active') and start_time and end_time:
+        # 异步发送邮件，避免阻塞请求
+        import threading
+        thread = threading.Thread(
+            target=_send_training_notifications,
+            args=(tid, start_time, end_time, user_ids, request.host_url)
+        )
+        thread.daemon = True
+        thread.start()
+        logger.info(f"培训 {tid} 邮件通知已加入发送队列")
+    
+    return jsonify({"success": True})
+    
+    # 更新成功后清除缓存
+    training_cache.clear('training_list')
+    
+    return jsonify({"success": True})
+
+def _delete_training(db):
+    """删除培训"""
+    tid = request.args.get('id')
+    if not tid:
+        return jsonify({"success": False, "message": "jsonify_lack_training_id", "params": []}), 400
+    
+    # 删除前检查权限
+    original = db.table("trainings").select("country", created_by).eq("id", tid).maybe_single().execute()
+    if original.data:
+        allowed = get_admin_allowed_countries()
+        original_country = original.data.get('country')
+        created_by = original.data.get('created_by')
+        current_user_id = session.get('user_id')
+        current_role = session.get('role')
+        is_dev = is_developer()
+        if allowed is not None and original_country and original_country not in allowed:
+            return jsonify({"success": False, "message": "jsonify_no_authorith_delete_training", "params": []}), 403
+
+        # ✅ 创建者检查（非超管/开发者）
+        if not is_dev and current_role != 'super_admin':
+            if created_by != current_user_id:
+                return jsonify({"success": False, "message": "jsonify_no_permmission_delete_item_created_by_others", "params": []}), 403
+    
+    db.table("trainings").delete().eq("id", tid).execute()
+    logger.info(f"删除培训成功: id={tid}")
+    return jsonify({"success": True})
+    
+    # 删除成功后清除缓存
+    training_cache.clear('training_list')
+    
+    return jsonify({"success": True})
+
+@admin_training_bp.route('/api/admin/training/clear_cache', methods=['POST'])
+@login_required
+@admin_required
+def clear_training_cache():
+    """手动清除培训列表缓存"""
+    training_cache.clear('training_list')
+    return jsonify({"success": True, "message": "培训列表缓存已清除"})
+
+@admin_training_bp.route('/api/admin/training/cache_stats', methods=['GET'])
+@login_required
+@admin_required
+def get_training_cache_stats():
+    """获取缓存统计信息"""
+    stats = training_cache.get_stats()
+    return jsonify(stats)
+# ==================== 培训列表 API（使用缓存）结束 ====================
 
 @admin_training_bp.route('/api/training/attendance/<int:training_id>')
 @login_required
@@ -860,12 +966,17 @@ def training_attendance_status_view():
 def api_training_users_with_status():
     """获取权限范围内所有培训的学员签到状态（只显示培训对应国家的学员）"""
     db = get_supabase()
-    admin_db = get_supabase_admin()  # 需要管理员客户端来读取分配关系
+    admin_db = get_supabase_admin()
     
-    # 获取当前管理员的权限范围
     allowed_countries = get_admin_allowed_countries()
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    is_dev = is_developer()
     
-    # 1. 获取权限范围内的所有培训
+    # 获取 URL 参数中的 training_id
+    training_id_param = request.args.get('training_id', '').strip()
+    
+    # ========== 1. 获取权限范围内的所有培训 ==========
     trainings_query = db.table("trainings").select("id, name, country").is_("deleted_at", "null")
     
     if allowed_countries is not None:
@@ -875,18 +986,36 @@ def api_training_users_with_status():
     
     trainings_res = trainings_query.execute()
     trainings = trainings_res.data or []
+
+    if training_id_param:
+        try:
+            training_id_int = int(training_id_param)
+            allowed_training_ids = [t['id'] for t in trainings]
+            if training_id_int not in allowed_training_ids:
+                return jsonify({"data": []})
+            trainings = [t for t in trainings if t['id'] == training_id_int]
+        except ValueError:
+            return jsonify({"data": []})
     
     if not trainings:
         return jsonify({"data": []})
     
-    # 2. 获取所有培训涉及的国家列表（用于后续过滤用户）
-    training_countries = list(set([t.get('country') for t in trainings if t.get('country')]))
+    # ========== 2. 获取培训涉及的国家列表 ==========
+    training_countries = []
+    for t in trainings:
+        country = t.get('country')
+        if country:
+            training_countries.append(country)
+    training_countries = list(set(training_countries))
     
-    # 3. 只获取培训国家范围内的用户
-    users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
-    
+    # ========== 3. 获取用户 ==========
     if training_countries:
-        users_query = users_query.in_("country", training_countries)
+        users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", training_countries)
+    else:
+        if allowed_countries is not None and allowed_countries:
+            users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", allowed_countries)
+        else:
+            users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
     
     # 额外筛选条件
     search = request.args.get('search', '')
@@ -901,30 +1030,137 @@ def api_training_users_with_status():
         users_query = users_query.filter("wh_id", "ilike", f"%{wh_id}%")
     
     users_res = users_query.execute()
-    users = users_res.data or []
+    all_users = users_res.data or []
+    
+    logger.info(f"查询到 {len(all_users)} 个用户（过滤前）")
+    for u in all_users:
+        logger.info(f"  用户: {u.get('name_en')}, role={u.get('role')}, country={u.get('country')}")
+    
+    # ========== 4. ✅ 权限过滤（使用新的权限逻辑） ==========
+    filtered_users = []
+    for user in all_users:
+        user_role = user.get('role', 'user')
+        user_id = user.get('id')
+        user_country = user.get('country', '')
+        user_admin_countries = user.get('admin_countries')
+        user_name = user.get('name_en', '')
+        
+        # 解析目标用户的权限范围
+        target_admin_country_list = []
+        if user_admin_countries:
+            try:
+                target_admin_country_list = json.loads(user_admin_countries) if isinstance(user_admin_countries, str) else user_admin_countries
+            except:
+                pass
+        
+        # 开发者：可以看到所有用户
+        if is_dev:
+            filtered_users.append(user)
+            continue
+        
+        # ========== 超管逻辑 ==========
+        if current_role == 'super_admin':
+            # 超管看不到开发者
+            if user_role == 'developer':
+                logger.debug(f"超管跳过开发者: {user_name}")
+                continue
+            
+            # 如果当前超管没有权限范围限制，可以看到所有非开发者
+            if allowed_countries is None:
+                filtered_users.append(user)
+                continue
+            
+            # 有权限范围限制
+            if allowed_countries:
+                # 目标用户是超管或管理员：检查 admin_countries 交集
+                if user_role in ['super_admin', 'admin']:
+                    if target_admin_country_list:
+                        if any(c in allowed_countries for c in target_admin_country_list):
+                            filtered_users.append(user)
+                            continue
+                    # 如果目标超管没有设置权限范围，视为全局，可见
+                    elif user_role == 'super_admin' and not target_admin_country_list:
+                        filtered_users.append(user)
+                        continue
+                    continue
+                
+                # 目标用户是普通用户：检查 country
+                if user_role == 'user':
+                    if user_country and user_country in allowed_countries:
+                        filtered_users.append(user)
+                        continue
+                continue
+            continue
+        
+        # ========== 管理员逻辑 ==========
+        if current_role == 'admin':
+            # 管理员看不到超管和开发者
+            if user_role in ['super_admin', 'developer']:
+                logger.debug(f"管理员跳过上级: {user_name} (role={user_role})")
+                continue
+            
+            # 当前管理员的权限范围
+            current_allowed = allowed_countries if allowed_countries else [session.get('user_country')]
+            if not current_allowed:
+                continue
+            
+            # 1. 如果是自己，允许
+            if user_id == current_user_id:
+                filtered_users.append(user)
+                logger.debug(f"管理员看到自己: {user_name}")
+                continue
+            
+            # 2. 目标用户是管理员：检查 admin_countries 交集
+            if user_role == 'admin':
+                if target_admin_country_list:
+                    if any(c in current_allowed for c in target_admin_country_list):
+                        filtered_users.append(user)
+                        logger.debug(f"管理员看到同国家管理员: {user_name}")
+                        continue
+                # 如果目标管理员没有设置权限范围，检查 country
+                elif user_country and user_country in current_allowed:
+                    filtered_users.append(user)
+                    continue
+                # 不同国家或不同权限范围的管理员不可见
+                logger.debug(f"管理员跳过不同国家管理员: {user_name} (country={user_country})")
+                continue
+            
+            # 3. 目标用户是普通用户：检查 country
+            if user_role == 'user':
+                if user_country and user_country in current_allowed:
+                    filtered_users.append(user)
+                    continue
+                continue
+            
+            continue
+        
+        # 其他角色
+        filtered_users.append(user)
+    
+    users = filtered_users
     user_ids = [u['id'] for u in users]
+    
+    logger.info(f"权限过滤后 {len(users)} 个用户: {[u.get('name_en') for u in users]}")
     
     if not user_ids:
         return jsonify({"data": []})
     
-    # 4. 获取所有培训的分配记录（关键修复）
+    # ========== 5. 获取培训分配记录 ==========
     training_ids = [t['id'] for t in trainings]
     assign_res = admin_db.table("training_assignments").select("training_id, user_id")\
         .in_("training_id", training_ids)\
         .execute()
 
-    # 构建分配映射 (training_id, user_id) -> assigned
     assignment_map = {}
     for a in (assign_res.data or []):
         key = f"{a['training_id']}_{a['user_id']}"
         assignment_map[key] = True
     
-    # 5. 获取所有培训的签到记录
+    # ========== 6. 获取签到记录 ==========
     att_res = db.table("training_attendances").select(
         "training_id, user_id, sign_time, signed_name, signature_url"
     ).in_("training_id", training_ids).in_("user_id", user_ids).is_("deleted_at", "null").execute()
     
-    # 构建签到记录映射
     attendance_map = {}
     for att in (att_res.data or []):
         key = f"{att['training_id']}_{att['user_id']}"
@@ -934,19 +1170,18 @@ def api_training_users_with_status():
             "signature_url": att.get('signature_url', '')
         }
     
-    # 6. 构建返回数据（关键：只显示培训国家对应的学员，基于分配关系判断状态）
+    # ========== 7. 构建返回数据 ==========
     result = []
     for training in trainings:
         training_id = training['id']
         training_name = training.get('name', '')
         training_country = training.get('country', '')
         
-        # 只遍历与该培训国家匹配的用户
-        for user in users:
+        for user in users:  # ✅ 使用过滤后的 users
             user_country = user.get('country', '')
             
-            # 用户国家必须与培训国家一致
-            if user_country != training_country:
+            # 如果培训有国家，用户国家必须匹配
+            if training_country and user_country != training_country:
                 continue
             
             key = f"{training_id}_{user['id']}"
@@ -957,18 +1192,13 @@ def api_training_users_with_status():
             sign_time = attendance.get('sign_time')
             signature_url = attendance.get('signature_url', '')
             
-            # ✅ 新的状态判断逻辑
             if not is_assigned and not has_attendance:
-                # 既没有分配也没有签到：未分配
                 sign_status = 'not_assigned'
             elif not sign_time:
-                # 有分配但未签到：待签到
                 sign_status = 'pending'
             elif not signature_url:
-                # 已签到但无签名：需重新签名
                 sign_status = 'resign'
             else:
-                # 已签到且有签名：已签到
                 sign_status = 'signed'
  
             result.append({
@@ -988,9 +1218,9 @@ def api_training_users_with_status():
                 "signature_url": signature_url
             })
     
-    # 按培训名称和学员姓名排序
     result.sort(key=lambda x: (x.get('training_name', ''), x.get('name_en', '')))
     
+    logger.info(f"最终返回 {len(result)} 条记录")
     return jsonify({"data": result})
 
 @admin_training_bp.route('/api/admin/training/export_attendance_status')
@@ -1149,31 +1379,133 @@ def export_training_attendance_status():
         download_name=filename
     )
 
-# routes/admin_training_bp - 修复后的搜索接口
-
 @admin_training_bp.route('/api/search/trainings')
 @login_required
 @admin_required
+@cache_get(ttl=60, prefix='search_trainings', include_user=True)
 def search_trainings():
-    """模糊搜索培训名称（带权限过滤）"""
+    """模糊搜索培训名称（带权限过滤 + 级联筛选 + 绑定标记）"""
     q = request.args.get('q', '').strip()
-    if not q:
-        return jsonify([])
+    country = request.args.get('country', '').strip()
+    warehouse = request.args.get('warehouse', '').strip()
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    exam_id = request.args.get('exam_id', '').strip()  # ✅ 新增：用于标记绑定关系
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    
+    if not q and not country and not warehouse and not start_date and not end_date:
+        per_page = 8
     
     db = get_supabase()
     allowed_countries = get_allowed_countries()
     
     # 基础查询
-    query = db.table("trainings").select("name").is_("deleted_at", "null").ilike("name", f"%{q}%")
+    query = db.table("trainings").select("*").is_("deleted_at", "null")
     
-    # ✅ 权限过滤：只返回权限范围内的培训
-    if allowed_countries is not None and allowed_countries:
+    if q:
+        query = query.ilike("name", f"%{q}%")
+    
+    if country:
+        query = query.eq("country", country)
+    elif allowed_countries is not None and allowed_countries:
         query = query.in_("country", allowed_countries)
     
-    res = query.limit(10).execute()
-    names = [row['name'] for row in (res.data or [])]
-    return jsonify(names)
+    if start_date:
+        query = query.gte("end_time", start_date)
+    if end_date:
+        query = query.lte("start_time", end_date)
+    
+    if warehouse:
+        users_res = db.table("users").select("id").eq("wh_id", warehouse).execute()
+        user_ids = [u['id'] for u in (users_res.data or [])]
+        if user_ids:
+            assign_res = db.table("training_assignments").select("training_id").in_("user_id", user_ids).execute()
+            training_ids = list(set([a['training_id'] for a in (assign_res.data or [])]))
+            if training_ids:
+                query = query.in_("id", training_ids)
+            else:
+                return jsonify([])
+        else:
+            return jsonify([])
+    
+    query = query.order("created_at", desc=True)
+    res = query.range((page-1)*per_page, page*per_page-1).execute()
+    trainings = res.data or []
+    
+    # ✅ 获取考试绑定的培训ID（用于标记）
+    bound_training_ids = set()
+    if exam_id:
+        try:
+            exam_id_int = int(exam_id)
+            bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).execute()
+            bound_training_ids = set([b['training_id'] for b in (bindings_res.data or [])])
+        except ValueError:
+            bound_training_ids = set()
+    else:
+        bound_training_ids = set()
+    
+    # 添加额外信息
+    for t in trainings:
+        t['created_date'] = t.get('created_at', '')[:10] if t.get('created_at') else ''
+        t['quarter'] = _get_quarter_from_date(t.get('created_at'))
+        t['is_bound'] = t['id'] in bound_training_ids  # ✅ 标记是否已绑定
+        t['bound_training_ids'] = list(bound_training_ids)  # 可选：返回所有绑定的培训ID
+    
+    # ✅ 排序：绑定的培训排在前面
+    trainings.sort(key=lambda x: (not x['is_bound'], x.get('name', '')))
+    
+    return jsonify(trainings)
 
+def _get_quarter_from_date(date_str):
+    """从日期字符串提取季度（格式：2026Q2）"""
+    if not date_str:
+        return ''
+    try:
+        from datetime import datetime
+        if isinstance(date_str, str):
+            if 'T' in date_str:
+                date_str = date_str.split('T')[0]
+            elif ' ' in date_str:
+                date_str = date_str.split(' ')[0]
+        date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
+        year = date.year
+        month = date.month
+        quarter = (month - 1) // 3 + 1
+        return f"{year}Q{quarter}"
+    except:
+        return ''
+
+@admin_training_bp.route('/api/admin/training/bindings/by_exam')
+@login_required
+@admin_required
+def get_training_bindings_by_exam():
+    """根据考试ID获取绑定的培训列表"""
+    exam_id = request.args.get('exam_id', '')
+    if not exam_id:
+        return jsonify({"bindings": [], "training_ids": []})
+    
+    try:
+        exam_id_int = int(exam_id)
+        #db = get_supabase()
+        db = get_supabase_admin()
+        # 查询该考试绑定的培训
+        bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).execute()
+        training_ids = list(set([b['training_id'] for b in (bindings_res.data or [])]))
+        
+        # 获取培训详细信息（可选）
+        trainings = []
+        if training_ids:
+            trainings_res = db.table("trainings").select("id, name, country").in_("id", training_ids).execute()
+            trainings = trainings_res.data or []
+        
+        return jsonify({
+            "bindings": trainings,
+            "training_ids": training_ids
+        })
+    except Exception as e:
+        logger.error(f"获取考试绑定培训失败: {e}")
+        return jsonify({"bindings": [], "training_ids": []}), 500
 
 @admin_training_bp.route('/api/search/exams')
 @login_required
@@ -1258,6 +1590,33 @@ def search_warehouses():
     
     return jsonify(suggestions[:10])
 
+# routes/admin_training.py - 添加获取单个培训的接口
+
+@admin_training_bp.route('/api/admin/trainings/<int:training_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_admin_training_detail(training_id):
+    """获取单个培训详情"""
+    from services.db import get_supabase_admin
+    from utils.permissions import get_admin_allowed_countries
+    
+    db = get_supabase_admin()
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取培训信息
+    res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
+    if not res.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
+    
+    training = res.data
+    
+    # 权限检查
+    training_country = training.get('country')
+    if allowed_countries is not None and training_country and training_country not in allowed_countries:
+        return jsonify({"success": False, "message": "无权访问此培训"}), 403
+    
+    return jsonify({"success": True, "data": training})
+
 # ==================== 正确注册到 admin_training_bp 蓝图中 ====================
 @admin_training_bp.route('/admin/training/completion_report')
 @login_required
@@ -1267,310 +1626,6 @@ def completion_report_page():
     return render_template('admin/training_completion_report.html')
 
 '''
-@admin_training_bp.route('/api/admin/training/completion_report')
-@login_required
-@admin_required
-def get_completion_report():
-    """获取培训完成度报表数据"""
-    try:
-        db = get_supabase_admin()
-        
-        # 获取当前管理员的权限范围
-        allowed_countries = get_admin_allowed_countries()
-        is_dev = is_developer()
-        current_role = session.get('role')
-        
-        # 获取筛选参数
-        name = request.args.get('name', '').strip()
-        country_filter = request.args.get('country', '').strip()
-        training_name = request.args.get('training_name', '').strip()
-        training_id = request.args.get('training_id', '').strip()
-        exam_name = request.args.get('exam_name', '').strip()
-        status = request.args.get('status', '').strip()
-        start_date = request.args.get('start_date', '')
-        end_date = request.args.get('end_date', '')
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        
-        # ========== 1. 获取培训 ==========
-        trainings_query = db.table("trainings").select("*").is_("deleted_at", "null")
-        
-        if training_id:
-            trainings_query = trainings_query.eq("id", int(training_id))
-        elif training_name:
-            trainings_query = trainings_query.ilike("name", f"%{training_name}%")
-        
-        if start_date:
-            trainings_query = trainings_query.gte("start_time", start_date)
-        if end_date:
-            trainings_query = trainings_query.lte("end_time", end_date)
-        
-        all_trainings = trainings_query.execute().data or []
-        
-        if not is_dev and allowed_countries:
-            filtered_trainings = []
-            for t in all_trainings:
-                training_country = t.get('country')
-                if training_country and training_country in allowed_countries:
-                    filtered_trainings.append(t)
-            all_trainings = filtered_trainings
-        
-        if not all_trainings:
-            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
-        
-        training_ids = [t['id'] for t in all_trainings]
-        trainings_dict = {t['id']: t for t in all_trainings}
-        
-        # ========== 2. 获取绑定关系 ==========
-        bindings_result = db.table("training_exam_bindings").select("*")\
-            .in_("training_id", training_ids)\
-            .is_("deleted_at", "null")\
-            .execute()
-        bindings = bindings_result.data if bindings_result else []
-        
-        if not bindings:
-            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
-        
-        # ========== 3. 获取考试信息 ==========
-        exam_ids = list(set([b.get('exam_id') for b in bindings]))
-        exams_result = db.table("exams").select("*").in_("id", exam_ids).is_("deleted_at", "null").execute()
-        exams_dict = {e['id']: e for e in (exams_result.data or [])}
-        
-        if exam_name:
-            filtered_bindings = []
-            for b in bindings:
-                exam = exams_dict.get(b['exam_id'])
-                if exam and exam_name.lower() in exam.get('title', '').lower():
-                    filtered_bindings.append(b)
-            bindings = filtered_bindings
-        
-        if not bindings:
-            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
-        
-        # ========== 4. 获取用户 ==========
-        all_countries = set()
-        for t in all_trainings:
-            country = t.get('country')
-            if country:
-                all_countries.add(country)
-        
-        if all_countries:
-            users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
-                .in_("country", list(all_countries))\
-                .eq("user_status", "registered")\
-                .is_("deleted_at", "null")\
-                .eq("is_resign", False)
-        else:
-            users_query = db.table("users").select("*")\
-                .eq("user_status", "registered")\
-                .is_("deleted_at", "null")\
-                .eq("is_resign", False)
-        
-        if country_filter:
-            users_query = users_query.ilike("country", f"%{country_filter}%")
-        
-        users_result = users_query.execute()
-        all_users = users_result.data if users_result else []
-
-        if name:
-            name_lower = name.lower()
-            filtered_users = []
-            for u in all_users:
-                name_en = (u.get('name_en') or '').lower()
-                name_cn = (u.get('name_cn') or '').lower()
-                email = (u.get('email') or '').lower()
-                if name_lower in name_en or name_lower in name_cn or name_lower in email:
-                    filtered_users.append(u)
-            all_users = filtered_users
-
-        users_by_country = {}
-        for u in all_users:
-            country = u.get('country')
-            if country not in users_by_country:
-                users_by_country[country] = []
-            users_by_country[country].append(u)
-        
-        # ========== 5. 获取分配关系 ==========
-        # 培训分配
-        training_assign_res = db.table("training_assignments").select("training_id, user_id")\
-            .in_("training_id", training_ids)\
-            .execute()
-        training_assign_map = {}
-        for a in (training_assign_res.data or []):
-            key = f"{a['training_id']}_{a['user_id']}"
-            training_assign_map[key] = True
-        
-        # 考试分配
-        exam_assign_res = db.table("exam_assignments").select("exam_id, user_id")\
-            .in_("exam_id", exam_ids)\
-            .execute()
-        exam_assign_map = {}
-        for a in (exam_assign_res.data or []):
-            key = f"{a['exam_id']}_{a['user_id']}"
-            exam_assign_map[key] = True
-        
-        # ========== 6. 获取完成度数据 ==========
-        summary_result = db.table("training_completion_summary").select("*")\
-            .in_("training_id", training_ids)\
-            .in_("exam_id", exam_ids)\
-            .execute()
-        summary_list = summary_result.data if summary_result else []
-        
-        summary_index = {}
-        for s in summary_list:
-            key = (s.get('training_id'), s.get('exam_id'), s.get('user_id'))
-            summary_index[key] = s
-        
-        # ========== 7. 组装数据（修复状态判断）==========
-        all_data = []
-        
-        for binding in bindings:
-            training_id_val = binding.get('training_id')
-            exam_id = binding.get('exam_id')
-            pass_score = binding.get('pass_score', 85)
-            
-            training = trainings_dict.get(training_id_val)
-            exam = exams_dict.get(exam_id)
-            
-            if not training or not exam:
-                continue
-            
-            training_country = training.get('country', '')
-            if not training_country:
-                continue
-            
-            users = users_by_country.get(training_country, [])
-            
-            # 角色过滤
-            if current_role == 'admin':
-                users = [u for u in users if u.get('role') not in ['super_admin', 'developer']]
-            elif current_role == 'super_admin' and not is_dev:
-                users = [u for u in users if u.get('role') != 'developer']
-            
-            for user in users:
-                user_id = user.get('id')
-                if not user_id:
-                    continue
-                
-                key = (training_id_val, exam_id, user_id)
-                summary_data = summary_index.get(key, {})
-                
-                # ✅ 获取分配关系
-                training_assign_key = f"{training_id_val}_{user_id}"
-                exam_assign_key = f"{exam_id}_{user_id}"
-                
-                has_training_assign = training_assign_key in training_assign_map
-                has_exam_assign = exam_assign_key in exam_assign_map
-                
-                # ✅ 获取签到和考试状态
-                is_signed = summary_data.get('is_signed', False)
-                is_completed = summary_data.get('is_completed', False)
-                is_passed = summary_data.get('is_passed', False)
-                score = summary_data.get('score')
-                
-                # ✅ 修复：培训状态判断
-                if is_signed:
-                    training_status_display = 'signed'  # 已签到
-                elif has_training_assign:
-                    training_status_display = 'pending'  # 待签到
-                else:
-                    training_status_display = 'not_assigned'  # 未推送
-                
-                # ✅ 修复：考试状态判断
-                if is_completed:
-                    exam_status_display = 'completed'  # 已完成
-                elif has_exam_assign:
-                    exam_status_display = 'pending'  # 待考试（已分配）
-                elif is_signed:
-                    # 已签到但考试未分配（理论上签到后会自动分配，这里作为兜底）
-                    exam_status_display = 'pending'
-                else:
-                    exam_status_display = 'not_assigned'  # 未推送
-                
-                # 状态筛选（前端筛选逻辑）
-                if status:
-                    if status == 'completed' and not is_passed:
-                        continue
-                    if status == 'incomplete' and (is_completed or is_passed):
-                        continue
-                    if status == 'failed' and (not is_completed or is_passed):
-                        continue
-                    if status == 'not_signed' and is_signed:
-                        continue
-                    if status == 'not_exam' and (is_completed or not is_signed):
-                        continue
-                
-                all_data.append({
-                    "training_id": training_id_val,
-                    "training_name": training.get('name', ''),
-                    "training_country": training_country,
-                    "training_start": training.get('start_time'),
-                    "training_end": training.get('end_time'),
-                    "exam_id": exam_id,
-                    "exam_name": exam.get('title', ''),
-                    "pass_score": pass_score,
-                    "user_id": user_id,
-                    "user_name": user.get('name_cn') or user.get('name_en', ''),
-                    "user_email": user.get('email', ''),
-                    "user_country": user.get('country', ''),
-                    "wh_id": user.get('wh_id', ''),
-                    "user_role": user.get('role', 'user'),
-                    "is_signed": is_signed,
-                    "is_completed": is_completed,
-                    "is_passed": is_passed,
-                    "score": score,
-                    "training_status": training_status_display,  # ✅ 新增
-                    "exam_status": exam_status_display,          # ✅ 新增
-                    "has_training_assign": has_training_assign,  # ✅ 新增
-                    "has_exam_assign": has_exam_assign,          # ✅ 新增
-                    "signed_at": summary_data.get('signed_at'),
-                    "completed_at": summary_data.get('completed_at')
-                })
-        
-        # 分页
-        total = len(all_data)
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        paginated = all_data[start_idx:end_idx]
-        
-        # 统计汇总
-        unique_users = set()
-        signed_count = 0
-        completed_count = 0
-        passed_count = 0
-        
-        for d in all_data:
-            if d.get('user_id'):
-                unique_users.add(d.get('user_id'))
-            if d.get('is_signed'):
-                signed_count += 1
-            if d.get('is_completed'):
-                completed_count += 1
-            if d.get('is_passed'):
-                passed_count += 1
-        
-        summary_stats = {
-            "total_users": len(unique_users),
-            "total_signed": signed_count,
-            "total_completed": completed_count,
-            "total_passed": passed_count,
-            "pass_rate": round(passed_count / len(all_data) * 100, 1) if all_data else 0
-        }
-        
-        return jsonify({
-            "data": paginated,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-            "summary": summary_stats
-        })
-        
-    except Exception as e:
-        logger.error(f"报表API错误: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({"error": str(e), "data": [], "total": 0}), 500
-'''
-
 @admin_training_bp.route('/api/admin/training/completion_report')
 @login_required
 @admin_required
@@ -1913,20 +1968,366 @@ def get_completion_report():
         logger.error(f"报表API错误: {e}")
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e), "data": [], "total": 0}), 500
+'''
 
+@admin_training_bp.route('/api/admin/training/completion_report')
+@login_required
+@admin_required
+def get_completion_report():
+    """获取培训完成度报表数据 - 实时查询版"""
+    try:
+        db = get_supabase_admin()
+        
+        # 获取当前管理员的权限范围
+        allowed_countries = get_admin_allowed_countries()
+        is_dev = is_developer()
+        current_role = session.get('role')
+        
+        # 获取筛选参数
+        name = request.args.get('name', '').strip()
+        country_filter = request.args.get('country', '').strip()
+        training_name = request.args.get('training_name', '').strip()
+        training_id = request.args.get('training_id', '').strip()
+        exam_name = request.args.get('exam_name', '').strip()
+        status = request.args.get('status', '').strip()
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        
+        # ========== 1. 获取培训 ==========
+        trainings_query = db.table("trainings").select("*").is_("deleted_at", "null")
+        
+        if training_id:
+            trainings_query = trainings_query.eq("id", int(training_id))
+        elif training_name:
+            trainings_query = trainings_query.ilike("name", f"%{training_name}%")
+        
+        if start_date:
+            trainings_query = trainings_query.gte("start_time", start_date)
+        if end_date:
+            trainings_query = trainings_query.lte("end_time", end_date)
+        
+        all_trainings = trainings_query.execute().data or []
+        
+        if not is_dev and allowed_countries:
+            filtered_trainings = []
+            for t in all_trainings:
+                training_country = t.get('country')
+                if training_country and training_country in allowed_countries:
+                    filtered_trainings.append(t)
+            all_trainings = filtered_trainings
+        
+        if not all_trainings:
+            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
+        
+        training_ids = [t['id'] for t in all_trainings]
+        trainings_dict = {t['id']: t for t in all_trainings}
+        
+        # ========== 2. 获取绑定关系 ==========
+        bindings_result = db.table("training_exam_bindings").select("*")\
+            .in_("training_id", training_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        bindings = bindings_result.data if bindings_result else []
+        
+        if not bindings:
+            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
+        
+        # ========== 3. 获取考试信息 ==========
+        exam_ids = list(set([b.get('exam_id') for b in bindings]))
+        exams_result = db.table("exams").select("*").in_("id", exam_ids).is_("deleted_at", "null").execute()
+        exams_dict = {e['id']: e for e in (exams_result.data or [])}
+        
+        if exam_name:
+            filtered_bindings = []
+            for b in bindings:
+                exam = exams_dict.get(b['exam_id'])
+                if exam and exam_name.lower() in exam.get('title', '').lower():
+                    filtered_bindings.append(b)
+            bindings = filtered_bindings
+        
+        if not bindings:
+            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
+        
+        # ========== 4. 获取用户 ==========
+        all_countries = set()
+        for t in all_trainings:
+            country = t.get('country')
+            if country:
+                all_countries.add(country)
+        
+        if all_countries:
+            users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
+                .in_("country", list(all_countries))\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)
+        else:
+            users_query = db.table("users").select("*")\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)
+        
+        if country_filter:
+            users_query = users_query.ilike("country", f"%{country_filter}%")
+        
+        users_result = users_query.execute()
+        all_users = users_result.data if users_result else []
+        
+        if name:
+            name_lower = name.lower()
+            filtered_users = []
+            for u in all_users:
+                name_en = (u.get('name_en') or '').lower()
+                name_cn = (u.get('name_cn') or '').lower()
+                email = (u.get('email') or '').lower()
+                if name_lower in name_en or name_lower in name_cn or name_lower in email:
+                    filtered_users.append(u)
+            all_users = filtered_users
+
+        # ========== ✅ 关键修复：使用 permissions.py 的过滤函数 ==========
+        # 注意：filter_users_by_permission 会同时处理：
+        # 1. 角色权限（管理员看不到超管/开发者）
+        # 2. 国家权限
+        # 3. 添加 created_by_name 字段
+        all_users = filter_users_by_permission(
+            all_users, 
+            allowed_countries=allowed_countries,
+            current_user_id=session.get('user_id')
+        )
+
+        users_by_country = {}
+        for u in all_users:
+            country = u.get('country')
+            if country not in users_by_country:
+                users_by_country[country] = []
+            users_by_country[country].append(u)
+        
+        # ========== 5. 批量获取实时数据（直接从源表查询）==========
+        
+        # 5.1 获取培训分配关系
+        training_assign_res = db.table("training_assignments").select("training_id, user_id")\
+            .in_("training_id", training_ids)\
+            .execute()
+        training_assign_map = {}
+        for a in (training_assign_res.data or []):
+            key = f"{a['training_id']}_{a['user_id']}"
+            training_assign_map[key] = True
+        
+        # 5.2 获取考试分配关系
+        exam_assign_res = db.table("exam_assignments").select("exam_id, user_id")\
+            .in_("exam_id", exam_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        exam_assign_map = {}
+        for a in (exam_assign_res.data or []):
+            key = f"{a['exam_id']}_{a['user_id']}"
+            exam_assign_map[key] = True
+        
+        # 5.3 获取培训签到记录
+        attendances_res = db.table("training_attendances").select("training_id, user_id, sign_time, signature_url")\
+            .in_("training_id", training_ids)\
+            .execute()
+        attendance_map = {}
+        for a in (attendances_res.data or []):
+            key = f"{a['training_id']}_{a['user_id']}"
+            attendance_map[key] = {
+                'sign_time': a.get('sign_time'),
+                'signature_url': a.get('signature_url')  # ✅ 增加 signature_url
+            }
+        
+        # 5.4 获取考试成绩记录
+        exam_results_res = db.table("exam_results").select("exam_id, user_id, total_score, created_at")\
+            .in_("exam_id", exam_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        exam_results_map = {}
+        for r in (exam_results_res.data or []):
+            key = f"{r['exam_id']}_{r['user_id']}"
+            exam_results_map[key] = {
+                'score': r.get('total_score'),
+                'submitted_at': r.get('submitted_at')
+            }
+        
+        # ========== 6. 组装数据（实时计算）==========
+        all_data = []
+        
+        for binding in bindings:
+            training_id_val = binding.get('training_id')
+            exam_id = binding.get('exam_id')
+            pass_score = binding.get('pass_score', 85)
+            
+            training = trainings_dict.get(training_id_val)
+            exam = exams_dict.get(exam_id)
+            
+            if not training or not exam:
+                continue
+            
+            training_country = training.get('country', '')
+            if not training_country:
+                continue
+            
+            users = users_by_country.get(training_country, [])
+            
+            # 角色过滤
+            if current_role == 'admin':
+                users = [u for u in users if u.get('role') not in ['super_admin', 'developer']]
+            elif current_role == 'super_admin' and not is_dev:
+                users = [u for u in users if u.get('role') != 'developer']
+            
+            for user in users:
+                user_id = user.get('id')
+                if not user_id:
+                    continue
+                
+                # 实时查询状态
+                training_assign_key = f"{training_id_val}_{user_id}"
+                exam_assign_key = f"{exam_id}_{user_id}"
+                attendance_key = f"{training_id_val}_{user_id}"
+                exam_result_key = f"{exam_id}_{user_id}"
+                
+                has_training_assign = training_assign_key in training_assign_map
+                has_exam_assign = exam_assign_key in exam_assign_map
+
+                # 获取签到详情（包含签名状态）
+                attendance_data = attendance_map.get(attendance_key, {})
+                is_signed = attendance_key in attendance_map
+                sign_time = attendance_map.get(attendance_key)
+                signature_url = attendance_data.get('signature_url')
+                
+                exam_result = exam_results_map.get(exam_result_key, {})
+                is_completed = exam_result_key in exam_results_map
+                score = exam_result.get('score')
+                is_passed = score is not None and score >= pass_score if is_completed else False
+
+                # ✅ 修复：判断是否真正签到（有签名）
+                is_signed_completed = is_signed and signature_url  # 有签到记录且有签名
+
+                # ✅ 判断是否需要重新签名
+                is_resign_needed = is_signed and not signature_url  # 有签到记录但无签名
+
+                # 状态判断
+                if is_resign_needed:
+                    training_status_display = 'resign'  # 待重新签名
+                elif is_signed_completed:
+                    training_status_display = 'signed'  # 已签到
+                elif has_training_assign:
+                    training_status_display = 'pending'  # 待签到
+                else:
+                    training_status_display = 'not_assigned'  # 未推送
+                
+                if is_completed:
+                    exam_status_display = 'completed'
+                elif has_exam_assign:
+                    exam_status_display = 'pending'
+                elif is_signed:
+                    exam_status_display = 'pending'
+                else:
+                    exam_status_display = 'not_assigned'
+                
+                # 状态筛选
+                if status:
+                    if status == 'completed' and not is_passed:
+                        continue
+                    if status == 'incomplete' and (is_completed or is_passed):
+                        continue
+                    if status == 'failed' and (not is_completed or is_passed):
+                        continue
+                    if status == 'not_signed' and is_signed:
+                        continue
+                    if status == 'not_exam' and (is_completed or not is_signed):
+                        continue
+                
+                all_data.append({
+                    "training_id": training_id_val,
+                    "training_name": training.get('name', ''),
+                    "training_country": training_country,
+                    "training_start": training.get('start_time'),
+                    "training_end": training.get('end_time'),
+                    "exam_id": exam_id,
+                    "exam_name": exam.get('title', ''),
+                    "pass_score": pass_score,
+                    "user_id": user_id,
+                    "user_name": user.get('name_cn') or user.get('name_en', ''),
+                    "user_email": user.get('email', ''),
+                    "user_country": user.get('country', ''),
+                    "wh_id": user.get('wh_id', ''),
+                    "user_role": user.get('role', 'user'),
+                    "is_signed": is_signed_completed,
+                    "is_resign": is_resign_needed,
+                    "is_completed": is_completed,
+                    "is_passed": is_passed,
+                    "score": score,
+                    "training_status": training_status_display,
+                    "exam_status": exam_status_display,
+                    "has_training_assign": has_training_assign,
+                    "has_exam_assign": has_exam_assign,
+                    "signed_at": sign_time,
+                    "completed_at": exam_result.get('submitted_at')
+                })
+        
+        # 分页
+        total = len(all_data)
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        paginated = all_data[start_idx:end_idx]
+        
+        # 统计汇总（基于唯一学员）
+        unique_users = set()
+        unique_users_signed = set()
+        unique_users_completed = set()
+        unique_users_passed = set()
+        
+        for d in all_data:
+            user_id = d.get('user_id')
+            if not user_id:
+                continue
+            unique_users.add(user_id)
+            if d.get('is_signed'):
+                unique_users_signed.add(user_id)
+            if d.get('is_completed'):
+                unique_users_completed.add(user_id)
+            if d.get('is_passed'):
+                unique_users_passed.add(user_id)
+        
+        total_users_count = len(unique_users)
+        passed_users_count = len(unique_users_passed)
+        signed_users_count = len(unique_users_signed)
+        completed_users_count = len(unique_users_completed)
+        
+        pass_rate = round(passed_users_count / total_users_count * 100, 1) if total_users_count > 0 else 0
+        sign_rate = round(signed_users_count / total_users_count * 100, 1) if total_users_count > 0 else 0
+        completion_rate = round(completed_users_count / total_users_count * 100, 1) if total_users_count > 0 else 0
+        
+        summary_stats = {
+            "total_users": total_users_count,
+            "total_signed": signed_users_count,
+            "total_completed": completed_users_count,
+            "total_passed": passed_users_count,
+            "pass_rate": pass_rate,
+            "sign_rate": sign_rate,
+            "completion_rate": completion_rate
+        }
+        
+        return jsonify({
+            "data": paginated,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "summary": summary_stats
+        })
+        
+    except Exception as e:
+        logger.error(f"报表API错误: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({"error": str(e), "data": [], "total": 0}), 500
 
 @admin_training_bp.route('/api/admin/training/completion_report/export')
 @login_required
 @admin_required
 def export_completion_report():
     """导出完成度报表 Excel"""
-    import traceback
-    from services.db import get_supabase_admin
-    from utils.permissions import get_admin_allowed_countries, is_developer
-    from io import BytesIO
-    import openpyxl
-    from openpyxl.styles import Font, PatternFill, Alignment
-    
     try:
         db = get_supabase_admin()
         
@@ -1990,6 +2391,13 @@ def export_completion_report():
         
         users_result = users_query.execute()
         all_users = users_result.data if users_result else []
+
+        # ========== ✅ 关键修复：使用 permissions.py 的过滤函数 ==========
+        all_users = filter_users_by_permission(
+            all_users,
+            allowed_countries=allowed_countries,
+            current_user_id=session.get('user_id')
+        )
         
         users_by_country = {}
         for u in all_users:
@@ -2068,10 +2476,19 @@ def export_completion_report():
                 summary_data = summary_index.get(key, {})
                 
                 is_signed = summary_data.get('is_signed', False)
+                signature_url = summary_data.get('signature_url')
                 is_completed = summary_data.get('is_completed', False)
                 is_passed = summary_data.get('is_passed', False)
                 score = summary_data.get('score')
-                
+
+                # 判断状态
+                if is_signed and signature_url:
+                    sign_status_display = '已签到'
+                elif is_signed and not signature_url:
+                    sign_status_display = '待重新签名'
+                else:
+                    sign_status_display = '未签到'
+
                 if status:
                     if status == 'completed' and not is_passed:
                         continue
@@ -2159,11 +2576,78 @@ def export_completion_report():
         logger.error(traceback.format_exc())
         return jsonify({"error": str(e)}), 500
 
+@admin_training_bp.route('/api/admin/training/refresh_cache', methods=['POST'])
+@login_required
+@admin_required
+def refresh_report_cache():
+    """手动刷新报表缓存 + 数据同步"""
+    data = request.json or {}
+    training_id = data.get('training_id')
+    
+    results = {
+        "cache_cleared": False,
+        "sync_results": {}
+    }
+    
+    # 1. 清除缓存
+    if hasattr(get_completion_report, 'cache'):
+        get_completion_report.cache.clear()
+        results["cache_cleared"] = True
+    
+    # 2. 执行数据同步
+    db = get_supabase_admin()
+    
+    if training_id:
+        # 同步指定培训
+        sync_results = _sync_training_binding_data(db, training_id, session.get('user_id'))
+        results["sync_results"] = sync_results
+    else:
+        # 同步所有有绑定关系的培训
+        logger.info("开始同步所有培训数据...")
+        
+        # 获取所有有绑定关系的培训
+        bindings_res = db.table("training_exam_bindings").select("training_id").is_("deleted_at", "null").execute()
+        training_ids = list(set([b['training_id'] for b in (bindings_res.data or [])]))
+        
+        total_results = {
+            "assigned_exams": 0,
+            "created_attendances": 0,
+            "created_assignments": 0,
+            "errors": [],
+            "synced_trainings": len(training_ids)
+        }
+        
+        allowed_countries = get_admin_allowed_countries()
+        
+        for tid in training_ids:
+            # 权限检查
+            training_res = db.table("trainings").select("country").eq("id", tid).maybe_single().execute()
+            if training_res.data:
+                training_country = training_res.data.get('country')
+                if allowed_countries is not None and training_country not in allowed_countries:
+                    continue
+                
+                sync_result = _sync_training_binding_data(db, tid, session.get('user_id'))
+                total_results["assigned_exams"] += sync_result.get("assigned_exams", 0)
+                total_results["created_attendances"] += sync_result.get("created_attendances", 0)
+                total_results["created_assignments"] += sync_result.get("created_assignments", 0)
+                if sync_result.get("errors"):
+                    total_results["errors"].extend(sync_result["errors"])
+        
+        results["sync_results"] = total_results
+    
+    return jsonify({
+        "success": True,
+        "message": "数据已刷新并同步",
+        "results": results
+    })
+
 # ==================== 培训-考试绑定管理 API ====================
 
 @admin_training_bp.route('/api/admin/training/<int:training_id>/bindings')
 @login_required
 @admin_required
+@cache_get(ttl=300, prefix='training_bindings', include_user=True)
 def get_training_bindings(training_id):
     """获取培训绑定的考试列表"""
     from utils.permissions import get_admin_allowed_countries, is_developer
@@ -2290,6 +2774,10 @@ def get_training_bindings(training_id):
 @admin_required
 def bind_exam_to_training():
     """绑定考试到培训"""
+    logger.info("=" * 60)
+    logger.info("🔥 bind_exam_to_training 被调用了！")
+    logger.info("=" * 60)
+
     data = request.json
     training_id = data.get('training_id')
     exam_id = data.get('exam_id')
@@ -2297,6 +2785,10 @@ def bind_exam_to_training():
     is_auto_assign = data.get('is_auto_assign', True)
     is_required = data.get('is_required', True)
     sort_order = data.get('sort_order', 0)
+    now = datetime.now(timezone.utc).isoformat()
+
+    logger.info(f"   training_id={training_id}, exam_id={exam_id}")
+    logger.info(f"   is_auto_assign={is_auto_assign}")
 
     logger.info(f"========== 绑定考试到培训 ==========")
     logger.info(f"training_id: {training_id}, exam_id: {exam_id}")
@@ -2327,14 +2819,17 @@ def bind_exam_to_training():
             "updated_by": session.get('user_id')
         }).eq("id", soft_deleted.data[0]['id']).execute()
 
-        logger.info(f"绑定创建成功: binding_id={result.data[0]['id'] if result.data else 'None'}")
-        logger.info(f"绑定记录: training_id={training_id}, exam_id={exam_id}, is_auto_assign={is_auto_assign}")
-        
-        if result.data:
-            return jsonify({"success": True, "binding_id": result.data[0]['id'], "restored": True})
-        else:
+        if not result.data:
             return jsonify({"success": False, "message": "恢复绑定失败"}), 500
-    
+        
+        binding_id = result.data[0]['id']
+        logger.info(f"✅ 恢复绑定成功: binding_id={binding_id}")
+        
+        # ✅ 补分配逻辑（抽取为单独调用）
+        _auto_assign_exam_to_signed_users(db, training_id, exam_id, is_auto_assign, session.get('user_id'), now)
+        
+        return jsonify({"success": True, "binding_id": binding_id, "restored": True})
+        
     # 检查是否已有活跃绑定
     existing = db.table("training_exam_bindings").select("id")\
         .eq("training_id", training_id)\
@@ -2353,14 +2848,84 @@ def bind_exam_to_training():
         "is_auto_assign": is_auto_assign,
         "is_required": is_required,
         "sort_order": sort_order,
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
         "created_by": session.get('user_id')
     }).execute()
     
-    if result.data:
-        return jsonify({"success": True, "binding_id": result.data[0]['id']})
-    else:
+    if not result.data:
         return jsonify({"success": False, "message": "绑定失败"}), 500
+    
+    binding_id = result.data[0]['id']
+    logger.info(f"✅ 绑定成功: binding_id={binding_id}")
+
+    # ✅ 调用数据同步
+    sync_results = _sync_training_binding_data(db, training_id, session.get('user_id'))
+    
+    # ✅ 补分配逻辑（抽取为单独调用）
+    _auto_assign_exam_to_signed_users(db, training_id, exam_id, is_auto_assign, session.get('user_id'), now)
+    
+    return jsonify({
+        "success": True, 
+        "binding_id": binding_id,
+        "sync_results": sync_results
+    })
+
+def _auto_assign_exam_to_signed_users(db, training_id, exam_id, is_auto_assign, created_by, assigned_at):
+    """
+    为培训的已签到学员自动分配考试（公共函数）
+    
+    Args:
+        db: 数据库连接
+        training_id: 培训ID
+        exam_id: 考试ID
+        is_auto_assign: 是否自动分配
+        created_by: 创建人ID
+        assigned_at: 分配时间
+    """
+    if not is_auto_assign:
+        logger.info(f"is_auto_assign=False，跳过补分配 (exam_id={exam_id})")
+        return
+    
+    logger.info(f"进入补分配逻辑: training_id={training_id}, exam_id={exam_id}")
+    
+    try:
+        # 1. 获取该培训下所有已签到的学员
+        signed_users_res = db.table("training_attendances").select("user_id").eq("training_id", training_id).execute()
+        signed_user_ids = [u['user_id'] for u in (signed_users_res.data or [])]
+        logger.info(f"已签到学员数: {len(signed_user_ids)}")
+        
+        if not signed_user_ids:
+            logger.info("该培训暂无已签到学员，跳过补分配")
+            return
+        
+        # 2. 过滤出尚未分配该考试的用户
+        assigned_res = db.table("exam_assignments").select("user_id")\
+            .eq("exam_id", exam_id)\
+            .in_("user_id", signed_user_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        assigned_set = {a['user_id'] for a in (assigned_res.data or [])}
+        
+        to_assign = [uid for uid in signed_user_ids if uid not in assigned_set]
+        logger.info(f"需要补分配的学员数: {len(to_assign)}")
+        
+        if not to_assign:
+            logger.info("所有已签到学员已分配该考试")
+            return
+        
+        # 3. 批量插入考试分配
+        assignments = [{
+            "exam_id": exam_id,
+            "user_id": uid,
+            "created_by": created_by,
+            "assigned_at": assigned_at
+        } for uid in to_assign]
+        
+        insert_result = db.table("exam_assignments").insert(assignments).execute()
+        logger.info(f"✅ 为已签到的 {len(insert_result.data or [])} 名学员补分配考试: exam_id={exam_id}")
+        
+    except Exception as e:
+        logger.error(f"补分配考试失败: training_id={training_id}, exam_id={exam_id}, error={e}", exc_info=True)
 
 @admin_training_bp.route('/api/admin/training/binding/<int:binding_id>', methods=['PUT'])
 @login_required
@@ -2388,7 +2953,7 @@ def update_training_binding(binding_id):
     
     result = db.table("training_exam_bindings").update(update_data)\
         .eq("id", binding_id)\
-        .eq("deleted_at", None)\
+        .is_("deleted_at", "null")\
         .execute()
     
     if result.data:
@@ -2609,3 +3174,277 @@ def get_training_users(training_id):
         })
     
     return jsonify({"data": result})
+
+# =====================添加补分配接口，用于已有签到的培训，再绑定考试时为已签到客户补分配考试=====================
+@admin_training_bp.route('/api/admin/training/<int:training_id>/binding/<int:binding_id>/reassign', methods=['POST'])
+@login_required
+@admin_required
+def reassign_training_binding(training_id, binding_id):
+    """
+    为培训的某个绑定关系，将所有已签到学员补分配考试
+    """
+    db = get_supabase_admin()
+    current_user_id = session.get('user_id')
+    now = datetime.now(timezone.utc).isoformat()
+    
+    logger.info("=" * 60)
+    logger.info(f"📌 补分配考试: training_id={training_id}, binding_id={binding_id}")
+    
+    try:
+        # 1. 获取绑定信息
+        binding_res = db.table("training_exam_bindings").select("*").eq("id", binding_id).eq("training_id", training_id).is_("deleted_at", "null").execute()
+        if not binding_res.data:
+            return jsonify({"success": False, "message": "绑定关系不存在"}), 404
+        
+        binding = binding_res.data[0]
+        exam_id = binding.get('exam_id')
+        is_auto_assign = binding.get('is_auto_assign', True)
+        
+        if not is_auto_assign:
+            return jsonify({
+                "success": False, 
+                "message": "该考试未启用自动分配，无需补分配"
+            }), 400
+        
+        # 2. 获取该培训下所有已签到的学员（排除离职人员）
+        signed_res = db.table("training_attendances").select("user_id").eq("training_id", training_id).execute()
+        signed_user_ids = [u['user_id'] for u in (signed_res.data or [])]
+        
+        if not signed_user_ids:
+            return jsonify({
+                "success": False,
+                "message": "该培训暂无已签到学员"
+            }), 400
+
+        # ========== ✅ 获取完整的用户信息并过滤 ==========
+        users_res = db.table("users").select("id, name_en, role, country").in_("id", signed_user_ids).execute()
+        users = users_res.data or []
+        
+        # ✅ 使用权限过滤
+        filtered_users = filter_users_by_permission(
+            users,
+            allowed_countries=get_admin_allowed_countries(),
+            current_user_id=session.get('user_id')
+        )
+        
+        filtered_user_ids = [u['id'] for u in filtered_users]
+        logger.info(f"补分配：原始 {len(signed_user_ids)} 人，权限过滤后 {len(filtered_user_ids)} 人")
+        
+        # 3. 过滤掉已分配该考试的学员
+        assigned_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).in_("user_id", filtered_user_ids).is_("deleted_at", "null").execute()
+        assigned_set = {a['user_id'] for a in (assigned_res.data or [])}
+        
+        to_assign = [uid for uid in filtered_user_ids if uid not in assigned_set]
+        
+        if not to_assign:
+            return jsonify({
+                "success": True,
+                "message": "所有已签到学员已分配该考试",
+                "assigned_count": 0
+            })
+        
+        # 4. 构建插入数据（使用正确的字段名）
+        assignments = [{
+            "exam_id": exam_id, 
+            "user_id": uid,
+            "created_by": current_user_id,  # ✅ 现在有这个字段了
+            "assigned_at": now              # ✅ 使用现有的 assigned_at
+        } for uid in to_assign]
+        
+        # 5. 批量插入考试分配
+        result = db.table("exam_assignments").insert(assignments).execute()
+        
+        inserted_count = len(result.data or [])
+        logger.info(f"✅ 补分配成功: {inserted_count} 名学员")
+        
+        return jsonify({
+            "success": True,
+            "message": f"补分配成功，共 {inserted_count} 名学员",
+            "assigned_count": inserted_count
+        })
+        
+    except Exception as e:
+        logger.error(f"补分配失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": "补分配失败: " + str(e)
+        }), 500
+
+def _sync_training_binding_data(db, training_id, created_by=None):
+    """
+    培训绑定考试后的数据同步：双向同步
+    1. 已签到学员 → 自动分配考试
+    2. 已完成考试学员 → 自动创建签到记录
+    
+    Args:
+        db: 数据库连接
+        training_id: 培训ID
+        created_by: 创建人ID（用于记录）
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    sync_results = {
+        "assigned_exams": 0,      # 已签到→分配考试 的数量
+        "created_attendances": 0,  # 已完成考试→创建签到 的数量
+        "created_assignments": 0,  # 已完成考试→创建培训分配 的数量
+        "errors": []
+    }
+    
+    logger.info("=" * 60)
+    logger.info(f"🔄 开始培训绑定数据同步: training_id={training_id}")
+    
+    try:
+        # ========== 1. 获取培训信息 ==========
+        training_res = db.table("trainings").select("country, name, start_time, end_time, is_active").eq("id", training_id).maybe_single().execute()
+        if not training_res.data:
+            logger.warning(f"培训不存在: training_id={training_id}")
+            return sync_results
+        
+        training = training_res.data
+        
+        # ========== 2. 获取该培训绑定的所有考试 ==========
+        bindings_res = db.table("training_exam_bindings").select("exam_id, is_auto_assign")\
+            .eq("training_id", training_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        bindings = bindings_res.data or []
+        
+        if not bindings:
+            logger.info("该培训暂无绑定考试，跳过同步")
+            return sync_results
+        
+        exam_ids = [b['exam_id'] for b in bindings]
+        auto_assign_exam_ids = [b['exam_id'] for b in bindings if b.get('is_auto_assign', True)]
+        
+        logger.info(f"绑定的考试: {exam_ids}")
+        
+        # ========== 3. 获取该培训国家下的所有用户 ==========
+        training_country = training.get('country')
+        if not training_country:
+            logger.warning("培训未指定国家，跳过同步")
+            return sync_results
+        
+        users_res = db.table("users").select("id, name_en, email")\
+            .eq("country", training_country)\
+            .eq("user_status", "registered")\
+            .eq("is_resign", False)\
+            .is_("deleted_at", "null")\
+            .execute()
+        all_users = users_res.data or []
+        all_user_ids = [u['id'] for u in all_users]
+        
+        if not all_user_ids:
+            logger.info("该国家无有效用户，跳过同步")
+            return sync_results
+        
+        logger.info(f"培训国家 {training_country} 下的用户数: {len(all_user_ids)}")
+        
+        # ========== 4. 获取已签到学员 ==========
+        attendances_res = db.table("training_attendances").select("user_id")\
+            .eq("training_id", training_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        signed_user_ids = {a['user_id'] for a in (attendances_res.data or [])}
+        logger.info(f"已签到学员数: {len(signed_user_ids)}")
+        
+        # ========== 5. 获取已完成考试的学员（针对绑定的考试） ==========
+        completed_users_per_exam = {}
+        if exam_ids:
+            results_res = db.table("exam_results").select("user_id, exam_id")\
+                .in_("exam_id", exam_ids)\
+                .in_("user_id", all_user_ids)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            for r in (results_res.data or []):
+                exam_id = r['exam_id']
+                user_id = r['user_id']
+                if exam_id not in completed_users_per_exam:
+                    completed_users_per_exam[exam_id] = set()
+                completed_users_per_exam[exam_id].add(user_id)
+        
+        # ========== 6. 获取已分配考试 ==========
+        assigned_exam_map = {}
+        if exam_ids:
+            assign_res = db.table("exam_assignments").select("exam_id, user_id")\
+                .in_("exam_id", exam_ids)\
+                .in_("user_id", all_user_ids)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            for a in (assign_res.data or []):
+                key = f"{a['exam_id']}_{a['user_id']}"
+                assigned_exam_map[key] = True
+        
+        # ========== 7. 获取培训分配记录 ==========
+        training_assign_res = db.table("training_assignments").select("user_id")\
+            .eq("training_id", training_id)\
+            .in_("user_id", all_user_ids)\
+            .execute()
+        training_assigned_set = {a['user_id'] for a in (training_assign_res.data or [])}
+        
+        # ========== 8. 双向数据同步 ==========
+        
+        # 8.1 已签到但未分配考试 → 自动分配考试
+        if signed_user_ids and auto_assign_exam_ids:
+            to_assign_exams = []
+            for exam_id in auto_assign_exam_ids:
+                for user_id in signed_user_ids:
+                    key = f"{exam_id}_{user_id}"
+                    if key not in assigned_exam_map:
+                        to_assign_exams.append({
+                            "exam_id": exam_id,
+                            "user_id": user_id,
+                            "created_by": created_by or 'system',
+                            "assigned_at": now
+                        })
+            
+            if to_assign_exams:
+                insert_result = db.table("exam_assignments").insert(to_assign_exams).execute()
+                sync_results["assigned_exams"] = len(insert_result.data or [])
+                logger.info(f"✅ 为已签到学员分配考试: {sync_results['assigned_exams']} 条")
+        
+        # 8.2 已完成考试但未签到 → 自动创建签到记录
+        if exam_ids:
+            # 收集所有已完成考试的用户
+            all_completed_users = set()
+            for exam_id, users in completed_users_per_exam.items():
+                all_completed_users.update(users)
+            
+            # 过滤出未签到的用户
+            to_create_attendance = [uid for uid in all_completed_users if uid not in signed_user_ids]
+            
+            if to_create_attendance:
+                # 创建签到记录
+                attendance_records = [{
+                    "training_id": training_id,
+                    "user_id": uid,
+                    "sign_time": now,
+                    "signed_name": next((u.get('name_en', '自动签到') for u in all_users if u['id'] == uid), '自动签到'),
+                    "signature_url": None  # 无签名
+                } for uid in to_create_attendance]
+                
+                insert_result = db.table("training_attendances").insert(attendance_records).execute()
+                sync_results["created_attendances"] = len(insert_result.data or [])
+                logger.info(f"✅ 为已完成考试学员创建签到: {sync_results['created_attendances']} 条")
+                
+                # 同时创建培训分配记录
+                to_create_assignment = [uid for uid in to_create_attendance if uid not in training_assigned_set]
+                if to_create_assignment:
+                    assignment_records = [{
+                        "training_id": training_id,
+                        "user_id": uid,
+                        "created_by": created_by or 'system',
+                        "created_at": now
+                    } for uid in to_create_assignment]
+                    
+                    insert_result = db.table("training_assignments").insert(assignment_records).execute()
+                    sync_results["created_assignments"] = len(insert_result.data or [])
+                    logger.info(f"✅ 为已完成考试学员创建培训分配: {sync_results['created_assignments']} 条")
+        
+        logger.info(f"🔄 数据同步完成: {sync_results}")
+        
+    except Exception as e:
+        logger.error(f"数据同步失败: {e}", exc_info=True)
+        sync_results["errors"].append(str(e))
+    
+    return sync_results

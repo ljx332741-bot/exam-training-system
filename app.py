@@ -1,4 +1,4 @@
-# app.py (最终重构版 - 带日志脱敏)
+# app.py (最终重构版 - 带日志脱敏和自动清理)
 import os
 import json
 import logging
@@ -20,104 +20,38 @@ from utils.permissions import is_developer
 from utils.common import utc_to_local, format_datetime_local
 from utils.i18n_messages import I18nMessages
 from utils.timezone_utils import get_user_timezone, format_datetime, utc_string_to_local, format_datetime_24h, format_datetime_24h_short, set_user_timezone
+from utils.cache_manager import training_cache
+from utils.logger import setup_logging, clean_old_logs, init_default_logging
 
 
-# ========== 1. 日志脱敏过滤器 ==========
-class SensitiveDataFilter(logging.Filter):
-    """过滤日志中的敏感信息"""
-    
-    # 敏感信息模式
-    PATTERNS = {
-        'uuid': re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.I),
-        'email': re.compile(r'\b[\w\.-]+@[\w\.-]+\.\w+\b'),
-        'user_id_eq': re.compile(r'id=eq\.[0-9a-f-]+', re.I),
-        'email_eq': re.compile(r'email=eq\.[^&]+', re.I),
-        'supabase_ref': re.compile(r'mrkukgnkrefhruoxuflz|hhupzorgxzwoxrrqaqjq', re.I),
-        'api_key': re.compile(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', re.I),
-    }
-    
-    REPLACEMENTS = {
-        'uuid': '[UUID]',
-        'email': '[EMAIL]',
-        'user_id_eq': 'id=eq.[ID]',
-        'email_eq': 'email=eq.[EMAIL]',
-        'supabase_ref': '[PROJECT]',
-        'api_key': '[API_KEY]',
-    }
-    
-    def filter(self, record):
-        if hasattr(record, 'msg') and record.msg:
-            msg = str(record.msg)
-            for pattern_name, pattern in self.PATTERNS.items():
-                msg = pattern.sub(self.REPLACEMENTS.get(pattern_name, '[REDACTED]'), msg)
-            record.msg = msg
-        return True
-
-
-def setup_production_logging():
-    """
-    配置生产环境日志
-    - 生产环境：只记录 WARNING 及以上级别
-    - 开发环境：保留 DEBUG 级别（方便调试）
-    """
-    # 判断是否为生产环境
-    is_production = os.environ.get('FLASK_ENV') == 'production' or \
-                    os.environ.get('RENDER', '') == 'true'
-    
-    # 设置基础日志级别
-    if is_production:
-        base_level = logging.WARNING
-        # 生产环境：只输出到控制台，不输出文件
-        handlers = [logging.StreamHandler(sys.stdout)]
-    else:
-        base_level = logging.DEBUG
-        # 开发环境：同时输出到控制台和文件
-        handlers = [
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler('exam_debug.log', encoding='utf-8', mode='a')
-        ]
-    
-    # 配置根日志
-    logging.basicConfig(
-        level=base_level,
-        format='[%(asctime)s] %(levelname)s: %(message)s',
-        handlers=handlers
-    )
-    
-    # 为所有处理器添加脱敏过滤器
-    for handler in logging.root.handlers:
-        handler.addFilter(SensitiveDataFilter())
-    
-    # 禁用第三方库的详细日志（生产环境）
-    if is_production:
-        logging.getLogger('supabase').setLevel(logging.ERROR)
-        logging.getLogger('httpx').setLevel(logging.WARNING)
-        logging.getLogger('httpcore').setLevel(logging.WARNING)
-        logging.getLogger('urllib3').setLevel(logging.WARNING)
-        logging.getLogger('werkzeug').setLevel(logging.WARNING)
-    
-    # 设置应用日志
-    app_logger = logging.getLogger(__name__)
-    
-    if is_production:
-        app_logger.warning("=" * 60)
-        app_logger.warning("PRODUCTION MODE - Sensitive data will be redacted")
-        app_logger.warning("=" * 60)
-    else:
-        app_logger.info("Development mode - Log level: DEBUG")
-    
-    return is_production
-
-
-# 执行日志配置
-IS_PRODUCTION = setup_production_logging()
+# ========== 1. 日志配置 ==========
+# 方法一：使用默认初始化（兼容旧方式）
+IS_PRODUCTION = init_default_logging()
 logger = logging.getLogger(__name__)
+
+
+# 手动清理一次旧日志（启动时清理）
+clean_old_logs('logs', 2)
 
 
 # ========== 2. 应用配置 ==========
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
+
+# ✅ 关联日志到 app
+app.logger = logger
+
+# 将 Flask 的日志也纳入管理
+werkzeug_logger = logging.getLogger('werkzeug')
+werkzeug_logger.handlers = logging.root.handlers
+werkzeug_logger.setLevel(logging.WARNING if IS_PRODUCTION else logging.DEBUG)
+
+# ✅ 缓存管理器日志（已经由 logger 处理）
+logger.info("=" * 60)
+logger.info("🚀 缓存管理器已初始化")
+logger.info(f"📊 当前缓存: {training_cache.get_stats()}")
+logger.info("=" * 60)
 
 # 根据生产环境强制设置 debug
 if IS_PRODUCTION:
@@ -220,6 +154,7 @@ def user_timezone():
     else:
         current_tz = get_user_timezone()
         return jsonify({"timezone": current_tz})
+
 
 # ========== 7. 模板过滤器 ==========
 @app.template_filter('local_time')

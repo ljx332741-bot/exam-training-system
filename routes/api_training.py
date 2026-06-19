@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 def api_available_trainings():
     """获取当前用户可签到的培训列表（显示有效期内的所有培训，包括未开始的）"""
     db = get_supabase()
+    #db = get_supabase_admin
+    admin_db = get_supabase_admin()
     user_id = session['user_id']
     now = datetime.now(timezone.utc).isoformat()
     
@@ -176,7 +178,7 @@ def api_training_sign():
 
     # 2. 检查是否重复签到
     try:
-        exist = db.table("training_attendances").select("id").eq("training_id", training_id).eq("user_id", user_id).maybe_single().execute()
+        exist = db.table("training_attendances").select("id").eq("training_id", training_id).eq("user_id", user_id).execute()
         if exist and exist.data: return jsonify({"success": False, "message": "您已签到过本培训"}), 400
     except: pass
 
@@ -215,24 +217,24 @@ def api_training_sign():
     logger.info(f"用户: {user_id}, 培训: {training_id}")
     try:
         # 查询该培训绑定的考试
-        bindings_res = db.table("training_exam_bindings").select("exam_id, pass_score")\
+        bindings_res = admin_db.table("training_exam_bindings").select("exam_id, pass_score")\
             .eq("training_id", training_id)\
             .eq("is_auto_assign", True)\
-            .eq("deleted_at", None)\
+            .is_("deleted_at", "null")\
             .execute()
         
         for binding in (bindings_res.data or []):
             exam_id = binding['exam_id']
             
             # 检查是否已分配
-            existing = db.table("exam_assignments").select("id")\
+            existing = admin_db.table("exam_assignments").select("id")\
                 .eq("exam_id", exam_id)\
                 .eq("user_id", user_id)\
                 .execute()
             
             if not existing.data:
                 # 分配考试
-                db.table("exam_assignments").insert({
+                admin_db.table("exam_assignments").insert({
                     "exam_id": exam_id,
                     "user_id": user_id,
                     "created_by": user_id
@@ -240,12 +242,12 @@ def api_training_sign():
                 logger.info(f"培训签到后自动分配考试: user={user_id}, exam={exam_id}")
                 
                 # ✅ 激活绑定模式的考试（如果尚未激活）
-                exam_res = db.table("exams").select("is_active, is_binding_exam").eq("id", exam_id).maybe_single().execute()
+                exam_res = admin_db.table("exams").select("is_active, is_binding_exam").eq("id", exam_id).maybe_single().execute()
                 if exam_res.data and exam_res.data.get('is_binding_exam') and not exam_res.data.get('is_active'):
                     # 设置默认有效期
                     now = datetime.now(timezone.utc).isoformat()
                     end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
-                    db.table("exams").update({
+                    admin_db.table("exams").update({
                         "is_active": True,
                         "status": "active",
                         "start_time": now,

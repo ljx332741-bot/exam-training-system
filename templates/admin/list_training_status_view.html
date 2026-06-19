@@ -249,9 +249,14 @@
             <button class="btn btn-success me-2" id="exportExcelBtn">
                 <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
             </button>
+            <button class="btn btn-outline-secondary" id="backToTrainingsBtn">
+                <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+            </button>
+            <!--
             <button class="btn btn-outline-secondary" id="closePageBtn">
                 <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
             </button>
+            -->
         </div>
     </div>
 
@@ -363,10 +368,11 @@
                             <th><span data-i18n="company">公司</span></th>
                             <th><span data-i18n="sign_time">签到时间</span></th>
                             <th><span data-i18n="status">签到状态</span></th>
+                            <th><span data-i18n="action">操作</span></th>
                         </tr>
                     </thead>
                     <tbody id="usersTableBody">
-                        <tr><td colspan="10" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="11" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -457,8 +463,14 @@
         
         let url;
         if (trainingId) {
-            // 模式1：单个培训详情（使用新 API，返回该培训的所有学员状态）
-            url = `/api/admin/training/${trainingId}/users`;
+            // ✅ 正确：使用 training/users_with_status API
+            const params = new URLSearchParams({
+                training_id: trainingId,
+                search: filters.search,
+                country: filters.country,
+                wh_id: filters.wh_id
+            });
+            url = `/api/admin/training/users_with_status?${params}`;
         } else {
             // 模式2：全局视图（使用旧 API，返回所有权限范围内的数据）
             const params = new URLSearchParams({
@@ -1022,6 +1034,12 @@
         });
     }
 
+    // 添加事件
+    document.getElementById('backToTrainingsBtn')?.addEventListener('click', function() {
+        sessionStorage.setItem('from_training_detail', 'true');
+        window.location.href = '/admin/trainings';
+    });
+
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
@@ -1033,6 +1051,7 @@
         loadData();
 
         // 关闭按钮
+        /*
         const closePageBtn = document.getElementById('closePageBtn');
         if (closePageBtn) {
             closePageBtn.addEventListener('click', () => {
@@ -1040,6 +1059,7 @@
                 window.location.replace('/admin/trainings');
             });
         }
+        */
 
         // ✅ 语言切换时重新加载列表
         if (window.i18n && window.i18n.subscribe) {

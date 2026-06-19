@@ -31,6 +31,7 @@ def get_allowed_countries():
         - list: 允许的国家代码列表（管理员）
     """
     role = session.get('role', 'user')
+    user_id = session.get('user_id')
     
     # 开发者：无限制
     if is_developer():
@@ -48,6 +49,26 @@ def get_allowed_countries():
                     return countries
             except Exception as e:
                 logger.error(f"解析超管权限范围失败: {e}")
+        
+        # 超管没有设置权限范围时，从数据库获取
+        if user_id:
+            try:
+                db = get_supabase()
+                res = db.table("users").select("admin_countries").eq("id", user_id).maybe_single().execute()
+                if res.data:
+                    admin_countries = res.data.get('admin_countries')
+                    if admin_countries:
+                        try:
+                            countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                            if countries and len(countries) > 0:
+                                session['admin_countries'] = admin_countries
+                                logger.debug(f"get_allowed_countries: 从数据库获取超管权限范围 {countries}")
+                                return countries
+                        except:
+                            pass
+            except Exception as e:
+                logger.error(f"从数据库获取超管权限范围失败: {e}")
+        
         logger.debug("get_allowed_countries: 超管无限制")
         return None
     
@@ -64,6 +85,31 @@ def get_allowed_countries():
                     return countries
             except Exception as e:
                 logger.error(f"解析管理员权限范围失败: {e}")
+
+        # 从数据库获取
+        if user_id:
+            try:
+                db = get_supabase()
+                res = db.table("users").select("admin_countries, country").eq("id", user_id).maybe_single().execute()
+                if res.data:
+                    admin_countries = res.data.get('admin_countries')
+                    if admin_countries:
+                        try:
+                            countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                            if countries and len(countries) > 0:
+                                session['admin_countries'] = admin_countries
+                                logger.debug(f"get_allowed_countries: 从数据库获取管理员权限范围 {countries}")
+                                return countries
+                        except:
+                            pass
+                    
+                    # 没有权限范围，使用自己所在国家
+                    user_country = res.data.get('country')
+                    if user_country:
+                        logger.debug(f"get_allowed_countries: 管理员使用默认国家 {user_country}")
+                        return [user_country]
+            except Exception as e:
+                logger.error(f"从数据库获取管理员权限范围失败: {e}")
         
         # 没有权限范围，使用自己所在国家
         user_country = session.get('user_country')
@@ -114,7 +160,44 @@ def set_admin_allowed_countries(user_id, countries):
     if user_id == session.get('user_id'):
         session['admin_countries'] = countries_json
 
+# utils/permissions.py
 
+def check_country_permission(country_code=None, country_list=None):
+    """
+    检查当前用户是否有权管理指定的国家
+    
+    Args:
+        country_code: 单个国家代码
+        country_list: 国家代码列表
+    
+    Returns:
+        bool: True 表示有权，False 表示无权
+    """
+    # ✅ developer 无限制
+    if is_developer():
+        return True
+    
+    allowed = get_admin_allowed_countries()
+    
+    # 如果没有权限范围限制，返回 True
+    if allowed is None:
+        return True
+
+    # ✅ 修复：如果 allowed 为空列表，无权管理任何国家
+    if not allowed:
+        return False
+ 
+    # 检查国家是否在权限范围内
+    check_list = []
+    if country_code:
+        check_list = [country_code]
+    elif country_list:
+        check_list = country_list
+    
+    if not check_list:
+        return True
+    
+    return any(c in allowed for c in check_list)
 # ==================== 用户权限检查 ====================
 
 def can_view_user(target_user):
@@ -147,6 +230,10 @@ def can_view_user(target_user):
         # 无权限范围限制，可以查看所有
         if allowed_countries is None:
             return True
+
+        # ✅ 修复：如果 allowed_countries 为空列表，无权查看任何用户
+        if not allowed_countries:
+            return False
         
         # 有权限范围限制
         if allowed_countries:
@@ -179,7 +266,16 @@ def can_view_user(target_user):
     # ========== 管理员逻辑 ==========
     if current_role == 'admin':
         allowed_countries = get_allowed_countries()
-        
+
+        # ✅ 修复：如果 allowed_countries 为空列表，无权查看任何用户
+        if allowed_countries is None:
+            # 无权限范围，使用用户注册国家
+            user_session_country = session.get('user_country')
+            user_country = target_user.get('country')
+            if user_country and user_country == user_session_country:
+                return True
+            return False
+   
         if allowed_countries:
             user_country = target_user.get('country')
             if user_country:
@@ -252,9 +348,12 @@ def can_manage_role(target_role):
 
 
 # ==================== 用户列表过滤（带创建人姓名）====================
+# utils/permissions.py
+
 def filter_users_by_permission(users, allowed_countries=None, current_user_id=None):
     """
     根据权限过滤用户列表，并自动添加创建人姓名
+    支持：管理员可以看到同级管理员（权限范围有交集）
     
     Args:
         users: 用户列表
@@ -270,6 +369,10 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
     if allowed_countries is None:
         allowed_countries = get_allowed_countries()
     
+    # 获取当前用户角色
+    current_role = session.get('role')
+    is_dev = is_developer()
+    
     # 收集所有创建人ID
     creator_ids = list(set([u.get('created_by') for u in users if u.get('created_by')]))
     
@@ -284,17 +387,234 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
         except Exception as e:
             logger.error(f"查询创建人姓名失败: {e}")
     
-    # 过滤用户并添加创建人姓名
+    # 过滤用户
     filtered_users = []
+    
     for user in users:
-        if not can_view_user(user):
+        user_role = user.get('role', 'user')
+        user_id = user.get('id')
+        user_country = user.get('country') or ''
+        user_status = user.get('user_status', '')
+        created_by = user.get('created_by')
+        user_admin_countries = user.get('admin_countries')
+        user_name = user.get('name_en', '')
+        
+        # 解析目标用户的权限范围
+        target_admin_country_list = []
+        if user_admin_countries:
+            try:
+                target_admin_country_list = json.loads(user_admin_countries) if isinstance(user_admin_countries, str) else user_admin_countries
+            except:
+                pass
+        
+        # ========== 开发者逻辑 ==========
+        if is_dev:
+            user['created_by_name'] = creator_name_map.get(created_by, '')
+            filtered_users.append(user)
             continue
         
-        # 添加创建人姓名
-        user['created_by_name'] = creator_name_map.get(user.get('created_by'), '')
-        filtered_users.append(user)
+        # ========== 超管逻辑 ==========
+        if current_role == 'super_admin':
+            # 超管看不到开发者
+            if user_role == 'developer':
+                continue
+            
+            # 无权限范围限制，可以看到所有非开发者
+            if allowed_countries is None:
+                user['created_by_name'] = creator_name_map.get(created_by, '')
+                filtered_users.append(user)
+                continue
+            
+            # 有权限范围限制
+            if allowed_countries:
+                # 目标用户是超管或管理员：检查 admin_countries 交集
+                if user_role in ['super_admin', 'admin']:
+                    if target_admin_country_list:
+                        if any(c in allowed_countries for c in target_admin_country_list):
+                            user['created_by_name'] = creator_name_map.get(created_by, '')
+                            filtered_users.append(user)
+                            continue
+                    # 目标超管没有设置权限范围，视为全局，可见
+                    elif user_role == 'super_admin' and not target_admin_country_list:
+                        user['created_by_name'] = creator_name_map.get(created_by, '')
+                        filtered_users.append(user)
+                        continue
+                    continue
+                
+                # 目标用户是普通用户：检查 country
+                if user_role == 'user':
+                    if user_country and user_country in allowed_countries:
+                        user['created_by_name'] = creator_name_map.get(created_by, '')
+                        filtered_users.append(user)
+                        continue
+                continue
+            continue
+        
+        # ========== ✅ 管理员逻辑（核心修复） ==========
+        if current_role == 'admin':
+            # 管理员看不到超管和开发者
+            if user_role in ['super_admin', 'developer']:
+                continue
+            
+            # 当前管理员的权限范围
+            current_allowed = allowed_countries if allowed_countries else [session.get('user_country')]
+            if not current_allowed:
+                continue
+            
+            # 1. 如果是自己，允许
+            if user_id == current_user_id:
+                user['created_by_name'] = creator_name_map.get(created_by, '')
+                filtered_users.append(user)
+                continue
+            
+            # ============================================================
+            # ✅ 2. 目标用户是管理员：检查 admin_countries 是否有交集
+            # ============================================================
+            if user_role == 'admin':
+                # 如果目标管理员有权限范围，检查交集
+                if target_admin_country_list:
+                    if any(c in current_allowed for c in target_admin_country_list):
+                        user['created_by_name'] = creator_name_map.get(created_by, '')
+                        filtered_users.append(user)
+                        logger.debug(f"管理员看到同国家管理员: {user_name}")
+                        continue
+                # 如果目标管理员没有设置权限范围，检查 country
+                elif user_country and user_country in current_allowed:
+                    user['created_by_name'] = creator_name_map.get(created_by, '')
+                    filtered_users.append(user)
+                    logger.debug(f"管理员看到同国家管理员(无权限范围): {user_name}")
+                    continue
+                # 不同权限范围的管理员不可见
+                continue
+            
+            # 3. 目标用户是普通用户：检查 country
+            if user_role == 'user':
+                # 已注册用户
+                if user_status == 'registered':
+                    if user_country and user_country in current_allowed:
+                        user['created_by_name'] = creator_name_map.get(created_by, '')
+                        filtered_users.append(user)
+                        continue
+                # 已导入用户：按创建者权限过滤
+                elif user_status == 'imported':
+                    if created_by == current_user_id:
+                        user['created_by_name'] = creator_name_map.get(created_by, '')
+                        filtered_users.append(user)
+                        continue
+                    creator = creator_name_map.get(created_by, '')
+                    # 检查创建者的国家是否在权限范围内
+                    if creator:
+                        # 获取创建者的国家
+                        try:
+                            db = get_supabase()
+                            creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
+                            if creator_res.data:
+                                creator_country = creator_res.data.get('country', '')
+                                if creator_country and creator_country in current_allowed:
+                                    user['created_by_name'] = creator_name_map.get(created_by, '')
+                                    filtered_users.append(user)
+                                    continue
+                        except:
+                            pass
+                continue
+            
+            continue
+        
+        # ========== 普通用户：只能看到自己 ==========
+        if user_id == current_user_id:
+            user['created_by_name'] = creator_name_map.get(created_by, '')
+            filtered_users.append(user)
     
     return filtered_users
+
+def _can_view_user_with_allowed(target_user, allowed_countries, current_user_id):
+    """内部函数：使用指定的权限范围检查用户可见性"""
+    current_role = session.get('role')
+    dev_id = os.environ.get('DEVELOPER_USER_ID', '')
+    
+    # 开发者可以查看所有用户
+    if dev_id and current_user_id == dev_id:
+        return True
+    
+    # 如果是自己，总是可以查看
+    if target_user.get('id') == current_user_id:
+        return True
+    
+    # 不能查看受保护账号（除非是本人）
+    if target_user.get('is_protected') and target_user.get('id') != current_user_id:
+        return False
+    
+    target_role = target_user.get('role', 'user')
+    target_country = target_user.get('country')
+    target_admin_countries = target_user.get('admin_countries')
+    
+    # ========== 解析目标用户的权限范围 ==========
+    target_admin_country_list = []
+    if target_admin_countries:
+        try:
+            target_admin_country_list = json.loads(target_admin_countries) if isinstance(target_admin_countries, str) else target_admin_countries
+        except:
+            pass
+    
+    # ========== 当前用户是超管 ==========
+    if current_role == 'super_admin':
+        # 超管看不到开发者
+        if target_role == 'developer':
+            return False
+        
+        # 如果当前超管没有权限范围限制，可以看到所有非开发者
+        if allowed_countries is None:
+            return True
+        
+        # 如果有权限范围限制，检查是否有交集
+        if allowed_countries:
+            # 目标用户是超管或管理员：检查 admin_countries 交集
+            if target_role in ['super_admin', 'admin']:
+                # 如果有共同的权限范围，可见
+                if target_admin_country_list:
+                    if any(c in allowed_countries for c in target_admin_country_list):
+                        return True
+                # 如果目标超管没有设置权限范围，视为全局，可见
+                elif target_role == 'super_admin' and not target_admin_country_list:
+                    return True
+                return False
+            
+            # 目标用户是普通用户：检查 country 是否在权限范围内
+            if target_role == 'user':
+                return target_country in allowed_countries if target_country else False
+        
+        return False
+    
+    # ========== 当前用户是管理员 ==========
+    if current_role == 'admin':
+        # 管理员看不到超管和开发者
+        if target_role in ['super_admin', 'developer']:
+            return False
+        
+        # 如果当前管理员没有权限范围限制，使用自己的国家
+        current_allowed = allowed_countries if allowed_countries else [session.get('user_country')]
+        if not current_allowed:
+            return False
+        
+        # 目标用户是管理员：检查 admin_countries 交集
+        if target_role == 'admin':
+            if target_admin_country_list:
+                # 检查是否有共同的权限范围
+                if any(c in current_allowed for c in target_admin_country_list):
+                    return True
+            # 如果目标管理员没有设置权限范围，检查 country
+            elif target_country and target_country in current_allowed:
+                return True
+            return False
+        
+        # 目标用户是普通用户：检查 country 是否在权限范围内
+        if target_role == 'user':
+            return target_country in current_allowed if target_country else False
+        
+        return False
+    
+    # ========== 普通用户：只能看到自己 ==========
+    return target_user.get('id') == current_user_id
 
 def is_active_user(user):
     """
@@ -427,15 +747,23 @@ def parse_countries_input(country_str):
 
 
 # ==================== 角色判断 ====================
-def has_role(required_roles):
-    """检查当前用户是否拥有指定角色"""
-    if is_developer():
-        return True
-    user_role = session.get('role', 'user')
-    if isinstance(required_roles, str):
-        required_roles = [required_roles]
-    return user_role in required_roles
 
+def has_role(role):
+    """检查当前用户是否具有指定角色或更高权限"""
+    current_role = session.get('role', 'user')
+    
+    # 角色层级
+    role_hierarchy = {
+        'developer': 4,
+        'super_admin': 3,
+        'admin': 2,
+        'user': 1
+    }
+    
+    current_level = role_hierarchy.get(current_role, 0)
+    target_level = role_hierarchy.get(role, 0)
+    
+    return current_level >= target_level
 
 # ==================== 权限装饰器 ====================
 def developer_required(f):
