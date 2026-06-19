@@ -880,7 +880,6 @@
             page: currentPage,
             per_page: 20,
             search: filters.search,
-            //country: filters.country,
             wh_id: filters.wh_id
         });
 
@@ -891,6 +890,11 @@
             const res = await fetch(`/api/admin/users?${params}`);
             const data = await res.json();
 
+            // ✅ 调试日志
+            console.log('API 返回数据:', data);
+            console.log('total:', data.total);
+            console.log('page:', data.page);
+            
             let users = data.data || [];
             
             // ✅ 前端国家模糊匹配
@@ -926,18 +930,19 @@
             currentUsersData = users;
             console.log('API 返回页码:', data.page);
             console.log('currentPage 在渲染前:', currentPage);
-            
-            // ✅ 在渲染前打印 currentPage 确认值
             console.log('loadUsers - currentPage:', currentPage);
-            
             renderUserTable(currentUsersData);
-            document.getElementById('totalCount').innerText = users.length;
 
-            // ✅ 分页：如果数据少于20条，只显示1页
-            const totalPages = Math.ceil(users.length / 20);
-            renderPagination(1, Math.max(totalPages, 1));
+            const total = data.total || users.length;
+            document.getElementById('totalCount').innerText = total;
 
-            renderPagination(data.page, totalPages);
+            // ✅ 计算总页数
+            const totalPages = Math.ceil(total / 20);
+            console.log('总页数:', totalPages);
+            
+            const current = data.page || 1;
+            renderPagination(current, totalPages);
+
             updateBatchDeleteButton();
             // ✅ 渲染完成后恢复列宽
             setTimeout(() => {
@@ -978,29 +983,82 @@
 
     // ==================== 权限判断函数 ====================
     function canEditUser(user) {
+        // 如果是受保护账号且不是自己 → 不可编辑
         if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
-        if (CURRENT_USER_ROLE === 'super_admin') return true;
+        
+        // ✅ 开发者可以编辑所有用户（包括超管）
+        if (IS_DEVELOPER) return true;
+        
+        // 超管可以编辑所有用户（除开发者）
+        if (CURRENT_USER_ROLE === 'super_admin') {
+            if (user.role === 'developer') return false;
+            return true;
+        }
+        
+        // 管理员不能编辑管理员和超管
         if (user.role === 'admin' || user.role === 'super_admin') return false;
-        return true;
+        
+        // 普通用户只能编辑自己
+        if (user.id === CURRENT_USER_ID) return true;
+        
+        return false;
     }
     function canDeleteUser(user) {
+        // 受保护账号不可删除
         if (user.is_protected) return false;
-        if (CURRENT_USER_ROLE === 'super_admin') return user.id !== CURRENT_USER_ID;
+        
+        // 开发者可以删除任何用户（但不能删除自己）
+        if (IS_DEVELOPER) {
+            return user.id !== CURRENT_USER_ID;
+        }
+        
+        // 超管可以删除任何用户（除开发者）
+        if (CURRENT_USER_ROLE === 'super_admin') {
+            if (user.role === 'developer') return false;
+            return user.id !== CURRENT_USER_ID;
+        }
+        
+        // 管理员不能删除管理员和超管
         if (user.role === 'admin' || user.role === 'super_admin') return false;
+        
         return user.id !== CURRENT_USER_ID;
     }
     function canResetPwd(user) {
+        // 受保护账号只有本人能重置
         if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
-        if (CURRENT_USER_ROLE === 'super_admin') return true;
+        
+        // 开发者可以重置任何用户的密码
+        if (IS_DEVELOPER) return true;
+        
+        // 超管可以重置任何用户密码（除开发者）
+        if (CURRENT_USER_ROLE === 'super_admin') {
+            if (user.role === 'developer') return false;
+            return true;
+        }
+        
         return user.role === 'user';
     }
 
     // 字段可见性配置
     let visibleFields = {
-        index: true, country: true, name_en: true, email: true, wh_id: true, wh_name_en: true,
-        role: true, is_partner: true, user_status: true, employee_id: false,
-        company: false, department: false, wh_type: false, birthday: false,
-        created_by: false, id: false, power_scope: true  // 权限范围列
+        index: true, 
+        country: true, 
+        name_en: true, 
+        email: true, 
+        id: false, 
+        wh_id: true, 
+        wh_name_en: false,
+        role: true, 
+        is_partner: true, 
+        user_status: true, 
+        employment_status: true,
+        employee_id: false,
+        company: false, 
+        department: false, 
+        wh_type: false, 
+        birthday: false,
+        created_by: false, 
+        power_scope: true  // 权限范围列
     };
 
     // 保存字段配置到 localStorage
@@ -1103,9 +1161,10 @@
 
         // ==================== 动态构建表头 ====================
         const fieldOrder = [
-            'index','country', 'name_en', 'email', 'id', 'wh_id', 'wh_name_en', 'role', 
-            'is_partner', 'user_status', 'employment_status', 'employee_id', 
-            'company', 'department', 'wh_type', 'birthday', 'created_by'
+            'index','country', 'name_en', 'email', 'id', 
+            'wh_id', 'wh_name_en', 'role', 'is_partner', 
+            'user_status', 'employment_status', 
+            'employee_id', 'company', 'department', 'wh_type', 'birthday', 'created_by'
         ];
         const labels = {
             index: '#',
@@ -1137,7 +1196,7 @@
             }
         }
         // 权限范围列（仅超管显示）
-        if (CURRENT_USER_ROLE === 'super_admin' && visibleFields && visibleFields.power_scope !== false) {
+        if ((CURRENT_USER_ROLE === 'super_admin' || IS_DEVELOPER) && visibleFields && visibleFields.power_scope !== false) {
             headerHtml += `<th><span data-i18n="power_scope">${t('power_scope')}</span></th>`;
         }
         headerHtml += `<th>${t('actions')}</th></tr></thead>`;
@@ -1192,7 +1251,15 @@
                             cellValue = u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'));
                             break;
                         case 'role':
-                            cellValue = u.role === 'super_admin' ? t('t_super_admin') : (u.role === 'admin' ? t('t_admin') : t('t_ordinary_user'));
+                            if (u.role === 'developer') {
+                                cellValue = t('t_developer');  // 显示"开发者"
+                            } else if (u.role === 'super_admin') {
+                                cellValue = t('t_super_admin');
+                            } else if (u.role === 'admin') {
+                                cellValue = t('t_admin');
+                            } else {
+                                cellValue = t('t_ordinary_user');
+                            }
                             break;
                         case 'is_partner':
                             cellValue = u.is_partner ? t('t_yes') : t('t_no');
@@ -1257,17 +1324,28 @@
                             </button>`;
             }
             // 权限范围列（仅超管显示）
-            if (CURRENT_USER_ROLE === 'super_admin' && visibleFields && visibleFields.power_scope !== false) {
-                let scopeDisplay = '';
-                if (u.admin_countries) {
-                    try {
-                        const codes = JSON.parse(u.admin_countries);
-                        scopeDisplay = codes.length ? codes.join(', ') : t('t_unrestricted');
-                    } catch(e) {
-                        scopeDisplay = u.admin_countries;
-                    }
-                } else {
+            if ((CURRENT_USER_ROLE === 'super_admin' || IS_DEVELOPER) && visibleFields && visibleFields.power_scope !== false) {
+                let scopeDisplay = '-';
+                const userRole = u.role || 'user';
+                // 开发者：显示"无限制"
+                if (userRole === 'developer') {
                     scopeDisplay = t('t_unrestricted');
+                } 
+                // 管理员或超管：显示权限范围
+                else if (userRole === 'admin' || userRole === 'super_admin') {
+                    if (u.admin_countries) {
+                        try {
+                            const codes = JSON.parse(u.admin_countries);
+                            // 如果有国家列表则显示，否则显示"无限制"
+                            scopeDisplay = codes && codes.length > 0 ? codes.join(', ') : t('t_unrestricted');
+                        } catch(e) {
+                            scopeDisplay = u.admin_countries;
+                        }
+                    } else {
+                        // 异常情况：数据库为空，降级显示"无限制"
+                        scopeDisplay = t('t_unrestricted');
+                    }
+                    // 普通用户：显示 '-'（不适用）
                 }
                 bodyHtml += `<td>${escapeHtml(scopeDisplay)}</td>`;
             }

@@ -63,6 +63,20 @@ else:
 logger.info(f"App debug mode: {app.debug}")
 
 
+#=====调试代码====
+@app.route('/debug/developer_check')
+@login_required
+def debug_developer_check():
+    """检查开发者状态"""
+    from utils.permissions import is_developer
+    return jsonify({
+        "session_user_id": session.get('user_id'),
+        "env_developer_id": os.environ.get('DEVELOPER_USER_ID'),
+        "is_developer": is_developer(),
+        "session_role": session.get('role')
+    })
+#=====调试结束=====
+
 # ========== 3. 请求日志（脱敏版本）==========
 @app.before_request
 def log_request_safe():
