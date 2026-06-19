@@ -1,6 +1,13 @@
 ﻿<!-- templates/admin/list_trainings.html -->
 {% extends "base.html" %}
 {% block title %}培训管理{% endblock %}
+
+{% block extra_head %}
+<!-- ✅ 预加载仪表盘数据，提升返回速度 -->
+<link rel="prefetch" href="/api/admin/dashboard/stats" as="fetch" crossorigin="use-credentials">
+{{ super() }}
+{% endblock %}
+
 {% block content %}
 <style>
     /* 可展开行样式 */
@@ -43,12 +50,63 @@
         width: 70px;
         display: inline-block;
     }
+    /* 在 list_trainings.html 的 style 标签中添加 */
+    .expand-icon-wrapper {
+        position: relative;
+        display: inline-block;
+        margin-right: 4px;
+    }
+
+    .expand-icon-wrapper .badge-count {
+        position: absolute;
+        top: -12px;
+        right: -8px;
+        background: #0d6efd;
+        color: white;
+        border-radius: 50%;
+        font-size: 9px;
+        padding: 1px 5px;
+        min-width: 16px;
+        text-align: center;
+        line-height: 1.4;
+        border: 1px solid white;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        cursor: pointer;
+        z-index: 1;
+        font-weight: bold;
+        transition: transform 0.2s;
+    }
+
+    .expand-icon-wrapper .badge-count:hover {
+        transform: scale(1.2);
+    }
+
+    .expand-icon-wrapper .badge-count.has-bindings {
+        background: #198754;  /* 有绑定时变为绿色 */
+    }
+
+    .expand-icon {
+        cursor: pointer;
+        transition: transform 0.2s;
+        display: inline-block;
+        font-size: 12px;
+        color: #0d6efd;
+        margin-right: 2px;
+    }
+
+    .expand-icon:hover {
+        color: #0a58ca;
+    }
+
+    .expand-icon.expanded {
+        transform: rotate(90deg);
+    }
 </style>
 
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
-        <button class="btn btn-outline-secondary" onclick="window.location.href='/admin/dashboard';">
+        <button class="btn btn-outline-secondary" id="backToDashboardBtn">
             <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
         </button>
     </div>
@@ -144,7 +202,7 @@
                                 <button class="btn btn-sm btn-secondary cancel-new-training"><span data-i18n="cancel">取消</span></button>
                             </td>
                         </tr>
-                        </tr><td colspan="9" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        </tr><td colspan="10" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -323,6 +381,34 @@
 
 {% block extra_js %}
 <script>
+    // ========== 培训页面缓存（方案一） ==========
+    const TRAINING_CACHE_KEY = 'training_list_data';
+    const TRAINING_CACHE_TIME_KEY = 'training_list_data_time';
+    const CACHE_DURATION = 5 * 60 * 1000; // 5分钟
+
+    function getCachedTrainingData() {
+        try {
+            const cached = sessionStorage.getItem(TRAINING_CACHE_KEY);
+            const cachedTime = sessionStorage.getItem(TRAINING_CACHE_TIME_KEY);
+            if (cached && cachedTime && (Date.now() - parseInt(cachedTime)) < CACHE_DURATION) {
+                return JSON.parse(cached);
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function setCachedTrainingData(data) {
+        try {
+            sessionStorage.setItem(TRAINING_CACHE_KEY, JSON.stringify(data));
+            sessionStorage.setItem(TRAINING_CACHE_TIME_KEY, String(Date.now()));
+        } catch (e) {}
+    }
+
+    function clearTrainingCache() {
+        sessionStorage.removeItem(TRAINING_CACHE_KEY);
+        sessionStorage.removeItem(TRAINING_CACHE_TIME_KEY);
+    }
+
     const STATUS_VIEW_URL = {{ url_for('admin_training.training_attendance_status_view')|tojson }};
     let currentPage = 1;
     let filters = { name: '', country: '', quarter: '' };
@@ -394,7 +480,30 @@
     }
 
     // 加载培训列表(<button class="btn btn-sm btn-outline-info header-btn" data-id="${t.id}">表头录入</button>)
-    async function loadTrainings() {
+    async function loadTrainings(forceRefresh = false) {
+        // 使用缓存
+        if (!forceRefresh) {
+            const cached = getCachedTrainingData();
+            if (cached && cached.data && cached.data.length > 0) {
+                console.log('📋 使用缓存渲染');
+                renderTrainingsTable(cached.data);
+                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
+                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
+            
+                // ✅ 检查是否从下级页面返回
+                const fromDetail = sessionStorage.getItem('from_training_detail');
+                if (fromDetail === 'true') {
+                    console.log('📋 从下级返回，不刷新');
+                    return;  // ✅ 直接返回，不执行后台刷新
+                }
+                
+                // 后台刷新
+                setTimeout(() => loadTrainings(true), 800);
+                return;
+            }
+        }
+        
+        // 从服务器加载
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
@@ -404,15 +513,26 @@
         });
         const res = await fetch(`/api/admin/trainings?${params}`);
         const data = await res.json();
+        
+        setCachedTrainingData({
+            data: data.data,
+            total: data.total,
+            page: data.page,
+            per_page: data.per_page
+        });
+        
         renderTrainingsTable(data.data);
         document.getElementById('totalCount').innerText = data.total;
-        currentPage = data.page;  // ✅ 更新当前页码
+        currentPage = data.page;
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
  
     function renderTrainingsTable(trainings) {
         const tbody = document.getElementById('trainingsTbody');
         const perPage = 20; // 与后端分页大小一致
+        // ✅ 使用 DocumentFragment 批量构建
+        const fragment = document.createDocumentFragment();
+        
         tbody.innerHTML = '';
         trainings.forEach((t, index) => {
             const rowNumber = (currentPage - 1) * perPage + index + 1;
@@ -420,6 +540,11 @@
             const row = tbody.insertRow();
             row.setAttribute('data-id', t.id);
 
+            // ✅ 使用 safeT 函数，如果不可用则使用 fallback
+            const tooltipText = (typeof safeT === 'function') 
+                ? safeT('click_view_exam_bindings') 
+                : '点击查看已绑定考试';
+            
             const inconsistent = t.has_inconsistent_templates || false;
             let headerBtnHtml = '';
             if (inconsistent) {
@@ -466,7 +591,36 @@
             }
 
             // ✅ 修改培训名称列：根据是否有国家决定跳转方式
-            const expandIcon = `<span class="expand-icon" data-training-id="${t.id}">▶</span>`;
+            // const expandIcon = `<span class="expand-icon" data-training-id="${t.id}">▶</span>`;
+            const expandIcon = `
+                <span class="expand-icon-wrapper" style="position: relative; display: inline-block; margin-right: 2px;">
+                    <span class="badge-count" style="
+                        position: absolute;
+                        top: -12px;
+                        right: -8px;
+                        background: ${t.binding_count > 0 ? '#198754' : '#0d6efd'};
+                        color: white;
+                        border-radius: 50%;
+                        font-size: 9px;
+                        padding: 1px 5px;
+                        min-width: 16px;
+                        text-align: center;
+                        line-height: 1.4;
+                        border: 1px solid white;
+                        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+                        display: ${t.binding_count > 0 ? 'inline' : 'none'};
+                        cursor: pointer;
+                        z-index: 1;
+                        font-weight: bold;
+                        transition: transform 0.2s;
+                    ">${t.binding_count || 0}</span>
+                    <span class="expand-icon" data-training-id="${t.id}" 
+                        title="${tooltipText}（${t.binding_count || 0}）"
+                        style="cursor: pointer; transition: transform 0.2s; display: inline-block; font-size: 12px; color: #0d6efd;">
+                        ▶
+                    </span>
+                </span>
+            `;
             let nameHtml = '';
             if (t.country) {
                 nameHtml = `${expandIcon}<a href="/admin/training/${t.id}/attendance" class="text-decoration-none fw-bold" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
@@ -474,6 +628,7 @@
                 nameHtml = `${expandIcon}<a href="#" class="text-decoration-none fw-bold group-detail-link" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
             }
 
+            // 构建行内容...
             row.innerHTML = `
                 <td class="seq-column">${rowNumber}</td>  <!-- 使用连续序号 -->
                 <td class="country-cell" title="${escapeHtml(t.country || safeT('t_general'))}">${escapeHtml(t.country || safeT('t_general'))}</td>
@@ -514,7 +669,12 @@
                     <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${t.id}" data-i18n-key="t_delete">${safeT('t_delete')}</button>
                   </td>
             `;
+            fragment.appendChild(row);
         });
+        // ✅ 一次性添加所有行
+        tbody.innerHTML = '';
+        tbody.appendChild(fragment);
+        
         attachRowEvents();    
         // 绑定国家分组链接的点击事件
         document.querySelectorAll('.group-detail-link').forEach(link => {
@@ -1575,7 +1735,8 @@
     });
 
     // 搜索
-    document.getElementById('searchBtn').addEventListener('click', () => {
+    document.getElementById('searchBtn').addEventListener('click', async () => {
+        clearTrainingCache();
         filters.name = document.getElementById('filterName').value;
         filters.country = document.getElementById('filterCountry').value;
         filters.quarter = document.getElementById('filterQuarter').value;
@@ -1666,9 +1827,39 @@
 
     // 初始化国家列表和季度列表0429增加校验
     document.addEventListener('DOMContentLoaded', async () => {
+        const backBtn = document.getElementById('backToDashboardBtn');
+        if (backBtn) {
+            backBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                // 标记来源，让仪表盘知道是从培训页面返回的
+                sessionStorage.setItem('from_training_page', 'true');
+                sessionStorage.setItem('use_dashboard_cache', 'true');
+                // 使用 history.back() 或直接跳转
+                if (document.referrer && document.referrer.includes('/admin/dashboard')) {
+                    history.back();
+                } else {
+                    window.location.href = '/admin/dashboard';
+                }
+            });
+        }
+
+        const fromDetail = sessionStorage.getItem('from_training_detail');
+        if (fromDetail === 'true') {
+            sessionStorage.removeItem('from_training_detail');
+            // 从下级返回，使用缓存，不刷新
+            const cached = getCachedTrainingData();
+            if (cached && cached.data && cached.data.length > 0) {
+                renderTrainingsTable(cached.data);
+                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
+                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
+                return; // 不执行后续加载
+            }
+        }
+
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await loadQuarterOptions();
         setupQuarterInput();
+        loadTrainings(false);
     });
 
     // 监听国家分组模态框中的“表头录入”按钮（动态元素使用事件委托）
@@ -1685,6 +1876,14 @@
     (async function() {
         await waitForI18n();                 // 确保 i18n 已就绪
         window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
+
+        // ✅ 检查是否从下级页面返回，如果是则不重复加载
+        const fromDetail = sessionStorage.getItem('from_training_detail');
+        if (fromDetail === 'true') {
+            // 已经由 DOMContentLoaded 处理了，这里不再重复加载
+            return;
+        }
+        
         loadTrainings();                     // 首次加载列表
 
         // 语言切换时重新加载列表，实现实时翻译
@@ -1753,7 +1952,7 @@
         const newRow = rowElement.insertAdjacentElement('afterend', document.createElement('tr'));
         newRow.id = detailRowId;
         newRow.className = 'binding-detail-row';
-        newRow.innerHTML = `<td colspan="9" class="p-0"><div class="binding-content"><div class="text-center py-3"><div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}</div></div></td>`;
+        newRow.innerHTML = `<td colspan="10" class="p-0"><div class="binding-content"><div class="text-center py-3"><div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}</div></div></td>`;
         
         try {
             const res = await fetch(`/api/admin/training/${trainingId}/bindings`);
@@ -1768,7 +1967,7 @@
             }
             
             if (bindings.length === 0) {
-                newRow.innerHTML = `<td colspan="9" class="p-0"><div class="binding-content">
+                newRow.innerHTML = `<td colspan="10" class="p-0"><div class="binding-content">
                     <div class="text-muted text-center py-3">
                         ${t('no_related_exam')}
                         <button class="btn btn-sm btn-outline-primary ms-2 add-binding-btn" data-training-id="${trainingId}">+ ${t('binding_exam')}</button>
@@ -1805,14 +2004,27 @@
                                         <td><input type="number" class="form-control form-control-sm pass-score-input" style="width: 70px;" value="${b.pass_score}" data-binding-id="${b.id}" data-field="pass_score" min="0" max="100"></td>
                                         <td><input type="checkbox" class="form-check-input auto-assign-checkbox" ${b.is_auto_assign ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_auto_assign"></td>
                                         <td><input type="checkbox" class="form-check-input required-checkbox" ${b.is_required ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_required"></td>
-                                        <td><button class="btn btn-sm btn-outline-danger unbind-btn" data-binding-id="${b.id}" data-exam-title="${escapeHtml(b.exam_title)}">${t('unbind')}</button></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-success reassign-btn me-1" 
+                                                    data-binding-id="${b.id}" 
+                                                    data-training-id="${trainingId}"
+                                                    data-exam-title="${escapeHtml(b.exam_title)}"
+                                                    title="为已签到学员补分配此考试">
+                                                <i class="bi bi-arrow-repeat"></i> ${safeT('reassign')}
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger unbind-btn" 
+                                                data-binding-id="${b.id}" 
+                                                data-exam-title="${escapeHtml(b.exam_title)}">
+                                                ${safeT('unbind')}
+                                            </button>
+                                        </td>
                                     </tr>
                                 `).join('')}
                             </tbody>
                         </table>
                     </div>
                 `;
-                newRow.innerHTML = `<td colspan="9" class="p-0">${bindingsHtml}</td>`;
+                newRow.innerHTML = `<td colspan="10" class="p-0">${bindingsHtml}</td>`;
             }
             
             // 绑定修改事件
@@ -1823,7 +2035,7 @@
             // ✅ 检查行是否还存在
             const errorRow = document.getElementById(detailRowId);
             if (errorRow) {
-                errorRow.innerHTML = `<td colspan="9" class="p-0"><div class="binding-content"><div class="text-danger text-center py-3">${t('failed_to_load_try_again')}</div></div></td>`;
+                errorRow.innerHTML = `<td colspan="10" class="p-0"><div class="binding-content"><div class="text-danger text-center py-3">${t('failed_to_load_try_again')}</div></div></td>`;
             }
         }
     }
@@ -1859,7 +2071,64 @@
                 await updateBinding(bindingId, { is_required: cb.checked });
             });
         });
-        
+
+        // 补分配按钮
+        rowElement.querySelectorAll('.reassign-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const bindingId = btn.dataset.bindingId;
+                const trainingId = btn.dataset.trainingId;
+                const examTitle = btn.dataset.examTitle;
+                
+                // ✅ 使用 safeT 或直接硬编码
+                const confirmMsg = (typeof safeT === 'function') 
+                    ? safeT('confirm_reassign') 
+                    : `确定要为考试「${examTitle}」补分配所有已签到学员吗？`;
+                
+                if (!confirm(confirmMsg)) return;
+                
+                // 显示加载状态
+                const originalText = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+                
+                try {
+                    const res = await fetch(`/api/admin/training/${trainingId}/binding/${bindingId}/reassign`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const data = await res.json();
+                    
+                    if (data.success) {
+                        const successMsg = (typeof safeT === 'function')
+                            ? safeT('reassign_success')
+                            : '补分配成功';
+                        
+                        if (data.assigned_count > 0) {
+                            showToast(`${successMsg}: ${data.assigned_count} 名学员`, 'success');
+                        } else {
+                            showToast(data.message || '所有学员已分配', 'info');
+                        }
+                        // 刷新绑定列表
+                        const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                        if (row) {
+                            await loadTrainingBindings(trainingId, row);
+                        }
+                    } else {
+                        const errorMsg = (typeof safeT === 'function')
+                            ? safeT('reassign_failed')
+                            : '补分配失败';
+                        showToast(errorMsg + ': ' + (data.message || ''), 'error');
+                    }
+                } catch (err) {
+                    console.error('补分配失败:', err);
+                    showToast('网络错误，请重试', 'error');
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = originalText;
+                }
+            });
+        });
+
         // 解除绑定(t('confirm_unbind_exam'),${examTitle})
         rowElement.querySelectorAll('.unbind-btn').forEach(btn => {
             btn.addEventListener('click', async (e) => {

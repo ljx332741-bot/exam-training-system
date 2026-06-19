@@ -575,6 +575,7 @@
     const IS_DEVELOPER = {{ is_developer | tojson }};
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     const CURRENT_USER_ID = "{{ session.get('user_id') }}";
+    const CURRENT_USER_COUNTRY = "{{ session.get('user_country', '') }}";
     
     let currentPage = 1;
     let filters = { search: '', country: '', wh_id: '' };
@@ -1064,6 +1065,7 @@
         }
         const currentUserId = CURRENT_USER_ID;
         const currentUserRole = CURRENT_USER_ROLE;
+        const currentUserCountry = CURRENT_USER_COUNTRY;
         const isDev = IS_DEVELOPER;
         const table = document.getElementById('userTable');
         if (!table) return;
@@ -1087,7 +1089,7 @@
                 // 显示自己
                 if (u.id === currentUserId) return true;
                 // ✅ 可选：显示同一国家的其他管理员（如果权限允许）
-                // if (u.role === 'admin' && u.country === currentUserCountry) return true;
+                if (u.role === 'admin' && u.country === currentUserCountry) return true;
                 return false;
             });
         } else {

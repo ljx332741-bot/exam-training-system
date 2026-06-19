@@ -1,4 +1,4 @@
-F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
+exam-system/
 ├── launcher.py                             # 桌面启动器
 ├── app.py                                  # 主入口
 ├── config.py                               # 环境变量 & 配置
@@ -9,22 +9,25 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 ├── reviewers.json                          # 阅卷人static
 ├── static/
 │   ├── i18n/ 
-│   │   ├── en.json                       # 词典英文
-│   │   ├── zh.json                       # 词典中文
-│   │   └── i18n.js                       # 翻译文件
+│   │   ├── en.json                         # 词典英文
+│   │   ├── zh.json                         # 词典中文
+│   │   └── i18n.js                         # 翻译文件
 │   │
 │   ├── js/                          
 │   │   │                             
-│   │   └── timezone.js                    # 前端时区检测增强
+│   │   └── timezone.js                     # 前端时区检测增强
 │   └── images/
 │
 ├── utils/
 │   ├── email_notifier.py                   # 邮件通知工具函数
 │   ├── permissions.py                      # 权限工具函数
 │   ├── timezone_utils.py                   # 统一的时区处理工具函数
+│   ├── i18n_messages.py                    # 统一的国际化消息模板
 │   ├── common.py                           # 国家和季度处理逻辑的工具函数
+│   ├── cache_manager.py                    # 稳定、兼容、高性能的缓存优化工具函数
+│   ├── logger.py                           # 完整的日志管理方案
 │   ├── training_helpers.py                 # 培训信息获取的工具函数
-│   ├── import_helper.py                    # [新增] 用户和库房导入的工具函数
+│   ├── import_helper.py                    # 用户和库房导入的工具函数
 │   └── status.py                           # 后端统一考试状态计算函数
 │
 ├── services/
@@ -45,7 +48,6 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │   │
 │   ├── components/          
 │   │   ├──                    
-│   │   ├── wh_selector.html                # [新增] 库房选择器组件（可复用）
 │   │   └── delete_modal.html               # 全局删除模态框组件
 │   │
 │   ├── exam/
@@ -67,21 +69,21 @@ F:\WarehouseToolsGen\Python.Using-Generate\exam-system/
 │        ├── attendance_pdf.html            # 培训签到详情专用PDF导出
 │        ├── list_inspection.html           # 访谈结果统计与管理一级菜单
 │        ├── list_inspection_details.html   # 访谈结果答题详情二级菜单
-│        ├── candidate_exam_status.html     # [新增] 考生考试状态查询独立页面
-│        ├── wh_info.html                   # [新增] 库房信息管理页面
+│        ├── candidate_exam_status.html     # 考生考试状态查询独立页面
+│        ├── wh_info.html                   # 库房信息管理页面
 │        └── dashboard.html                 # 管理员面板
 │   
 ├── routes/
-│   ├── __init__.py                 # [新增] 蓝图注册中心
-│   ├── helpers.py                  # [新增] 公共辅助函数 & 装饰器
-│   ├── api_auth.py                 # [新增] 认证模块
-│   ├── api_exam.py                 # [新增] 学员考试模块
-│   ├── api_training.py             # [新增] 学员培训模块 
-│   ├── admin_stats.py              # [新增] 统计专用函数
-│   ├── admin_wh.py                 # [新增] 库房管理API模块
-│   ├── admin_exam.py               # [新增] 管理员：考试 & 仪表盘
-│   ├── admin_user.py               # [新增] 管理员：用户管理
-│   ├── admin_training.py           # [新增] 管理员：培训管理
-│   ├── admin_inspection.py         # [新增] 管理员：访谈管理
-│   └── admin_export.py             # [新增] 管理员：导出模块
+│   ├── __init__.py                         # 蓝图注册中心
+│   ├── helpers.py                          # 公共辅助函数 & 装饰器
+│   ├── api_auth.py                         # 认证模块
+│   ├── api_exam.py                         # 学员考试模块
+│   ├── api_training.py                     # 学员培训模块 
+│   ├── admin_stats.py                      # 统计专用函数
+│   ├── admin_wh.py                         # 库房管理API模块
+│   ├── admin_exam.py                       # 管理员：考试 & 仪表盘
+│   ├── admin_user.py                       # 管理员：用户管理
+│   ├── admin_training.py                   # 管理员：培训管理
+│   ├── admin_inspection.py                 # 管理员：访谈管理
+│   └── admin_export.py                     # 管理员：导出模块
 

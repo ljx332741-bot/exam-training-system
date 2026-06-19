@@ -145,7 +145,7 @@
         } catch (err) {
             console.error('加载成绩列表失败:', err);
             document.getElementById('scoresTbody').innerHTML = 
-                `<tr><td colspan="14" class="text-center text-danger">加载失败: ${err.message}</td></tr>`;
+                `<tr><td colspan="14" class="text-center text-danger">加载失败: ${err.message}<\/td><\/tr>`;
         }
     }
 
@@ -242,7 +242,7 @@
     function renderScoresTable(scores) {
         const tbody = document.getElementById('scoresTbody');
         if (!scores.length) {
-            tbody.innerHTML = '<tr><td colspan="13" class="text-center">暂无数据</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="13" class="text-center">暂无数据<\/td><\/tr>';
             return;
         }
         
@@ -290,8 +290,8 @@
                     <a href="/admin/export_pdf_by_result/${s.result_id}" class="btn btn-sm btn-outline-secondary">PDF</a>
                     ${forceResetBtnHtml}
                     ${deleteButtonHtml}
-                </td>
-            </tr>
+                <\/td>
+            <\/tr>
             `;
         }).join('');
 

@@ -1,6 +1,13 @@
 <!-- templates/admin/dashboard.html -->
 {% extends "base.html" %}
 {% block title %}管理员控制台{% endblock %}
+
+{% block extra_head %}
+<!-- ✅ 预加载仪表盘数据 -->
+<link rel="prefetch" href="/api/admin/dashboard/stats" as="fetch" crossorigin="use-credentials">
+{{ super() }}
+{% endblock %}
+
 {% block extra_css %}
 {{ super() }}
 <style>
@@ -140,6 +147,7 @@
 	}
 </style>
 {% endblock %}
+
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2"></i><span data-i18n="mc">管理控制台</span></h3>
@@ -909,6 +917,145 @@
 
 {% block extra_js %}
 <script>
+    // ========== 仪表盘数据缓存 ==========
+    const DASHBOARD_CACHE_KEY = 'dashboard_data';
+    const DASHBOARD_CACHE_TIME_KEY = 'dashboard_data_time';
+    const CACHE_DURATION = 5 * 60 * 1000; // 5分钟
+
+    function getCachedDashboardData() {
+        try {
+            const cached = sessionStorage.getItem(DASHBOARD_CACHE_KEY);
+            const cachedTime = sessionStorage.getItem(DASHBOARD_CACHE_TIME_KEY);
+            if (cached && cachedTime) {
+                const age = Date.now() - parseInt(cachedTime);
+                if (age < CACHE_DURATION) {
+                    return JSON.parse(cached);
+                }
+            }
+        } catch (e) {
+            console.warn('读取缓存失败:', e);
+        }
+        return null;
+    }
+
+    function setCachedDashboardData(data) {
+        try {
+            sessionStorage.setItem(DASHBOARD_CACHE_KEY, JSON.stringify(data));
+            sessionStorage.setItem(DASHBOARD_CACHE_TIME_KEY, String(Date.now()));
+        } catch (e) {
+            console.warn('保存缓存失败:', e);
+        }
+    }
+
+    async function loadDashboardData(forceRefresh = false) {
+        // 检查是否从培训页面返回（使用缓存）
+        const fromTraining = sessionStorage.getItem('from_training_page') === 'true';
+        const useCache = sessionStorage.getItem('use_dashboard_cache') === 'true';
+        
+        if (!forceRefresh && (fromTraining || useCache)) {
+            const cached = getCachedDashboardData();
+            if (cached) {
+                console.log('📊 从培训返回，使用缓存的仪表盘数据');
+                renderDashboardStats(cached);
+                // 清除标记
+                sessionStorage.removeItem('from_training_page');
+                sessionStorage.removeItem('use_dashboard_cache');
+                // 后台刷新数据
+                setTimeout(() => {
+                    loadDashboardData(true);
+                }, 500);
+                return;
+            }
+        }
+        
+        // 如果有缓存且不强制刷新
+        if (!forceRefresh) {
+            const cached = getCachedDashboardData();
+            if (cached) {
+                console.log('📊 使用缓存的仪表盘数据');
+                renderDashboardStats(cached);
+                // 后台刷新数据
+                setTimeout(() => {
+                    loadDashboardData(true);
+                }, 1000);
+                return;
+            }
+        }
+        
+        console.log('📊 加载仪表盘数据...');
+        try {
+            const res = await fetch('/api/admin/dashboard/stats');
+            const result = await res.json();
+            
+            if (result.success) {
+                const data = result.data;
+                setCachedDashboardData(data);
+                renderDashboardStats(data);
+            }
+        } catch (err) {
+            console.error('加载仪表盘数据失败:', err);
+        }
+    }
+
+    function renderDashboardStats(data) {
+        const stats = data.stats || {};
+        
+        // 更新用户统计
+        const userCard = document.querySelector('.bg-primary .card-body');
+        if (userCard) {
+            const numbers = userCard.querySelectorAll('.fw-bold');
+            if (numbers.length >= 2) {
+                numbers[0].textContent = stats.users || 0;
+                numbers[1].textContent = stats.users_imported || 0;
+            }
+        }
+        
+        // 更新考试统计
+        const examCard = document.querySelector('.bg-success .card-body');
+        if (examCard) {
+            const numbers = examCard.querySelectorAll('.fw-bold');
+            if (numbers.length >= 1) {
+                numbers[0].textContent = stats.exams_total || 0;
+            }
+            // 更新已完成数量
+            const smalls = examCard.querySelectorAll('.fs-6');
+            if (smalls.length >= 3) {
+                smalls[0].textContent = stats.exams_completed || 0;
+                smalls[1].textContent = stats.exam_active || 0;
+                smalls[2].textContent = stats.exam_draft || 0;
+            }
+        }
+        
+        // 更新培训统计
+        const trainingCard = document.querySelector('.bg-info .card-body');
+        if (trainingCard) {
+            const numbers = trainingCard.querySelectorAll('.fw-bold');
+            if (numbers.length >= 3) {
+                numbers[0].textContent = stats.trainings_count || 0;
+                numbers[1].textContent = stats.total_attendances || 0;
+                numbers[2].textContent = stats.signins_today || 0;
+            }
+        }
+        
+        // 更新访谈统计
+        const interviewCard = document.querySelector('.bg-secondary .card-body');
+        if (interviewCard) {
+            const number = interviewCard.querySelector('.fw-bold');
+            if (number) {
+                number.textContent = stats.interviewee_count || 0;
+            }
+        }
+        
+        // 更新题库统计（如果有）
+        const questionCard = document.querySelector('.bg-warning .card-body');
+        if (questionCard) {
+            const number = questionCard.querySelector('.fw-bold');
+            if (number) {
+                number.textContent = stats.questions || 0;
+            }
+        }
+    }
+
     // ==================== 导出模态框统一状态管理器 ====================
     // 此模块管理导出筛选模态框的所有状态和逻辑
 
@@ -4028,6 +4175,24 @@
      
 	// 初始化事件监听
 	document.addEventListener('DOMContentLoaded', async () => {
+        // 立即加载数据（优先使用缓存）
+        loadDashboardData();
+        
+        // 监听页面显示事件（从 bfcache 恢复）
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                console.log('📊 从 bfcache 恢复，使用缓存数据');
+                const cached = getCachedDashboardData();
+                if (cached) {
+                    renderDashboardStats(cached);
+                }
+                // 后台刷新
+                setTimeout(() => {
+                    loadDashboardData(true);
+                }, 500);
+            }
+        });
+
 		// 等待 i18n 就绪
 		await waitForI18n();
 		if (window.i18n) window.i18n.applyTranslations();
@@ -4144,18 +4309,10 @@
 					renderExamStatusTable(); // 直接基于缓存数据重绘
 				}
 				// 同时确保下拉框的 placeholder 也被刷新（已有 data-i18n 自动处理）
+                loadDashboardData(true);
 			});
 		}
 		convertAllTimesToLocal();
-		// 初始化国家列表和失焦校验（仅执行一次）
-		// setupCountryAutocomplete('exportCountryInput', 'countryDatalist', 'exportCountryCode');
-		// 还可以初始化考生筛选国家框（无隐藏字段）
-		// setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
-		// 2. 初始化导出筛选模态框中的国家输入框（需要标准化）
-
-		// ✅ 修改：只加载权限范围内的国家
-		// setupCountryAutocompleteWithPermission('exportCountryInput', 'countryDatalist', 'exportCountryCode');
-		// setupCountryAutocompleteWithPermission('countryInput', 'countryDatalist', 'countryCodeForSetting');
 	});
 
 	// ✅ 新增：带权限过滤的国家自动完成函数

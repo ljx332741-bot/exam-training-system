@@ -15,6 +15,7 @@ from config import Config
 from utils.status import get_exam_status
 from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country, utc_to_local, format_datetime_local
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
+from utils.cache_manager import cache_get
 from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
 from utils.permissions import (
     is_developer, 
@@ -59,6 +60,68 @@ def api_admin_current_user_permissions():
         "is_super_admin": session.get('role') == 'super_admin' or is_developer(),
         "allowed_countries": get_allowed_countries()
     })
+
+@admin_exam_bp.route('/api/admin/dashboard/stats')
+@login_required
+@admin_required
+@cache_get(ttl=300, prefix='dashboard_stats', include_user=True)  # ✅ 添加缓存
+def api_dashboard_stats():
+    """获取仪表盘统计数据（带缓存）"""
+    try:
+        db = get_supabase()
+        allowed_countries = get_admin_allowed_countries()
+        
+        # 用户统计
+        registered_count, imported_count = get_user_stats(allowed_countries)
+        
+        # 考试统计
+        (exams_total, exams_completed, exam_stats, 
+         filtered_exams, allowed_user_ids, allowed_exam_ids) = get_exam_stats(allowed_countries)
+        
+        # 培训统计
+        trainings_count, total_attendances, signins_today = get_training_stats(
+            allowed_countries, allowed_user_ids
+        )
+        
+        # 访谈统计
+        interviewee_count = get_interview_stats(allowed_countries)
+        
+        # 题库统计
+        questions_count = get_questions_stats(allowed_countries, filtered_exams)
+        
+        # 获取考试列表（用于下拉框）
+        exams_for_table, exams_for_selector = get_exams_for_display(
+            filtered_exams, allowed_countries, allowed_user_ids
+        )
+        
+        # 培训签到开关
+        sign_in_open = get_sign_in_status()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "stats": {
+                    "users": registered_count,
+                    "users_imported": imported_count,
+                    "exams_total": exams_total,
+                    "exams_completed": exams_completed,
+                    "exam_draft": exam_stats.get('draft', 0),
+                    "exam_active": exam_stats.get('active', 0),
+                    "exam_closed": exam_stats.get('closed', 0),
+                    "trainings_count": trainings_count,
+                    "total_attendances": total_attendances,
+                    "signins_today": signins_today,
+                    "questions": questions_count,
+                    "interviewee_count": interviewee_count
+                },
+                "exams_table": exams_for_table,
+                "exams_selector": exams_for_selector,
+                "sign_in_open": sign_in_open
+            }
+        })
+    except Exception as e:
+        logger.error(f"获取仪表盘统计失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_exam_bp.route('/admin/dashboard')
 @login_required

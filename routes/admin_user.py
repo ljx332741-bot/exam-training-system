@@ -67,121 +67,6 @@ def api_admin_user_detail(user_id):
 @login_required
 @admin_required
 def api_admin_users():
-    """获取用户列表（带完整权限控制）"""
-    db = get_supabase()
-    page = request.args.get('page', 1, type=int)
-    per_page = request.args.get('per_page', 20, type=int)
-    search = request.args.get('search', '').strip()
-    country = request.args.get('country', '').strip()  # 国家模糊匹配关键字
-    wh_id = request.args.get('wh_id', '').strip()     # 库房模糊匹配关键字
-    user_status = request.args.get('status', '')
-    
-    allowed_countries = get_admin_allowed_countries()
-    current_user_id = session.get('user_id')
-    current_role = session.get('role')
-    
-    # 基础查询
-    query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
-    
-    if not is_developer():
-        query = query.eq("is_protected", False)
-    
-    if current_role != 'super_admin' and not is_developer():
-        query = query.neq("role", "super_admin").neq("role", "developer")
-    
-    if user_status:
-        query = query.eq("user_status", user_status)
-    
-    # 获取所有数据（后续内存过滤）
-    all_res = query.execute()
-    all_users = all_res.data or []
-
-    # ✅ 新增：是否排除离职人员（默认排除）
-    exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
-    
-    # ✅ 内存过滤（支持模糊匹配）
-    filtered = []
-    for user in all_users:
-        # 姓名/邮箱/工号搜索
-        if search:
-            search_lower = search.lower()
-            name = (user.get('name_en') or '').lower()
-            email = (user.get('email') or '').lower()
-            emp_id = (user.get('employee_id') or '').lower()
-            if search_lower not in name and search_lower not in email and search_lower not in emp_id:
-                continue
-
-        # 国家模糊匹配（支持中文、英文、代码）
-        if country:
-            country_lower = country.lower()
-            user_country = user.get('country') or ''
-            # 获取国家名称进行匹配
-            match = False
-            # 直接匹配国家代码
-            if country_lower in user_country.lower():
-                match = True
-            else:
-                # 查询国家名称进行匹配
-                try:
-                    country_res = db.table("countries").select("code, name_zh, name_en").eq("code", user_country).execute()
-                    if country_res.data:
-                        c = country_res.data[0]
-                        if (country_lower in (c.get('name_zh') or '').lower() or 
-                            country_lower in (c.get('name_en') or '').lower()):
-                            match = True
-                except:
-                    pass
-            if not match:
-                continue
-        
-        # 库房模糊匹配
-        if wh_id:
-            wh_lower = wh_id.lower()
-            user_wh_id = (user.get('wh_id') or '').lower()
-            user_wh_name = (user.get('wh_name_en') or '').lower()
-            if wh_lower not in user_wh_id and wh_lower not in user_wh_name:
-                continue
-        
-        filtered.append(user)
-
-    # ✅ 在循环结束后，统一进行离职过滤
-    if exclude_resigned:
-        filtered = [u for u in filtered if not u.get('is_resign', False)]
-        logger.info(f"排除离职人员后剩余 {len(filtered)} 人")
-    
-    # 权限过滤
-    filtered_users = filter_users_by_permission(filtered)
-    
-    # 按创建时间倒序排序
-    filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-    
-    # 内存分页
-    total = len(filtered_users)
-    start = (page - 1) * per_page
-    end = start + per_page
-    paginated = filtered_users[start:end]
-
-    # ✅ 确保离职状态字段存在（可选，因为数据库已返回）
-    for user in paginated:
-        # 确保布尔值转换为 Python bool 类型
-        if 'is_resign' in user:
-            user['is_resign'] = user.get('is_resign', False)
-        if 'is_rehire' in user:
-            user['is_rehire'] = user.get('is_rehire', False)
-        # 日期字段保持原样
-
-    return jsonify({
-        "data": paginated,
-        "total": total,
-        "page": page,
-        "per_page": per_page
-    })
-'''
-
-@admin_user_bp.route('/api/admin/users')
-@login_required
-@admin_required
-def api_admin_users():
     """获取用户列表（带完整权限控制 + 国家名称模糊匹配）"""
     db = get_supabase()
     page = request.args.get('page', 1, type=int)
@@ -348,6 +233,197 @@ def api_admin_users():
     # 权限过滤
     filtered_users = filter_users_by_permission(filtered, allowed_countries, current_user_id)
     
+    # 按创建时间倒序排序
+    filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    # 内存分页
+    total = len(filtered_users)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated = filtered_users[start:end]
+
+    # 确保字段存在
+    for user in paginated:
+        if 'is_resign' in user:
+            user['is_resign'] = user.get('is_resign', False)
+        if 'is_rehire' in user:
+            user['is_rehire'] = user.get('is_rehire', False)
+
+    return jsonify({
+        "data": paginated,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
+'''
+
+@admin_user_bp.route('/api/admin/users')
+@login_required
+@admin_required
+def api_admin_users():
+    """获取用户列表（带完整权限控制 + 国家名称模糊匹配）"""
+    db = get_supabase()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    search = request.args.get('search', '').strip()
+    country = request.args.get('country', '').strip()
+    countries_param = request.args.get('countries', '').strip()
+    training_id = request.args.get('training_id', '').strip()
+    exam_id = request.args.get('exam_id', '').strip()
+    wh_id = request.args.get('wh_id', '').strip()
+    user_status = request.args.get('status', '')
+    
+    allowed_countries = get_admin_allowed_countries()
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    is_dev = is_developer()
+
+    # ========== 1. 从考试/培训获取国家列表 ==========
+    exam_countries = []
+    if exam_id:
+        try:
+            exam_res = db.table("exams").select("countries, country").eq("id", int(exam_id)).execute()
+            if exam_res.data:
+                exam = exam_res.data[0]
+                if exam.get('countries'):
+                    countries_data = exam.get('countries')
+                    if isinstance(countries_data, str):
+                        try:
+                            exam_countries = json.loads(countries_data)
+                        except:
+                            exam_countries = []
+                    elif isinstance(countries_data, list):
+                        exam_countries = countries_data
+                if not exam_countries and exam.get('country'):
+                    exam_countries = [exam.get('country')]
+        except:
+            pass
+
+    training_countries = []
+    if training_id:
+        try:
+            training_res = db.table("trainings").select("country, countries").eq("id", int(training_id)).execute()
+            if training_res.data:
+                training = training_res.data[0]
+                if training.get('countries'):
+                    countries_data = training.get('countries')
+                    if isinstance(countries_data, str):
+                        try:
+                            training_countries = json.loads(countries_data)
+                        except:
+                            training_countries = []
+                    elif isinstance(countries_data, list):
+                        training_countries = countries_data
+                if not training_countries and training.get('country'):
+                    training_countries = [training.get('country')]
+        except:
+            pass
+
+    # ========== 2. 国家模糊匹配 ==========
+    matched_country_codes = []
+    country_search_term = country or countries_param
+    
+    if country_search_term:
+        countries_res = db.table("countries").select("code, name_zh, name_en").execute()
+        all_countries = countries_res.data or []
+        search_lower = country_search_term.lower().strip()
+        
+        for c in all_countries:
+            code = (c.get('code') or '').lower()
+            name_zh = (c.get('name_zh') or '').lower()
+            name_en = (c.get('name_en') or '').lower()
+            
+            if (search_lower in name_zh or 
+                search_lower in name_en or 
+                search_lower in code):
+                matched_country_codes.append(c['code'])
+        
+        if not matched_country_codes:
+            return jsonify({
+                "data": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page
+            })
+    
+    # ========== 3. 确定最终国家过滤列表 ==========
+    final_countries = []
+    
+    if matched_country_codes:
+        final_countries = matched_country_codes
+    elif exam_countries:
+        final_countries = exam_countries
+    elif training_countries:
+        final_countries = training_countries
+    
+    if allowed_countries is not None and final_countries:
+        final_countries = [c for c in final_countries if c in allowed_countries]
+    
+    if not final_countries and allowed_countries is not None and allowed_countries:
+        final_countries = allowed_countries
+    
+    logger.info(f"用户列表请求 - 最终国家过滤: {final_countries}")
+
+
+    # ========== 4. 基础查询 ==========
+    query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
+
+    if not is_dev:
+        query = query.eq("is_protected", False)
+    
+    if user_status:
+        query = query.eq("user_status", user_status)
+    
+    all_res = query.execute()
+    all_users = all_res.data or []
+
+    # ========== 5. 内存过滤 ==========
+    exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
+    
+    filtered = []
+    for user in all_users:
+        # 姓名/邮箱/工号搜索
+        if search:
+            search_lower = search.lower()
+            name = (user.get('name_en') or '').lower()
+            email = (user.get('email') or '').lower()
+            emp_id = (user.get('employee_id') or '').lower()
+            if search_lower not in name and search_lower not in email and search_lower not in emp_id:
+                continue
+
+        # 国家筛选
+        if final_countries:
+            user_country = user.get('country') or ''
+            if user_country not in final_countries:
+                continue
+        
+        # 库房模糊匹配
+        if wh_id:
+            wh_lower = wh_id.lower()
+            user_wh_id = (user.get('wh_id') or '').lower()
+            user_wh_name = (user.get('wh_name_en') or '').lower()
+            if wh_lower not in user_wh_id and wh_lower not in user_wh_name:
+                continue
+        
+        filtered.append(user)
+
+    # 离职过滤
+    if exclude_resigned:
+        filtered = [u for u in filtered if not u.get('is_resign', False)]
+        logger.info(f"排除离职人员后剩余 {len(filtered)} 人")
+    
+    # ========== 6. ✅ 使用修改后的 filter_users_by_permission ==========
+    logger.info(f"权限过滤前: {len(filtered)} 个用户")
+    for u in filtered:
+        logger.info(f"  用户: {u.get('name_en')}, role={u.get('role')}, country={u.get('country')}, admin_countries={u.get('admin_countries')}")
+
+    # 这个函数现在支持同级管理员可见
+    filtered_users = filter_users_by_permission(filtered, allowed_countries, current_user_id)
+
+    logger.info(f"权限过滤后: {len(filtered_users)} 个用户")
+    for u in filtered_users:
+        logger.info(f"  ✅ 保留: {u.get('name_en')}, role={u.get('role')}, country={u.get('country')}")
+        
     # 按创建时间倒序排序
     filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
     
@@ -1218,7 +1294,7 @@ def refresh_permissions():
 def export_users_to_excel():
     """导出用户清单到Excel（简化版）"""
     try:
-        # ✅ 权限检查：只有超管或开发者可以导出
+        # 权限检查：只有超管或开发者可以导出
         current_role = session.get('role')
         if current_role not in ['admin', 'super_admin', 'developer']:
             logger.warning(f"用户 {session.get('user_id')} 尝试导出用户清单但权限不足")
@@ -1230,10 +1306,10 @@ def export_users_to_excel():
         current_user_id = session.get('user_id')
         is_dev = is_developer()
         
-        # ✅ 基础查询：获取所有未删除用户
+        # 基础查询：获取所有未删除用户
         query = db.table("users").select("*").is_("deleted_at", "null")
         
-        # ✅ 角色过滤
+        # 角色过滤
         if not is_dev:
             query = query.eq("is_protected", False)
         
