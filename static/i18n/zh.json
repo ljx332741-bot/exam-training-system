@@ -939,5 +939,17 @@
     "created_assignments": "创建培训分配",
     "synced_trainings": "同步培训",
     "people": "人",
-    "count": "个"
+    "count": "个",
+    "re_sign_in": "重新签到",
+      "confirm_reset_sign_status": "确定要重置 {0} 的签到状态吗？\n重置后该学员需要重新签名。",
+  "reset_success": "重置成功: {0} 需要重新签到",
+  "re_sign_in_success": "重新签到成功",
+      "exam_completed_tooltip": "✅ 已完成: {count} 个",
+    "exam_ongoing_tooltip": "▶ 进行中: {count} 个",
+    "exam_not_started_tooltip": "⏳ 未开始: {count} 个",
+    "exam_draft_tooltip": "📝 草稿: {count} 个",
+    "create": "创建",
+"binded": "已绑定",
+"click_unlock_clear_all": "其他条件已锁定，请先点击[清空所有]解锁",
+"export_report_ready": "已精确选择培训和考试，继续导出报告吧"
 }

@@ -31,7 +31,10 @@ class I18n {
     }
 
     async setLanguage(lang) {
-        if (lang === this.currentLang) return;
+        if (lang === this.currentLang) {
+            this.applyTranslations();
+            return;
+        }
         this.currentLang = lang;
         localStorage.setItem('app_lang', lang);
         await this.loadTranslations(lang);
@@ -61,6 +64,73 @@ class I18n {
         btn.addEventListener('click', handler);
     }
 
+    // ============================================================
+    // ✅ 新增：支持参数替换的翻译函数
+    // ============================================================
+    t(key, params = {}) {
+        let text = this.translations[key] || key;
+        if (params && typeof params === 'object') {
+            Object.keys(params).forEach(k => {
+                text = text.replace(new RegExp(`\\{${k}\\}`, 'g'), params[k]);
+            });
+        }
+        return text;
+    }
+
+    // ============================================================
+    // ✅ 新增：统一的属性翻译方法（支持带参数标题）
+    // ============================================================
+    translateAttributes() {
+        // 1. 翻译 data-i18n-title（简单文本，无参数）
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            if (this.translations[key]) {
+                el.title = this.translations[key];
+            }
+        });
+
+        // 2. ✅ 新增：翻译 data-i18n-title-key（支持参数）
+        document.querySelectorAll('[data-i18n-title-key]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title-key');
+            if (!key) return;
+            
+            // 解析参数
+            let params = {};
+            const paramsAttr = el.getAttribute('data-i18n-title-params');
+            if (paramsAttr) {
+                try {
+                    params = JSON.parse(paramsAttr);
+                } catch(e) {
+                    console.warn('解析 title params 失败:', e);
+                }
+            }
+            
+            const translated = this.t(key, params);
+            if (translated && translated !== key) {
+                el.title = translated;
+            }
+        });
+
+        // 3. 翻译 data-i18n-placeholder
+        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+            const key = el.getAttribute('data-i18n-placeholder');
+            if (this.translations[key]) {
+                el.placeholder = this.translations[key];
+            }
+        });
+
+        // 4. 翻译 data-i18n-alt
+        document.querySelectorAll('[data-i18n-alt]').forEach(el => {
+            const key = el.getAttribute('data-i18n-alt');
+            if (this.translations[key]) {
+                el.alt = this.translations[key];
+            }
+        });
+    }
+
+    // ============================================================
+    // ✅ 扩展 applyTranslations，调用 translateAttributes
+    // ============================================================
     applyTranslations() {
         // 翻译带 data-i18n 属性的元素
         document.querySelectorAll('[data-i18n]').forEach(el => {
@@ -82,19 +152,9 @@ class I18n {
                 }
             }
         });
-        // 翻译 placeholder、title、alt
-        document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
-            const key = el.getAttribute('data-i18n-placeholder');
-            if (this.translations[key]) el.placeholder = this.translations[key];
-        });
-        document.querySelectorAll('[data-i18n-title]').forEach(el => {
-            const key = el.getAttribute('data-i18n-title');
-            if (this.translations[key]) el.title = this.translations[key];
-        });
-        document.querySelectorAll('[data-i18n-alt]').forEach(el => {
-            const key = el.getAttribute('data-i18n-alt');
-            if (this.translations[key]) el.alt = this.translations[key];
-        });
+
+        // ✅ 调用统一的属性翻译方法
+        this.translateAttributes();
     }
 
     subscribe(fn) {
@@ -105,9 +165,15 @@ class I18n {
         this.observers.forEach(fn => fn(this.currentLang, this.translations));
     }
 
-    t(key) {
-        return this.translations[key] || key;
-    }
+    // ✅ 保留 t 方法，但实际使用 this.t
+    // 为了兼容，保持原有 t 方法
 }
 
 window.i18n = new I18n();
+
+// ============================================================
+// ✅ 兼容全局 t() 函数（支持参数）
+// ============================================================
+window.t = function(key, params = {}) {
+    return window.i18n.t(key, params);
+};

@@ -14,13 +14,14 @@ from services import auth, exam, export
 from services.db import get_supabase
 from services.auth import hash_password
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
-from utils.permissions import (is_developer, apply_country_filter, can_view_user, get_admin_allowed_countries, 
+from utils.permissions import (
+    is_developer, apply_country_filter, can_view_user, get_admin_allowed_countries, 
     can_modify_user, parse_countries_input, filter_users_by_permission, can_resign_user, can_rehire_user
 )
 from routes.helpers import login_required, admin_required, get_current_user
 from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, generate_import_template, format_import_result
 from utils.i18n_messages import I18nMessages
-
+from utils.employment_history import add_employment_event, get_latest_employment_status, get_employment_summary
         
 logger = logging.getLogger(__name__)
 
@@ -1340,6 +1341,7 @@ def resigned_users_page():
         return redirect(url_for('admin_dashboard'))
     return render_template('admin/resigned_users.html')
 
+'''
 @admin_user_bp.route('/api/admin/users/<user_id>/resign', methods=['POST'])
 @login_required
 @admin_required
@@ -1397,8 +1399,75 @@ def api_admin_resign_user(user_id):
     
     logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
     return jsonify({"success": True, "message": "user_resigned_success", "params": []})
+'''
 
+@admin_user_bp.route('/api/admin/users/<user_id>/resign', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_resign_user(user_id):
+    """标记用户为离职"""
+    db = get_supabase()
+    operator_id = session['user_id']
+    current_role = session.get('role')
+    is_dev = is_developer()
 
+    # 获取目标用户信息
+    target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    if not target_user_res.data:
+        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
+    
+    target_user = target_user_res.data
+
+    # ✅ 修复：构建 current_user 对象
+    current_user = {
+        'id': operator_id,
+        'role': current_role,
+        'is_developer': is_dev
+    }
+    # 使用权限检查函数
+    if not can_resign_user(target_user, current_user):
+        return jsonify({"success": False, "message": "no_permission_to_resign", "params": []}), 403
+    
+    # 能标记自己离职
+    if user_id == operator_id:
+        return jsonify({"success": False, "message": "cannot_resign_self", "params": []}), 400
+    
+    # 检查用户是否存在
+    user_res = db.table("users").select("id, user_status, role, is_protected").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
+    
+    user = user_res.data
+
+    # 超管不能标记离职（除非是开发者）
+    if user.get('role') == 'super_admin' and not is_developer():
+        return jsonify({"success": False, "message": "cannot_resign_super_admin", "params": []}), 403
+  
+    # 只有已注册用户才能标记离职
+    if user.get('user_status') != 'registered':
+        return jsonify({"success": False, "message": "only_registered_users_can_resign", "params": []}), 400
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    db.table("users").update({
+        "is_resign": True,
+        "resigned_at": now,
+        "is_rehire": False,
+        "rehire_at": None
+    }).eq("id", user_id).execute()
+
+    # ✅ 添加历史记录
+    add_employment_event(
+        user_id=user_id,
+        event_type='resign',
+        created_by=operator_id,
+        notes=f"由 {operator_id} 标记离职"
+    )
+    
+    logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
+    return jsonify({"success": True, "message": "user_resigned_success", "params": []})
+
+'''
 @admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
 @login_required
 @admin_required
@@ -1437,6 +1506,71 @@ def api_admin_rehire_user(user_id):
     
     logger.info(f"用户 {user_id} 已复职，操作人: {operator_id}")
     return jsonify({"success": True, "message": "user_rehired_success", "params": []})
+'''
+
+
+@admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_rehire_user(user_id):
+    """恢复用户为在职状态（复职）"""
+    db = get_supabase()
+    operator_id = session['user_id']
+
+    # 不能给自己复职（虽然已离职的自己理论上无法操作，但增加检查）
+    if user_id == operator_id:
+        return jsonify({"success": False, "message": "cannot_rehire_self", "params": []}), 400
+  
+    # 检查用户是否存在
+    user_res = db.table("users").select("id, user_status, is_resign, role").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
+    
+    user = user_res.data
+
+    # 只有已离职的用户才能复职
+    if not user.get('is_resign'):
+        return jsonify({"success": False, "message": "user_not_resigned", "params": []}), 400
+  
+    # 只有已注册用户才能复职
+    if user.get('user_status') != 'registered':
+        return jsonify({"success": False, "message": "only_registered_users_can_rehire", "params": []}), 400
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    db.table("users").update({
+        "is_resign": False,
+        "is_rehire": True,
+        "rehire_at": now
+        # 保留 resigned_at 用于审计
+    }).eq("id", user_id).execute()
+
+    # ✅ 添加历史记录
+    add_employment_event(
+        user_id=user_id,
+        event_type='rehire',
+        created_by=operator_id,
+        notes=f"由 {operator_id} 复职"
+    )
+    
+    logger.info(f"用户 {user_id} 已复职，操作人: {operator_id}")
+    return jsonify({"success": True, "message": "user_rehired_success", "params": []})
+
+@admin_user_bp.route('/api/admin/users/<user_id>/employment_history')
+@login_required
+@admin_required
+def api_admin_user_employment_history(user_id):
+    """获取用户的离职/复职历史"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"error": "权限不足"}), 403
+    
+    history = get_employment_history(user_id)
+    summary = get_employment_summary(user_id)
+    
+    return jsonify({
+        "history": history,
+        "summary": summary
+    })
 
 # routes/admin_user.py - 添加离职人员管理接口
 

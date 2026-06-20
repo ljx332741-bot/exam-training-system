@@ -145,6 +145,25 @@
 	.nav-tabs .nav-link.active {
 		font-weight: 600;
 	}
+
+    /* 绑定标记悬浮提示样式 */
+    .binding-badge {
+        font-size: 0.6rem;
+        cursor: help;
+        transition: all 0.2s ease;
+    }
+
+    .binding-badge:hover {
+        transform: scale(1.05);
+        box-shadow: 0 2px 8px rgba(25, 135, 84, 0.3);
+    }
+
+    /* 下拉框中的绑定标记 */
+    .option-binding-icon {
+        color: #198754;
+        margin-left: 4px;
+        font-size: 0.8rem;
+    }
 </style>
 {% endblock %}
 
@@ -222,15 +241,36 @@
 							<h2 class="mb-0 fw-bold">{{ stats.exams_total }}</h2>
 							<small class="opacity-75 ms-2"><span data-i18n="total_exams">考试总数</span></small>
 						</div>
-						<div class="d-flex align-items-baseline mt-1">
-							<span class="fw-bold fs-6">{{ stats.exams_completed }}</span>
-							<small class="opacity-75 ms-2"><span data-i18n="completed">已完成</span></small>
-							<span class="mx-1">|</span>
-							<span class="fw-bold fs-6">{{ stats.exam_active }}</span>
-							<small class="opacity-75 ms-2"><span data-i18n="ongoing">进行中</span></small>
-							<span class="mx-1">|</span>
-							<span class="fw-bold fs-6">{{ stats.exam_draft + stats.exam_created|default(0) }}</span>
-							<small class="opacity-75 ms-1"><span data-i18n="other">其它</span></small>
+						<div class="d-flex align-items-baseline mt-1 flex-wrap gap-2">
+                            <!-- ✅ 高级显示：使用符号 + 数字 -->
+                            <span 
+                                data-i18n-title-key="exam_completed_tooltip" 
+                                data-i18n-title-params='{"count": {{ stats.exams_closed }}}' 
+                                style="cursor: help;">
+                                <i class="bi bi-check" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_closed }}</span>
+                            </span>
+                            <span 
+                                data-i18n-title-key="exam_ongoing_tooltip" 
+                                data-i18n-title-params='{"count": {{ stats.exams_active }}}' 
+                                style="cursor: help;">
+                                <i class="bi bi-activity" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_active }}</span>
+                            </span>
+                            <span 
+                                data-i18n-title-key="exam_not_started_tooltip" 
+                                data-i18n-title-params='{"count": {{ stats.exams_created }}}' 
+                                style="cursor: help;">
+                                <i class="bi bi-hourglass-top" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_created }}</span>
+                            </span>
+                            <span 
+                                data-i18n-title-key="exam_draft_tooltip" 
+                                data-i18n-title-params='{"count": {{ stats.exams_draft }}}' 
+                                style="cursor: help;">
+                                <i class="bi bi-pencil" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_draft }}</span>
+                            </span>
 						</div>
 					</div>
 				</div>
@@ -352,9 +392,25 @@
 												<a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" 
 													class="text-decoration-none fw-semibold">
 													{{ ex.title }}
+                                                    {% if ex.has_binding %}
+                                                    <span class="badge bg-success ms-1" 
+                                                        style="font-size: 0.6rem; cursor: help;"
+                                                        title="已绑定培训: {% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}">
+                                                        <i class="bi bi-link"></i> 已绑定
+                                                    </span>
+                                                    {% endif %}
 												</a>
 											{% else %}
-												<span class="fw-semibold">{{ ex.title }}</span>
+												<span class="fw-semibold">
+                                                    {{ ex.title }}
+                                                    {% if ex.has_binding %}
+                                                    <span class="badge bg-success ms-1" 
+                                                        style="font-size: 0.6rem; cursor: help;"
+                                                        title="已绑定培训: {% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}">
+                                                        <i class="bi bi-link"></i> 已绑定
+                                                    </span>
+                                                    {% endif %}
+                                                </span>
 											{% endif %}
 											<small class="text-muted" style="margin-top: 4px;">
 												<!-- ✅ 显示多个国家标签 -->
@@ -416,7 +472,12 @@
 							<select id="exam-selector" class="form-select mb-3">
 								<option value="" data-i18n="select_exam">-- 选择考试 --</option>
 								{% for ex in exams_selector %}
-									<option value="{{ ex.id }}">{{ ex.title }}</option>
+									<option value="{{ ex.id }}">
+                                        {{ ex.title }}
+                                        {% if ex.has_binding %}
+                                            🔗
+                                        {% endif %}
+                                    </option>
 								{% endfor %}
 							</select>
 							<!-- 新增筛选栏 -->
@@ -1020,9 +1081,10 @@
             // 更新已完成数量
             const smalls = examCard.querySelectorAll('.fs-6');
             if (smalls.length >= 3) {
-                smalls[0].textContent = stats.exams_completed || 0;
-                smalls[1].textContent = stats.exam_active || 0;
-                smalls[2].textContent = stats.exam_draft || 0;
+                smalls[0].textContent = stats.exams_closed || 0;
+                smalls[1].textContent = stats.exams_active || 0;
+                smalls[2].textContent = stats.exams_created || 0;
+                smalls[3].textContent = stats.exams_draft || 0;
             }
         }
         
@@ -1594,7 +1656,7 @@
                 const quarter = DateUtils.getQuarterFromDate(t.created_at);
 				// ✅ 绑定徽章（如果先选了考试）
 				const bindingBadge = t.is_bound 
-					? '<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> 已绑定</span>' 
+					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> ${t('binded')}</span>` 
 					: '';
                 html += `
                     <div class="export-dropdown-item" 
@@ -1607,8 +1669,8 @@
 							${bindingBadge}
 						</div>
                         <div class="item-meta">
-                            <span><i class="bi bi-calendar3"></i> 创建: ${createdDate}</span>
-                            <span><i class="bi bi-calendar-week"></i> 季度: ${quarter}</span>
+                            <span><i class="bi bi-calendar3"></i> ${t('create')}: ${createdDate}</span>
+                            <span><i class="bi bi-calendar-week"></i> ${t('quarter')}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '-')}</span>
                         </div>
                     </div>
@@ -1665,7 +1727,7 @@
 
 				// ✅ 已绑定的考试添加特殊标记
 				const bindingBadge = exam.is_bound 
-					? '<span class="badge bg-success ms-1" style="font-size: 0.6rem;">已绑定</span>' 
+					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;">${t('binded')}</span>` 
 					: '';
 				
                 html += `
@@ -1679,8 +1741,8 @@
 							${bindingBadge}
 						</div>
                         <div class="item-meta">
-                            <span><i class="bi bi-calendar3"></i> 创建: ${createdDate}</span>
-                            <span><i class="bi bi-calendar-week"></i> 季度: ${quarter}</span>
+                            <span><i class="bi bi-calendar3"></i> ${t('create')}: ${createdDate}</span>
+                            <span><i class="bi bi-calendar-week"></i> ${t('quarter')}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
 							<!-- <span><i class="bi bi-link"></i> ${bindingBadge}</span> -->
                         </div>
@@ -1839,7 +1901,7 @@
 			// ✅ 如果已锁定，不允许修改
 			if (this.state.locked) {
 				if (typeof showToast === 'function') {
-					showToast('其他条件已锁定，请先点击"清空所有"解锁', 'warning');
+					showToast(t('click_unlock_clear_all'), 'warning');
 				}
 				return;
 			}
@@ -1856,7 +1918,7 @@
                 this.state.quarter = '';
                 this.state.dateRangeOption = '';
                 if (typeof showToast === 'function') {
-                    showToast('已精确选择培训和考试继续导出报告吧', 'info');
+                    showToast(t('export_report_ready'), 'info');
                 }
             } else if (startTime && endTime) {
                 this.state.startDate = DateUtils.formatDateOnly(startTime);
@@ -1884,7 +1946,7 @@
 			// ✅ 如果已锁定，不允许修改
 			if (this.state.locked) {
 				if (typeof showToast === 'function') {
-					showToast('其他条件已锁定，请先点击"清空所有"解锁', 'warning');
+					showToast(t('click_unlock_clear_all'), 'warning');
 				}
 				return;
 			}
@@ -1901,7 +1963,7 @@
                 this.state.quarter = '';
                 this.state.dateRangeOption = '';
                 if (typeof showToast === 'function') {
-                    showToast('已精确选择培训和考试继续导出报告吧', 'info');
+                    showToast(t('export_report_ready'), 'info');
                 }
             } else if (startTime && endTime) {
                 this.state.startDate = DateUtils.formatDateOnly(startTime);
@@ -4462,7 +4524,7 @@
 					btn.innerHTML = originalHtml;
 				} else {
 					// 默认恢复
-					btn.innerHTML = '<span data-i18n="copy">拷贝</span>';
+					btn.innerHTML = `${t('copy')}`;
 				}
 			});
 		}

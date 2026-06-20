@@ -25,6 +25,7 @@ exam-system/
 │   ├── i18n_messages.py                    # 统一的国际化消息模板
 │   ├── common.py                           # 国家和季度处理逻辑的工具函数
 │   ├── cache_manager.py                    # 稳定、兼容、高性能的缓存优化工具函数
+│   ├── employment_history.py               # 完整的离复职历史记录工具管理函数
 │   ├── logger.py                           # 完整的日志管理方案
 │   ├── training_helpers.py                 # 培训信息获取的工具函数
 │   ├── import_helper.py                    # 用户和库房导入的工具函数

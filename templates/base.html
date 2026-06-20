@@ -235,6 +235,7 @@
                 }, 50);
             });
         }
+
         function setAppLanguage(lang) {
             if (!window.i18n) return;
             if (typeof window.i18n.setLang === 'function') {
@@ -376,7 +377,7 @@
             return date.toLocaleString(); // 使用浏览器本地格式
         }
 
-        // 全局前端统一时间转换函数
+        // 全局前端统一时间转换函数(带am,pm格式)
         function formatLocalDateTime(isoString) {
             if (!isoString) return '-';
             const date = new Date(isoString);
@@ -384,7 +385,7 @@
             return date.toLocaleString();
         }
         
-        // 全局前端统一时间转换函数 将 UTC 字符串转换为本地 datetime-local 格式（用于填充 <input type="datetime-local">）
+        // 全局前端统一时间转换函数 将 UTC 字符串转换为本地 datetime-local 格式（这个含T）
         function utcToLocalDatetimeLocal(utcString) {
             if (!utcString) return '';
             const date = new Date(utcString);
@@ -397,7 +398,7 @@
             return `${year}-${month}-${day}T${hours}:${minutes}`;
         }
         
-        // 将 UTC 时间字符串转换为本地时间字符串
+        // 将 UTC 时间字符串转换为本地时间字符串(年月日时分)
         function formatLocalTime(utcString) {
             if (!utcString) return '-';
             try {

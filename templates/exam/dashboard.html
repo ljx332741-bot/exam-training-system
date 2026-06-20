@@ -122,7 +122,7 @@
                             {% endif %}
                         </td>
                         <td class="text-muted small">
-                        <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at[:19].replace('T', ' ') if r.created_at else '-' }}</span>
+                        <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at if r.created_at else '-' }}</span>
                         </td>
                         <td>
                         <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
@@ -353,7 +353,7 @@
         // 签到时间显示
         let signTimeHtml = '';
         if (t.signed && t.sign_time && !t.is_future) {
-            signTimeHtml = `<div class="small text-muted mt-2">${safeT('sign_in_period')}：${new Date(t.sign_time).toLocaleString()}</div>`;
+            signTimeHtml = `<div class="small text-muted mt-2">${safeT('sign_in_period')}：${formatLocalTime(t.sign_time)}</div>`;
         }
 
         card.innerHTML = `
@@ -368,7 +368,7 @@
                     <div class="card-meta">
                         <div class="date-range">
                             <i class="bi bi-calendar-range"></i>
-                            <span>${new Date(t.start_time).toLocaleString()} → ${new Date(t.end_time).toLocaleString()}</span>
+                            <span>${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}</span>
                         </div>
                         ${t.signed && !t.is_future ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
                     </div>
@@ -515,7 +515,7 @@
                             <div class="card-meta">
                                 <div class="date-range">
                                     <i class="bi bi-clock"></i>
-                                    <span>${new Date(inv.start_time).toLocaleString()} → ${new Date(inv.end_time).toLocaleString()}</span>
+                                    <span>${formatLocalTime(inv.start_time)} → ${formatLocalTime(inv.end_time)}</span>
                                 </div>
                             </div>
                             <div class="progress-indicator">
@@ -685,13 +685,18 @@
     };
 
     document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('.local-time').forEach(el => {
+            const utc = el.dataset.utc;
+            if (utc && utc !== '-') {
+                el.textContent = formatLocalTime(utc);
+            }
+        });
         if (window.i18n) {
           window.i18n.subscribe(() => {
             loadTrainings();
             loadMyInterviews();
           });
         }
-        convertAllTimesToLocal();
     });
 
     // 签到按钮逻辑
