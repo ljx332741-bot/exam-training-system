@@ -942,5 +942,17 @@
     "created_assignments": "Training assignments created",
     "synced_trainings": "Trainings synced",
     "people": "",
-    "count": ""
+    "count": "",
+    "re_sign_in": "Re-sign in",
+      "confirm_reset_sign_status": "Reset {0}'s check-in status? Need to sign in again.",
+  "reset_success": "Reset successful: {0} needs to check in again.",
+  "re_sign_in_success": "Re-sign in successful.",
+      "exam_completed_tooltip": "✅ Completed: {count}",
+    "exam_ongoing_tooltip": "▶ Ongoing: {count}",
+    "exam_not_started_tooltip": "⏳ Not Started: {count}",
+    "exam_draft_tooltip": "📝 Draft: {count}",
+    "create": "Create",
+"binded": "Binded",
+"click_unlock_clear_all": "Other conditions are locked. Please click [Clear All] to unlock.",
+"export_report_ready": "Training and exams selected precisely. Go ahead and export the report."
 }

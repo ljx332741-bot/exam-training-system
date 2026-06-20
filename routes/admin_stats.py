@@ -4,7 +4,7 @@ import logging
 import json
 from datetime import datetime, timezone, date
 from flask import session
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, is_developer
 from routes.helpers import parse_exam_countries, can_access_exam
 from utils.status import get_exam_status
@@ -194,6 +194,10 @@ def get_exam_stats(allowed_countries):
     """
     db = get_supabase()
     is_dev = is_developer()
+
+    # ✅ 添加调试日志
+    logger.info(f"get_exam_stats - allowed_countries: {allowed_countries}")
+    logger.info(f"get_exam_stats - is_dev: {is_dev}")
     
     exams_query = db.table("exams").select("*").is_("deleted_at", "null")
     
@@ -220,8 +224,10 @@ def get_exam_stats(allowed_countries):
                 filtered_exams.append(exam)
             else:
                 logger.debug(f"考试 {exam.get('id')} 被过滤: countries={exam_countries}, allowed={allowed_countries}")
+        logger.info(f"有权限限制: {allowed_countries}")
     else:
         filtered_exams = exams_query.execute().data or []
+        logger.info(f"无权限限制，返回所有考试: {len(filtered_exams)} 个")
     
     # 统计考试状态
     exam_stats = {'draft': 0, 'created': 0, 'active': 0, 'closed': 0}
@@ -286,30 +292,32 @@ def get_training_stats(allowed_countries, allowed_user_ids):
     
     trainings_count = len(filtered_trainings)
     
-    # 统计签到总人次
+    # ========== ✅ 修复：统计签到总人次 ==========
     total_attendances = 0
-    if allowed_countries is not None and allowed_countries:
-        if allowed_user_ids:
-            # 获取在职的用户ID
-            active_users = db.table("users").select("id").in_("id", allowed_user_ids).eq("is_resign", False).execute()
-            active_user_ids = [u['id'] for u in (active_users.data or [])]
-            if active_user_ids:
-                attend_count = db.table("training_attendances").select("id", count="exact").in_("user_id", active_user_ids).execute()
-                total_attendances = attend_count.count or 0
-            else:
-                total_attendances = 0
     
-    # 今日签到数量
-    today = date.today().isoformat()
-    if allowed_countries is not None and allowed_countries:
-        if allowed_user_ids:
-            signins_today = db.table("training_attendances").select("id", count="exact")\
-                .in_("user_id", allowed_user_ids)\
-                .gte("sign_time", today).execute().count or 0
-        else:
-            signins_today = 0
+    # 获取在职用户ID（用于过滤离职人员）
+    active_user_ids = []
+    
+    if allowed_user_ids:
+        # 有权限范围限制：只统计权限范围内的在职用户
+        active_users = db.table("users").select("id").in_("id", allowed_user_ids).eq("is_resign", False).execute()
+        active_user_ids = [u['id'] for u in (active_users.data or [])]
     else:
+        # ✅ 无权限限制（开发者/超管）：统计所有在职用户
+        active_users = db.table("users").select("id").eq("is_resign", False).execute()
+        active_user_ids = [u['id'] for u in (active_users.data or [])]
+    
+    if active_user_ids:
+        attend_count = db.table("training_attendances").select("id", count="exact").in_("user_id", active_user_ids).execute()
+        total_attendances = attend_count.count or 0
+    
+    # ========== 今日签到数量 ==========
+    today = date.today().isoformat()
+    signins_today = 0
+    
+    if active_user_ids:
         signins_today = db.table("training_attendances").select("id", count="exact")\
+            .in_("user_id", active_user_ids)\
             .gte("sign_time", today).execute().count or 0
     
     logger.info(f"培训统计: 培训数={trainings_count}, 签到总人次={total_attendances}, 今日签到={signins_today}")
@@ -401,16 +409,20 @@ def get_questions_stats(allowed_countries, filtered_exams):
     logger.info(f"题库统计: 题目数={questions_count}")
     return questions_count
 
+# routes/admin_stats.py
+
 def get_exams_for_display(filtered_exams, allowed_countries, allowed_user_ids):
     """
     获取用于前端显示的考试列表（表格和下拉框）
     确保只显示权限范围内的考试，并排除离职人员
     """
     db = get_supabase()
+    admin_db = get_supabase_admin()  # ✅ 管理员客户端（绕过 RLS）
+    
     now = datetime.now(timezone.utc)
     exams_for_table = []
     exams_for_selector = []
-    seen_selector_ids = set()  # 用于去重
+    seen_selector_ids = set()
 
     logger.info(f"get_exams_for_display 输入: filtered_exams数量={len(filtered_exams)}")
 
@@ -421,10 +433,47 @@ def get_exams_for_display(filtered_exams, allowed_countries, allowed_user_ids):
         started_exams.add(s['exam_id'])
     logger.info(f"已开始但未提交的考试ID: {started_exams}")
     
-    # ✅ 批量获取所有考试涉及的考生ID，用于统一过滤离职人员
+    # 批量获取所有考试涉及的考生ID，用于统一过滤离职人员
     all_exam_ids = [exam['id'] for exam in filtered_exams]
-    
-    # 批量获取分配关系
+
+    # ============================================================
+    # ✅ 使用管理员客户端查询绑定关系（绕过 RLS）
+    # ============================================================
+    binding_info = {}
+    if all_exam_ids:
+        # 查询绑定关系（使用管理员客户端）
+        bindings_res = admin_db.table("training_exam_bindings") \
+            .select("exam_id, training_id") \
+            .in_("exam_id", all_exam_ids) \
+            .is_("deleted_at", "null") \
+            .execute()
+        
+        logger.info(f"绑定查询: 找到 {len(bindings_res.data or [])} 条绑定记录")
+        
+        if bindings_res.data:
+            # 获取培训名称
+            training_ids = list(set([b['training_id'] for b in bindings_res.data]))
+            training_names = {}
+            if training_ids:
+                training_res = db.table("trainings").select("id, name").in_("id", training_ids).execute()
+                for t in (training_res.data or []):
+                    training_names[t['id']] = t.get('name', '未知培训')
+            
+            # 组装
+            for b in bindings_res.data:
+                exam_id = b['exam_id']
+                if exam_id not in binding_info:
+                    binding_info[exam_id] = []
+                binding_info[exam_id].append({
+                    'training_id': b['training_id'],
+                    'training_name': training_names.get(b['training_id'], '未知培训')
+                })
+            
+            logger.info(f"绑定信息: {len(binding_info)} 个考试有绑定关系")
+            for exam_id, bindings in binding_info.items():
+                logger.info(f"  考试 {exam_id}: {len(bindings)} 个绑定 -> {[b['training_name'] for b in bindings]}")
+
+    # 批量获取分配关系（保持原有逻辑）
     assign_map = {}
     if all_exam_ids:
         assign_res = db.table("exam_assignments").select("exam_id, user_id").in_("exam_id", all_exam_ids).execute()
@@ -444,7 +493,7 @@ def get_exams_for_display(filtered_exams, allowed_countries, allowed_user_ids):
                 result_map[exam_id] = []
             result_map[exam_id].append(row['user_id'])
     
-    # ✅ 批量获取在职用户ID（用于过滤离职人员）
+    # 批量获取在职用户ID
     all_user_ids = set()
     for exam_id in assign_map:
         all_user_ids.update(assign_map[exam_id])
@@ -456,77 +505,65 @@ def get_exams_for_display(filtered_exams, allowed_countries, allowed_user_ids):
         active_users = db.table("users").select("id").in_("id", list(all_user_ids)).eq("is_resign", False).execute()
         active_user_ids = {u['id'] for u in (active_users.data or [])}
         logger.info(f"在职用户数量: {len(active_user_ids)}")
-    
-    # ✅ 确保 filtered_exams 已经是权限过滤后的
+
     for exam in filtered_exams:
         exam_id = exam['id']
         
-        # ✅ 双重检查：再次验证考试是否在权限范围内
+        # 检查考试权限
         exam_countries = parse_exam_countries(exam)
         if allowed_countries is not None and allowed_countries:
-            # 检查是否有交集
             if not any(c in allowed_countries for c in exam_countries):
                 logger.debug(f"考试 {exam_id} 被双重过滤跳过: countries={exam_countries}, allowed={allowed_countries}")
-                continue  # 跳过不在权限范围内的考试
+                continue
+
+        # ✅ 添加绑定信息
+        bindings = binding_info.get(exam_id, [])
+        exam['binding_count'] = len(bindings)
+        exam['has_binding'] = len(bindings) > 0
+        exam['binding_trainings'] = bindings
         
+        # ✅ 打印每个考试的绑定信息
+        if exam['has_binding']:
+            logger.info(f"考试 {exam_id} ({exam.get('title')}) 绑定数量: {len(bindings)} -> {[b['training_name'] for b in bindings]}")
+
         has_started = exam_id in started_exams
         status = get_exam_status(exam, has_started=has_started)
         exam['status'] = status
 
-        logger.debug(f"考试 {exam_id}: status={status}, has_started={has_started}")
-        
-        # ========== ✅ 增强：统计应考/实考人数（排除离职人员） ==========
-        
-        # 方法1：如果有批量数据，使用批量数据（性能更好）
+        # 统计应考/实考人数
         if assign_map and exam_id in assign_map:
             assign_user_ids = assign_map.get(exam_id, [])
-            # 进一步按权限过滤
             if allowed_countries is not None and allowed_countries and allowed_user_ids:
                 assign_user_ids = [uid for uid in assign_user_ids if uid in allowed_user_ids]
-            # ✅ 排除离职人员
             assigned_count = len([uid for uid in assign_user_ids if uid in active_user_ids])
         else:
-            # 降级：直接查询（保持原有逻辑）
             assign_query = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id)
-            if allowed_countries is not None and allowed_countries:
-                if allowed_user_ids:
-                    assign_query = assign_query.in_("user_id", allowed_user_ids)
-                    assign_temp = assign_query.execute().data or []
-                    assign_user_ids = [a['user_id'] for a in assign_temp]
-                    # ✅ 排除离职人员
-                    assigned_count = len([uid for uid in assign_user_ids if uid in active_user_ids])
-                else:
-                    assigned_count = 0
+            if allowed_countries is not None and allowed_countries and allowed_user_ids:
+                assign_query = assign_query.in_("user_id", allowed_user_ids)
+                assign_temp = assign_query.execute().data or []
+                assign_user_ids = [a['user_id'] for a in assign_temp]
+                assigned_count = len([uid for uid in assign_user_ids if uid in active_user_ids])
             else:
                 assign_temp = assign_query.execute().data or []
                 assign_user_ids = [a['user_id'] for a in assign_temp]
-                # ✅ 排除离职人员
                 assigned_count = len([uid for uid in assign_user_ids if uid in active_user_ids])
         
         # 实考人数统计
         if result_map and exam_id in result_map:
             result_user_ids = result_map.get(exam_id, [])
-            # 进一步按权限过滤
             if allowed_countries is not None and allowed_countries and allowed_user_ids:
                 result_user_ids = [uid for uid in result_user_ids if uid in allowed_user_ids]
-            # ✅ 排除离职人员
             submitted_count = len([uid for uid in result_user_ids if uid in active_user_ids])
         else:
-            # 降级：直接查询（保持原有逻辑）
             submitted_query = db.table("exam_results").select("user_id", count="exact").eq("exam_id", exam_id)
-            if allowed_countries is not None and allowed_countries:
-                if allowed_user_ids:
-                    submitted_query = submitted_query.in_("user_id", allowed_user_ids)
-                    submitted_temp = submitted_query.execute().data or []
-                    submitted_user_ids = [s['user_id'] for s in submitted_temp]
-                    # ✅ 排除离职人员
-                    submitted_count = len([uid for uid in submitted_user_ids if uid in active_user_ids])
-                else:
-                    submitted_count = 0
+            if allowed_countries is not None and allowed_countries and allowed_user_ids:
+                submitted_query = submitted_query.in_("user_id", allowed_user_ids)
+                submitted_temp = submitted_query.execute().data or []
+                submitted_user_ids = [s['user_id'] for s in submitted_temp]
+                submitted_count = len([uid for uid in submitted_user_ids if uid in active_user_ids])
             else:
                 submitted_temp = submitted_query.execute().data or []
                 submitted_user_ids = [s['user_id'] for s in submitted_temp]
-                # ✅ 排除离职人员
                 submitted_count = len([uid for uid in submitted_user_ids if uid in active_user_ids])
         
         exam['assigned_count'] = assigned_count
@@ -544,22 +581,32 @@ def get_exams_for_display(filtered_exams, allowed_countries, allowed_user_ids):
         
         exam['countries_display'] = ', '.join(filtered_countries) if filtered_countries else '-'
         exam['countries_filtered'] = filtered_countries
-        
-        # 仪表盘表格显示：草稿、已创建、进行中
+
+        # 仪表盘表格显示
         if status in ["draft", "created", "active"]:
             exam['dynamic_status'] = status
             exams_for_table.append(exam)
             logger.debug(f"考试 {exam_id} 添加到 exams_for_table")
         
-        # 考生考试状态下拉框显示：进行中（去重）
+        # 考生考试状态下拉框显示
         if status == "active":
             if exam_id not in seen_selector_ids:
                 seen_selector_ids.add(exam_id)
                 exams_for_selector.append({
                     "id": exam['id'],
-                    "title": exam['title']
+                    "title": exam['title'],
+                    "binding_count": exam['binding_count'],
+                    "has_binding": exam['has_binding'],
+                    "binding_trainings": exam['binding_trainings']
                 })
                 logger.debug(f"考试 {exam_id} 添加到 exams_for_selector")
+    
+    # ✅ 最终日志确认
+    logger.info("=" * 60)
+    logger.info("📊 exams_for_table 绑定信息汇总:")
+    for ex in exams_for_table:
+        logger.info(f"  {ex.get('id')}: {ex.get('title')} → has_binding={ex.get('has_binding')}, binding_count={ex.get('binding_count')}")
+    logger.info("=" * 60)
     
     logger.info(f"get_exams_for_display 输出: exams_for_table={len(exams_for_table)}, exams_for_selector={len(exams_for_selector)}")
     return exams_for_table, exams_for_selector

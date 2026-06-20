@@ -1265,16 +1265,25 @@
                             cellValue = u.is_partner ? t('t_yes') : t('t_no');
                             break;
                         case 'employment_status':
-                            // 已导入但未注册的用户，显示为"未激活"
+                            // 已导入但未注册的用户
                             if (u.user_status === 'imported') {
                                 cellValue = `<span class="badge bg-secondary">${t('not_activated') || '未激活'}</span>`;
-                            } else if (u.is_resign) {
-                                if (u.is_rehire) {
-                                    cellValue = `<span class="badge bg-info" title="复职日期: ${u.rehire_at || '-'}">${t('rehired') || '已复职'}</span>`;
-                                } else {
-                                    cellValue = `<span class="badge bg-danger" title="离职日期: ${u.resigned_at || '-'}">${t('resigned') || '已离职'}</span>`;
-                                }
-                            } else {
+                            } 
+                            // 已复职（有复职时间，且当前在职）
+                            else if (u.is_rehire && u.rehire_at && !u.is_resign) {
+                                // ✅ 使用 formatLocalTime 转换复职时间
+                                const rehireLocal = formatLocalTime(u.rehire_at);
+                                const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '无';
+                                const title = `复职日期: ${rehireLocal}\n离职日期: ${resignLocal}`;
+                                cellValue = `<span class="badge bg-info" title="${title}">${t('rehired') || '已复职'}</span>`;
+                            } 
+                            // 已离职
+                            else if (u.is_resign) {
+                                const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '-';
+                                cellValue = `<span class="badge bg-danger" title="离职日期: ${resignLocal}">${t('resigned') || '已离职'}</span>`;
+                            } 
+                            // 在职
+                            else {
                                 cellValue = `<span class="badge bg-success">${t('active_employee') || '在职'}</span>`;
                             }
                             break;

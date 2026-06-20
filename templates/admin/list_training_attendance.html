@@ -342,7 +342,7 @@
                 <td>${escapeHtml(r.company || '')}</td>
                 <td>${escapeHtml(nameDisplay)}${empId}</td>
                 <td>${signatureCell}</td>
-                <td class="print-hide">${new Date(r.sign_time).toLocaleString()}</td>
+                <td class="print-hide">${formatLocalTime(r.sign_time)}</td>
                 <td class="country-cell no-print" title="${escapeHtml(r.country )}">${escapeHtml(r.country )}</td>
                 <td class="print-hide">
                     <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">

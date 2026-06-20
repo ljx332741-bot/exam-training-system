@@ -587,7 +587,7 @@
                                         data-training-id="${item.training_id}" 
                                         data-user-id="${item.user_id}"
                                         data-user-name="${escapeHtml(item.name_en)}">
-                                    <i class="bi bi-arrow-repeat"></i> ${t('resign') || '重新签到'}
+                                    <i class="bi bi-arrow-repeat"></i> ${t('re_sign_in') || '重新签到'}
                                 </button>`;
                     break;
                 case 'pending':
@@ -605,7 +605,7 @@
                                         data-training-id="${item.training_id}" 
                                         data-user-id="${item.user_id}"
                                         data-user-name="${escapeHtml(item.name_en)}">
-                                    <i class="bi bi-arrow-repeat"></i> ${t('resign') || '重新签到'}
+                                    <i class="bi bi-arrow-repeat"></i> ${t('re_sign_in') || '重新签到'}
                                 </button>`;
                     break;
                 default:
@@ -637,7 +637,7 @@
                     <td>${escapeHtml(item.wh_id || '-')}</td>
                     <td>${escapeHtml(item.wh_name_en || '-')}</td>
                     <td>${escapeHtml(item.company || '-')}</td>
-                    <td>${item.sign_time ? new Date(item.sign_time).toLocaleString() : '-'}</td>
+                    <td>${item.sign_time ? formatLocalTime(item.sign_time) : '-'}</td>
                     <td>${statusBadge}</td>
                     <td class="action-cell" style="min-width: 100px;">${actionHtml}</td>
                 </tr>
@@ -747,9 +747,9 @@
                 const userId = btn.dataset.userId;
                 const userName = btn.dataset.userName;
                 
-                if (!confirm(`确定要重置 ${userName} 的签到状态吗？\n重置后该学员需要重新签名。`)) return;
+                if (!confirm(t('confirm_reset_sign_status', userName ))) return;
                 
-                showLoading('重置中...');
+                showLoading(t('resetting'));
                 try {
                     const res = await fetch(`/api/admin/training/${trainingId}/resign/${userId}`, {
                         method: 'POST',
@@ -760,13 +760,13 @@
                     
                     if (data.success) {
                         if (typeof showToast === 'function') {
-                            showToast(t('resign_success') || `已重置 ${userName} 的签到状态`, 'success');
+                            showToast(t('re_sign_in_success') || t('reset_success', userName ), 'success');
                         } else {
-                            alert(`重置成功: ${userName} 需要重新签到`);
+                            alert(t('reset_success', userName ));
                         }
                         loadData();
                     } else {
-                        const msg = data.message || '重置失败';
+                        const msg = data.message || t('reset_failed');
                         if (typeof showToast === 'function') {
                             showToast(msg, 'error');
                         } else {
@@ -775,7 +775,7 @@
                     }
                 } catch (err) {
                     hideLoading();
-                    console.error('重置失败:', err);
+                    console.error(t('reset_failed'), err);
                     alert('网络错误，请重试');
                 }
             };
@@ -807,7 +807,7 @@
                 
                 // 更新文本信息
                 document.getElementById('modalSignedName').innerText = signedName || '-';
-                document.getElementById('modalSignTime').innerText = signTime ? new Date(signTime).toLocaleString() : '-';
+                document.getElementById('modalSignTime').innerText = signTime ? formatLocalTime(signTime) : '-';
                 
                 // 获取 Bootstrap 模态框实例
                 let modal = bootstrap.Modal.getInstance(modalElement);

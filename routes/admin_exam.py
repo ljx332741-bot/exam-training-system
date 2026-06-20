@@ -104,10 +104,10 @@ def api_dashboard_stats():
                     "users": registered_count,
                     "users_imported": imported_count,
                     "exams_total": exams_total,
-                    "exams_completed": exams_completed,
-                    "exam_draft": exam_stats.get('draft', 0),
-                    "exam_active": exam_stats.get('active', 0),
-                    "exam_closed": exam_stats.get('closed', 0),
+                    "exams_closed": exam_stats.get('closed', 0),      # ✅ 改为 exams_closed
+                    "exams_active": exam_stats.get('active', 0),
+                    "exams_draft": exam_stats.get('draft', 0),        # ✅ 新增
+                    "exams_created": exam_stats.get('created', 0),    # ✅ 新增
                     "trainings_count": trainings_count,
                     "total_attendances": total_attendances,
                     "signins_today": signins_today,
@@ -154,13 +154,15 @@ def admin_dashboard():
         logger.debug(f"考试 {exam.get('id')}: 状态={status}")
     
     exams_total = len(filtered_exams)
-    # ✅ 已完成 = 已关闭的考试数量（考试状态为 closed）
-    exams_completed = exam_stats.get('closed', 0)
+    # 已完成 = 已关闭的考试数量（考试状态为 closed）
+    exams_closed = exam_stats.get('closed', 0)
     exams_active = exam_stats.get('active', 0)
-    exams_other = exam_stats.get('draft', 0) + exam_stats.get('created', 0)
+    exams_draft = exam_stats.get('draft', 0)
+    exams_created = exam_stats.get('created', 0)
+    exams_other = exams_draft + exams_created  # 草稿 + 未开始
     
     logger.info(f"考试统计(基于考试状态): 总数={exams_total}, "
-                f"已完成(closed)={exams_completed}, "
+                f"已完成(closed)={exams_closed}, "
                 f"进行中(active)={exams_active}, "
                 f"其它(draft+created)={exams_other}")
     
@@ -188,10 +190,11 @@ def admin_dashboard():
         "users": registered_count,
         "users_imported": imported_count,
         "exams_total": exams_total,
-        "exams_completed": exams_completed,
-        "exam_draft": exam_stats.get('draft', 0),
-        "exam_active": exam_stats.get('active', 0),
-        "exam_closed": exam_stats.get('closed', 0),
+        "exams_closed": exams_closed,      # ✅ 已关闭/已完成
+        "exams_active": exams_active,      # ✅ 进行中
+        "exams_draft": exams_draft,        # ✅ 草稿
+        "exams_created": exams_created,    # ✅ 未开始
+        "exams_other": exams_other,        # ✅ 其它（草稿+未开始）
         "trainings_count": trainings_count,
         "total_attendances": total_attendances,
         "signins_today": signins_today,

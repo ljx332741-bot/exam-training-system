@@ -640,10 +640,10 @@
                 </td>
                 <td>${quarter}</td>
                 <td>${t.signed_count || 0}</td>
-                <td title="${new Date(t.created_at).toLocaleString()}">${new Date(t.created_at).toLocaleString()}</td>
+                <td title="${formatLocalTime(t.created_at)}">${formatLocalTime(t.created_at)}</td>
                 <td 
-                    class="time-range" title="${formatDate(t.start_time)} - ${formatDate(t.end_time)}">
-                    ${formatDate(t.start_time)} - ${formatDate(t.end_time)}
+                    class="time-range" title="${formatLocalTime(t.start_time)} - ${formatLocalTime(t.end_time)}">
+                    ${formatLocalTime(t.start_time)} - ${formatLocalTime(t.end_time)}
                 </td>
                 <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>
