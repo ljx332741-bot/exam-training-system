@@ -194,7 +194,7 @@
     
     /* 考试 - 选中状态复选框 */
     #multiExamList .list-group-item.active .form-check-input {
-        border-color: #198754 !important;
+        border-color: #87193f !important;
         background-color: #ffffff !important;
     }
     
@@ -1176,9 +1176,22 @@
                 const data = result.data;
                 setCachedDashboardData(data);
                 renderDashboardStats(data);
+                
+                // 如果有考试状态表格，渲染数据
+                if (currentExamId) {
+                    await loadExamStatusData(currentExamId);
+                }
+                
+                // 完成进度
+                window.completeTableProgress('status-table-container', 'status_loaded');
+                // 延迟隐藏
+                setTimeout(() => {
+                    window.hideTableProgress('status-table-container');
+                }, 500);
             }
         } catch (err) {
             console.error('加载仪表盘数据失败:', err);
+            window.hideTableProgress('status-table-container');
         }
     }
 
@@ -4652,6 +4665,10 @@
 	// 渲染考生状态表格（基于当前缓存数据，使用 t() 翻译）
 	function renderExamStatusTable() {
 		const container = document.getElementById('status-table-container');
+
+        // ✅ 如果有进度条，先隐藏
+        window.hideTableProgress('status-table-container');
+        
 		if (!currentExamId || !currentExamUsers.length) {
 			container.innerHTML = `<div class="text-center text-muted py-3">${safeT('t_select_exam_first')}</div>`;
 			return;
@@ -4767,81 +4784,120 @@
 		});
 	}
 
-	// 加载数据（仅首次从后端获取）
-	async function loadExamStatusData(examId) {
-		if (!examId) {
-			currentExamId = null;
-			currentExamUsers = [];
-			document.getElementById('status-table-container').innerHTML = '';
-			return;
-		}
+    // 加载数据（仅首次从后端获取）
+    async function loadExamStatusData(examId) {
+        const container = document.getElementById('status-table-container');
+        if (!container) {
+            console.warn('status-table-container 不存在');
+            return;
+        }
+        
+        if (!examId) {
+            currentExamId = null;
+            currentExamUsers = [];
+            // ✅ 清空容器，显示提示信息
+            container.innerHTML = `<div class="text-center py-3">${t('t_select_exam_first')}</div>`;
+            // 如果有进度条，隐藏
+            window.hideTableProgress('status-table-container');
+            return;
+        }
+        
+        // ✅ 在加载考试状态时显示进度条
+        window.showTableProgress('status-table-container', {
+            title: 'loading_exam_status',
+            desc: 'please_wait_loading_status',
+            colspan: 1,
+            size: 'sm'
+        });
 
-		const container = document.getElementById('status-table-container');
-		container.innerHTML = `<div class="text-center py-4">${t('loading')}</div>`;
+        try {
+            // 1. 获取考试状态
+            const statusRes = await fetch(`/admin/exam_status/${examId}`);
+            
+            // 更新进度到 40%
+            window.updateTableProgress('status-table-container', 40, t('please_wait_loading_status'));
+            
+            if (statusRes.status === 403) {
+                // 权限不足
+                window.hideTableProgress('status-table-container');
+                container.innerHTML = `<div class="alert alert-warning">${t('no_permission_to_view_exam')}</div>`;
+                return;
+            }
+            
+            if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
+            let statusData = await statusRes.json();
 
-		try {
-			// 1. 获取考试状态（包含 user_id, name, email, score, result_id 等）
-			const statusRes = await fetch(`/admin/exam_status/${examId}`);
-			
-			// ✅ 处理权限不足的情况
-			if (statusRes.status === 403) {
-				container.innerHTML = `<div class="alert alert-warning">${t('no_permission_to_view_exam')}</div>`;
-				return;
-			}
-			
-			if (!statusRes.ok) throw new Error(`HTTP ${statusRes.status}`);
-			let statusData = await statusRes.json();
+            if (!statusData.length) {
+                // 没有考生数据
+                window.hideTableProgress('status-table-container');
+                currentExamUsers = [];
+                currentExamId = examId;
+                renderExamStatusTable();
+                return;
+            }
 
-			if (!statusData.length) {
-				currentExamUsers = [];
-				currentExamId = examId;
-				renderExamStatusTable();
-				return;
-			}
+            // 2. 提取所有 user_id，批量获取用户详细信息
+            const userIds = statusData.map(item => item.user_id).filter(id => id);
+            if (userIds.length === 0) {
+                window.hideTableProgress('status-table-container');
+                currentExamUsers = [];
+                currentExamId = examId;
+                renderExamStatusTable();
+                return;
+            }
 
-			// 2. 提取所有 user_id，批量获取用户详细信息
-			const userIds = statusData.map(item => item.user_id).filter(id => id);
-			if (userIds.length === 0) {
-				currentExamUsers = [];
-				currentExamId = examId;
-				renderExamStatusTable();
-				return;
-			}
+            // 更新进度到 60%
+            window.updateTableProgress('status-table-container', 60, t('loading_user_info'));
 
-			const usersRes = await fetch(`/api/admin/users?ids=${userIds.join(',')}&status=registered&page=1&per_page=100`);
-			const usersData = await usersRes.json();
-			const usersMap = {};
-			(usersData.data || []).forEach(u => {
-				usersMap[u.id] = u;
-			});
+            const usersRes = await fetch(`/api/admin/users?ids=${userIds.join(',')}&status=registered&page=1&per_page=100`);
+            const usersData = await usersRes.json();
+            const usersMap = {};
+            (usersData.data || []).forEach(u => {
+                usersMap[u.id] = u;
+            });
 
-			// 3. 合并状态和用户信息，并过滤掉无效用户（用户已删除或未注册）
-			const merged = [];
-			for (const item of statusData) {
-				const userInfo = usersMap[item.user_id];
-				if (!userInfo || userInfo.user_status !== 'registered') {
-					// 如果用户不存在或未注册，跳过（避免空行）
-					continue;
-				}
-				merged.push({
-					...item,
-					wh_id: userInfo.wh_id || '',
-					wh_name_en: userInfo.wh_name_en || '',
-					is_partner: userInfo.is_partner || false,
-					country: userInfo.country || '',
-					name: userInfo.name_cn || userInfo.name_en || item.name || '',
-					email: userInfo.email || item.email || ''
-				});
-			}
+            // 更新进度到 80%
+            window.updateTableProgress('status-table-container', 80, t('merging_data'));
 
-			currentExamUsers = merged;
-			currentExamId = examId;
-			renderExamStatusTable();
-		} catch (err) {
-			console.error(t('t_failed_load_candidate_status'), err);
-			container.innerHTML = `<div class="alert alert-danger">${t('load_failed')}</div>`;
-		}
-	}
+            // 3. 合并状态和用户信息
+            const merged = [];
+            for (const item of statusData) {
+                const userInfo = usersMap[item.user_id];
+                if (!userInfo || userInfo.user_status !== 'registered') {
+                    continue;
+                }
+                merged.push({
+                    ...item,
+                    wh_id: userInfo.wh_id || '',
+                    wh_name_en: userInfo.wh_name_en || '',
+                    is_partner: userInfo.is_partner || false,
+                    country: userInfo.country || '',
+                    name: userInfo.name_cn || userInfo.name_en || item.name || '',
+                    email: userInfo.email || item.email || ''
+                });
+            }
+
+            currentExamUsers = merged;
+            currentExamId = examId;
+            
+            // 更新进度到 90%
+            window.updateTableProgress('status-table-container', 90, t('rendering_table'));
+            
+            // 渲染表格
+            renderExamStatusTable();
+            
+            // 完成进度并隐藏
+            window.completeTableProgress('status-table-container', 'status_loaded');
+            setTimeout(() => {
+                window.hideTableProgress('status-table-container');
+            }, 800);
+            
+        } catch (err) {
+            console.error('加载考试状态失败:', err);
+            window.hideTableProgress('status-table-container');
+            container.innerHTML = `<div class="alert alert-danger">${t('load_failed')}: ${err.message}</div>`;
+        }
+    }
 
 	// 重置按钮处理函数（保持不变）,对指定考生进行状态重置让其可重新考试
 	async function handleReset(e) {
@@ -5116,15 +5172,29 @@
 
 		// 考试状态表格的初始化
 		const examSelector = document.getElementById('exam-selector');
-		if (examSelector) {
-			examSelector.addEventListener('change', (e) => {
-				loadExamStatusData(e.target.value);
-			});
+        if (examSelector) {
+            examSelector.addEventListener('change', (e) => {
+                const examId = e.target.value;
+                if (examId) {
+                    // ✅ 选择考试后加载数据（进度条在 loadExamStatusData 中显示）
+                    loadExamStatusData(examId);
+                } else {
+                    // 清空显示
+                    const container = document.getElementById('status-table-container');
+                    if (container) {
+                        container.innerHTML = `<div class="text-center text-muted py-3">${t('t_select_exam_first')}</div>`;
+                        window.hideTableProgress('status-table-container');
+                    }
+                    currentExamId = null;
+                    currentExamUsers = [];
+                }
+            });
 			// 如果有默认选中值，加载一次
 			if (examSelector.value) {
 				loadExamStatusData(examSelector.value);
 			}
 		}
+
 		// 绑定考生状态筛选事件
 		const filterInputs = ['statusFilterName', 'statusFilterWh', 'statusFilterIsPartner', 'statusFilterCountry'];
 		filterInputs.forEach(id => {

@@ -253,7 +253,7 @@
     let allWhData = [];
     let deletedAllData = [];
 
-    // ========== 加载库房列表 ==========
+    // ========== 加载库房列表（使用表格内嵌进度条） ==========
     async function loadWhList() {
         const params = new URLSearchParams({
             page: currentPage,
@@ -264,20 +264,49 @@
             include_deleted: 'false'
         });
         
-        try {
-            const res = await fetch(`/api/admin/wh/list?${params}`);
-            const data = await res.json();
-            renderWhTable(data.data);
-            document.getElementById('totalCount').innerText = data.total;
-            renderPagination(data.page, Math.ceil(data.total / data.per_page));
-        } catch (err) {
-            console.error('加载库房列表失败:', err);
-        }
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('whTableBody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, '准备加载库房数据...');
+                
+                const res = await fetch(`/api/admin/wh/list?${params}`);
+                
+                updateProgress(50, '数据获取中...');
+                
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                updateProgress(80, '渲染数据...');
+                
+                // 渲染表格数据
+                renderWhTable(data.data);
+                document.getElementById('totalCount').innerText = data.total;
+                renderPagination(data.page, Math.ceil(data.total / data.per_page));
+                
+                updateProgress(100, '加载完成');
+                
+            } catch (err) {
+                console.error('加载库房列表失败:', err);
+                // 错误时显示提示，但进度条会显示错误状态
+                throw err;
+            }
+        }, {
+            title: 'loading_warehouse_data',
+            desc: 'please_wait_loading_warehouses',
+            colspan: 10,
+            size: 'md',
+            completeMessage: 'warehouse_data_loaded'
+        });
     }
 
     function renderWhTable(rows) {
         const tbody = document.getElementById('whTableBody');
-        if (!rows.length) {
+        if (!tbody) return;
+        
+        // ✅ 如果进度条还在显示，先隐藏
+        window.hideTableProgress('whTableBody');
+        
+        if (!rows || rows.length === 0) {
             tbody.innerHTML = `<tr><td colspan="10" class="text-center">${t('t_no_data')}</td></tr>`;
             return;
         }
@@ -299,6 +328,7 @@
             </tr>
         `).join('');
 
+        // 绑定事件...
         document.querySelectorAll('.edit-wh-btn').forEach(btn => {
             btn.addEventListener('click', () => openEditWhModal(btn.dataset.id));
         });
@@ -306,14 +336,13 @@
             btn.addEventListener('click', () => {
                 currentDeleteId = btn.dataset.id;
                 document.getElementById('deleteConfirmMsg').innerText = t('confirm_delete_warehouse', btn.dataset.name);
-                // document.getElementById('deleteConfirmMsg').innerText = `确定要删除库房 ${btn.dataset.name} 吗？`;
                 new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
             });
         });
         bindSelectAll();
     }
 
-    // ========== 加载已删除库房列表 ==========
+    // ========== 加载已删除库房列表（使用表格内嵌进度条） ==========
     async function loadDeletedWhList() {
         const params = new URLSearchParams({
             page: 1,
@@ -321,33 +350,57 @@
             include_deleted: 'true'
         });
         
-        try {
-            const res = await fetch(`/api/admin/wh/list?${params}`);
-            const data = await res.json();
-            let allData = data.data || [];
-            
-            if (deletedFilters.search) {
-                const searchLower = deletedFilters.search.toLowerCase();
-                allData = allData.filter(wh => 
-                    (wh.wh_id && wh.wh_id.toLowerCase().includes(searchLower)) ||
-                    (wh.wh_name_cn && wh.wh_name_cn.toLowerCase().includes(searchLower)) ||
-                    (wh.wh_name_en && wh.wh_name_en.toLowerCase().includes(searchLower))
-                );
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('deletedWhTableBody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, '加载已删除库房数据...');
+                
+                const res = await fetch(`/api/admin/wh/list?${params}`);
+                
+                updateProgress(50, '数据获取中...');
+                
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                let allData = data.data || [];
+                
+                // 应用筛选
+                if (deletedFilters.search) {
+                    const searchLower = deletedFilters.search.toLowerCase();
+                    allData = allData.filter(wh => 
+                        (wh.wh_id && wh.wh_id.toLowerCase().includes(searchLower)) ||
+                        (wh.wh_name_cn && wh.wh_name_cn.toLowerCase().includes(searchLower)) ||
+                        (wh.wh_name_en && wh.wh_name_en.toLowerCase().includes(searchLower))
+                    );
+                }
+                if (deletedFilters.country) {
+                    allData = allData.filter(wh => wh.country_code === deletedFilters.country);
+                }
+                if (deletedFilters.wh_type) {
+                    allData = allData.filter(wh => wh.wh_type === deletedFilters.wh_type);
+                }
+                
+                deletedAllData = allData;
+                
+                updateProgress(80, '渲染数据...');
+                
+                renderDeletedWhTable();
+                document.getElementById('deletedTotalCount').innerText = allData.length;
+                renderDeletedPagination(1, Math.ceil(allData.length / 20));
+                
+                updateProgress(100, '加载完成');
+                
+            } catch (err) {
+                console.error('加载已删除库房失败:', err);
+                throw err;
             }
-            if (deletedFilters.country) {
-                allData = allData.filter(wh => wh.country_code === deletedFilters.country);
-            }
-            if (deletedFilters.wh_type) {
-                allData = allData.filter(wh => wh.wh_type === deletedFilters.wh_type);
-            }
-            
-            deletedAllData = allData;
-            renderDeletedWhTable();
-            document.getElementById('deletedTotalCount').innerText = allData.length;
-            renderDeletedPagination(1, Math.ceil(allData.length / 20));
-        } catch (err) {
-            console.error(t('t_failed_to_load_deleted_warehouse'), err);
-        }
+        }, {
+            title: 'loading_deleted_warehouse',
+            desc: 'please_wait_loading_deleted',
+            colspan: 8,
+            size: 'md',
+            completeMessage: 'deleted_warehouse_loaded'
+        });
     }
 
     function renderDeletedWhTable() {

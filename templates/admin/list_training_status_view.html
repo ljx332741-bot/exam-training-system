@@ -454,46 +454,63 @@
     let filteredData = [];
     const perPage = 20;
 
-    // 加载数据
-    // 加载数据（兼容两种模式：单个培训详情 or 全局视图）
     async function loadData() {
-        // 优先从 URL 参数获取 training_id
         const urlParams = new URLSearchParams(window.location.search);
         const trainingId = urlParams.get('training_id');
         
-        let url;
-        if (trainingId) {
-            // ✅ 正确：使用 training/users_with_status API
-            const params = new URLSearchParams({
-                training_id: trainingId,
-                search: filters.search,
-                country: filters.country,
-                wh_id: filters.wh_id
-            });
-            url = `/api/admin/training/users_with_status?${params}`;
-        } else {
-            // 模式2：全局视图（使用旧 API，返回所有权限范围内的数据）
-            const params = new URLSearchParams({
-                search: filters.search,
-                country: filters.country,
-                wh_id: filters.wh_id
-            });
-            url = `/api/admin/training/users_with_status?${params}`;
-        }
-        
-        try {
-            const res = await fetch(url);
-            const data = await res.json();
-            allData = data.data || [];
-            applyFilters();
-        } catch (err) {
-            console.error('加载数据失败:', err);
-            document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="11" class="text-center text-danger">加载失败</td></tr>`;
-        }
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('usersTableBody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, t('preparing_load_attendance_data'));
+                
+                let url;
+                if (trainingId) {
+                    const params = new URLSearchParams({
+                        training_id: trainingId,
+                        search: filters.search,
+                        country: filters.country,
+                        wh_id: filters.wh_id
+                    });
+                    url = `/api/admin/training/users_with_status?${params}`;
+                } else {
+                    const params = new URLSearchParams({
+                        search: filters.search,
+                        country: filters.country,
+                        wh_id: filters.wh_id
+                    });
+                    url = `/api/admin/training/users_with_status?${params}`;
+                }
+                
+                updateProgress(40, t('data_acquisition_in_progress'));
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                updateProgress(70, t('processing_data'));
+                allData = data.data || [];
+                
+                updateProgress(85, t('rendering_table'));
+                applyFilters();
+                
+                updateProgress(100, t('report_data_loaded'));
+                
+            } catch (err) {
+                console.error('加载数据失败:', err);
+                // 错误会由 loadTableWithProgress 处理
+                throw err;
+            }
+        }, {
+            title: 'loading_attendance_status',
+            desc: 'please_wait_loading_attendance',
+            colspan: 11,
+            size: 'md',
+            completeMessage: 'attendance_status_loaded'
+        });
     }
     
     // 应用筛选（前端内存过滤）
     function applyFilters() {
+        window.hideTableProgress('usersTableBody');
         let filtered = [...allData];
         
         if (filters.search) {
@@ -555,6 +572,10 @@
     // 渲染表格
     function renderTable() {
         const tbody = document.getElementById('usersTableBody');
+        if (!tbody) return;
+
+        window.hideTableProgress('usersTableBody');
+        
         const totalCount = filteredData.length;
         document.getElementById('totalRecordCount').innerText = totalCount;
         

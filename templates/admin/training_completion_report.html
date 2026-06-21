@@ -540,9 +540,8 @@
         }
     }
 
-    // 加载报表数据
+    // ========== 加载报表数据（使用表格内嵌进度条） ==========
     async function loadReportData() {
-        // ✅ 使用选中的ID
         const trainingId = document.getElementById('selectedTrainingId')?.value || '';
         const examId = document.getElementById('selectedExamId')?.value || '';
         
@@ -560,27 +559,51 @@
             end_date: filters.end_date
         });
 
-        try {
-            const res = await fetch(`/api/admin/training/completion_report?${params}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const data = await res.json();
-            cachedReportData = data.data || [];
-            currentReportData = [...cachedReportData];
-            renderTable(currentReportData);
-            document.getElementById('totalCount').innerText = data.total;
-            renderPagination(data.page, Math.ceil(data.total / data.per_page));
-            
-            if (data.summary) {
-                document.getElementById('totalUsers').innerText = data.summary.total_users || 0;
-                document.getElementById('totalSigned').innerText = data.summary.total_signed || 0;
-                document.getElementById('totalCompleted').innerText = data.summary.total_completed || 0;
-                document.getElementById('passRate').innerText = (data.summary.pass_rate || 0) + '%';
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('reportTableBody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, t('preparing_load_report_data'));
+                
+                const res = await fetch(`/api/admin/training/completion_report?${params}`);
+                
+                updateProgress(40, t('data_acquisition_in_progress'));
+                
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                updateProgress(70, t('processing_data'));
+                
+                cachedReportData = data.data || [];
+                currentReportData = [...cachedReportData];
+                
+                updateProgress(85, t('rendering_table'));
+                
+                renderTable(currentReportData);
+                document.getElementById('totalCount').innerText = data.total || 0;
+                renderPagination(data.page, Math.ceil((data.total || 0) / data.per_page));
+                
+                // 更新统计卡片
+                if (data.summary) {
+                    document.getElementById('totalUsers').innerText = data.summary.total_users || 0;
+                    document.getElementById('totalSigned').innerText = data.summary.total_signed || 0;
+                    document.getElementById('totalCompleted').innerText = data.summary.total_completed || 0;
+                    document.getElementById('passRate').innerText = (data.summary.pass_rate || 0) + '%';
+                }
+                
+                updateProgress(100, t('report_data_loaded'));
+                
+            } catch (err) {
+                console.error('加载报表失败:', err);
+                // 错误会由 loadTableWithProgress 处理
+                throw err;
             }
-        } catch (err) {
-            console.error('加载报表失败:', err);
-            document.getElementById('reportTableBody').innerHTML = 
-                `<tr><td colspan="14" class="text-center text-danger">加载失败</td></tr>`;
-        }
+        }, {
+            title: 'loading_report_data',
+            desc: 'please_wait_loading_report',
+            colspan: 14,
+            size: 'md',
+            completeMessage: 'report_data_loaded'
+        });
     }
 
     // 应用筛选并加载
@@ -591,12 +614,15 @@
         loadReportData();
     }
 
-    // 渲染表格（保持不变）
+    // 渲染表格
     function renderTable(rows) {
-        // ... 原有 renderTable 逻辑保持不变 ...
         const tbody = document.getElementById('reportTableBody');
+
+        // ✅ 如果有进度条，先隐藏
+        window.hideTableProgress('reportTableBody');
+        
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="14" class="text-center">暂无数据</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="14" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
 
@@ -769,14 +795,134 @@
         window.open(`/api/admin/training/completion_report/export?${params}`, '_blank');
     });
 
-    // 刷新数据按钮
+    /**
+    * 显示同步结果详情
+    */
+    function showSyncResults(syncResults) {
+        if (!syncResults) return;
+        
+        // 计算总数（使用 || 避免 undefined）
+        const total = (syncResults.assigned_exams || 0) + 
+                    (syncResults.created_attendances || 0) + 
+                    (syncResults.created_assignments || 0);
+        
+        if (total === 0) {
+            return; // 没有需要同步的数据
+        }
+        
+        // 构建详情列表
+        let details = [];
+        if (syncResults.assigned_exams > 0) {
+            details.push(`📝 ${t('assigned_exams', '分配考试')}: ${syncResults.assigned_exams} ${t('people', '人')}`);
+        }
+        if (syncResults.created_attendances > 0) {
+            details.push(`✅ ${t('created_attendances', '创建签到')}: ${syncResults.created_attendances} ${t('people', '人')}`);
+        }
+        if (syncResults.created_assignments > 0) {
+            details.push(`📋 ${t('created_assignments', '创建培训分配')}: ${syncResults.created_assignments} ${t('people', '人')}`);
+        }
+        if (syncResults.synced_trainings) {
+            details.push(`📚 ${t('synced_trainings', '同步培训')}: ${syncResults.synced_trainings} ${t('count', '个')}`);
+        }
+        
+        // 创建提示框
+        const alertDiv = document.createElement('div');
+        alertDiv.className = 'alert alert-success alert-dismissible fade show mb-3';
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            <i class="bi bi-check-circle-fill me-2"></i>
+            <strong>${t('sync_completed', '数据同步完成')}</strong>
+            <ul class="mb-0 mt-1">
+                ${details.map(d => `<li>${d}</li>`).join('')}
+            </ul>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        
+        // 插入到统计卡片前面
+        const summaryCards = document.getElementById('summaryCards');
+        if (summaryCards) {
+            summaryCards.parentNode.insertBefore(alertDiv, summaryCards);
+            
+            // 5秒后自动消失
+            setTimeout(() => {
+                alertDiv.classList.remove('show');
+                setTimeout(() => alertDiv.remove(), 300);
+            }, 5000);
+        }
+    }
+
+    /**
+    * 刷新数据（包含同步）
+    */
     document.getElementById('refreshDataBtn').addEventListener('click', async () => {
-        // ... 原有刷新逻辑保持不变 ...
         const btn = document.getElementById('refreshDataBtn');
         const originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 同步中...';
-        // ... 省略，保持原有逻辑 ...
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('syncing')}`;
+        showLoading(t('syncing_data', '正在同步数据...'));
+        
+        try {
+            // 获取当前筛选的培训ID
+            const trainingIdEl = document.getElementById('filterTrainingId');
+            const trainingId = trainingIdEl?.value || '';
+            
+            // 构建请求参数
+            const payload = {};
+            if (trainingId) {
+                payload.training_id = parseInt(trainingId);
+            }
+            
+            // 发送请求
+            const response = await fetch('/api/admin/training/refresh_cache', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // 获取同步结果
+                const syncResults = result.results?.sync_results || {};
+                
+                // 显示同步详情
+                showSyncResults(syncResults);
+                
+                // 构建 Toast 消息
+                const assigned = syncResults.assigned_exams || 0;
+                const attendances = syncResults.created_attendances || 0;
+                const assignments = syncResults.created_assignments || 0;
+                
+                let toastMsg = t('data_refreshed', '数据已刷新');
+                const parts = [];
+                if (assigned > 0) parts.push(`${t('assigned_exams', '分配考试')} ${assigned} ${t('people', '人')}`);
+                if (attendances > 0) parts.push(`${t('created_attendances', '创建签到')} ${attendances} ${t('people', '人')}`);
+                if (assignments > 0) parts.push(`${t('created_assignments', '创建培训分配')} ${assignments} ${t('people', '人')}`);
+                
+                if (parts.length > 0) {
+                    toastMsg += '，' + parts.join('，');
+                } else {
+                    toastMsg += '，' + (t('data_synced', '数据已同步'));
+                }
+                
+                // 显示 Toast
+                showToast(toastMsg, 'success');
+                
+                // 重新加载报表数据
+                await loadReportData();
+                
+            } else {
+                const errorMsg = result.message || t('sync_failed', '同步失败');
+                showToast(errorMsg, 'error');
+            }
+        } catch (err) {
+            console.error('刷新失败:', err);
+            showToast(t('network_error', '网络错误，请重试'), 'error');
+        } finally {
+            hideLoading();
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
     });
 
     // 等待 i18n 就绪
