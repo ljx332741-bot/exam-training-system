@@ -472,7 +472,6 @@
         });
     }
 
-    // 加载培训列表(<button class="btn btn-sm btn-outline-info header-btn" data-id="${t.id}">表头录入</button>)
     async function loadTrainings(forceRefresh = false) {
         // 使用缓存
         if (!forceRefresh) {
@@ -482,46 +481,73 @@
                 renderTrainingsTable(cached.data);
                 document.getElementById('totalCount').innerText = cached.total || cached.data.length;
                 renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-            
-                // ✅ 检查是否从下级页面返回
+                
                 const fromDetail = sessionStorage.getItem('from_training_detail');
                 if (fromDetail === 'true') {
                     console.log('📋 从下级返回，不刷新');
-                    return;  // ✅ 直接返回，不执行后台刷新
+                    return;
                 }
                 
-                // 后台刷新
                 setTimeout(() => loadTrainings(true), 800);
                 return;
             }
         }
         
-        // 从服务器加载
-        const params = new URLSearchParams({
-            page: currentPage,
-            per_page: 20,
-            name: filters.name,
-            country: filters.country,
-            quarter: filters.quarter
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('trainingsTbody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, t('preparing_load_training_data'));
+                
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    per_page: 20,
+                    name: filters.name,
+                    country: filters.country,
+                    quarter: filters.quarter
+                });
+                
+                updateProgress(40, t('data_acquisition_in_progress'));
+                const res = await fetch(`/api/admin/trainings?${params}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                updateProgress(70, t('processing_data'));
+                
+                setCachedTrainingData({
+                    data: data.data,
+                    total: data.total,
+                    page: data.page,
+                    per_page: data.per_page
+                });
+                
+                updateProgress(85, t('rendering_table'));
+                renderTrainingsTable(data.data);
+                document.getElementById('totalCount').innerText = data.total;
+                currentPage = data.page;
+                renderPagination(data.page, Math.ceil(data.total / data.per_page));
+                
+                updateProgress(100, t('report_data_loaded'));
+                
+            } catch (err) {
+                console.error('加载培训列表失败:', err);
+                throw err;
+            }
+        }, {
+            title: 'loading_training_data',
+            desc: 'please_wait_loading_trainings',
+            colspan: 10,
+            size: 'md',
+            completeMessage: 'training_data_loaded'
         });
-        const res = await fetch(`/api/admin/trainings?${params}`);
-        const data = await res.json();
-        
-        setCachedTrainingData({
-            data: data.data,
-            total: data.total,
-            page: data.page,
-            per_page: data.per_page
-        });
-        
-        renderTrainingsTable(data.data);
-        document.getElementById('totalCount').innerText = data.total;
-        currentPage = data.page;
-        renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
  
     function renderTrainingsTable(trainings) {
         const tbody = document.getElementById('trainingsTbody');
+        if (!tbody) return;
+
+        // ✅ 如果有进度条，先隐藏
+        window.hideTableProgress('trainingsTbody');
+        
         const perPage = 20; // 与后端分页大小一致
         // ✅ 使用 DocumentFragment 批量构建
         const fragment = document.createDocumentFragment();

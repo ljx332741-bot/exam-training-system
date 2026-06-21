@@ -1187,6 +1187,527 @@
             }
         }
 
+        // ==================== 表格内嵌加载进度条 ====================
+        (function() {
+            /**
+             * 在表格的 tbody 中显示加载进度条
+             * @param {string} tbodyId - tbody 元素的 ID
+             * @param {Object} options - 配置选项
+             * @param {string} options.title - 标题（支持翻译键名）
+             * @param {string} options.desc - 描述（支持翻译键名）
+             * @param {number} options.colspan - 跨列数，默认 10
+             * @param {string} options.size - 进度条大小 'sm' | 'md' | 'lg'，默认 'md'
+             */
+            window.showTableProgress = function(tbodyId, options = {}) {
+                const tbody = document.getElementById(tbodyId);
+                if (!tbody) {
+                    console.warn(`tbody #${tbodyId} 不存在`);
+                    return;
+                }
+                
+                const colspan = options.colspan || 10;
+                const size = options.size || 'md';
+                
+                // 尺寸配置
+                const sizeMap = {
+                    'sm': { spinner: '2rem', barHeight: '6px', titleSize: '1rem', padding: '20px' },
+                    'md': { spinner: '2.5rem', barHeight: '8px', titleSize: '1.1rem', padding: '30px' },
+                    'lg': { spinner: '3rem', barHeight: '10px', titleSize: '1.2rem', padding: '40px' }
+                };
+                const config = sizeMap[size] || sizeMap['md'];
+                
+                // 获取翻译文本
+                const titleText = typeof t === 'function' ? t(options.title || 'loading_data') : (options.title || '正在加载数据...');
+                const descText = typeof t === 'function' ? t(options.desc || 'please_wait') : (options.desc || '请稍候...');
+                
+                // 生成进度条 HTML（嵌入 tbody 的单个单元格）
+                const progressHtml = `
+                    <tr>
+                        <td colspan="${colspan}" class="text-center" style="padding: ${config.padding} 20px;">
+                            <div class="d-flex flex-column align-items-center justify-content-center">
+                                <!-- 加载动画 -->
+                                <div class="spinner-border text-primary mb-3" role="status" style="width: ${config.spinner}; height: ${config.spinner};">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                
+                                <!-- 标题 -->
+                                <h6 class="fw-bold mb-1" id="${tbodyId}_progress_title" style="font-size: ${config.titleSize};">${titleText}</h6>
+                                
+                                <!-- 描述 -->
+                                <p class="text-muted mb-2 small" id="${tbodyId}_progress_desc">${descText}</p>
+                                
+                                <!-- 进度条 -->
+                                <div class="progress w-75" style="height: ${config.barHeight}; max-width: 400px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                                        role="progressbar" 
+                                        style="width: 0%;" 
+                                        id="${tbodyId}_progress_bar"></div>
+                                </div>
+                                
+                                <!-- 进度百分比 -->
+                                <small class="text-muted mt-1" id="${tbodyId}_progress_percent" style="font-size: 0.7rem;">0%</small>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                
+                // 替换 tbody 内容
+                tbody.innerHTML = progressHtml;
+                
+                // 保存状态
+                tbody._progressState = {
+                    current: 0,
+                    target: 100,
+                    intervalId: null,
+                    isComplete: false
+                };
+            };
+            
+            /**
+             * 更新表格进度条
+             * @param {string} tbodyId - tbody 元素的 ID
+             * @param {number} percent - 进度百分比 (0-100)
+             * @param {string} desc - 可选，更新描述文字
+             */
+            window.updateTableProgress = function(tbodyId, percent, desc) {
+                const tbody = document.getElementById(tbodyId);
+                if (!tbody) return;
+                
+                const bar = document.getElementById(`${tbodyId}_progress_bar`);
+                const percentEl = document.getElementById(`${tbodyId}_progress_percent`);
+                const descEl = document.getElementById(`${tbodyId}_progress_desc`);
+                
+                if (!bar) return;
+                
+                // 确保百分比在有效范围内
+                const clampedPercent = Math.min(Math.max(percent, 0), 100);
+                tbody._progressState.current = clampedPercent;
+                
+                // 更新进度条
+                bar.style.width = clampedPercent + '%';
+                bar.setAttribute('aria-valuenow', clampedPercent);
+                
+                // 更新百分比文字
+                if (percentEl) {
+                    percentEl.textContent = Math.round(clampedPercent) + '%';
+                }
+                
+                // 更新描述
+                if (desc && descEl) {
+                    const translatedDesc = typeof t === 'function' ? t(desc) : desc;
+                    descEl.textContent = translatedDesc;
+                }
+                
+                // 如果达到100%，自动完成
+                if (clampedPercent >= 100 && !tbody._progressState.isComplete) {
+                    window.completeTableProgress(tbodyId);
+                }
+            };
+            
+            /**
+             * 完成表格加载（显示完成状态并渲染数据）
+             * @param {string} tbodyId - tbody 元素的 ID
+             * @param {string} message - 可选，完成消息
+             */
+            window.completeTableProgress = function(tbodyId, message) {
+                const tbody = document.getElementById(tbodyId);
+                if (!tbody) return;
+                
+                const state = tbody._progressState;
+                if (!state || state.isComplete) return;
+                
+                state.isComplete = true;
+                
+                // 停止自动进度
+                if (state.intervalId) {
+                    clearInterval(state.intervalId);
+                    state.intervalId = null;
+                }
+                
+                // 设置为100%
+                const bar = document.getElementById(`${tbodyId}_progress_bar`);
+                const percentEl = document.getElementById(`${tbodyId}_progress_percent`);
+                const titleEl = document.getElementById(`${tbodyId}_progress_title`);
+                const descEl = document.getElementById(`${tbodyId}_progress_desc`);
+                
+                if (bar) {
+                    bar.style.width = '100%';
+                    bar.setAttribute('aria-valuenow', '100');
+                    bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                }
+                if (percentEl) {
+                    percentEl.textContent = '100%';
+                }
+                
+                // 更新标题为完成状态
+                if (titleEl) {
+                    titleEl.innerHTML = '<i class="bi bi-check-circle-fill text-success me-2"></i> ' + (typeof t === 'function' ? t('load_complete') : '加载完成');
+                }
+                
+                // 更新描述
+                if (descEl && message) {
+                    const translatedMsg = typeof t === 'function' ? t(message) : message;
+                    descEl.textContent = translatedMsg;
+                    descEl.style.color = '#198754';
+                }
+                
+                // 延迟后执行回调（由调用方决定何时替换为真实数据）
+                // 不自动替换，由调用方在数据准备好后调用 render 函数
+            };
+            
+            /**
+             * 隐藏表格进度条（直接替换为数据内容）
+             * @param {string} tbodyId - tbody 元素的 ID
+             */
+            window.hideTableProgress = function(tbodyId) {
+                const tbody = document.getElementById(tbodyId);
+                if (!tbody) return;
+                
+                // 重置状态
+                if (tbody._progressState) {
+                    if (tbody._progressState.intervalId) {
+                        clearInterval(tbody._progressState.intervalId);
+                    }
+                    tbody._progressState = null;
+                }
+            };
+            
+            /**
+             * 带有表格进度条的异步加载包装器
+             * @param {string} tbodyId - tbody 元素的 ID
+             * @param {Function} asyncFn - 异步函数，接收 (updateProgress, updateDesc) 回调
+             * @param {Object} options - 配置选项
+             * @param {string} options.title - 标题
+             * @param {string} options.desc - 描述
+             * @param {number} options.colspan - 跨列数
+             * @param {string} options.size - 进度条大小
+             */
+            window.loadTableWithProgress = async function(tbodyId, asyncFn, options = {}) {
+                // 显示进度条
+                window.showTableProgress(tbodyId, {
+                    title: options.title || 'loading_data',
+                    desc: options.desc || 'please_wait',
+                    colspan: options.colspan || 10,
+                    size: options.size || 'md'
+                });
+                
+                try {
+                    // 执行异步函数，传入进度更新回调
+                    const result = await asyncFn(
+                        // updateProgress: 0-100
+                        (percent, desc) => {
+                            window.updateTableProgress(tbodyId, percent, desc);
+                        },
+                        // updateDesc: 只更新描述
+                        (desc) => {
+                            const descEl = document.getElementById(`${tbodyId}_progress_desc`);
+                            if (descEl) {
+                                descEl.textContent = typeof t === 'function' ? t(desc) : desc;
+                            }
+                        }
+                    );
+                    
+                    // 完成进度（但保留显示，由调用方决定何时渲染数据）
+                    window.completeTableProgress(tbodyId, options.completeMessage);
+                    
+                    return result;
+                } catch (err) {
+                    // 出错时显示错误信息
+                    const descEl = document.getElementById(`${tbodyId}_progress_desc`);
+                    const titleEl = document.getElementById(`${tbodyId}_progress_title`);
+                    
+                    if (titleEl) {
+                        titleEl.innerHTML = '<i class="bi bi-x-circle-fill text-danger me-2"></i> ' + (typeof t === 'function' ? t('load_failed') : '加载失败');
+                    }
+                    if (descEl) {
+                        descEl.textContent = err.message || (typeof t === 'function' ? t('load_failed_retry') : '加载失败，请重试');
+                        descEl.style.color = '#dc3545';
+                    }
+                    
+                    // 隐藏进度条（错误状态保留3秒后自动隐藏）
+                    setTimeout(() => {
+                        window.hideTableProgress(tbodyId);
+                    }, 3000);
+                    
+                    throw err;
+                }
+            };
+        })();
+
+        // ==================== 全局加载进度条 ====================
+        (function() {
+            // 进度条状态
+            let progressState = {
+                current: 0,
+                target: 100,
+                intervalId: null,
+                isComplete: false,
+                onComplete: null
+            };
+            
+            // DOM 元素缓存
+            let elements = null;
+            
+            function getElements() {
+                if (!elements) {
+                    elements = {
+                        container: document.getElementById('globalProgressContainer'),
+                        bar: document.getElementById('globalProgressBar'),
+                        percent: document.getElementById('globalProgressPercent'),
+                        title: document.getElementById('globalProgressTitle'),
+                        desc: document.getElementById('globalProgressDesc')
+                    };
+                }
+                return elements;
+            }
+            
+            /**
+             * 显示加载进度条
+             * @param {Object} options - 配置选项
+             * @param {string} options.title - 标题（支持翻译键名或直接文本）
+             * @param {string} options.desc - 描述（支持翻译键名或直接文本）
+             * @param {number} options.duration - 自动完成的时间（毫秒），默认 0 表示手动控制
+             * @param {Function} options.onComplete - 完成时的回调
+             */
+            window.showProgress = function(options = {}) {
+                const el = getElements();
+                const { container, bar, percent, title, desc } = el;
+                
+                if (!container) {
+                    console.warn('全局进度条容器不存在');
+                    return;
+                }
+                
+                // 停止之前的进度
+                window.hideProgress();
+                
+                // 重置状态
+                progressState.current = 0;
+                progressState.isComplete = false;
+                progressState.onComplete = options.onComplete || null;
+                
+                // 设置标题和描述（支持翻译）
+                const titleText = options.title || '正在加载数据...';
+                const descText = options.desc || '请稍候，正在准备内容';
+                
+                if (title) {
+                    // 尝试翻译
+                    const translatedTitle = typeof t === 'function' ? t(titleText) : titleText;
+                    title.textContent = translatedTitle;
+                }
+                if (desc) {
+                    const translatedDesc = typeof t === 'function' ? t(descText) : descText;
+                    desc.textContent = translatedDesc;
+                }
+                
+                // 重置进度条
+                bar.style.width = '0%';
+                bar.setAttribute('aria-valuenow', '0');
+                if (percent) percent.textContent = '0%';
+                
+                // 显示容器
+                container.style.display = 'block';
+                
+                // 如果设置了自动完成时间，启动自动进度
+                if (options.duration && options.duration > 0) {
+                    const startTime = Date.now();
+                    const totalSteps = 60; // 分成60步，每步均匀增加
+                    
+                    progressState.intervalId = setInterval(() => {
+                        const elapsed = Date.now() - startTime;
+                        const progress = Math.min((elapsed / options.duration) * 100, 95);
+                        
+                        // 平滑增长，最后停在95%
+                        window.updateProgress(progress);
+                        
+                        if (progress >= 95) {
+                            clearInterval(progressState.intervalId);
+                            progressState.intervalId = null;
+                        }
+                    }, options.duration / totalSteps);
+                }
+                
+                // 设置默认进度条为动画状态
+                bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+            };
+            
+            /**
+             * 更新进度条
+             * @param {number} percent - 进度百分比 (0-100)
+             * @param {string} desc - 可选，更新描述文字
+             */
+            window.updateProgress = function(percent, desc) {
+                const el = getElements();
+                const { bar, percent: percentEl, desc: descEl } = el;
+                
+                if (!bar) return;
+                
+                // 确保百分比在有效范围内
+                const clampedPercent = Math.min(Math.max(percent, 0), 100);
+                progressState.current = clampedPercent;
+                
+                // 更新进度条
+                bar.style.width = clampedPercent + '%';
+                bar.setAttribute('aria-valuenow', clampedPercent);
+                
+                // 更新百分比文字
+                if (percentEl) {
+                    percentEl.textContent = Math.round(clampedPercent) + '%';
+                }
+                
+                // 更新描述
+                if (desc && descEl) {
+                    const translatedDesc = typeof t === 'function' ? t(desc) : desc;
+                    descEl.textContent = translatedDesc;
+                }
+                
+                // 如果达到100%，自动完成
+                if (clampedPercent >= 100 && !progressState.isComplete) {
+                    window.completeProgress();
+                }
+            };
+            
+            /**
+             * 完成进度（设置为100%并自动关闭）
+             * @param {string} message - 可选，完成消息
+             */
+            window.completeProgress = function(message) {
+                if (progressState.isComplete) return;
+                
+                progressState.isComplete = true;
+                
+                // 停止自动进度
+                if (progressState.intervalId) {
+                    clearInterval(progressState.intervalId);
+                    progressState.intervalId = null;
+                }
+                
+                // 设置为100%
+                const el = getElements();
+                if (el.bar) {
+                    el.bar.style.width = '100%';
+                    el.bar.setAttribute('aria-valuenow', '100');
+                    // 移除动画效果
+                    el.bar.classList.remove('progress-bar-striped', 'progress-bar-animated');
+                }
+                if (el.percent) {
+                    el.percent.textContent = '100%';
+                }
+                
+                // 更新标题为完成状态
+                if (el.title) {
+                    el.title.innerHTML = '<i class="bi bi-check-circle-fill text-success me-2"></i> 加载完成';
+                }
+                
+                // 更新描述
+                if (message && el.desc) {
+                    const translatedMsg = typeof t === 'function' ? t(message) : message;
+                    el.desc.textContent = translatedMsg;
+                    el.desc.style.color = '#198754';
+                }
+                
+                // 执行回调
+                if (typeof progressState.onComplete === 'function') {
+                    progressState.onComplete();
+                }
+                
+                // 延迟2秒后自动隐藏
+                setTimeout(() => {
+                    window.hideProgress();
+                }, 1500);
+            };
+            
+            /**
+             * 隐藏进度条
+             */
+            window.hideProgress = function() {
+                const el = getElements();
+                const { container } = el;
+                
+                // 停止自动进度
+                if (progressState.intervalId) {
+                    clearInterval(progressState.intervalId);
+                    progressState.intervalId = null;
+                }
+                
+                // 重置状态
+                progressState.current = 0;
+                progressState.isComplete = false;
+                progressState.onComplete = null;
+                
+                if (container) {
+                    container.style.display = 'none';
+                }
+                
+                // 重置进度条样式
+                if (el.bar) {
+                    el.bar.style.width = '0%';
+                    el.bar.setAttribute('aria-valuenow', '0');
+                    el.bar.classList.add('progress-bar-striped', 'progress-bar-animated');
+                }
+                if (el.percent) {
+                    el.percent.textContent = '0%';
+                }
+                if (el.desc) {
+                    el.desc.style.color = '';
+                }
+                if (el.title) {
+                    el.title.textContent = typeof t === 'function' ? t('loading_data') : '正在加载数据...';
+                }
+            };
+            
+            /**
+             * 带有进度条的异步加载包装器
+             * @param {Function} asyncFn - 异步函数
+             * @param {Object} options - 配置选项
+             * @param {string} options.title - 标题
+             * @param {string} options.desc - 描述
+             * @param {number} options.steps - 进度更新步数
+             * @param {Function} options.onProgress - 进度回调，接收 (progress, message)
+             */
+            window.loadWithProgress = async function(asyncFn, options = {}) {
+                const steps = options.steps || 10;
+                let currentStep = 0;
+                
+                // 显示进度条
+                window.showProgress({
+                    title: options.title || 'loading_data',
+                    desc: options.desc || 'please_wait',
+                    onComplete: options.onComplete || null
+                });
+                
+                try {
+                    // 执行异步函数，传入进度更新回调
+                    const result = await asyncFn((progress, message) => {
+                        // progress 范围 0-1
+                        const percent = Math.min(progress * 100, 95);
+                        window.updateProgress(percent, message);
+                    });
+                    
+                    // 完成
+                    window.completeProgress(options.completeMessage || 'load_complete');
+                    
+                    return result;
+                } catch (err) {
+                    // 出错时显示错误信息
+                    const el = getElements();
+                    if (el.title) {
+                        el.title.innerHTML = '<i class="bi bi-x-circle-fill text-danger me-2"></i> 加载失败';
+                    }
+                    if (el.desc) {
+                        el.desc.textContent = err.message || typeof t === 'function' ? t('load_failed') : '加载失败，请重试';
+                        el.desc.style.color = '#dc3545';
+                    }
+                    // 隐藏进度条
+                    setTimeout(() => {
+                        window.hideProgress();
+                    }, 3000);
+                    
+                    throw err;
+                }
+            };
+        })();
+
     </script>
 
     <!-- 引入全局删除模态框 -->
@@ -1206,6 +1727,33 @@
             <div class="toast-body" id="toastMessage">
                 操作成功
             </div>
+        </div>
+    </div>
+        
+    <!-- 全局加载进度条（用于页面数据加载） -->
+    <div id="globalProgressContainer" style="display: none; position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: rgba(255,255,255,0.95); padding: 30px 20px; min-height: 100vh;">
+        <div class="d-flex flex-column align-items-center justify-content-center" style="min-height: 60vh;">
+            <!-- 加载动画 -->
+            <div class="spinner-border text-primary mb-4" role="status" style="width: 3.5rem; height: 3.5rem;">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            
+            <!-- 加载标题 -->
+            <h5 class="fw-bold mb-2" id="globalProgressTitle">正在加载数据...</h5>
+            
+            <!-- 加载描述 -->
+            <p class="text-muted mb-3" id="globalProgressDesc">请稍候，正在准备内容</p>
+            
+            <!-- 进度条 -->
+            <div class="progress w-50" style="height: 8px; max-width: 400px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
+                    role="progressbar" 
+                    style="width: 0%;" 
+                    id="globalProgressBar"></div>
+            </div>
+            
+            <!-- 进度百分比 -->
+            <small class="text-muted mt-2" id="globalProgressPercent">0%</small>
         </div>
     </div>
 
