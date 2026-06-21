@@ -1274,7 +1274,8 @@
                                 // ✅ 使用 formatLocalTime 转换复职时间
                                 const rehireLocal = formatLocalTime(u.rehire_at);
                                 const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '无';
-                                const title = `复职日期: ${rehireLocal}\n离职日期: ${resignLocal}`;
+                                //const title = `复职日期: ${rehireLocal}\n离职日期: ${resignLocal}`;
+                                const title = `${t('resign_rehire_date_marked', { rehireLocal, resignLocal })}`;
                                 cellValue = `<span class="badge bg-info" title="${title}">${t('rehired') || '已复职'}</span>`;
                             } 
                             // 已离职

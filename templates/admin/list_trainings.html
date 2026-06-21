@@ -431,13 +431,6 @@
         });
     }
 
-    function safeT(key, fallback = '') {
-        if (window.i18n && typeof window.i18n.t === 'function') {
-            return window.i18n.t(key) || fallback || key;
-        }
-        return fallback || key;
-    }
-
     // ---------- 季度辅助 ----------
     function getQuarterFromDate(isoDate) {
         if (!isoDate) return '-';

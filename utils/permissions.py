@@ -346,22 +346,12 @@ def can_manage_role(target_role):
         return target_role == 'user'
     return False
 
-
-# ==================== 用户列表过滤（带创建人姓名）====================
 # utils/permissions.py
 
 def filter_users_by_permission(users, allowed_countries=None, current_user_id=None):
     """
     根据权限过滤用户列表，并自动添加创建人姓名
     支持：管理员可以看到同级管理员（权限范围有交集）
-    
-    Args:
-        users: 用户列表
-        allowed_countries: 管理员允许的国家列表，None表示无限制
-        current_user_id: 当前用户ID，用于判断自己创建的无国家用户
-    
-    Returns:
-        过滤后的用户列表（已添加 created_by_name 字段）
     """
     if current_user_id is None:
         current_user_id = session.get('user_id')
@@ -369,14 +359,12 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
     if allowed_countries is None:
         allowed_countries = get_allowed_countries()
     
-    # 获取当前用户角色
     current_role = session.get('role')
     is_dev = is_developer()
     
     # 收集所有创建人ID
     creator_ids = list(set([u.get('created_by') for u in users if u.get('created_by')]))
     
-    # 批量查询创建人姓名
     creator_name_map = {}
     if creator_ids:
         try:
@@ -387,7 +375,6 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
         except Exception as e:
             logger.error(f"查询创建人姓名失败: {e}")
     
-    # 过滤用户
     filtered_users = []
     
     for user in users:
@@ -415,33 +402,24 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
         
         # ========== 超管逻辑 ==========
         if current_role == 'super_admin':
-            # 超管看不到开发者
             if user_role == 'developer':
                 continue
-            
-            # 无权限范围限制，可以看到所有非开发者
             if allowed_countries is None:
                 user['created_by_name'] = creator_name_map.get(created_by, '')
                 filtered_users.append(user)
                 continue
-            
-            # 有权限范围限制
             if allowed_countries:
-                # 目标用户是超管或管理员：检查 admin_countries 交集
                 if user_role in ['super_admin', 'admin']:
                     if target_admin_country_list:
                         if any(c in allowed_countries for c in target_admin_country_list):
                             user['created_by_name'] = creator_name_map.get(created_by, '')
                             filtered_users.append(user)
                             continue
-                    # 目标超管没有设置权限范围，视为全局，可见
                     elif user_role == 'super_admin' and not target_admin_country_list:
                         user['created_by_name'] = creator_name_map.get(created_by, '')
                         filtered_users.append(user)
                         continue
                     continue
-                
-                # 目标用户是普通用户：检查 country
                 if user_role == 'user':
                     if user_country and user_country in allowed_countries:
                         user['created_by_name'] = creator_name_map.get(created_by, '')
@@ -450,13 +428,12 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
                 continue
             continue
         
-        # ========== ✅ 管理员逻辑（核心修复） ==========
+        # ========== ✅ 管理员逻辑 ==========
         if current_role == 'admin':
             # 管理员看不到超管和开发者
             if user_role in ['super_admin', 'developer']:
                 continue
             
-            # 当前管理员的权限范围
             current_allowed = allowed_countries if allowed_countries else [session.get('user_country')]
             if not current_allowed:
                 continue
@@ -467,55 +444,49 @@ def filter_users_by_permission(users, allowed_countries=None, current_user_id=No
                 filtered_users.append(user)
                 continue
             
-            # ============================================================
-            # ✅ 2. 目标用户是管理员：检查 admin_countries 是否有交集
-            # ============================================================
+            # 2. 目标用户是管理员
             if user_role == 'admin':
-                # 如果目标管理员有权限范围，检查交集
                 if target_admin_country_list:
                     if any(c in current_allowed for c in target_admin_country_list):
                         user['created_by_name'] = creator_name_map.get(created_by, '')
                         filtered_users.append(user)
-                        logger.debug(f"管理员看到同国家管理员: {user_name}")
                         continue
-                # 如果目标管理员没有设置权限范围，检查 country
                 elif user_country and user_country in current_allowed:
                     user['created_by_name'] = creator_name_map.get(created_by, '')
                     filtered_users.append(user)
-                    logger.debug(f"管理员看到同国家管理员(无权限范围): {user_name}")
                     continue
-                # 不同权限范围的管理员不可见
                 continue
             
-            # 3. 目标用户是普通用户：检查 country
+            # 3. 目标用户是普通用户（user）
             if user_role == 'user':
-                # 已注册用户
-                if user_status == 'registered':
-                    if user_country and user_country in current_allowed:
-                        user['created_by_name'] = creator_name_map.get(created_by, '')
-                        filtered_users.append(user)
-                        continue
-                # 已导入用户：按创建者权限过滤
-                elif user_status == 'imported':
-                    if created_by == current_user_id:
-                        user['created_by_name'] = creator_name_map.get(created_by, '')
-                        filtered_users.append(user)
-                        continue
-                    creator = creator_name_map.get(created_by, '')
-                    # 检查创建者的国家是否在权限范围内
-                    if creator:
-                        # 获取创建者的国家
-                        try:
-                            db = get_supabase()
-                            creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
-                            if creator_res.data:
-                                creator_country = creator_res.data.get('country', '')
-                                if creator_country and creator_country in current_allowed:
-                                    user['created_by_name'] = creator_name_map.get(created_by, '')
-                                    filtered_users.append(user)
-                                    continue
-                        except:
-                            pass
+                # ✅ 优先：用户有自己的国家且在权限范围内
+                if user_country and user_country in current_allowed:
+                    user['created_by_name'] = creator_name_map.get(created_by, '')
+                    filtered_users.append(user)
+                    logger.debug(f"管理员看到普通用户(国家匹配): {user_name}")
+                    continue
+                
+                # ✅ 已导入用户：用户国家不在权限范围，检查创建者国家
+                if user_status == 'imported' and created_by:
+                    creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
+                    if creator_res.data:
+                        creator_country = creator_res.data.get('country', '')
+                        if creator_country and creator_country in current_allowed:
+                            user['created_by_name'] = creator_name_map.get(created_by, '')
+                            filtered_users.append(user)
+                            logger.debug(f"管理员看到已导入用户(创建者国家匹配): {user_name}")
+                            continue
+                
+                # 普通已注册用户但没有国家：检查创建者国家
+                if user_status == 'registered' and not user_country and created_by:
+                    creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
+                    if creator_res.data:
+                        creator_country = creator_res.data.get('country', '')
+                        if creator_country and creator_country in current_allowed:
+                            user['created_by_name'] = creator_name_map.get(created_by, '')
+                            filtered_users.append(user)
+                            continue
+                
                 continue
             
             continue
@@ -546,70 +517,62 @@ def _can_view_user_with_allowed(target_user, allowed_countries, current_user_id)
     
     target_role = target_user.get('role', 'user')
     target_country = target_user.get('country')
-    target_admin_countries = target_user.get('admin_countries')
+    user_status = target_user.get('user_status', '')
+    created_by = target_user.get('created_by')
     
-    # ========== 解析目标用户的权限范围 ==========
-    target_admin_country_list = []
-    if target_admin_countries:
-        try:
-            target_admin_country_list = json.loads(target_admin_countries) if isinstance(target_admin_countries, str) else target_admin_countries
-        except:
-            pass
-    
-    # ========== 当前用户是超管 ==========
+    # ========== 超管逻辑 ==========
     if current_role == 'super_admin':
-        # 超管看不到开发者
         if target_role == 'developer':
             return False
-        
-        # 如果当前超管没有权限范围限制，可以看到所有非开发者
         if allowed_countries is None:
             return True
-        
-        # 如果有权限范围限制，检查是否有交集
         if allowed_countries:
-            # 目标用户是超管或管理员：检查 admin_countries 交集
             if target_role in ['super_admin', 'admin']:
-                # 如果有共同的权限范围，可见
-                if target_admin_country_list:
-                    if any(c in allowed_countries for c in target_admin_country_list):
-                        return True
-                # 如果目标超管没有设置权限范围，视为全局，可见
-                elif target_role == 'super_admin' and not target_admin_country_list:
+                target_admin_countries = target_user.get('admin_countries')
+                if target_admin_countries:
+                    try:
+                        target_admin_country_list = json.loads(target_admin_countries) if isinstance(target_admin_countries, str) else target_admin_countries
+                        if any(c in allowed_countries for c in target_admin_country_list):
+                            return True
+                    except:
+                        pass
+                elif target_role == 'super_admin' and not target_admin_countries:
                     return True
                 return False
-            
-            # 目标用户是普通用户：检查 country 是否在权限范围内
             if target_role == 'user':
                 return target_country in allowed_countries if target_country else False
-        
         return False
     
-    # ========== 当前用户是管理员 ==========
+    # ========== 管理员逻辑 ==========
     if current_role == 'admin':
         # 管理员看不到超管和开发者
         if target_role in ['super_admin', 'developer']:
             return False
         
-        # 如果当前管理员没有权限范围限制，使用自己的国家
         current_allowed = allowed_countries if allowed_countries else [session.get('user_country')]
         if not current_allowed:
             return False
         
-        # 目标用户是管理员：检查 admin_countries 交集
-        if target_role == 'admin':
-            if target_admin_country_list:
-                # 检查是否有共同的权限范围
-                if any(c in current_allowed for c in target_admin_country_list):
-                    return True
-            # 如果目标管理员没有设置权限范围，检查 country
-            elif target_country and target_country in current_allowed:
+        # ============================================================
+        # ✅ 核心修复：先检查用户自己的国家，再检查创建者国家
+        # ============================================================
+        
+        # 1. ✅ 优先：如果用户自己有国家且在权限范围内，可见
+        if target_country and target_country in current_allowed:
+            return True
+        
+        # 2. 已导入用户：如果用户自己没有国家，再检查创建者国家
+        if user_status == 'imported':
+            creator_country = _get_user_country(created_by)
+            if creator_country and creator_country in current_allowed:
                 return True
             return False
         
-        # 目标用户是普通用户：检查 country 是否在权限范围内
-        if target_role == 'user':
-            return target_country in current_allowed if target_country else False
+        # 3. 普通用户（已注册但没有国家）：检查创建者国家
+        if not target_country:
+            creator_country = _get_user_country(created_by)
+            if creator_country and creator_country in current_allowed:
+                return True
         
         return False
     
