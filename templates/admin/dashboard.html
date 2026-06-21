@@ -2117,7 +2117,7 @@
             // 更新状态
             this.state.exam = { id, name, start: startTime, end: endTime };
             
-            // 联动：根据考试有效期更新日期范围
+            // 联动：根据考试有效期更新日期范围清除日期预填
             /*
             const hasTraining = !!this.state.training.id;
             const hasExam = !!id;
