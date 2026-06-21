@@ -951,5 +951,18 @@
     "create": "创建",
 "binded": "已绑定",
 "click_unlock_clear_all": "其他条件已锁定，请先点击[清空所有]解锁",
-"export_report_ready": "已精确选择培训和考试，继续导出报告吧"
+"export_report_ready": "已精确选择培训和考试，点击导出报告或者清空继续选择",
+"conditions_are_all_cleared": "已清空所有筛选条件",
+"clear_conditions": "清空条件",
+"click_unlock_and_clear": "点击解锁并清空",
+"placeholder_multi_training_search": "输入培训名称搜索...",
+"placeholder_multi_exam_search": "输入考试名称搜索...",
+"no_training_data_available": "暂无培训数据",
+"no_quarter_data_available": "暂无季度数据",
+"training": "培训",
+"exam": "考试",
+"binded_exam": "已绑定考试",
+"already_linked_current_exam": "已绑定到当前考试",
+"binded_training": "已绑定培训",
+"already_linked_current_training": "已绑定到当前培训"
 }

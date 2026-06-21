@@ -954,5 +954,18 @@
     "create": "Create",
 "binded": "Binded",
 "click_unlock_clear_all": "Other conditions are locked. Please click [Clear All] to unlock.",
-"export_report_ready": "Training and exams selected precisely. Go ahead and export the report."
+"export_report_ready": "Training and exams selected. Go ahead and export the report or clear and celect again",
+"conditions_are_all_cleared": "Conditions are all cleared",
+"clear_conditions": "Clear conditions",
+"click_unlock_and_clear": "Click unlock and clear",
+"placeholder_multi_training_search": "Input training name to search",
+"placeholder_multi_exam_search": "Input exam name to search",
+"no_training_data_available": "No training data available",
+"no_quarter_data_available": "No  quarter data available",
+"training": "training",
+"exam": "Exam",
+"binded_exam": "Binded exam",
+"already_linked_current_exam": "Already linked to the current exam",
+"binded_training": "Binded training",
+"already_linked_current_training": "Already linked to the current training"
 }
