@@ -2072,6 +2072,7 @@
             this.state.training = { id, name, start: startTime, end: endTime };
             
             // 联动：根据培训有效期更新日期范围
+            /*
             const hasTraining = !!id;
             const hasExam = !!this.state.exam.id;
             
@@ -2088,7 +2089,7 @@
                 this.state.endDate = DateUtils.formatDateOnly(endTime);
                 this.state.quarter = '';
                 this.state.dateRangeOption = '';
-            }
+            } */
             
             this._syncToDOM();
 
@@ -2117,6 +2118,7 @@
             this.state.exam = { id, name, start: startTime, end: endTime };
             
             // 联动：根据考试有效期更新日期范围
+            /*
             const hasTraining = !!this.state.training.id;
             const hasExam = !!id;
             
@@ -2133,12 +2135,20 @@
                 this.state.endDate = DateUtils.formatDateOnly(endTime);
                 this.state.quarter = '';
                 this.state.dateRangeOption = '';
+            } */
+
+            // ✅ 新逻辑：只清空日期（用户自定义）
+            if (id) {
+                // 选择了考试，清空日期让用户自定义
+                this.state.startDate = '';
+                this.state.endDate = '';
+                this.state.quarter = '';
+                this.state.dateRangeOption = '';
             }
-            
             this._syncToDOM();
             
             this._closeDropdown('examDropdown');
-			// ✅ 检查是否需要锁定
+			// 检查是否需要锁定
 			this._checkAndSetLock();
 
 			// 刷新培训列表，标记绑定关系
@@ -2258,11 +2268,12 @@
             };
             
             // 恢复默认日期为当前季度
+            /*
             const currentDates = DateUtils.getCurrentQuarterDates();
             if (currentDates) {
                 this.state.startDate = currentDates.start;
                 this.state.endDate = currentDates.end;
-            }
+            } */
             
             this._applyLockState(false);
             this._lockDateRangeRadios(false);  // ✅ 解锁日期范围按钮
@@ -2272,6 +2283,10 @@
             document.querySelectorAll('.input-clear-btn').forEach(btn => {
                 btn.style.display = 'none';
             });
+
+            // ✅ 同步清空日期输入框
+            document.getElementById('filterStartDate').value = '';
+            document.getElementById('filterEndDate').value = '';
             
             await this.refreshAll();
             
@@ -2303,11 +2318,16 @@
             await this.refreshAll();
             
             // 设置默认日期为当前季度
+            /*
             const currentDates = DateUtils.getCurrentQuarterDates();
             if (currentDates) {
                 this.state.startDate = currentDates.start;
                 this.state.endDate = currentDates.end;
-            }
+            } */
+
+            // ✅ 初始状态：日期为空
+            this.state.startDate = '';
+            this.state.endDate = '';
 
 			this.state.locked = false;  // ✅ 初始解锁
 			this._applyLockState(false);
@@ -2459,6 +2479,10 @@
                     
                     // 同步到 DOM（不触发 input 事件）
                     this._syncToDOMWithoutTrigger();
+
+                    // ✅ 确保日期输入框也被清空
+                    document.getElementById('filterStartDate').value = '';
+                    document.getElementById('filterEndDate').value = '';
                     
                     // 清除所有删除按钮
                     document.querySelectorAll('.input-clear-btn').forEach(btn => {
