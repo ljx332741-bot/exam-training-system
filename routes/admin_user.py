@@ -68,6 +68,7 @@ def api_admin_user_detail(user_id):
 @admin_required
 def api_admin_users():
     """获取用户列表（带完整权限控制 + 国家名称模糊匹配）"""
+
     db = get_supabase()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
@@ -170,7 +171,12 @@ def api_admin_users():
     
     logger.info(f"用户列表请求 - 最终国家过滤: {final_countries}")
 
-
+    logger.info(f"=== 调试国家过滤 ===")
+    logger.info(f"matched_country_codes: {matched_country_codes}")
+    logger.info(f"exam_countries: {exam_countries}")
+    logger.info(f"training_countries: {training_countries}")
+    logger.info(f"final_countries: {final_countries}")
+    
     # ========== 4. 基础查询 ==========
     query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
 
@@ -198,9 +204,29 @@ def api_admin_users():
                 continue
 
         # 国家筛选
+
+        # ✅ 修复：国家筛选（支持已导入用户通过创建者国家过滤）
         if final_countries:
             user_country = user.get('country') or ''
-            if user_country not in final_countries:
+            user_status = user.get('user_status', '')
+            created_by = user.get('created_by')
+            
+            # 情况1：用户有国家且在权限范围内
+            if user_country and user_country in final_countries:
+                pass
+            # 情况2：已导入用户，检查创建者国家
+            elif user_status == 'imported' and created_by:
+                # 获取创建者国家
+                creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
+                if creator_res.data:
+                    creator_country = creator_res.data.get('country')
+                    if creator_country and creator_country in final_countries:
+                        pass
+                    else:
+                        continue
+                else:
+                    continue
+            else:
                 continue
         
         # 库房模糊匹配

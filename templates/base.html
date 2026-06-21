@@ -236,6 +236,13 @@
             });
         }
 
+        function safeT(key, fallback = '') {
+            if (window.i18n && typeof window.i18n.t === 'function') {
+                return window.i18n.t(key) || fallback || key;
+            }
+            return fallback || key;
+        }
+
         function setAppLanguage(lang) {
             if (!window.i18n) return;
             if (typeof window.i18n.setLang === 'function') {

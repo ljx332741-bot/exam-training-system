@@ -11,7 +11,7 @@
 {% block extra_css %}
 {{ super() }}
 <style>
-    /* 导出模态框下拉面板样式 */
+    /* ==================== 导出模态框下拉面板样式 ==================== */
     .export-dropdown {
         position: absolute;
         top: 100%;
@@ -67,95 +67,185 @@
         align-items: center;
         gap: 4px;
     }
-    
-    /* 单选按钮组样式 */
+
+    /* ==================== 输入框和按钮样式 ==================== */
     .btn-group .btn-check:checked + .btn-outline-primary {
         background-color: #0d6efd;
         color: white;
     }
     
-    /* 季度输入框样式 */
     #filterQuarter:focus {
         border-color: #86b7fe;
         box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.25);
     }
-	/* 确保清空按钮正确显示在输入框内 */
-	.input-clear-btn {
-		position: absolute;
-		right: 10px;
-		top: 50%;
-		transform: translateY(-50%);
-		cursor: pointer;
-		color: #999;
-		z-index: 10;
-		background: white;
-		padding-left: 5px;
-		display: none;  /* 默认隐藏 */
-	}
-
-	/* 输入框容器需要相对定位 */
-	.position-relative {
-		position: relative;
-	}
-	/* 锁定状态样式 */
-	.lockable-field.locked {
-		background-color: #e9ecef !important;
-		cursor: not-allowed !important;
-		opacity: 0.7;
-	}
-
-	.lockable-field.locked::placeholder {
-		color: #adb5bd;
-	}
-
-	/* 锁定时禁用下拉面板触发 */
-	.lockable-field.locked + .input-clear-btn {
-		display: none !important;
-	}
-	/* 综合筛选列表样式 */
-	#multiTrainingList .list-group-item.active,
-	#multiExamList .list-group-item.active {
-		background-color: #e7f3ff;
-		border-color: #b6d4fe;
-	}
-
-	#multiTrainingList .list-group-item:hover,
-	#multiExamList .list-group-item:hover {
-		background-color: #f8f9fa;
-	}
-
-	#multiTrainingList .list-group-item.active:hover,
-	#multiExamList .list-group-item.active:hover {
-		background-color: #d4e8ff;
-	}
-
-	/* 已选标签样式 */
-	.badge .remove-selection {
-		opacity: 0.7;
-		transition: opacity 0.2s;
-	}
-	.badge .remove-selection:hover {
-		opacity: 1;
-	}
-
-	/* Tab 切换样式 */
-	.nav-tabs .nav-link {
-		color: #495057;
-	}
-	.nav-tabs .nav-link.active {
-		font-weight: 600;
-	}
-
-    /* 绑定标记悬浮提示样式 */
-    .binding-badge {
-        font-size: 0.6rem;
-        cursor: help;
-        transition: all 0.2s ease;
+    
+    .input-clear-btn {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #999;
+        z-index: 10;
+        background: white;
+        padding-left: 5px;
+        display: none;
+    }
+    
+    .position-relative {
+        position: relative;
+    }
+    
+    /* 锁定状态样式 */
+    .lockable-field.locked {
+        background-color: #e9ecef !important;
+        cursor: not-allowed !important;
+        opacity: 0.7;
+    }
+    
+    .lockable-field.locked::placeholder {
+        color: #adb5bd;
+    }
+    
+    .lockable-field.locked + .input-clear-btn {
+        display: none !important;
+    }
+    
+    /* 日期范围按钮锁定样式 */
+    input[name="dateRangeOption"]:disabled + label {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+    }
+    
+    input[name="dateRangeOption"]:disabled + label.btn-outline-primary {
+        background-color: #e9ecef !important;
+        border-color: #ced4da !important;
+        color: #6c757d !important;
     }
 
+    /* ==================== 综合筛选 - 培训列表（蓝色系） ==================== */
+    /* 培训 - 列表渲染区选中状态 */
+    #multiTrainingList .list-group-item.active {
+        background-color: #e7f3ff !important;  /* 淡蓝色 */
+        border-color: #b6d4fe !important;
+        color: #212529 !important;
+    }
+    
+    #multiTrainingList .list-group-item.active:hover {
+        background-color: #d4e8ff !important;  /* 悬停加深 */
+        border-color: #a0c4f0 !important;
+    }
+    
+    /* 培训 - 列表渲染区普通悬停 */
+    #multiTrainingList .list-group-item-action:hover {
+        background-color: #f0f7ff !important;
+    }
+    
+    /* 培训 - 选中状态文字颜色 */
+    #multiTrainingList .list-group-item.active .fw-bold,
+    #multiTrainingList .list-group-item.active .text-muted,
+    #multiTrainingList .list-group-item.active .small {
+        color: #212529 !important;
+    }
+    
+    /* 培训 - 选中状态复选框 */
+    #multiTrainingList .list-group-item.active .form-check-input {
+        border-color: #0d6efd !important;
+        background-color: #ffffff !important;
+    }
+    
+    #multiTrainingList .list-group-item.active .form-check-input:checked {
+        background-color: #0d6efd !important;
+        border-color: #0d6efd !important;
+    }
+    
+    /* 培训 - 已选标签（下方）与列表颜色一致 */
+    .training-selected-tag {
+        background-color: #e7f3ff !important;
+        border: 1px solid #b6d4fe !important;
+        color: #212529 !important;
+    }
+
+    /* ==================== 综合筛选 - 考试列表（绿色系） ==================== */
+    /* 考试 - 列表渲染区选中状态 */
+    #multiExamList .list-group-item.active {
+        background-color: #e6f9e6 !important;  /* 淡绿色 */
+        border-color: #b4e6b4 !important;
+        color: #212529 !important;
+    }
+    
+    #multiExamList .list-group-item.active:hover {
+        background-color: #d4f0d4 !important;  /* 悬停加深 */
+        border-color: #a0d8a0 !important;
+    }
+    
+    /* 考试 - 列表渲染区普通悬停 */
+    #multiExamList .list-group-item-action:hover {
+        background-color: #f0faf0 !important;
+    }
+    
+    /* 考试 - 选中状态文字颜色 */
+    #multiExamList .list-group-item.active .fw-bold,
+    #multiExamList .list-group-item.active .text-muted,
+    #multiExamList .list-group-item.active .small {
+        color: #212529 !important;
+    }
+    
+    /* 考试 - 选中状态复选框 */
+    #multiExamList .list-group-item.active .form-check-input {
+        border-color: #198754 !important;
+        background-color: #ffffff !important;
+    }
+    
+    #multiExamList .list-group-item.active .form-check-input:checked {
+        background-color: #198754 !important;
+        border-color: #198754 !important;
+    }
+    
+    /* 考试 - 已选标签（下方）与列表颜色一致 */
+    .exam-selected-tag {
+        background-color: #e6f9e6 !important;
+        border: 1px solid #b4e6b4 !important;
+        color: #212529 !important;
+    }
+
+    /* ==================== 通用 - ID 标记样式 ==================== */
+    .id-badge {
+        font-size: 0.5rem !important;
+        padding: 1px 5px !important;
+        border-radius: 3px !important;
+        vertical-align: middle;
+        background-color: #6c757d !important;
+        color: #ffffff !important;
+        display: inline-block;
+        line-height: 1.2;
+    }
+    
+    /* 选中状态下 ID 标记 */
+    #multiTrainingList .list-group-item.active .id-badge,
+    #multiExamList .list-group-item.active .id-badge {
+        background-color: rgba(108, 117, 125, 0.8) !important;
+        color: #ffffff !important;
+    }
+
+    /* ==================== 通用 - 绑定标记样式 ==================== */
+    .binding-badge {
+        font-size: 0.6rem !important;
+        cursor: help !important;
+        transition: all 0.2s ease;
+    }
+    
     .binding-badge:hover {
         transform: scale(1.05);
         box-shadow: 0 2px 8px rgba(25, 135, 84, 0.3);
+    }
+    
+    /* 选中状态下绑定标记 - 保持绿色 */
+    #multiTrainingList .list-group-item.active .binding-badge,
+    #multiExamList .list-group-item.active .binding-badge {
+        background-color: #198754 !important;
+        color: #ffffff !important;
     }
 
     /* 下拉框中的绑定标记 */
@@ -163,6 +253,26 @@
         color: #198754;
         margin-left: 4px;
         font-size: 0.8rem;
+    }
+
+    /* ==================== 通用 - 已选标签 ==================== */
+    .badge .remove-selection {
+        opacity: 0.7;
+        transition: opacity 0.2s;
+        cursor: pointer;
+    }
+    
+    .badge .remove-selection:hover {
+        opacity: 1;
+    }
+    
+    /* ==================== Tab 切换样式 ==================== */
+    .nav-tabs .nav-link {
+        color: #495057;
+    }
+    
+    .nav-tabs .nav-link.active {
+        font-weight: 600;
     }
 </style>
 {% endblock %}
@@ -396,7 +506,7 @@
                                                     <span class="badge bg-success ms-1" 
                                                         style="font-size: 0.6rem; cursor: help;"
                                                         title="已绑定培训: {% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}">
-                                                        <i class="bi bi-link"></i> 已绑定
+                                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
                                                     </span>
                                                     {% endif %}
 												</a>
@@ -407,7 +517,7 @@
                                                     <span class="badge bg-success ms-1" 
                                                         style="font-size: 0.6rem; cursor: help;"
                                                         title="已绑定培训: {% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}">
-                                                        <i class="bi bi-link"></i> 已绑定
+                                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
                                                     </span>
                                                     {% endif %}
                                                 </span>
@@ -542,8 +652,9 @@
 
                 <!-- Tab 内容 -->
                 <div class="tab-content">
-                    <!-- ========== 精确筛选 Tab（现有内容） ========== -->
+                    <!-- ========== 精确筛选 Tab ========== -->
                     <div class="tab-pane fade show active" id="exact" role="tabpanel">
+                        <!-- ... 精确筛选表单内容保持不变 ... -->
                         <form id="exportFilterForm">
                             <!-- 第1行：培训名称 + 考试名称 -->
                             <div class="row g-3 mb-3">
@@ -728,7 +839,7 @@
                         </form>
                     </div>
 
-                    <!-- ========== 综合筛选 Tab（新内容） ========== -->
+                    <!-- ========== 综合筛选 Tab ========== -->
                     <div class="tab-pane fade" id="multi" role="tabpanel">
                         <!-- 筛选条件区域 -->
                         <div class="card mb-3">
@@ -843,14 +954,6 @@
                                             <span class="fw-bold"><span data-i18n="selected_exam">已选考试</span>:</span>
                                             <span id="selectedExamTags" class="text-muted"><span data-i18n="none">无</span></span>
                                         </div>
-                                        <div class="d-flex gap-2">
-                                            <button class="btn btn-success" id="multiExportBtn">
-                                                <i class="bi bi-download"></i> <span data-i18n="export_multi_report">导出综合报告</span>
-                                            </button>
-                                            <button class="btn btn-outline-danger" id="multiClearSelectionBtn">
-                                                <i class="bi bi-x-circle"></i> <span data-i18n="clear_selection">清空选择</span>
-                                            </button>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -863,9 +966,32 @@
                     <span data-i18n="exportfiltermodal_tip">提示：精确筛选支持单选，综合筛选支持多选培训/考试，可同时导出多份报告。</span>
                 </div>
             </div>
+            
+            <!-- ============================================================ -->
+            <!-- ✅ 底部按钮：根据 Tab 切换显示不同按钮 -->
+            <!-- ============================================================ -->
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
-                <button class="btn btn-primary" id="confirmExportBtn"><span data-i18n="confirm_export">确定导出</span></button>
+                <!-- 取消按钮（两个 Tab 共用） -->
+                <button class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="cancel">取消</span>
+                </button>
+                
+                <!-- ✅ 精确筛选按钮组（默认显示） -->
+                <div id="exactActions" class="d-inline-block">
+                    <button class="btn btn-primary" id="confirmExportBtn">
+                        <i class="bi bi-download"></i> <span data-i18n="confirm_export">确定导出</span>
+                    </button>
+                </div>
+                
+                <!-- ✅ 综合筛选按钮组（默认隐藏） -->
+                <div id="multiActions" class="d-inline-block" style="display: none !important;">
+                    <button class="btn btn-success me-2" id="multiExportBtn">
+                        <i class="bi bi-download"></i> <span data-i18n="export_multi_report">导出综合报告</span>
+                    </button>
+                    <button class="btn btn-outline-danger" id="multiClearSelectionBtn">
+                        <i class="bi bi-x-circle"></i> <span data-i18n="clear_selection">清空选择</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1033,7 +1159,6 @@
         if (!forceRefresh) {
             const cached = getCachedDashboardData();
             if (cached) {
-                console.log('📊 使用缓存的仪表盘数据');
                 renderDashboardStats(cached);
                 // 后台刷新数据
                 setTimeout(() => {
@@ -1043,7 +1168,6 @@
             }
         }
         
-        console.log('📊 加载仪表盘数据...');
         try {
             const res = await fetch('/api/admin/dashboard/stats');
             const result = await res.json();
@@ -1357,52 +1481,104 @@
             else this.state.dateRangeOption = '';
         },
 
-		// ✅ ===================应用锁定状态到DOM（使用 CSS 类统一管理）===================
-		_applyLockState(locked) {
-			// ✅ 使用 CSS 类统一管理，而不是逐个字段硬编码
-			const lockableFields = document.querySelectorAll('.lockable-field');
-			lockableFields.forEach(element => {
-				element.disabled = locked;
-				element.classList.toggle('locked', locked);
-			});
-			
-			// ✅ 锁定/解锁清空所有按钮（保持可点击用于解锁，但改变样式提示）
-			const clearAllBtn = document.getElementById('clearAllBtn');
-			if (clearAllBtn) {
-				// 清空所有按钮保持可点击，但改变外观提示用户
-				if (locked) {
-					clearAllBtn.classList.add('btn-warning');
-					clearAllBtn.classList.remove('btn-outline-secondary');
-					clearAllBtn.innerHTML = '<i class="bi bi-lock"></i> 点击解锁并清空';
-				} else {
-					clearAllBtn.classList.remove('btn-warning');
-					clearAllBtn.classList.add('btn-outline-secondary');
-					clearAllBtn.innerHTML = '<i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空所有</span>';
-				}
-			}
-			
-			// ✅ 锁定/解锁下拉面板的触发（通过输入框的 disabled 状态自动阻止）
-			// 不需要额外处理，因为输入框 disabled 后无法触发 focus/click
-		},
+		// ===================应用锁定状态到DOM（使用 CSS 类统一管理）===================
+        _applyLockState(locked) {
+            // 使用 CSS 类统一管理
+            const lockableFields = document.querySelectorAll('.lockable-field');
+            lockableFields.forEach(element => {
+                element.disabled = locked;
+                element.classList.toggle('locked', locked);
+            });
+            
+            // 锁定日期范围快速设置按钮组
+            const dateRangeRadios = document.querySelectorAll('input[name="dateRangeOption"]');
+            dateRangeRadios.forEach(radio => {
+                radio.disabled = locked;
+                radio.closest('.btn-check')?.classList.toggle('locked', locked);
+                // 锁定对应的 label 样式
+                const label = document.querySelector(`label[for="${radio.id}"]`);
+                if (label) {
+                    if (locked) {
+                        label.style.opacity = '0.5';
+                        label.style.cursor = 'not-allowed';
+                        label.classList.add('btn-outline-secondary');
+                        label.classList.remove('btn-outline-primary');
+                    } else {
+                        label.style.opacity = '1';
+                        label.style.cursor = 'pointer';
+                        label.classList.remove('btn-outline-secondary');
+                        label.classList.add('btn-outline-primary');
+                    }
+                }
+            });
+            
+            // 锁定/解锁清空所有按钮
+            const clearAllBtn = document.getElementById('clearAllBtn');
+            if (clearAllBtn) {
+                if (locked) {
+                    clearAllBtn.classList.add('btn-warning');
+                    clearAllBtn.classList.remove('btn-outline-secondary');
+                    clearAllBtn.innerHTML = `<i class="bi bi-lock"></i> ${t('click_unlock_and_clear')}`;
+                } else {
+                    clearAllBtn.classList.remove('btn-warning');
+                    clearAllBtn.classList.add('btn-outline-secondary');
+                    clearAllBtn.innerHTML = `<i class="bi bi-x-circle"></i> <span data-i18n="clear_all">${t('clear_conditions')}</span>`;
+                }
+            }
+        },
 
-		// ✅ 检查是否应该锁定
-		_checkAndSetLock() {
-			const hasTraining = !!this.state.training.id;
-			const hasExam = !!this.state.exam.id;
-			
-			if (hasTraining && hasExam) {
-				this.state.locked = true;
-				this._applyLockState(true);
-				if (typeof showToast === 'function') {
-					showToast('培训和考试已同时选中，已锁定其他筛选条件', 'info');
-				}
-			} else {
-				this.state.locked = false;
-				this._applyLockState(false);
-			}
-		},
+        // 检查是否应该锁定
+        _checkAndSetLock() {
+            const hasTraining = !!this.state.training.id;
+            const hasExam = !!this.state.exam.id;
+            
+            if (hasTraining && hasExam) {
+                this.state.locked = true;
+                this._applyLockState(true);
+                
+                // 锁定日期范围快速设置按钮
+                this._lockDateRangeRadios(true);
+                
+                if (typeof showToast === 'function') {
+                    showToast(t('export_report_ready'), 'info');
+                }
+            } else {
+                this.state.locked = false;
+                this._applyLockState(false);
+                
+                // 解锁日期范围快速设置按钮
+                this._lockDateRangeRadios(false);
+            }
+        },
 
-		// ✅ 解锁方法（供清除操作调用）
+        // 单独控制日期范围单选按钮的锁定状态
+        _lockDateRangeRadios(locked) {
+            const dateRangeRadios = document.querySelectorAll('input[name="dateRangeOption"]');
+            dateRangeRadios.forEach(radio => {
+                radio.disabled = locked;
+                const label = document.querySelector(`label[for="${radio.id}"]`);
+                if (label) {
+                    if (locked) {
+                        label.style.opacity = '0.5';
+                        label.style.cursor = 'not-allowed';
+                        label.classList.remove('btn-outline-primary');
+                        label.classList.add('btn-outline-secondary');
+                    } else {
+                        label.style.opacity = '1';
+                        label.style.cursor = 'pointer';
+                        label.classList.remove('btn-outline-secondary');
+                        label.classList.add('btn-outline-primary');
+                        // 恢复当前选中状态的颜色
+                        if (radio.checked) {
+                            label.style.backgroundColor = '#0d6efd';
+                            label.style.color = 'white';
+                        }
+                    }
+                }
+            });
+        },
+
+		// 解锁方法（供清除操作调用）
 		_unlockFields() {
 			this.state.locked = false;
 			this._applyLockState(false);
@@ -1413,7 +1589,7 @@
             const params = new URLSearchParams();
             if (searchTerm) params.append('q', searchTerm);
             params.append('per_page', '20');
-			// ✅ 确保使用正确的国家代码
+			// 确保使用正确的国家代码
 			if (this.state.country.code) {
 				params.append('country', this.state.country.code);
 				console.log('培训搜索 - 国家过滤:', this.state.country.code);
@@ -1523,15 +1699,12 @@
 						}
 						const bindData = await bindRes.json();
 						// ✅ 检查 bindData 的结构
-						console.log('绑定数据:', bindData);
-
 						const boundTrainingIds = new Set(bindData.training_ids || bindData.bindings?.map(b => b.training_id) || []);
 						
 						trainings = trainings.map(t => ({
 							...t,
 							is_bound: boundTrainingIds.has(t.id)
 						}));
-						console.log('绑定培训ID列表:', [...boundTrainingIds]);
 					} catch (err) {
 						console.error('获取绑定关系失败:', err);
 						trainings = trainings.map(t => ({ ...t, is_bound: false }));
@@ -1541,9 +1714,7 @@
 				}
 				
                 this.cache.trainings = trainings;
-        		console.log('培训列表已刷新，is_bound 标记:', trainings.map(t => ({ id: t.id, is_bound: t.is_bound })));
             } catch (err) {
-                console.error('刷新培训列表失败:', err);
                 this.cache.trainings = [];
             }
             return this.cache.trainings;
@@ -1570,9 +1741,7 @@
                             ...e,
                             is_bound: boundExamIds.has(e.id)
                         }));
-                        console.log('绑定考试ID列表:', [...boundExamIds]);
                     } catch (err) {
-                        console.error('获取绑定关系失败:', err);
                         exams = exams.map(e => ({ ...e, is_bound: false }));
                     }
                 } else {
@@ -1581,7 +1750,6 @@
                 
                 this.cache.exams = exams;
             } catch (err) {
-                console.error('刷新考试列表失败:', err);
                 this.cache.exams = [];
             }
             return this.cache.exams;
@@ -1642,10 +1810,8 @@
 				return true;
 			});
 			
-			console.log(`培训过滤后: ${trainings.length} 条 (原始: ${this.cache.trainings.length})`);
-
             if (!trainings.length) {
-                container.innerHTML = '<div class="p-3 text-center text-muted">暂无培训数据</div>';
+                container.innerHTML = `<div class="p-3 text-center text-muted">${safeT('no_training_data_available')}</div>`;
                 if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
                 return;
             }
@@ -1656,7 +1822,7 @@
                 const quarter = DateUtils.getQuarterFromDate(t.created_at);
 				// ✅ 绑定徽章（如果先选了考试）
 				const bindingBadge = t.is_bound 
-					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> ${t('binded')}</span>` 
+					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> ${safeT('binded')}</span>` 
 					: '';
                 html += `
                     <div class="export-dropdown-item" 
@@ -1669,8 +1835,8 @@
 							${bindingBadge}
 						</div>
                         <div class="item-meta">
-                            <span><i class="bi bi-calendar3"></i> ${t('create')}: ${createdDate}</span>
-                            <span><i class="bi bi-calendar-week"></i> ${t('quarter')}: ${quarter}</span>
+                            <span><i class="bi bi-calendar3"></i> ${safeT('create')}: ${createdDate}</span>
+                            <span><i class="bi bi-calendar-week"></i> ${safeT('quarter')}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '-')}</span>
                         </div>
                     </div>
@@ -1710,11 +1876,8 @@
 				return true;
 			});
 			
-			console.log(`考试过滤后: ${exams.length} 条 (原始: ${this.cache.exams.length})`);
-			
-
             if (!exams.length) {
-                container.innerHTML = '<div class="p-3 text-center text-muted">暂无考试数据</div>';
+                container.innerHTML = `<div class="p-3 text-center text-muted">${t('no_exam_datas')}</div>`;
                 if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
                 return;
             }
@@ -1727,7 +1890,7 @@
 
 				// ✅ 已绑定的考试添加特殊标记
 				const bindingBadge = exam.is_bound 
-					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;">${t('binded')}</span>` 
+					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;">${safeT('binded')}</span>` 
 					: '';
 				
                 html += `
@@ -1741,8 +1904,8 @@
 							${bindingBadge}
 						</div>
                         <div class="item-meta">
-                            <span><i class="bi bi-calendar3"></i> ${t('create')}: ${createdDate}</span>
-                            <span><i class="bi bi-calendar-week"></i> ${t('quarter')}: ${quarter}</span>
+                            <span><i class="bi bi-calendar3"></i> ${safeT('create')}: ${createdDate}</span>
+                            <span><i class="bi bi-calendar-week"></i> ${safeT('quarter')}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
 							<!-- <span><i class="bi bi-link"></i> ${bindingBadge}</span> -->
                         </div>
@@ -1777,7 +1940,7 @@
 			}
 			
 			if (!quarters.length) {
-				container.innerHTML = '<div class="p-3 text-center text-muted">暂无季度数据</div>';
+				container.innerHTML = `<div class="p-3 text-center text-muted">${t('no_quarter_data_available')}</div>`;
 				if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
 				return;
 			}
@@ -1901,7 +2064,7 @@
 			// ✅ 如果已锁定，不允许修改
 			if (this.state.locked) {
 				if (typeof showToast === 'function') {
-					showToast(t('click_unlock_clear_all'), 'warning');
+					showToast(saft('click_unlock_clear_all'), 'warning');
 				}
 				return;
 			}
@@ -2083,15 +2246,15 @@
                 quarter: '',
                 dateRangeOption: '',
                 isInitialized: true,
-				locked: false,  // ✅ 解锁
-				isInitialized: true
+                locked: false,
+                isInitialized: true
             };
             this.cache = {
                 trainings: [],
                 exams: [],
                 countries: [],
                 warehouses: [],
-                allCountries: this.cache.allCountries  // 保留国家列表
+                allCountries: this.cache.allCountries
             };
             
             // 恢复默认日期为当前季度
@@ -2101,16 +2264,15 @@
                 this.state.endDate = currentDates.end;
             }
             
-    		this._applyLockState(false); // ✅ 解锁
-
-			// ✅ 使用不触发事件的同步方法
-			this._syncToDOMWithoutTrigger();
-			
-			// 清除所有删除按钮
-			document.querySelectorAll('.input-clear-btn').forEach(btn => {
-				btn.style.display = 'none';
-			});
-			
+            this._applyLockState(false);
+            this._lockDateRangeRadios(false);  // ✅ 解锁日期范围按钮
+            
+            this._syncToDOMWithoutTrigger();
+            
+            document.querySelectorAll('.input-clear-btn').forEach(btn => {
+                btn.style.display = 'none';
+            });
+            
             await this.refreshAll();
             
             if (typeof showToast === 'function') {
@@ -2186,12 +2348,12 @@
                         this._renderTrainingDropdown(e.target.value, true);
                     }, 300);
                 });
-                // ✅ focus 替代 click
+                // focus 替代 click
                 trainingInput.addEventListener('focus', async () => {
                     await this.refreshTrainingListWithFilters('');
     				this._renderTrainingDropdown('', !this.state.training.id);
                 });
-                // ✅ 失焦延迟关闭
+                // 失焦延迟关闭
                 trainingInput.addEventListener('blur', () => {
                     setTimeout(() => {
                         const dropdown = document.getElementById('trainingDropdown');
@@ -2277,44 +2439,45 @@
             }
             
             // 清空所有按钮
-			const clearAllBtn = document.getElementById('clearAllBtn');
-			if (clearAllBtn) {
-				clearAllBtn.addEventListener('click', () => {
-					// 清空所有状态
-					this.state.training = { id: '', name: '', start: '', end: '' };
-					this.state.exam = { id: '', name: '', start: '', end: '' };
-					this.state.country = { code: '', display: '' };
-					this.state.warehouse = '';
-					this.state.startDate = '';
-					this.state.endDate = '';
-					this.state.quarter = '';
-					this.state.dateRangeOption = '';
+            const clearAllBtn = document.getElementById('clearAllBtn');
+            if (clearAllBtn) {
+                clearAllBtn.addEventListener('click', () => {
+                    // 清空所有状态
+                    this.state.training = { id: '', name: '', start: '', end: '' };
+                    this.state.exam = { id: '', name: '', start: '', end: '' };
+                    this.state.country = { code: '', display: '' };
+                    this.state.warehouse = '';
+                    this.state.startDate = '';
+                    this.state.endDate = '';
+                    this.state.quarter = '';
+                    this.state.dateRangeOption = '';
 
-					// ✅ 解锁
-					this.state.locked = false;
-					this._applyLockState(false);
-					
-					// 同步到 DOM（不触发 input 事件）
-					this._syncToDOMWithoutTrigger();
-					
-					// 清除所有删除按钮
-					document.querySelectorAll('.input-clear-btn').forEach(btn => {
-						btn.style.display = 'none';
-					});
-					
-					// 关闭所有下拉面板
-					document.querySelectorAll('.export-dropdown').forEach(dd => {
-						dd.style.display = 'none';
-					});
-					
-					// 刷新数据
-					this.refreshAll();
-					
-					if (typeof showToast === 'function') {
-						showToast('已清空所有筛选条件', 'info');
-					}
-				});
-			}
+                    // 解锁
+                    this.state.locked = false;
+                    this._applyLockState(false);
+                    this._lockDateRangeRadios(false);
+                    
+                    // 同步到 DOM（不触发 input 事件）
+                    this._syncToDOMWithoutTrigger();
+                    
+                    // 清除所有删除按钮
+                    document.querySelectorAll('.input-clear-btn').forEach(btn => {
+                        btn.style.display = 'none';
+                    });
+                    
+                    // 关闭所有下拉面板
+                    document.querySelectorAll('.export-dropdown').forEach(dd => {
+                        dd.style.display = 'none';
+                    });
+                    
+                    // 刷新数据
+                    this.refreshAll();
+                    
+                    if (typeof showToast === 'function') {
+                        showToast(t('conditions_are_all_cleared'), 'info');
+                    }
+                });
+            }
             
             // 重置按钮
             const resetBtn = document.getElementById('resetFiltersBtn');
@@ -2341,7 +2504,7 @@
             
             btn.disabled = true;
             const originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 导出中...';
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span> t('t_exporting')`;
             
             try {
                 // 验证国家
@@ -2372,7 +2535,7 @@
                     body: JSON.stringify(params)
                 });
                 
-                if (!response.ok) throw new Error('导出失败');
+                if (!response.ok) throw new Error(t('t_export_failed'));
                 
                 const blob = await response.blob();
                 const url = URL.createObjectURL(blob);
@@ -2389,17 +2552,17 @@
                 URL.revokeObjectURL(url);
                 
                 if (typeof showToast === 'function') {
-                    showToast('导出成功', 'success');
+                    showToast(t('export_success'), 'success');
                 }
                 
                 const modal = bootstrap.Modal.getInstance(document.getElementById('exportFilterModal'));
                 if (modal) modal.hide();
             } catch (err) {
-                console.error('导出失败:', err);
+                console.error(t('t_export_failed'), err);
                 if (typeof showToast === 'function') {
-                    showToast('导出失败: ' + err.message, 'error');
+                    showToast(t('t_export_failed') + err.message, 'error');
                 } else {
-                    alert('导出失败: ' + err.message);
+                    alert(t('t_export_failed') + err.message);
                 }
             } finally {
                 btn.disabled = false;
@@ -2428,7 +2591,7 @@
                 input.value = '';
                 this.state.country = { code: '', display: '' };
                 if (typeof showToast === 'function') {
-                    showToast('请选择有效的国家', 'warning');
+                    showToast(t('t_select_valid_country'), 'warning');
                 }
                 return false;
             }
@@ -2445,7 +2608,82 @@
         examData: [],
         searchTimeout: null,
         isInitialized: false,
+
+        // ✅ 绑定关系缓存
+        _bindingCache: {
+            trainingBindings: {},  // { trainingId: [examIds] }
+            examBindings: {},      // { examId: [trainingIds] }
+            cacheTime: {}          // 缓存时间戳
+        },
+        _CACHE_TTL: 60000, // 缓存有效期 60 秒
+
+        // ========== 获取培训的绑定考试（带缓存） ==========
+        async _getTrainingBindings(trainingId) {
+            const cacheKey = `training_${trainingId}`;
+            const now = Date.now();
+            
+            // 检查缓存是否有效
+            if (this._bindingCache.cacheTime[cacheKey] && 
+                (now - this._bindingCache.cacheTime[cacheKey]) < this._CACHE_TTL) {
+                return this._bindingCache.trainingBindings[trainingId] || [];
+            }
+            
+            try {
+                const bindRes = await fetch(`/api/admin/training/${trainingId}/bindings`);
+                if (bindRes.ok) {
+                    const bindData = await bindRes.json();
+                    const examIds = bindData.bindings?.map(b => b.exam_id) || [];
+                    
+                    // 存入缓存
+                    this._bindingCache.trainingBindings[trainingId] = examIds;
+                    this._bindingCache.cacheTime[cacheKey] = now;
+                    
+                    return examIds;
+                }
+            } catch (err) {
+                console.error(`获取培训 ${trainingId} 绑定失败:`, err);
+            }
+            return [];
+        },
         
+        // ========== 获取考试的绑定培训（带缓存） ==========
+        async _getExamBindings(examId) {
+            const cacheKey = `exam_${examId}`;
+            const now = Date.now();
+            
+            // 检查缓存是否有效
+            if (this._bindingCache.cacheTime[cacheKey] && 
+                (now - this._bindingCache.cacheTime[cacheKey]) < this._CACHE_TTL) {
+                return this._bindingCache.examBindings[examId] || [];
+            }
+            
+            try {
+                const bindRes = await fetch(`/api/admin/training/bindings/by_exam?exam_id=${examId}`);
+                if (bindRes.ok) {
+                    const bindData = await bindRes.json();
+                    const trainingIds = bindData.training_ids || 
+                                    bindData.bindings?.map(b => b.training_id) || 
+                                    [];
+                    
+                    // 存入缓存
+                    this._bindingCache.examBindings[examId] = trainingIds;
+                    this._bindingCache.cacheTime[cacheKey] = now;
+                    
+                    return trainingIds;
+                }
+            } catch (err) {
+                console.error(`获取考试 ${examId} 绑定失败:`, err);
+            }
+            return [];
+        },
+        
+        // ========== 清除缓存 ==========
+        _clearBindingCache() {
+            this._bindingCache.trainingBindings = {};
+            this._bindingCache.examBindings = {};
+            this._bindingCache.cacheTime = {};
+        },
+
         // ========== 初始化 ==========
         init() {
             if (this.isInitialized) return;
@@ -2493,20 +2731,6 @@
                 this.searchTimeout = setTimeout(() => this.search(), 500);
             });
             
-            // 培训复选框变化（事件委托）
-            document.getElementById('multiTrainingList')?.addEventListener('change', (e) => {
-                if (e.target.classList.contains('training-checkbox')) {
-                    this.onTrainingCheckboxChange(e.target);
-                }
-            });
-            
-            // 考试复选框变化（事件委托）
-            document.getElementById('multiExamList')?.addEventListener('change', (e) => {
-                if (e.target.classList.contains('exam-checkbox')) {
-                    this.onExamCheckboxChange(e.target);
-                }
-            });
-            
             // 培训全选按钮
             document.querySelector('.select-all-trainings-btn')?.addEventListener('click', () => {
                 this.selectAllTrainings();
@@ -2528,25 +2752,30 @@
             });
             
             // 点击行切换复选框（事件委托）
+            /*
             document.getElementById('multiTrainingList')?.addEventListener('click', (e) => {
                 const item = e.target.closest('.list-group-item');
                 if (!item || e.target.type === 'checkbox') return;
                 const checkbox = item.querySelector('.training-checkbox');
                 if (checkbox) {
                     checkbox.checked = !checkbox.checked;
-                    checkbox.dispatchEvent(new Event('change'));
+                    // ✅ 修复：使用 bubbles: true 确保事件冒泡到容器
+                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
-            
+                        
+            // 考试列表同理
             document.getElementById('multiExamList')?.addEventListener('click', (e) => {
                 const item = e.target.closest('.list-group-item');
                 if (!item || e.target.type === 'checkbox') return;
                 const checkbox = item.querySelector('.exam-checkbox');
                 if (checkbox) {
                     checkbox.checked = !checkbox.checked;
-                    checkbox.dispatchEvent(new Event('change'));
+                    // ✅ 修复：使用 bubbles: true
+                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
+            */
         },
         
         // ========== 搜索 ==========
@@ -2556,39 +2785,68 @@
             const country = document.getElementById('multiCountry')?.value.trim() || '';
             const warehouse = document.getElementById('multiWarehouse')?.value.trim() || '';
             
+            // ✅ 先获取当前已选中的 ID（确保在搜索时使用最新的选中状态）
+            const selectedTrainingIds = Array.from(this.selectedTrainings.keys());
+            const selectedExamIds = Array.from(this.selectedExams.keys());
+            
             // 显示加载状态
             const trainingList = document.getElementById('multiTrainingList');
             const examList = document.getElementById('multiExamList');
-            if (trainingList) trainingList.innerHTML = '<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> 搜索中...</div>';
-            if (examList) examList.innerHTML = '<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> 搜索中...</div>';
+            if (trainingList) trainingList.innerHTML = `<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> ${t('searching')}</div>`;
+            if (examList) examList.innerHTML = `<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> ${t('searching')}</div>`;
             
             try {
-                // 并行查询培训和考试
+                // ✅ 将选中的 ID 传递给 fetch 方法
                 const [trainings, exams] = await Promise.all([
-                    this.fetchTrainings(trainingName, country, warehouse),
-                    this.fetchExams(examName, country, warehouse)
+                    this.fetchTrainings(trainingName, country, warehouse, selectedExamIds),
+                    this.fetchExams(examName, country, warehouse, selectedTrainingIds)
                 ]);
                 
                 this.trainingData = trainings;
                 this.examData = exams;
                 
-                this.renderTrainingList(trainings);
-                this.renderExamList(exams);
+                // ✅ 预热缓存：预先加载所有绑定关系
+                await this._preloadBindings(trainings, exams);
+
+                this.renderTrainingList(this.trainingData);
+                this.renderExamList(this.examData);
                 
                 const trainingCount = document.getElementById('multiTrainingCount');
                 const examCount = document.getElementById('multiExamCount');
-                if (trainingCount) trainingCount.textContent = trainings.length;
-                if (examCount) examCount.textContent = exams.length;
+                if (trainingCount) trainingCount.textContent = this.trainingData.length;
+                if (examCount) examCount.textContent = this.examData.length;
                 
             } catch (err) {
                 console.error('搜索失败:', err);
                 if (trainingList) trainingList.innerHTML = '<div class="list-group-item text-center text-danger py-3">加载失败</div>';
                 if (examList) examList.innerHTML = '<div class="list-group-item text-center text-danger py-3">加载失败</div>';
             }
+            
         },
-        
+
+        // ========== 预热缓存 ==========
+        async _preloadBindings(trainings, exams) {
+            // 并行预加载所有培训和考试的绑定关系
+            const trainingIds = trainings.map(t => t.id);
+            const examIds = exams.map(e => e.id);
+            
+            const promises = [];
+            
+            // 预加载培训绑定
+            for (const trainingId of trainingIds) {
+                promises.push(this._getTrainingBindings(trainingId));
+            }
+            
+            // 预加载考试绑定
+            for (const examId of examIds) {
+                promises.push(this._getExamBindings(examId));
+            }
+            
+            await Promise.all(promises);
+        },
+
         // ========== 获取培训列表 ==========
-        async fetchTrainings(name, country, warehouse) {
+        async fetchTrainings(name, country, warehouse, selectedExamIds) {
             const params = new URLSearchParams({ per_page: '100' });
             if (name) params.append('q', name);
             if (country) params.append('country', country);
@@ -2596,28 +2854,106 @@
             
             const res = await fetch(`/api/search/trainings?${params}`);
             const data = await res.json();
-            return Array.isArray(data) ? data : (data.data || []);
+            let trainings = Array.isArray(data) ? data : (data.data || []);
+
+            // ✅ 过滤草稿和未激活的培训
+            trainings = trainings.filter(t => {
+                // 检查 dynamic_status 是否为 draft
+                if (t.dynamic_status === 'draft') return false;
+                // 检查是否有有效的开始和结束时间
+                if (!t.start_time || !t.end_time) return false;
+                // 检查是否已激活
+                if (t.is_active === false) return false;
+                return true;
+            });
+            
+            if (selectedExamIds && selectedExamIds.length > 0) {
+                try {
+                    const boundTrainingIds = new Set();
+                    for (const examId of selectedExamIds) {
+                        const bindRes = await fetch(`/api/admin/training/bindings/by_exam?exam_id=${examId}`);
+                        if (bindRes.ok) {
+                            const bindData = await bindRes.json();
+                            const ids = bindData.training_ids || 
+                                    bindData.bindings?.map(b => b.training_id) || 
+                                    [];
+                            ids.forEach(id => boundTrainingIds.add(id));
+                        }
+                    }
+                    trainings = trainings.map(t => ({
+                        ...t,
+                        is_bound: boundTrainingIds.has(t.id)
+                    }));
+                } catch (err) {
+                    console.error('获取培训绑定关系失败:', err);
+                    trainings = trainings.map(t => ({ ...t, is_bound: false }));
+                }
+            } else {
+                trainings = trainings.map(t => ({ ...t, is_bound: false }));
+            }
+            
+            return trainings;
         },
-        
+
         // ========== 获取考试列表 ==========
-        async fetchExams(name, country, warehouse) {
+        async fetchExams(name, country, warehouse, selectedTrainingIds) {
             const params = new URLSearchParams({ per_page: '100' });
             if (name) params.append('name', name);
             if (country) params.append('country', country);
             if (warehouse) params.append('warehouse', warehouse);
             
+            // 如果有选中的培训，传递 training_id
+            if (selectedTrainingIds && selectedTrainingIds.length > 0) {
+                params.append('training_id', selectedTrainingIds[0]);
+            }
+            
             const res = await fetch(`/api/admin/exams/list_light?${params}`);
             const data = await res.json();
-            return data.data || [];
+            let exams = data.data || [];
+
+            // 过滤草稿和未激活的考试
+            exams = exams.filter(e => {
+                // 检查 status 是否为 draft
+                if (e.status === 'draft') return false;
+                // 检查是否有有效的开始和结束时间
+                if (!e.start_time || !e.end_time) return false;
+                // 可选：检查是否已激活
+                if (e.is_active === false) return false;
+                return true;
+            });
+            if (selectedTrainingIds && selectedTrainingIds.length > 0) {
+                try {
+                    const boundExamIds = new Set();
+                    for (const trainingId of selectedTrainingIds) {
+                        const bindRes = await fetch(`/api/admin/training/${trainingId}/bindings`);
+                        if (bindRes.ok) {
+                            const bindData = await bindRes.json();
+                            const ids = bindData.bindings?.map(b => b.exam_id) || [];
+                            ids.forEach(id => boundExamIds.add(id));
+                        }
+                    }
+                    exams = exams.map(e => ({
+                        ...e,
+                        is_bound: boundExamIds.has(e.id)
+                    }));
+                } catch (err) {
+                    console.error('获取考试绑定关系失败:', err);
+                    exams = exams.map(e => ({ ...e, is_bound: false }));
+                }
+            } else {
+                exams = exams.map(e => ({ ...e, is_bound: false }));
+            }
+            
+            return exams;
         },
         
-        // ========== 渲染培训列表 ==========
+        // ========== 渲染培训列表（修复版） ==========
         renderTrainingList(trainings) {
             const container = document.getElementById('multiTrainingList');
             if (!container) return;
             
             if (!trainings || trainings.length === 0) {
-                container.innerHTML = '<div class="list-group-item text-center text-muted py-3">暂无培训数据</div>';
+                container.innerHTML = `<div class="list-group-item text-center text-muted py-3">${safeT('no_training_data_available')}</div>`;
                 return;
             }
             
@@ -2626,9 +2962,27 @@
                 const isChecked = this.selectedTrainings.has(t.id);
                 const createdDate = t.created_at ? t.created_at.slice(0, 10) : '-';
                 const quarter = this.getQuarterFromDate(t.created_at);
-                const bindingBadge = t.is_bound 
-                    ? '<span class="badge bg-success ms-1"><i class="bi bi-link"></i> 已绑定</span>' 
-                    : '';
+                        
+                // ✅ ID 标记（小标签）
+                const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${t.id}</span>`;
+                
+                // ✅ 绑定标记 - 增强提示（包含绑定的考试ID）
+                let bindingBadge = '';
+                if (t.is_bound && this.selectedExams.size > 0) {
+                    // 获取绑定的考试ID列表
+                    const boundExamIds = this._getBoundExamIdsForTraining(t.id);
+                    const titleText = boundExamIds.length > 0 
+                        ? `${t('binded_exam')} ID: ${boundExamIds.join(', ')}` 
+                        : `${t('already_linked_current_exam')}`;
+                    bindingBadge = `<span class="badge bg-success ms-1 binding-badge" title="${titleText}" style="font-size: 0.6rem; cursor: help;">
+                        <i class="bi bi-link"></i> ${t('binded')}
+                    </span>`;
+                } else if (t.is_bound) {
+                    // 兼容：没有选中考试但有绑定关系的情况
+                    bindingBadge = `<span class="badge bg-success ms-1 binding-badge" title="已绑定到其他考试" style="font-size: 0.6rem; cursor: help;">
+                        <i class="bi bi-link"></i> ${t('binded')}
+                    </span>`;
+                }
                 
                 html += `
                     <div class="list-group-item list-group-item-action ${isChecked ? 'active' : ''}" 
@@ -2639,7 +2993,7 @@
                                     data-id="${t.id}" ${isChecked ? 'checked' : ''}>
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(t.name)}">
-                                        ${escapeHtml(t.name)} ${bindingBadge}
+                                        ${idBadge}${escapeHtml(t.name)} ${bindingBadge}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-tag"></i> ${escapeHtml(t.country || '-')}</span>
@@ -2657,23 +3011,228 @@
             
             container.innerHTML = html;
             
-            // 恢复已选状态
+            // ✅ 绑定 checkbox change 事件（直接绑定，不使用委托）
             container.querySelectorAll('.training-checkbox').forEach(cb => {
-                const id = parseInt(cb.dataset.id);
-                if (this.selectedTrainings.has(id)) {
-                    cb.checked = true;
-                    cb.closest('.list-group-item')?.classList.add('active');
+                cb.removeEventListener('change', this._trainingCheckboxHandler);
+                this._trainingCheckboxHandler = (e) => {
+                    this._handleTrainingCheckboxChange(e.target);
+                };
+                cb.addEventListener('change', this._trainingCheckboxHandler);
+            });
+            
+            // ✅ 绑定行点击事件（直接绑定）
+            container.querySelectorAll('.list-group-item').forEach(item => {
+                item.removeEventListener('click', this._trainingItemClickHandler);
+                this._trainingItemClickHandler = (e) => {
+                    if (e.target.type === 'checkbox') return;
+                    const checkbox = item.querySelector('.training-checkbox');
+                    if (checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        // ✅ 使用 bubbles: true 触发 change 事件
+                        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+                    }
+                };
+                item.addEventListener('click', this._trainingItemClickHandler);
+            });
+            
+            this.updateSelectedCounts();
+        },
+
+        // ========== 辅助方法：获取培训绑定的考试ID列表 ==========
+        _getBoundExamIdsForTraining(trainingId) {
+            const examIds = [];
+            // 遍历所有选中的考试，检查是否绑定了这个培训
+            for (const [examId, examData] of this.selectedExams) {
+                // 如果有绑定关系，添加考试ID
+                // 这里需要根据实际的绑定数据来判断
+                // 由于我们无法直接从 selectedExams 获取绑定关系，使用缓存中的绑定数据
+                const boundTrainings = this._getBoundTrainingsForExam(examId);
+                if (boundTrainings.includes(trainingId)) {
+                    examIds.push(examId);
+                }
+            }
+            return examIds;
+        },
+
+        // ========== 辅助方法：获取考试绑定的培训ID列表（从缓存） ==========
+        _getBoundTrainingsForExam(examId) {
+            // 从缓存中获取
+            if (this._bindingCache && this._bindingCache.examBindings) {
+                return this._bindingCache.examBindings[examId] || [];
+            }
+            return [];
+        },
+
+        // ========== 培训 checkbox 变化处理（不刷新列表） ==========
+        _handleTrainingCheckboxChange(checkbox) {
+            const id = parseInt(checkbox.dataset.id);
+            const item = checkbox.closest('.list-group-item');
+            
+            console.log('培训 checkbox 变化:', id, checkbox.checked);
+            
+            if (checkbox.checked) {
+                let data = this.trainingData.find(t => t.id === id);
+                if (!data) {
+                    data = this.selectedTrainings.get(id);
+                }
+                if (data) {
+                    this.selectedTrainings.set(id, data);
+                    if (item) item.classList.add('active');
+                } else {
+                    checkbox.checked = false;
+                    return;
+                }
+            } else {
+                this.selectedTrainings.delete(id);
+                if (item) item.classList.remove('active');
+            }
+            
+            this.updateSelectedCounts();
+            
+            // ✅ 使用防抖版本，而不是直接调用
+            this._updateBindingBadgesDebounced();
+        },
+
+        _updateBindingBadgesDebounced() {
+            clearTimeout(this._updateBindingTimer);
+            this._updateBindingTimer = setTimeout(() => {
+                this.updateBindingBadges();
+            }, 300); // 300ms 防抖
+        },
+
+        // ========== 更新绑定标记（使用缓存） ==========
+        async updateBindingBadges() {
+            // 1. 如果选中了培训，更新考试列表的绑定标记
+            if (this.selectedTrainings.size > 0) {
+                const trainingIds = Array.from(this.selectedTrainings.keys());
+                try {
+                    const boundExamIds = new Set();
+                    // ✅ 使用缓存方法
+                    for (const trainingId of trainingIds) {
+                        const examIds = await this._getTrainingBindings(trainingId);
+                        examIds.forEach(id => boundExamIds.add(id));
+                    }
+                    this._updateExamBindingBadges(boundExamIds);
+                    
+                } catch (err) {
+                    console.error('更新绑定标记失败:', err);
+                }
+            } else {
+                this._clearExamBindingBadges();
+            }
+            
+            // 2. 如果选中了考试，更新培训列表的绑定标记
+            if (this.selectedExams.size > 0) {
+                const examIds = Array.from(this.selectedExams.keys());
+                try {
+                    const boundTrainingIds = new Set();
+                    // ✅ 使用缓存方法
+                    for (const examId of examIds) {
+                        const trainingIds = await this._getExamBindings(examId);
+                        trainingIds.forEach(id => boundTrainingIds.add(id));
+                    }
+                    console.log('🔍 绑定的培训ID:', [...boundTrainingIds]);
+                    this._updateTrainingBindingBadges(boundTrainingIds);
+                    
+                } catch (err) {
+                    console.error('更新绑定标记失败:', err);
+                }
+            } else {
+                this._clearTrainingBindingBadges();
+            }
+        },
+
+        // ========== 更新考试列表的绑定标记（批量操作） ==========
+        _updateExamBindingBadges(boundExamIds) {
+            const container = document.getElementById('multiExamList');
+            if (!container) return;
+            
+            container.querySelectorAll('.list-group-item').forEach(item => {
+                const examId = parseInt(item.dataset.id);
+                const titleDiv = item.querySelector('.fw-bold');
+                if (!titleDiv) return;
+                
+                const existingBadge = titleDiv.querySelector('.binding-badge');
+                const isBound = boundExamIds.has(examId);
+                
+                if (isBound && !existingBadge) {
+                    // ✅ 获取绑定的培训ID
+                    const boundTrainingIds = this._getBoundTrainingIdsForExam(examId);
+                    const titleText = boundTrainingIds.length > 0 
+                        ? `${t('binded_training')} ID: ${boundTrainingIds.join(', ')}` 
+                        : `${t('already_linked_current_training')}`;
+                    
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-success ms-1 binding-badge';
+                    badge.setAttribute('title', titleText);
+                    badge.style.cssText = 'font-size: 0.6rem; cursor: help;';
+                    badge.innerHTML = `<i class="bi bi-link"></i> ${t('binded')}`;
+                    titleDiv.appendChild(badge);
+                } else if (!isBound && existingBadge) {
+                    existingBadge.remove();
                 }
             });
         },
-        
-        // ========== 渲染考试列表 ==========
+
+        // ========== 清除考试列表的所有绑定标记 ==========
+        _clearExamBindingBadges() {
+            const container = document.getElementById('multiExamList');
+            if (!container) return;
+            
+            container.querySelectorAll('.binding-badge').forEach(badge => {
+                badge.remove();
+            });
+        },
+
+        // ========== 更新培训列表的绑定标记 ==========
+        _updateTrainingBindingBadges(boundTrainingIds) {
+            const container = document.getElementById('multiTrainingList');
+            if (!container) return;
+            
+            container.querySelectorAll('.list-group-item').forEach(item => {
+                const trainingId = parseInt(item.dataset.id);
+                const titleDiv = item.querySelector('.fw-bold');
+                if (!titleDiv) return;
+                
+                const existingBadge = titleDiv.querySelector('.binding-badge');
+                const isBound = boundTrainingIds.has(trainingId);
+                
+                if (isBound && !existingBadge) {
+                    // ✅ 获取绑定的考试ID
+                    const boundExamIds = this._getBoundExamIdsForTraining(trainingId);
+                    const titleText = boundExamIds.length > 0 
+                        ? `${t('binded_exam')}ID: ${boundExamIds.join(', ')}` 
+                        : `${t('already_linked_current_exam')}`;
+                    
+                    const badge = document.createElement('span');
+                    badge.className = 'badge bg-success ms-1 binding-badge';
+                    badge.setAttribute('title', titleText);
+                    badge.style.cssText = 'font-size: 0.6rem; cursor: help;';
+                    badge.innerHTML = `<i class="bi bi-link"></i> ${t('binded')}`;
+                    titleDiv.appendChild(badge);
+                } else if (!isBound && existingBadge) {
+                    existingBadge.remove();
+                }
+            });
+        },
+
+        // ========== 清除培训列表的所有绑定标记 ==========
+        _clearTrainingBindingBadges() {
+            const container = document.getElementById('multiTrainingList');
+            if (!container) return;
+            
+            container.querySelectorAll('.binding-badge').forEach(badge => {
+                badge.remove();
+            });
+        },
+
+        // ========== 渲染考试列表（修复版） ==========
         renderExamList(exams) {
             const container = document.getElementById('multiExamList');
             if (!container) return;
             
             if (!exams || exams.length === 0) {
-                container.innerHTML = '<div class="list-group-item text-center text-muted py-3">暂无考试数据</div>';
+                container.innerHTML = `<div class="list-group-item text-center text-muted py-3">${t('no_exam_datas')}</div>`;
                 return;
             }
             
@@ -2683,9 +3242,26 @@
                 const createdDate = e.created_at ? e.created_at.slice(0, 10) : '-';
                 const quarter = this.getQuarterFromDate(e.created_at);
                 const countriesDisplay = e.countries_display || e.country || '-';
-                const bindingBadge = e.is_bound 
-                    ? '<span class="badge bg-success ms-1"><i class="bi bi-link"></i> 已绑定</span>' 
-                    : '';
+                
+                // ✅ ID 标记（小标签）
+                const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${e.id}</span>`;
+                
+                // ✅ 绑定标记 - 增强提示（包含绑定的培训ID）
+                let bindingBadge = '';
+                if (e.is_bound && this.selectedTrainings.size > 0) {
+                    // 获取绑定的培训ID列表
+                    const boundTrainingIds = this._getBoundTrainingIdsForExam(e.id);
+                    const titleText = boundTrainingIds.length > 0 
+                        ? `${t('binded_training')} ID: ${boundTrainingIds.join(', ')}` 
+                        : `${t('already_linked_current_training')}`;
+                    bindingBadge = `<span class="badge bg-success ms-1 binding-badge" title="${titleText}" style="font-size: 0.6rem; cursor: help;">
+                        <i class="bi bi-link"></i> ${t('binded')}
+                    </span>`;
+                } else if (e.is_bound) {
+                    bindingBadge = `<span class="badge bg-success ms-1 binding-badge" title="已绑定到其他培训" style="font-size: 0.6rem; cursor: help;">
+                        <i class="bi bi-link"></i> ${t('binded')}
+                    </span>`;
+                }
                 
                 html += `
                     <div class="list-group-item list-group-item-action ${isChecked ? 'active' : ''}" 
@@ -2696,7 +3272,7 @@
                                     data-id="${e.id}" ${isChecked ? 'checked' : ''}>
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(e.title)}">
-                                        ${escapeHtml(e.title)} ${bindingBadge}
+                                        ${idBadge}${escapeHtml(e.title)} ${bindingBadge}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
@@ -2714,58 +3290,80 @@
             
             container.innerHTML = html;
             
-            // 恢复已选状态
+            // ✅ 绑定 checkbox change 事件
             container.querySelectorAll('.exam-checkbox').forEach(cb => {
-                const id = parseInt(cb.dataset.id);
-                if (this.selectedExams.has(id)) {
-                    cb.checked = true;
-                    cb.closest('.list-group-item')?.classList.add('active');
-                }
+                cb.removeEventListener('change', this._examCheckboxHandler);
+                this._examCheckboxHandler = (e) => {
+                    this._handleExamCheckboxChange(e.target);
+                };
+                cb.addEventListener('change', this._examCheckboxHandler);
             });
-        },
-        
-        // ========== 复选框变化处理 ==========
-        onTrainingCheckboxChange(checkbox) {
-            const id = parseInt(checkbox.dataset.id);
-            const item = checkbox.closest('.list-group-item');
-            if (checkbox.checked) {
-                const data = this.trainingData.find(t => t.id === id);
-                if (data) {
-                    this.selectedTrainings.set(id, data);
-                    if (item) item.classList.add('active');
-                } else {
-                    // 如果数据不在当前列表中，从已选数据中获取
-                    const existing = Array.from(this.selectedTrainings.values()).find(t => t.id === id);
-                    if (existing) {
-                        this.selectedTrainings.set(id, existing);
+            
+            // ✅ 绑定行点击事件
+            container.querySelectorAll('.list-group-item').forEach(item => {
+                item.removeEventListener('click', this._examItemClickHandler);
+                this._examItemClickHandler = (e) => {
+                    if (e.target.type === 'checkbox') return;
+                    const checkbox = item.querySelector('.exam-checkbox');
+                    if (checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                     }
-                }
-            } else {
-                this.selectedTrainings.delete(id);
-                if (item) item.classList.remove('active');
-            }
+                };
+                item.addEventListener('click', this._examItemClickHandler);
+            });
+            
             this.updateSelectedCounts();
         },
-        
-        onExamCheckboxChange(checkbox) {
+
+        // ========== 辅助方法：获取考试绑定的培训ID列表 ==========
+        _getBoundTrainingIdsForExam(examId) {
+            const trainingIds = [];
+            for (const [trainingId, trainingData] of this.selectedTrainings) {
+                const boundExams = this._getBoundExamsForTraining(trainingId);
+                if (boundExams.includes(examId)) {
+                    trainingIds.push(trainingId);
+                }
+            }
+            return trainingIds;
+        },
+
+        // ========== 辅助方法：获取培训绑定的考试ID列表（从缓存） ==========
+        _getBoundExamsForTraining(trainingId) {
+            if (this._bindingCache && this._bindingCache.trainingBindings) {
+                return this._bindingCache.trainingBindings[trainingId] || [];
+            }
+            return [];
+        },
+
+        // ========== 考试 checkbox 变化处理（不刷新列表） ==========
+        _handleExamCheckboxChange(checkbox) {
             const id = parseInt(checkbox.dataset.id);
             const item = checkbox.closest('.list-group-item');
+            
+            console.log('考试 checkbox 变化:', id, checkbox.checked);
+            
             if (checkbox.checked) {
-                const data = this.examData.find(e => e.id === id);
+                let data = this.examData.find(e => e.id === id);
+                if (!data) {
+                    data = this.selectedExams.get(id);
+                }
                 if (data) {
                     this.selectedExams.set(id, data);
                     if (item) item.classList.add('active');
                 } else {
-                    const existing = Array.from(this.selectedExams.values()).find(e => e.id === id);
-                    if (existing) {
-                        this.selectedExams.set(id, existing);
-                    }
+                    checkbox.checked = false;
+                    return;
                 }
             } else {
                 this.selectedExams.delete(id);
                 if (item) item.classList.remove('active');
             }
+            
             this.updateSelectedCounts();
+            
+            // ✅ 使用防抖版本，而不是直接调用
+            this._updateBindingBadgesDebounced();
         },
         
         // ========== 全选 ==========
@@ -2774,17 +3372,18 @@
             checkboxes.forEach(cb => {
                 if (!cb.checked) {
                     cb.checked = true;
-                    cb.dispatchEvent(new Event('change'));
+                    // 直接调用处理函数
+                    this._handleTrainingCheckboxChange(cb);
                 }
             });
         },
-        
+
         selectAllExams() {
             const checkboxes = document.querySelectorAll('#multiExamList .exam-checkbox');
             checkboxes.forEach(cb => {
                 if (!cb.checked) {
                     cb.checked = true;
-                    cb.dispatchEvent(new Event('change'));
+                    this._handleExamCheckboxChange(cb);
                 }
             });
         },
@@ -2805,16 +3404,16 @@
             this.updateSelectedTags();
         },
         
-        // ========== 更新已选标签 ==========
+        // ========== 更新已选标签（修复删除功能） ==========
         updateSelectedTags() {
             // 培训标签
             const trainingContainer = document.getElementById('selectedTrainingTags');
             if (trainingContainer) {
                 if (this.selectedTrainings.size === 0) {
-                    trainingContainer.innerHTML = '<span class="text-muted">无</span>';
+                    trainingContainer.innerHTML = `<span class="text-muted">${t('none')}</span>`;
                 } else {
                     trainingContainer.innerHTML = Array.from(this.selectedTrainings.values())
-                        .map(t => `<span class="badge bg-primary me-1">${escapeHtml(t.name)} <span class="remove-selection" data-type="training" data-id="${t.id}" style="cursor:pointer;">✕</span></span>`)
+                        .map(t => `<span class="badge bg-primary me-1">${escapeHtml(t.name)} <span class="remove-selection" data-type="training" data-id="${t.id}" style="cursor:pointer;opacity:0.7;">✕</span></span>`)
                         .join('');
                 }
             }
@@ -2823,18 +3422,19 @@
             const examContainer = document.getElementById('selectedExamTags');
             if (examContainer) {
                 if (this.selectedExams.size === 0) {
-                    examContainer.innerHTML = '<span class="text-muted">无</span>';
+                    examContainer.innerHTML = `<span class="text-muted">${t('none')}</span>`;
                 } else {
                     examContainer.innerHTML = Array.from(this.selectedExams.values())
-                        .map(e => `<span class="badge bg-info me-1">${escapeHtml(e.title)} <span class="remove-selection" data-type="exam" data-id="${e.id}" style="cursor:pointer;">✕</span></span>`)
+                        .map(e => `<span class="badge bg-info me-1">${escapeHtml(e.title)} <span class="remove-selection" data-type="exam" data-id="${e.id}" style="cursor:pointer;opacity:0.7;">✕</span></span>`)
                         .join('');
                 }
             }
             
-            // 绑定删除标签事件
+            // ✅ 绑定删除标签事件（使用事件委托，避免重复绑定）
             document.querySelectorAll('.remove-selection').forEach(el => {
+                // 移除旧监听器避免重复
                 el.removeEventListener('click', this._removeSelectionHandler);
-                el._removeSelectionHandler = (e) => {
+                this._removeSelectionHandler = (e) => {
                     e.stopPropagation();
                     const type = el.dataset.type;
                     const id = parseInt(el.dataset.id);
@@ -2843,19 +3443,21 @@
                         const checkbox = document.querySelector(`.training-checkbox[data-id="${id}"]`);
                         if (checkbox) {
                             checkbox.checked = false;
-                            checkbox.dispatchEvent(new Event('change'));
+                            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                         }
-                    } else {
+                        // 更新UI
+                        this.updateSelectedCounts();
+                    } else if (type === 'exam') {
                         this.selectedExams.delete(id);
                         const checkbox = document.querySelector(`.exam-checkbox[data-id="${id}"]`);
                         if (checkbox) {
                             checkbox.checked = false;
-                            checkbox.dispatchEvent(new Event('change'));
+                            checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                         }
+                        this.updateSelectedCounts();
                     }
-                    this.updateSelectedCounts();
                 };
-                el.addEventListener('click', el._removeSelectionHandler);
+                el.addEventListener('click', this._removeSelectionHandler);
             });
         },
         
@@ -2874,6 +3476,10 @@
             });
             
             this.updateSelectedCounts();
+            
+            // ✅ 清除所有绑定标记
+            this._clearTrainingBindingBadges();
+            this._clearExamBindingBadges();
         },
         
         // ========== 重置筛选条件 ==========
@@ -2982,13 +3588,146 @@
             // 加载国家列表
             await populateCountryDatalist('multiCountryDatalist');
             
-            // 自动搜索一次
+            // 初始搜索一次（加载数据）
             setTimeout(() => this.search(), 300);
-        }
+            
+            // ✅ 初始搜索后，如果有选中的项，更新绑定标记
+            setTimeout(() => {
+                if (this.selectedTrainings.size > 0 || this.selectedExams.size > 0) {
+                    this.updateBindingBadges();
+                }
+            }, 500);
+        },
     };
 
-    // ==================== 国家/库房下拉面板渲染函数 ====================
+    // ==================== Tab 切换控制（带深度调试） ====================
+    function initTabActions() {
+        const exactTab = document.getElementById('exact-tab');
+        const multiTab = document.getElementById('multi-tab');
+        const exactActions = document.getElementById('exactActions');
+        const multiActions = document.getElementById('multiActions');
+        const exportModal = document.getElementById('exportFilterModal');
+        
+        if (!exactTab || !multiTab || !exactActions || !multiActions) {
+            return;
+        }
+        
+        // 切换按钮显示的函数（带日志）
+        function switchActions(showExact) {
+            if (showExact) {
+                exactActions.style.setProperty('display', 'inline-block', 'important');
+                multiActions.style.setProperty('display', 'none', 'important');
+            } else {
+                exactActions.style.setProperty('display', 'none', 'important');
+                multiActions.style.setProperty('display', 'inline-block', 'important');
+            }
+        }
+        
+        // ========== 3. 方案A: 使用 click 事件 ==========
+        function handleTabClick(e) {
+            const tab = e.currentTarget;
+            
+            // 使用 setTimeout 等待 Bootstrap 完成 class 切换
+            setTimeout(() => {
+                const isExactActive = exactTab.classList.contains('active');
+                const isMultiActive = multiTab.classList.contains('active');
+                
+                if (isExactActive) {
+                    switchActions(true);
+                } else if (isMultiActive) {
+                    switchActions(false);
+                    if (typeof MultiSelectManager !== 'undefined' && MultiSelectManager.updateSelectedCounts) {
+                        MultiSelectManager.updateSelectedCounts();
+                    }
+                } else {
+                    console.warn('  ⚠️ 没有 Tab 处于 active 状态');
+                }
+            }, 100);
+        }
+        
+        // 移除旧监听器
+        exactTab.removeEventListener('click', handleTabClick);
+        multiTab.removeEventListener('click', handleTabClick);
+        
+        // 绑定新监听器
+        exactTab.addEventListener('click', handleTabClick);
+        multiTab.addEventListener('click', handleTabClick);
+        
+        // ========== 4. 方案B: 使用 shown.bs.tab 事件 ==========
+        function onExactTabShown(e) {
+            switchActions(true);
+        }
+        
+        function onMultiTabShown(e) {
+            switchActions(false);
+            if (typeof MultiSelectManager !== 'undefined' && MultiSelectManager.updateSelectedCounts) {
+                MultiSelectManager.updateSelectedCounts();
+            }
+        }
+        
+        // 移除旧监听器
+        exactTab.removeEventListener('shown.bs.tab', onExactTabShown);
+        multiTab.removeEventListener('shown.bs.tab', onMultiTabShown);
+        
+        // 绑定新监听器
+        exactTab.addEventListener('shown.bs.tab', onExactTabShown);
+        multiTab.addEventListener('shown.bs.tab', onMultiTabShown);
+        
+        // ========== 5. 方案C: 使用 MutationObserver 监听 class 变化 ==========
+        // 清理旧的 observer
+        if (window._tabObserver) {
+            window._tabObserver.disconnect();
+        }
+        
+        const tabContainer = document.getElementById('exportTab');
+        if (tabContainer) {
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'attributes' && mutation.attributeName === 'class') {
+                        const target = mutation.target;
+                        
+                        if (target.id === 'exact-tab' && target.classList.contains('active')) {
+                            switchActions(true);
+                        } else if (target.id === 'multi-tab' && target.classList.contains('active')) {
+                            switchActions(false);
+                            if (typeof MultiSelectManager !== 'undefined' && MultiSelectManager.updateSelectedCounts) {
+                                MultiSelectManager.updateSelectedCounts();
+                            }
+                        }
+                    }
+                });
+            });
+            
+            // 观察两个 tab 按钮的 class 变化
+            observer.observe(exactTab, { attributes: true, attributeFilter: ['class'] });
+            observer.observe(multiTab, { attributes: true, attributeFilter: ['class'] });
+            
+            // 保存 observer 以便清理
+            window._tabObserver = observer;
+        }
+        
+        // ========== 6. 初始化状态 ==========
+        // 检查当前哪个 Tab 是激活的
+        const isExactActive = exactTab.classList.contains('active');
+        const isMultiActive = multiTab.classList.contains('active');
+        
+        if (isExactActive) {
+            switchActions(true);
+        } else if (isMultiActive) {
+            switchActions(false);
+        } else {
+            // 默认显示精确筛选
+            switchActions(true);
+            // 强制激活精确筛选 Tab
+            exactTab.classList.add('active');
+            document.getElementById('exact')?.classList.add('show', 'active');
+            multiTab.classList.remove('active');
+            document.getElementById('multi')?.classList.remove('show', 'active');
+        }
+        
+    }
 
+    // ==================== 国家/库房下拉面板渲染函数 ====================
     // 渲染国家下拉面板
     async function renderCountryDropdown(searchTerm = '') {
         const container = document.getElementById('countryListContainer');
@@ -3033,7 +3772,7 @@
         filtered.sort((a, b) => a.code.localeCompare(b.code));
         
         if (!filtered.length) {
-            container.innerHTML = '<div class="p-3 text-center text-muted">暂无数据</div>';
+            container.innerHTML = `<div class="p-3 text-center text-muted">${t('no_data')}</div>`;
             if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
             return;
         }
@@ -3050,7 +3789,7 @@
                     <div class="item-title">${escapeHtml(displayText)}</div>
                     <div class="item-meta">
                         <span><i class="bi bi-tag"></i> ${escapeHtml(country.code)}</span>
-                        <span><i class="bi bi-file-text"></i> ${trainingCountries.has(country.code) ? '培训' : ''}${examCountries.has(country.code) ? ' 考试' : ''}</span>
+                        <span><i class="bi bi-file-text"></i> ${trainingCountries.has(country.code) ? t('training') : ''}${examCountries.has(country.code) ? t('exam') : ''}</span>
                     </div>
                 </div>
             `;
@@ -3098,7 +3837,7 @@
         }
         
         if (!filtered.length) {
-            container.innerHTML = '<div class="p-3 text-center text-muted">暂无库房数据</div>';
+            container.innerHTML = `<div class="p-3 text-center text-muted">${t('no_data')}</div>`;
             return;
         }
         
@@ -3215,10 +3954,7 @@
         const input = document.getElementById(inputId);
         const clearBtn = document.querySelector(`.input-clear-btn[data-target="${inputId}"]`);
         
-        console.log(`setupClearButton: inputId=${inputId}, input=${!!input}, clearBtn=${!!clearBtn}`);
-        
         if (!input || !clearBtn) {
-            console.warn(`清空按钮初始化失败: ${inputId}`);
             return false;
         }
         
@@ -3269,8 +4005,6 @@
 
 	// 初始化所有清空按钮0617
     function initClearButtons() {
-        console.log('初始化清空按钮...');
-        
         const clearButtonsConfig = [
             { inputId: 'filterTrainingName', targets: ['selectedTrainingId', 'selectedTrainingStart', 'selectedTrainingEnd'] },
             { inputId: 'filterExamName', targets: ['selectedExamId', 'selectedExamStart', 'selectedExamEnd'] },
@@ -3285,7 +4019,6 @@
             
             if (input && clearBtn) {
                 setupClearButton(config.inputId, config.targets);
-                console.log(`✅ 初始化成功: ${config.inputId}`);
             } else {
                 console.warn(`⚠️ 跳过: ${config.inputId}, input=${!!input}, btn=${!!clearBtn}`);
             }
@@ -3298,7 +4031,6 @@
                 const input = document.getElementById(targetId);
                 if (input && input.value && input.value.trim() !== '') {
                     btn.style.display = 'block';
-                    console.log(`🔄 延迟显示 ${targetId} 的删除按钮`);
                 }
             });
         }, 300);
@@ -3620,7 +4352,7 @@
 		const btn = document.getElementById('loadUsersBtn');
 		const originalHTML = btn.innerHTML;
 		btn.disabled = true;
-		btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('loading')}`;
+		btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${safeT('loading')}`;
 		
 		try {
 			await loadUserList();
@@ -3897,7 +4629,7 @@
 	function renderExamStatusTable() {
 		const container = document.getElementById('status-table-container');
 		if (!currentExamId || !currentExamUsers.length) {
-			container.innerHTML = `<div class="text-center text-muted py-3">${t('t_select_exam_first')}</div>`;
+			container.innerHTML = `<div class="text-center text-muted py-3">${safeT('t_select_exam_first')}</div>`;
 			return;
 		}
 
@@ -4237,6 +4969,27 @@
      
 	// 初始化事件监听
 	document.addEventListener('DOMContentLoaded', async () => {
+
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🔍 [DEBUG] DOMContentLoaded 触发');
+            
+            // 等待 Bootstrap 初始化完成
+            setTimeout(function() {
+                console.log('🔍 [DEBUG] 延迟执行 initTabActions');
+                initTabActions();
+                
+                // 额外检查：在 1 秒后再次检查状态
+                setTimeout(function() {
+                    console.log('🔍 [DEBUG] 1秒后状态检查:');
+                    const exactActions = document.getElementById('exactActions');
+                    const multiActions = document.getElementById('multiActions');
+                    if (exactActions && multiActions) {
+                        console.log('  - exactActions display:', window.getComputedStyle(exactActions).display);
+                        console.log('  - multiActions display:', window.getComputedStyle(multiActions).display);
+                    }
+                }, 1000);
+            }, 500);
+        });
         // 立即加载数据（优先使用缓存）
         loadDashboardData();
         
@@ -4264,6 +5017,14 @@
 
 		// ✅ 初始化综合筛选管理器
 		MultiSelectManager.init();
+        initTabActions();
+        // ✅ 监听综合筛选 Tab 显示事件（备用）
+        document.getElementById('multi-tab')?.addEventListener('shown.bs.tab', function() {
+            // 刷新选中计数
+            if (typeof MultiSelectManager !== 'undefined') {
+                MultiSelectManager.updateSelectedCounts();
+            }
+        });
 
 		// 绑定额外的UI事件
 		bindExportModalEvents();
