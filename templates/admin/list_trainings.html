@@ -387,7 +387,7 @@
     // ========== 培训页面缓存（方案一） ==========
     const TRAINING_CACHE_KEY = 'training_list_data';
     const TRAINING_CACHE_TIME_KEY = 'training_list_data_time';
-    const CACHE_DURATION = 5 * 60 * 1000; // 5分钟
+    const CACHE_DURATION = 10 * 60 * 1000; // 5分钟
 
     function getCachedTrainingData() {
         try {
@@ -476,31 +476,55 @@
     }
 
     async function loadTrainings(forceRefresh = false) {
-        // 使用缓存（仅当不是强制刷新时）
-        if (!forceRefresh) {
-            const cached = getCachedTrainingData();
+        // 如果强制刷新，直接显示进度条
+        if (forceRefresh) {
+            await doLoadTrainings();
+            return;
+        }
+        
+        // 尝试从缓存获取
+        const cached = getCachedTrainingData();
+        const fromDetail = sessionStorage.getItem('from_training_detail');
+        
+        // ✅ 从子页面返回时，直接使用缓存，不触发后台刷新
+        if (fromDetail === 'true') {
+            sessionStorage.removeItem('from_training_detail');
             if (cached && cached.data && cached.data.length > 0) {
-                console.log('📋 使用缓存渲染');
-                
-                // ✅ 如果是来自子页面返回，直接使用缓存，不刷新
-                const fromDetail = sessionStorage.getItem('from_training_detail');
-                if (fromDetail === 'true') {
-                    sessionStorage.removeItem('from_training_detail');
-                    console.log('📋 从下级返回，使用缓存不刷新');
-                    renderTrainingsTable(cached.data);
-                    document.getElementById('totalCount').innerText = cached.total || cached.data.length;
-                    renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-                    return;
-                }
-                
-                // ✅ 其他情况：先显示缓存，但立即在后台刷新（不闪烁）
-                // 但为了更好的体验，直接走刷新流程，不显示缓存
-                // 改为：不显示缓存，直接显示进度条
-                console.log('📋 有缓存但需要刷新，直接显示进度条');
-                // 继续执行下面的刷新逻辑（不 return）
+                console.log('📋 从下级返回，使用缓存');
+                renderTrainingsTable(cached.data);
+                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
+                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
+                return; // ✅ 不执行后台刷新
             }
         }
         
+        // 有缓存且有效
+        if (cached && cached.data && cached.data.length > 0) {
+            console.log('📋 使用缓存渲染');
+            renderTrainingsTable(cached.data);
+            document.getElementById('totalCount').innerText = cached.total || cached.data.length;
+            renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
+            
+            // ✅ 检查缓存是否过期（超过TTL的一半就后台刷新）
+            const cacheTime = sessionStorage.getItem(TRAINING_CACHE_TIME_KEY);
+            if (cacheTime) {
+                const age = Date.now() - parseInt(cacheTime);
+                if (age > CACHE_DURATION * 0.5) {  // 超过2.5分钟
+                    console.log('📋 缓存即将过期，后台刷新');
+                    setTimeout(() => doLoadTrainings(true), 500);
+                }
+            } else {
+                // 没有时间戳，后台刷新
+                setTimeout(() => doLoadTrainings(true), 800);
+            }
+            return;
+        }
+        
+        // 无缓存，直接加载
+        await doLoadTrainings();
+    }
+
+    async function doLoadTrainings() {    
         // ✅ 使用表格内嵌进度条
         await window.loadTableWithProgress('trainingsTbody', async (updateProgress, updateDesc) => {
             try {
@@ -553,7 +577,22 @@
             completeMessage: 'training_data_loaded'
         });
     }
- 
+
+    // 页面可见性变化时，不自动刷新（避免闪烁）
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+            // 用户返回页面，检查缓存是否有效
+            const cached = getCachedTrainingData();
+            if (cached && cached.data && cached.data.length > 0) {
+                console.log('📋 页面可见性恢复，使用缓存');
+                renderTrainingsTable(cached.data);
+                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
+                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
+                // ✅ 不触发刷新
+            }
+        }
+    });
+
     function renderTrainingsTable(trainings) {
         const tbody = document.getElementById('trainingsTbody');
         if (!tbody) return;
