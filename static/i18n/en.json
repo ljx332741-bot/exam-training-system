@@ -994,5 +994,16 @@
 "preparing_load_training_data": "Preparing to load training data...",
     "loading_attendance_status": "Loading attendance status...",
     "please_wait_loading_attendance": "Please wait, loading attendance status...",
-    "attendance_status_loaded": "Attendance status loaded"
+    "attendance_status_loaded": "Attendance status loaded",
+"preparing_load_attendance_data": "Preparing to load attendance data...",
+"preparing_load_wh_info_data": "Preparing to load WH info data...",
+"preparing_load_exam_data": "Preparing to exam data...",
+"infomation_loaded": "Infomation loaded",
+"preparing_load_deleted_data": "Preparing to load deleted data...",
+"loading_exam_list": "Loading exam list",
+"please_wait_loading_exams": "Please wait loading exams",
+"exam_list_loaded": "Exam list loaded",
+"loading_deleted_exams": "Loading deleted exams",
+"please_wait_loading_deleted_exams": "Please wait loading deleted exams"
+
 }
