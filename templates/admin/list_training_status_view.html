@@ -1074,8 +1074,15 @@
 
     // 添加事件
     document.getElementById('backToTrainingsBtn')?.addEventListener('click', function() {
+        // ✅ 设置两个标记，确保缓存被使用
         sessionStorage.setItem('from_training_detail', 'true');
-        window.location.href = '/admin/trainings';
+        sessionStorage.setItem('use_dashboard_cache', 'true');
+        
+        if (document.referrer && document.referrer.includes('/admin/dashboard')) {
+            history.back();
+        } else {
+            window.location.href = '/admin/trainings';
+        }
     });
 
     // 初始化
