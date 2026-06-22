@@ -18,7 +18,7 @@ def health_check():
 
 @auth_bp.route('/register')
 def register():
-    return render_template('auth/register.html')
+    return render_template('auth/register_standalone.html')
 
 @auth_bp.route('/api/check-name')
 def check_name():
@@ -34,132 +34,6 @@ def api_countries():
     db = get_supabase()
     res = db.table("countries").select("code, name_zh, name_en").execute()
     return jsonify(res.data)
-
-'''
-@auth_bp.route('/profile', methods=['GET', 'POST'])
-@login_required
-def profile():
-    db = get_supabase()
-    user_id = session['user_id']
-    
-    if request.method == 'POST':
-        action = request.form.get('action')
-        if action == 'update_info':
-            # 更新基本信息
-            update_data = {
-                'birthday': request.form.get('birthday', ''),
-                'name_en': request.form.get('name_en', ''),
-                'company': request.form.get('company', ''),
-                'department': request.form.get('department', ''),
-                'employee_id': request.form.get('employee_id', ''),
-                'country': request.form.get('country', ''),
-                'phone': request.form.get('phone', ''),
-                'birthday': request.form.get('birthday', '')  or None
-            }
-            db.table('users').update(update_data).eq('id', user_id).execute()
-            #flash('个人信息已更新', 'success')
-            flash({'msg': 'profile_updated', 'params': []}, 'success')
-
-        elif action == 'change_password':
-            old_pwd = request.form.get('old_password')
-            new_pwd = request.form.get('new_password')
-            confirm_pwd = request.form.get('confirm_password')
-            
-            if new_pwd != confirm_pwd:
-                #flash('两次输入的新密码不一致', 'danger')
-                flash({'msg': 'password_mismatch', 'params': []}, 'danger')
-                return redirect(url_for('profile'))
-            if len(new_pwd) < 6:
-                #flash('密码长度至少6位', 'danger')
-                flash({'msg': 'password_too_short', 'params': []}, 'danger')
-                return redirect(url_for('profile'))
-            
-            # 验证原密码
-            user_res = db.table('users').select('password_hash').eq('id', user_id).execute()
-            if not user_res.data or not auth.check_password(old_pwd, user_res.data[0]['password_hash']):
-                #flash('原密码错误', 'danger')
-                flash({'msg': 'wrong_password', 'params': []}, 'danger')
-                return redirect(url_for('auth.profile'))
-            
-            # 更新密码
-            new_hash = auth.hash_password(new_pwd)
-            db.table('users').update({'password_hash': new_hash}).eq('id', user_id).execute()
-            #flash('密码修改成功，请重新登录', 'success')
-            flash({'msg': 'password_changed', 'params': []}, 'success')
-            session.clear()
-            return redirect(url_for('auth.login'))
-        
-        return redirect(url_for('auth.profile'))
-
-    if request.method == 'GET':
-        user_res = db.table('users').select('*').eq('id', user_id).single().execute()
-        user = user_res.data
-        
-        if user:
-            # ========== 处理国家显示（中英文） ==========
-            if user.get('country'):
-                try:
-                    c_res = db.table("countries").select("name_zh, name_en").eq("code", user['country']).maybe_single().execute()
-                    if c_res and c_res.data:
-                        user['country_display_zh'] = c_res.data.get('name_zh')
-                        user['country_display_en'] = c_res.data.get('name_en')
-                        user['country_display'] = user['country_display_zh']  # 默认中文
-                    else:
-                        user['country_display_zh'] = user['country']
-                        user['country_display_en'] = user['country']
-                        user['country_display'] = user['country']
-                except Exception as e:
-                    logger.warning(f"获取国家名称失败: {e}")
-                    user['country_display_zh'] = user['country']
-                    user['country_display_en'] = user['country']
-                    user['country_display'] = user['country']
-            else:
-                user['country_display_zh'] = '未设置'
-                user['country_display_en'] = 'Not Set'
-                user['country_display'] = '未设置'
-        
-        # 处理权限范围显示（中英文）
-        admin_countries = user.get('admin_countries')
-        if admin_countries:
-            try:
-                if isinstance(admin_countries, str):
-                    country_codes = json.loads(admin_countries)
-                else:
-                    country_codes = admin_countries
-                
-                if country_codes and len(country_codes) > 0:
-                    # 获取国家名称映射
-                    countries_res = db.table("countries").select("code, name_zh, name_en").execute()
-                    country_map = {c['code']: c for c in (countries_res.data or [])}
-                    
-                    names_zh = []
-                    names_en = []
-                    for code in country_codes:
-                        if code in country_map:
-                            names_zh.append(country_map[code].get('name_zh', code))
-                            names_en.append(country_map[code].get('name_en', code))
-                        else:
-                            names_zh.append(code)
-                            names_en.append(code)
-                    
-                    user['admin_countries_display_zh'] = ', '.join(names_zh) if names_zh else '无限制'
-                    user['admin_countries_display_en'] = ', '.join(names_en) if names_en else 'Unrestricted'
-                    user['admin_countries_display'] = user['admin_countries_display_zh']
-                else:
-                    user['admin_countries_display_zh'] = '无限制'
-                    user['admin_countries_display_en'] = 'Unrestricted'
-                    user['admin_countries_display'] = '无限制'
-            except:
-                user['admin_countries_display_zh'] = '无限制'
-                user['admin_countries_display_en'] = 'Unrestricted'
-                user['admin_countries_display'] = '无限制'
-        else:
-            user['admin_countries_display_zh'] = '无限制'
-            user['admin_countries_display_en'] = 'Unrestricted'
-            user['admin_countries_display'] = '无限制'
-
-    return render_template('auth/profile.html', user=user)
-'''
 
 @auth_bp.route('/profile', methods=['GET', 'POST'])
 @login_required
@@ -433,34 +307,6 @@ def login():
             if res and hasattr(res, 'data'): user = res.data
             elif isinstance(res, dict): user = res
         except: pass
-        if user and auth.check_password(pwd, user.get('password_hash', '')):
-            admin_countries = user.get('admin_countries', '')
-            try:
-                if isinstance(admin_countries, str): json.loads(admin_countries)
-            except: admin_countries = json.dumps([])
-            session.update({
-                "user_id": user['id'], "user_email": email, "role": user.get('role', 'user'),
-                "admin_countries": admin_countries, "is_protected": user.get('is_protected', False),
-                "user_country": user.get('country')
-            })
-            flash({'msg': 'login_success', 'params': []}, 'success')
-            return redirect(url_for('exam.dashboard'))
-        else:
-            flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
-    return render_template('auth/login.html')
-'''
-
-@auth_bp.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email, pwd = request.form['email'], request.form['password']
-        db = get_supabase()
-        user = None
-        try:
-            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").maybe_single().execute()
-            if res and hasattr(res, 'data'): user = res.data
-            elif isinstance(res, dict): user = res
-        except: pass
         
         if user and auth.check_password(pwd, user.get('password_hash', '')):
             admin_countries = user.get('admin_countries', '')
@@ -487,6 +333,44 @@ def login():
             return render_template('auth/login.html')
     
     return render_template('auth/login.html')
+'''
+@auth_bp.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        email, pwd = request.form['email'], request.form['password']
+        db = get_supabase()
+        user = None
+        try:
+            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").maybe_single().execute()
+            if res and hasattr(res, 'data'): user = res.data
+            elif isinstance(res, dict): user = res
+        except: pass
+        
+        if user and auth.check_password(pwd, user.get('password_hash', '')):
+            admin_countries = user.get('admin_countries', '')
+            try:
+                if isinstance(admin_countries, str): json.loads(admin_countries)
+            except: admin_countries = json.dumps([])
+            session.update({
+                "user_id": user['id'], "user_email": email, "role": user.get('role', 'user'),
+                "admin_countries": admin_countries, "is_protected": user.get('is_protected', False),
+                "user_country": user.get('country')
+            })
+            
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
+            
+            flash({'msg': 'login_success', 'params': []}, 'success')
+            return redirect(url_for('exam.dashboard'))
+        else:
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"success": False, "message": "invalid_email_or_password"}), 401
+            
+            flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
+            return render_template('auth/login_standalone.html')  # ✅ 改为独立模板
+    
+    # GET 请求也使用独立模板
+    return render_template('auth/login_standalone.html')
 
 @auth_bp.route('/logout')
 def logout():
