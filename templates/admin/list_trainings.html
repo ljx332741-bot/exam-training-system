@@ -381,6 +381,9 @@
 
 {% block extra_js %}
 <script>
+    // 在页面顶部定义缓存变量
+    let cachedData = [];
+    let cachedTotal = 0;
     // ========== 培训页面缓存（方案一） ==========
     const TRAINING_CACHE_KEY = 'training_list_data';
     const TRAINING_CACHE_TIME_KEY = 'training_list_data_time';
@@ -473,23 +476,28 @@
     }
 
     async function loadTrainings(forceRefresh = false) {
-        // 使用缓存
+        // 使用缓存（仅当不是强制刷新时）
         if (!forceRefresh) {
             const cached = getCachedTrainingData();
             if (cached && cached.data && cached.data.length > 0) {
                 console.log('📋 使用缓存渲染');
-                renderTrainingsTable(cached.data);
-                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
-                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
                 
+                // ✅ 如果是来自子页面返回，直接使用缓存，不刷新
                 const fromDetail = sessionStorage.getItem('from_training_detail');
                 if (fromDetail === 'true') {
-                    console.log('📋 从下级返回，不刷新');
+                    sessionStorage.removeItem('from_training_detail');
+                    console.log('📋 从下级返回，使用缓存不刷新');
+                    renderTrainingsTable(cached.data);
+                    document.getElementById('totalCount').innerText = cached.total || cached.data.length;
+                    renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
                     return;
                 }
                 
-                setTimeout(() => loadTrainings(true), 800);
-                return;
+                // ✅ 其他情况：先显示缓存，但立即在后台刷新（不闪烁）
+                // 但为了更好的体验，直接走刷新流程，不显示缓存
+                // 改为：不显示缓存，直接显示进度条
+                console.log('📋 有缓存但需要刷新，直接显示进度条');
+                // 继续执行下面的刷新逻辑（不 return）
             }
         }
         
@@ -519,12 +527,17 @@
                     page: data.page,
                     per_page: data.per_page
                 });
+
+                // ✅ 缓存数据
+                cachedData = data.data;
+                cachedTotal = data.total;
                 
                 updateProgress(85, t('rendering_table'));
-                renderTrainingsTable(data.data);
-                document.getElementById('totalCount').innerText = data.total;
+
+                renderTrainingsTable(cachedData);
+                document.getElementById('totalCount').innerText = cachedTotal;
                 currentPage = data.page;
-                renderPagination(data.page, Math.ceil(data.total / data.per_page));
+                renderPagination(data.page, Math.ceil(cachedTotal / data.per_page));
                 
                 updateProgress(100, t('report_data_loaded'));
                 
@@ -900,7 +913,7 @@
                             if (typeof showToast === 'function') {
                                 showToast(safeT('t_delete_success'), 'success');
                             }
-                            loadTrainings();
+                            loadTrainings(true);
                         } else {
                             // ✅ 使用 apiToast 自动翻译
                             if (typeof apiToast === 'function') {
@@ -1760,7 +1773,7 @@
         filters.country = document.getElementById('filterCountry').value;
         filters.quarter = document.getElementById('filterQuarter').value;
         currentPage = 1;
-        loadTrainings();
+        loadTrainings(true);  // ✅ 强制刷新，直接显示进度条
     });
 
     // 保存表头模板
@@ -1800,7 +1813,7 @@
             document.getElementById('currentEditTrainingId').value = '';
             document.getElementById('currentEditCountry').value = '';
             // 刷新培训列表（更新一级菜单的禁用状态）
-            loadTrainings();
+            loadTrainings(true);
         } else {
             alert('❌ 保存失败: ' + (result.message || '未知错误'));
         }
@@ -1836,7 +1849,7 @@
 
         if (res.ok) {
             bootstrap.Modal.getInstance(document.getElementById('pushModal')).hide();
-            loadTrainings();
+            loadTrainings(true);
             alert(safeT('t_notification_push_success') + (selectedUserIds.length ? '' : safeT('t_all_registered_users')));
         } else {
             const err = await res.json();
@@ -1930,7 +1943,15 @@
                 };
             }
 
-            await loadTrainings();
+            // 只重新渲染表格，不重新加载数据
+            if (cachedData && cachedData.length > 0) {
+                renderTrainingsTable(cachedData);
+            }
+            
+            // 重新应用翻译
+            if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+                window.i18n.applyTranslations();
+            }
 
             if (editData) {
                 addNewTrainingRow(editData);
@@ -1947,7 +1968,15 @@
                 }
             });
         }
-        if (typeof loadTrainings === 'function') loadTrainings();
+        // ✅ 只重新渲染表格，不重新加载数据
+        if (cachedData && cachedData.length > 0) {
+            renderTrainingsTable(cachedData);
+        }
+        
+        // ✅ 重新应用翻译到页面
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
     });
     
     // ==================== 培训-考试绑定管理 ====================

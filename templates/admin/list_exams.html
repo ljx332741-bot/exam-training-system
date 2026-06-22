@@ -386,6 +386,8 @@
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     let currentReopenExamId = null;
     let debugModeEnabled = false;
+    let cachedExamsData = [];
+    let cachedTotal = 0;
 
     // ========== 初始化调试开关 ==========
     async function initDebugMode() {
@@ -440,7 +442,7 @@
             });
         }
     }    
-
+    
     async function loadExams() {
         // ✅ 使用表格内嵌进度条
         await window.loadTableWithProgress('examsTbody', async (updateProgress, updateDesc) => {
@@ -457,19 +459,30 @@
                     include_deleted: document.getElementById('includeDeletedCheckbox').checked ? 'true' : 'false',
                     debug_mode: debugModeEnabled
                 });
+
+                updateProgress(20, t('building_request_parameters'));
+                updateProgress(30, t('sending_request'));
                 
                 updateProgress(40, t('data_acquisition_in_progress'));
                 const res = await fetch(`/api/admin/exams/list?${params}`);
+
+                updateProgress(50, t('server_is_in_response'));
+                
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                
+
+                // ✅ 缓存数据
+                cachedExamsData = data.data || [];
+                cachedTotal = data.total || 0;
+
+                updateProgress(65, t('analyzing_data'));
                 updateProgress(70, t('processing_data'));
                 
                 updateProgress(85, t('rendering_table'));
-                renderExamsTable(data.data);
-                document.getElementById('totalCount').innerText = data.total;
-                renderPagination(data.page, Math.ceil(data.total / data.per_page));
-                
+                renderExamsTable(cachedExamsData);
+                document.getElementById('totalCount').innerText = cachedTotal;
+                renderPagination(data.page, Math.ceil(cachedTotal / data.per_page));
+                updateProgress(95, t('render_is_completed'));
                 updateProgress(100, t('infomation_loaded'));
                 
             } catch (err) {
@@ -477,7 +490,7 @@
                 throw err;
             }
         }, {
-            title: 'loading_exam_list',
+            title: t('loading_exam_list'),
             desc: 'please_wait_loading_exams',
             colspan: 14,
             size: 'md',
@@ -1517,11 +1530,27 @@
     document.addEventListener('DOMContentLoaded', async () => {
         await initDebugMode();
 
+        // ✅ 等待 i18n 就绪
+        await waitForI18n();
+
+        // ✅ 应用翻译
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+
         if (window.i18n) {
           window.i18n.subscribe(() => {
             loadQuarterOptions();
             setupQuarterInput();
-            loadExams();
+            // ✅ 只重新渲染表格，不重新请求数据
+            if (cachedExamsData && cachedExamsData.length > 0) {
+                renderExamsTable(cachedExamsData);
+            }
+            
+            // ✅ 重新应用翻译到页面
+            if (window.i18n.applyTranslations) {
+                window.i18n.applyTranslations();
+            }
           });
         }
         await setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
@@ -1544,10 +1573,19 @@
                 }
             });
         }
+        loadExams();
     });
-    
+            
+    // 语言切换时只重新渲染，不重新加载数据
     window.addEventListener('app:languageChanged', function() {
-        if (typeof loadExams === 'function') loadExams();
+        // 只重新渲染表格（使用已缓存的数据）
+        if (cachedExamsData && cachedExamsData.length > 0) {
+            renderExamsTable(cachedExamsData);
+        }
+        // 重新应用翻译
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
     });
 </script>
 {% endblock %}
