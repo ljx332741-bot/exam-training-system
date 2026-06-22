@@ -1236,11 +1236,11 @@
                                 <!-- 描述 -->
                                 <p class="text-muted mb-2 small" id="${tbodyId}_progress_desc">${descText}</p>
                                 
-                                <!-- 进度条 -->
+                                <!-- 进度条（添加平滑过渡动画） -->
                                 <div class="progress w-75" style="height: ${config.barHeight}; max-width: 400px;">
                                     <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" 
                                         role="progressbar" 
-                                        style="width: 0%;" 
+                                        style="width: 0%; transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);" 
                                         id="${tbodyId}_progress_bar"></div>
                                 </div>
                                 
@@ -1254,21 +1254,92 @@
                 // 替换 tbody 内容
                 tbody.innerHTML = progressHtml;
                 
-                // 保存状态
+                // ✅ 启动模拟进度（快速跑到 98%，模拟快速加载）
+                const bar = document.getElementById(`${tbodyId}_progress_bar`);
+                const percentEl = document.getElementById(`${tbodyId}_progress_percent`);
+                
+                // 清除之前的模拟定时器
+                if (tbody._simulateInterval) {
+                    clearInterval(tbody._simulateInterval);
+                    tbody._simulateInterval = null;
+                }
+                
+                // 重置状态
                 tbody._progressState = {
                     current: 0,
-                    target: 100,
-                    intervalId: null,
-                    isComplete: false
+                    isComplete: false,
+                    lastUpdateTime: Date.now()
                 };
+                
+                // ✅ 快速模拟进度：从 1% 快速跑到 98%
+                let descriptionIndex = 0;
+                const descriptions = [
+                    t('loading_in_progress'),
+                    t('processing_the_request'),
+                    t('preparing_to_render_content'),
+                    t('about_to_be_completed'),
+                    t('loading_please_wait_while')
+                ];
+                
+                tbody._simulateInterval = setInterval(function() {
+                    if (!bar) {
+                        clearInterval(tbody._simulateInterval);
+                        return;
+                    }
+                    
+                    // 如果已完成，停止模拟
+                    if (tbody._progressState && tbody._progressState.isComplete) {
+                        clearInterval(tbody._simulateInterval);
+                        tbody._simulateInterval = null;
+                        return;
+                    }
+                    
+                    // 获取当前真实进度
+                    const currentWidth = parseFloat(bar.style.width) || 0;
+                    
+                    // ✅ 如果当前进度小于 98%，快速模拟增加
+                    if (currentWidth < 98) {
+                        // 动态速度：0-60% 快速，60-90% 中速，90-98% 慢速
+                        let increment;
+                        if (currentWidth < 30) {
+                            // 初始阶段：快速 5-10%
+                            increment = 5 + Math.random() * 5;
+                        } else if (currentWidth < 60) {
+                            // 中间阶段：中速 3-6%
+                            increment = 3 + Math.random() * 3;
+                        } else if (currentWidth < 85) {
+                            // 中后阶段：中慢速 1.5-3.5%
+                            increment = 1.5 + Math.random() * 2;
+                        } else {
+                            // 最后阶段：慢速 0.3-1.2%（接近完成时等待真实数据）
+                            increment = 0.3 + Math.random() * 0.9;
+                        }
+                        
+                        const newWidth = Math.min(currentWidth + increment, 98);
+                        bar.style.width = newWidth + '%';
+                        bar.setAttribute('aria-valuenow', Math.round(newWidth));
+                        if (percentEl) {
+                            percentEl.textContent = Math.round(newWidth) + '%';
+                        }
+                        
+                        // ✅ 描述文字轮换，增加动态感
+                        const descEl = document.getElementById(`${tbodyId}_progress_desc`);
+                        if (descEl && Math.random() > 0.6) {
+                            const tip = descriptions[descriptionIndex % descriptions.length];
+                            descriptionIndex++;
+                            descEl.textContent = typeof t === 'function' ? t(tip) : tip;
+                        }
+                    }
+                }, 120); // ✅ 120ms 更新一次，速度很快
             };
-            
+             
             /**
              * 更新表格进度条
              * @param {string} tbodyId - tbody 元素的 ID
              * @param {number} percent - 进度百分比 (0-100)
              * @param {string} desc - 可选，更新描述文字
              */
+
             window.updateTableProgress = function(tbodyId, percent, desc) {
                 const tbody = document.getElementById(tbodyId);
                 if (!tbody) return;
@@ -1281,9 +1352,11 @@
                 
                 // 确保百分比在有效范围内
                 const clampedPercent = Math.min(Math.max(percent, 0), 100);
-                tbody._progressState.current = clampedPercent;
+                if (tbody._progressState) {
+                    tbody._progressState.current = clampedPercent;
+                }
                 
-                // 更新进度条
+                // 更新进度条（CSS transition 会处理平滑动画）
                 bar.style.width = clampedPercent + '%';
                 bar.setAttribute('aria-valuenow', clampedPercent);
                 
@@ -1298,8 +1371,8 @@
                     descEl.textContent = translatedDesc;
                 }
                 
-                // 如果达到100%，自动完成
-                if (clampedPercent >= 100 && !tbody._progressState.isComplete) {
+                // 如果达到 100%，完成
+                if (clampedPercent >= 100 && tbody._progressState && !tbody._progressState.isComplete) {
                     window.completeTableProgress(tbodyId);
                 }
             };
@@ -1309,22 +1382,24 @@
              * @param {string} tbodyId - tbody 元素的 ID
              * @param {string} message - 可选，完成消息
              */
+
             window.completeTableProgress = function(tbodyId, message) {
                 const tbody = document.getElementById(tbodyId);
                 if (!tbody) return;
                 
+                // ✅ 停止模拟进度
+                if (tbody._simulateInterval) {
+                    clearInterval(tbody._simulateInterval);
+                    tbody._simulateInterval = null;
+                }
+                
                 const state = tbody._progressState;
-                if (!state || state.isComplete) return;
+                if (!state) return;
+                if (state.isComplete) return;
                 
                 state.isComplete = true;
                 
-                // 停止自动进度
-                if (state.intervalId) {
-                    clearInterval(state.intervalId);
-                    state.intervalId = null;
-                }
-                
-                // 设置为100%
+                // 设置为 100%
                 const bar = document.getElementById(`${tbodyId}_progress_bar`);
                 const percentEl = document.getElementById(`${tbodyId}_progress_percent`);
                 const titleEl = document.getElementById(`${tbodyId}_progress_title`);
@@ -1351,8 +1426,7 @@
                     descEl.style.color = '#198754';
                 }
                 
-                // 延迟后执行回调（由调用方决定何时替换为真实数据）
-                // 不自动替换，由调用方在数据准备好后调用 render 函数
+                // 延迟后自动隐藏（由调用方决定何时替换为真实数据）
             };
             
             /**
@@ -1363,11 +1437,14 @@
                 const tbody = document.getElementById(tbodyId);
                 if (!tbody) return;
                 
+                // ✅ 停止模拟进度
+                if (tbody._simulateInterval) {
+                    clearInterval(tbody._simulateInterval);
+                    tbody._simulateInterval = null;
+                }
+                
                 // 重置状态
                 if (tbody._progressState) {
-                    if (tbody._progressState.intervalId) {
-                        clearInterval(tbody._progressState.intervalId);
-                    }
                     tbody._progressState = null;
                 }
             };
@@ -1415,6 +1492,13 @@
                     // 出错时显示错误信息
                     const descEl = document.getElementById(`${tbodyId}_progress_desc`);
                     const titleEl = document.getElementById(`${tbodyId}_progress_title`);
+                    
+                    // ✅ 停止模拟进度
+                    const tbody = document.getElementById(tbodyId);
+                    if (tbody && tbody._simulateInterval) {
+                        clearInterval(tbody._simulateInterval);
+                        tbody._simulateInterval = null;
+                    }
                     
                     if (titleEl) {
                         titleEl.innerHTML = '<i class="bi bi-x-circle-fill text-danger me-2"></i> ' + (typeof t === 'function' ? t('load_failed') : '加载失败');

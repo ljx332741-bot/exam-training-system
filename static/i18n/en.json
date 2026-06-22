@@ -1004,6 +1004,22 @@
 "please_wait_loading_exams": "Please wait loading exams",
 "exam_list_loaded": "Exam list loaded",
 "loading_deleted_exams": "Loading deleted exams",
-"please_wait_loading_deleted_exams": "Please wait loading deleted exams"
-
+"please_wait_loading_deleted_exams": "Please wait loading deleted exams",
+"loading_in_progress": "Loading is in progress...",
+"processing_the_request": "Processing the request...",
+"preparing_to_render_content": "Preparing to render content...",
+"about_to_be_completed": "About to be completed...",
+"loading_please_wait_while": "Loading... please wait while...",
+"building_request_parameters": "Building request parameters...",
+"sending_request": "Sending request...",
+"server_is_in_response": "Server is in response...",
+"analyzing_data": "Analyzing data...",
+"render_is_completed": "Render is completed...",
+"confirm_cancel_training_assign": "Confirm to cancel  {0}'s training assign? \nCan't see the training if unassigned.",
+"confirm_assign_training": "Confirm to assign training to {0}?",
+"canceling_assign": "Canceling the assignment...",
+"unassign_success": "Unassign successful",
+"canceled_people_assignment": "Canceled {0} people's assignment",
+"assign_success": "Assign successful",
+"success_assign": "Success to assign {0} people"
 }
