@@ -43,9 +43,11 @@ exam-system/
 │   ├── base.html                           # 基础布局
 │   ├── index.html                          # 首页布局
 │   ├── auth/     
-│   │   ├── login.html                      # 登陆界面
+│   │   ├── login.html                      # 登陆界面(旧)
+│   │   ├── login_standalone.html           # 登陆界面(新)
 │   │   ├── profile.html                    # 个人资料
-│   │   └── register.html                   # 注册界面
+│   │   ├── register.html                   # 注册界面(旧)
+│   │   └── register_standalone.html        # 注册界面(新)
 │   │
 │   ├── components/          
 │   │   ├──                    
