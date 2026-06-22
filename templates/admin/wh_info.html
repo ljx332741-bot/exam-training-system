@@ -267,23 +267,23 @@
         // ✅ 使用表格内嵌进度条
         await window.loadTableWithProgress('whTableBody', async (updateProgress, updateDesc) => {
             try {
-                updateProgress(10, '准备加载库房数据...');
+                updateProgress(10, t('preparing_load_wh_info_data'));
                 
                 const res = await fetch(`/api/admin/wh/list?${params}`);
                 
-                updateProgress(50, '数据获取中...');
+                updateProgress(50, t('data_acquisition_in_progress'));
                 
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 
-                updateProgress(80, '渲染数据...');
+                updateProgress(80, t('rendering_table'));
                 
                 // 渲染表格数据
                 renderWhTable(data.data);
                 document.getElementById('totalCount').innerText = data.total;
                 renderPagination(data.page, Math.ceil(data.total / data.per_page));
                 
-                updateProgress(100, '加载完成');
+                updateProgress(100, t('report_data_loaded'));
                 
             } catch (err) {
                 console.error('加载库房列表失败:', err);

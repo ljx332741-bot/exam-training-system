@@ -991,6 +991,16 @@
 "preparing_load_training_data": "准备加载培训列表...",
     "loading_attendance_status": "正在加载签到状态数据...",
     "please_wait_loading_attendance": "请稍候，正在获取签到状态",
-    "attendance_status_loaded": "签到状态加载完成"
+    "attendance_status_loaded": "签到状态加载完成",
+"preparing_load_attendance_data": "准备加载签到状态数据...",
+"preparing_load_wh_info_data": "准备加载库房信息数据...",
+"preparing_load_exam_data": "准备加载考试数据...",
+"infomation_loaded": "加载完成",
+"preparing_load_deleted_data": "准备加载已删除考试...",
+"loading_exam_list": "正在加载考试列表...",
+"please_wait_loading_exams": "请稍候，正在获取考试数据",
+"exam_list_loaded": "考试列表加载完成",
+"loading_deleted_exams": "正在加载已删除考试...",
+"please_wait_loading_deleted_exams": "请稍候，正在获取已删除考试"
 
 }

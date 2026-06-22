@@ -442,25 +442,47 @@
     }    
 
     async function loadExams() {
-        const params = new URLSearchParams({
-            page: currentPage,
-            per_page: 20,
-            name: filters.name,
-            status: filters.status,
-            quarter: filters.quarter,
-            country: filters.country,
-            include_deleted: document.getElementById('includeDeletedCheckbox').checked ? 'true' : 'false',
-            debug_mode: debugModeEnabled  // ✅ 传递调试模式状态
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('examsTbody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, t('preparing_load_exam_data'));
+                
+                const params = new URLSearchParams({
+                    page: currentPage,
+                    per_page: 20,
+                    name: filters.name,
+                    status: filters.status,
+                    quarter: filters.quarter,
+                    country: filters.country,
+                    include_deleted: document.getElementById('includeDeletedCheckbox').checked ? 'true' : 'false',
+                    debug_mode: debugModeEnabled
+                });
+                
+                updateProgress(40, t('data_acquisition_in_progress'));
+                const res = await fetch(`/api/admin/exams/list?${params}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                updateProgress(70, t('processing_data'));
+                
+                updateProgress(85, t('rendering_table'));
+                renderExamsTable(data.data);
+                document.getElementById('totalCount').innerText = data.total;
+                renderPagination(data.page, Math.ceil(data.total / data.per_page));
+                
+                updateProgress(100, t('infomation_loaded'));
+                
+            } catch (err) {
+                console.error('加载考试列表失败:', err);
+                throw err;
+            }
+        }, {
+            title: 'loading_exam_list',
+            desc: 'please_wait_loading_exams',
+            colspan: 14,
+            size: 'md',
+            completeMessage: 'exam_list_loaded'
         });
-        try {
-            const res = await fetch(`/api/admin/exams/list?${params}`);
-            const data = await res.json();
-            renderExamsTable(data.data);
-            document.getElementById('totalCount').innerText = data.total;
-            renderPagination(data.page, Math.ceil(data.total / data.per_page));
-        } catch (err) {
-            console.error('加载考试列表失败:', err);
-        }
     }
 
     // 按钮绑定事件
@@ -637,6 +659,8 @@
     function renderExamsTable(exams) {
         console.log('当前用户角色:', CURRENT_USER_ROLE);
         const tbody = document.getElementById('examsTbody');
+        if (!tbody) return;
+        window.hideTableProgress('examsTbody');
         if (!exams.length) {
             tbody.innerHTML = '<tr><td colspan="14" class="text-center">' + t('t_no_data') + '</td></tr>';
             return;
@@ -1149,30 +1173,52 @@
 
     // 加载已删除考试列表
     async function loadDeletedExams() {
-        const params = new URLSearchParams({
-            page: deletedExamsCurrentPage,
-            per_page: 20,
-            search: deletedExamsSearch
+        // ✅ 使用表格内嵌进度条
+        await window.loadTableWithProgress('deletedExamsTbody', async (updateProgress, updateDesc) => {
+            try {
+                updateProgress(10, t('preparing_load_deleted_data'));
+                
+                const params = new URLSearchParams({
+                    page: deletedExamsCurrentPage,
+                    per_page: 20,
+                    search: deletedExamsSearch
+                });
+                
+                updateProgress(40, t('data_acquisition_in_progress'));
+                const res = await fetch(`/api/admin/exams/deleted?${params}`);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                
+                updateProgress(70, t('processing_data'));
+                
+                updateProgress(85, t('rendering_table'));
+                renderDeletedExamsTable(data.data);
+                document.getElementById('deletedExamsTotalCount').innerText = data.total;
+                renderDeletedExamsPagination(data.page, Math.ceil(data.total / data.per_page));
+                
+                updateProgress(100, t('infomation_loaded'));
+                
+            } catch (err) {
+                console.error('加载已删除考试列表失败:', err);
+                // 错误会由 loadTableWithProgress 处理
+                throw err;
+            }
+        }, {
+            title: 'loading_deleted_exams',
+            desc: 'please_wait_loading_deleted_exams',
+            colspan: 11,
+            size: 'md',
+            completeMessage: 'deleted_exams_loaded'
         });
-        
-        try {
-            const res = await fetch(`/api/admin/exams/deleted?${params}`);
-            const data = await res.json();
-            renderDeletedExamsTable(data.data);
-            document.getElementById('deletedExamsTotalCount').innerText = data.total;
-            renderDeletedExamsPagination(data.page, Math.ceil(data.total / data.per_page));
-        } catch (err) {
-            console.error('加载已删除考试列表失败:', err);
-            document.getElementById('deletedExamsTbody').innerHTML = 
-                `<tr><td colspan="11" class="text-center text-danger">加载失败</td></tr>`;
-        }
     }
 
     // 渲染已删除考试表格
     function renderDeletedExamsTable(exams) {
         const tbody = document.getElementById('deletedExamsTbody');
+        if (!tbody) return;
+        window.hideTableProgress('deletedExamsTbody');
         if (!exams.length) {
-            tbody.innerHTML = `<tr><td colspan="11" class="text-center">暂无数据</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="11" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
         
@@ -1244,7 +1290,7 @@
         document.getElementById('examResultsTitle').innerText = examTitle;
         
         const tbody = document.getElementById('examResultsTbody');
-        tbody.innerHTML = `<tr><td colspan="8" class="text-center"><div class="spinner-border spinner-border-sm me-2"></div>加载中...</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center"><div class="spinner-border spinner-border-sm me-2"></div>${t('loading')}</td></tr>`;
         
         const modal = new bootstrap.Modal(document.getElementById('examResultsModal'));
         modal.show();
@@ -1255,7 +1301,7 @@
             const data = await res.json();
             
             if (!data.data || data.data.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">暂无考试记录</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted">${t('t_no_data')}</td></tr>`;
                 return;
             }
             
@@ -1276,7 +1322,7 @@
             `).join('');
         } catch (err) {
             console.error('加载考试记录失败:', err);
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">加载失败</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${t('load_failed')}</td></tr>`;
         }
     }
 
