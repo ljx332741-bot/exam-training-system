@@ -11,6 +11,127 @@
 {% block extra_css %}
 {{ super() }}
 <style>
+    /* ==================== 统计卡片 - 毛玻璃效果（保留各自颜色） ==================== */
+    /* 卡片基础样式 - 所有统计卡片共用 */
+    .dashboard-stats-card {
+        border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+        transition: all 0.3s ease !important;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        backdrop-filter: blur(4px) saturate(1.2) !important;
+        -webkit-backdrop-filter: blur(4px) saturate(1.2) !important;
+    }
+
+    /* 卡片顶部发光线条 */
+    .dashboard-stats-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+        opacity: 0.6;
+    }
+
+    /* 卡片悬停效果 */
+    .dashboard-stats-card:hover {
+        transform: translateY(-4px) !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
+    }
+
+    /* 小标签文字（如：已注册、已导入、考试总数等） */
+    .dashboard-stats-card .card-body .opacity-75,
+    .dashboard-stats-card .card-body .small,
+    .dashboard-stats-card .card-body small:not(.text-muted),
+    .dashboard-stats-card .card-body .card-title small {
+        color: rgba(255, 255, 255, 0.75) !important;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.10), 0 1px 3px rgba(0, 0, 0, 0.2) !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.3px !important;
+    }
+
+    /* 统计数据旁边的辅助文字（如：已注册、已导入、考试总数等） */
+    .dashboard-stats-card .card-body .ms-2,
+    .dashboard-stats-card .card-body .opacity-75 {
+        color: rgba(255, 255, 255, 0.7) !important;
+        text-shadow: 0 0 18px rgba(45, 44, 44, 0.742), 0 1px 2px rgba(0, 0, 0, 0.15) !important;
+    } 
+
+    /* 卡片内的文字颜色适配毛玻璃 */
+    .dashboard-stats-card .card-title {
+        color: rgba(255, 255, 255, 0.8) !important;
+        text-shadow: 0 0 20px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    }
+
+    .dashboard-stats-card .card-body h2,
+    .dashboard-stats-card .card-body .h2,
+    .dashboard-stats-card .card-body .fw-bold {
+        color: #ffffff !important;
+        text-shadow: 0 0 30px rgba(255, 255, 255, 0.12), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+    }
+
+    /* 卡片中的小字图标 */
+    .dashboard-stats-card .card-body .bi {
+        color: rgba(255, 255, 255, 0.5) !important;
+        text-shadow: 0 0 15px rgba(255, 255, 255, 0.06) !important;
+    }
+    .dashboard-stats-card .card-body .text-muted,
+    .dashboard-stats-card .card-body small {
+        color: rgba(255, 255, 255, 0.6) !important;
+        text-shadow: 0 0 15px rgba(255, 255, 255, 0.05) !important;
+    }
+
+    .dashboard-stats-card .card-body .opacity-75 {
+        opacity: 0.8 !important;
+    }
+
+    /* 卡片图标颜色 */
+    .dashboard-stats-card .bi {
+        color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* ===== 各卡片独有颜色（毛玻璃版本） ===== */
+
+    /* 1. 用户统计卡片 - 蓝色系 */
+    .dashboard-stats-card.card-user {
+        background: #0d6efd !important;
+    }
+    .dashboard-stats-card.card-user:hover {
+        border-color: rgba(13, 110, 253, 0.45) !important;
+        box-shadow: 0 12px 48px rgba(13, 110, 253, 0.2) !important;
+    }
+
+    /* 2. 考试统计卡片 - 绿色系 */
+    .dashboard-stats-card.card-exam {
+        background: #198754 !important;
+    }
+    .dashboard-stats-card.card-exam:hover {
+        border-color: rgba(25, 135, 84, 0.45) !important;
+        box-shadow: 0 12px 48px rgba(25, 135, 84, 0.2) !important;
+    }
+
+    /* 3. 培训统计卡片 - 青色系 */
+    .dashboard-stats-card.card-training {
+        background: #0dcaf0 !important;
+    }
+    .dashboard-stats-card.card-training:hover {
+        border-color: rgba(13, 202, 240, 0.40) !important;
+        box-shadow: 0 12px 48px rgba(13, 202, 240, 0.2) !important;
+    }
+
+    /* 4. 访谈统计卡片 - 灰色系（紫色调） */
+    .dashboard-stats-card.card-interview {
+        background: #6c757d !important;
+    }
+    .dashboard-stats-card.card-interview:hover {
+        border-color: rgba(108, 117, 125, 0.45) !important;
+        box-shadow: 0 12px 48px rgba(108, 117, 125, 0.2) !important;
+    }
+
     /* ==================== 导出模态框下拉面板样式 ==================== */
     .export-dropdown {
         position: absolute;
@@ -319,7 +440,7 @@
 	
 	<!-- 注册用户统计 -->
 	<div class="col-md-3">
-		<div class="card shadow-sm border-0 bg-primary text-white h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_user_list') }}`">
+		<div class="card dashboard-stats-card card-user h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_user_list') }}`">
 			<div class="card-body">
 				<h6 class="mb-2 opacity-75"><span data-i18n="user_statistics_manage">用户统计与管理</span></h6>
 				<div class="d-flex align-items-center mt-2">
@@ -341,7 +462,7 @@
 	
 	<!-- 考试信息统计 -->
 	<div class="col-md-3">
-		<div class="card shadow-sm border-0 bg-success text-white h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_exams_page') }}`">
+		<div class="card dashboard-stats-card card-exam h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_exams_page') }}`">
 			<div class="card-body">
 				<h6 class="mb-2 opacity-75"><span data-i18n="exam_statistics_manage">考试统计与管理</span></h6>
 				<div class="d-flex align-items-center mt-2">
@@ -390,7 +511,7 @@
 
 	<!-- 培训签到信息统计 -->
 	<div class="col-md-3">
-		<div class="card shadow-sm border-0 bg-info text-white h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_trainings') }}`">
+		<div class="card dashboard-stats-card card-training h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_trainings') }}`">
 			<div class="card-body">
 				<h6 class="mb-2 opacity-75"><span data-i18n="sign_in_statistics_manage">培训记录与管理</span></h6>
 				<div class="d-flex align-items-center mt-2">
@@ -415,7 +536,7 @@
 
 	<!-- 访谈记录统计 -->
 	<div class="col-md-3">
-		<div class="card shadow-sm border-0 bg-secondary text-white h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_interviewee_stats') }}`">
+		<div class="card dashboard-stats-card card-interview h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_interviewee_stats') }}`">
 			<div class="card-body">
 				<h6 class="mb-2 opacity-75"><span data-i18n="inspect_statistics_manage">访谈统计与管理</span></h6>
 				<div class="d-flex align-items-center mt-2">
