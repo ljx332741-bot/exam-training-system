@@ -1347,6 +1347,9 @@ def api_admin_exam_update(exam_id):
         update_data['duration'] = data['duration']
     if 'pass_score' in data:
         update_data['pass_score'] = data['pass_score']
+    if 'reviewer' in data:
+        update_data['reviewer'] = data['reviewer'] if data['reviewer'] else None
+    
     # 根据是否有完整有效期，同步 is_active 和 status
     if update_data.get('start_time') and update_data.get('end_time'):
         update_data['is_active'] = True
@@ -1717,7 +1720,51 @@ def api_admin_exams_list():
         # ========== 9. 批量获取统计数据 ==========
         if all_exams:
             exam_ids = [exam['id'] for exam in all_exams]
+
+            # 1. 批量获取所有成绩记录
+            all_results = db.table("exam_results") \
+                .select("exam_id, user_id, total_score") \
+                .in_("exam_id", exam_ids) \
+                .is_("deleted_at", "null") \
+                .execute()
             
+            results_by_exam = {}
+            for r in (all_results.data or []):
+                eid = r['exam_id']
+                if eid not in results_by_exam:
+                    results_by_exam[eid] = []
+                results_by_exam[eid].append(r)
+
+            # 2. 计算每个考试的统计信息
+            stats_by_exam = {}
+            for eid, results in results_by_exam.items():
+                if not results:
+                    stats_by_exam[eid] = {
+                        'max_score': None,
+                        'min_score': None,
+                        'retake_count': 0
+                    }
+                    continue
+                
+                # 最高分、最低分
+                scores = [r['total_score'] for r in results if r['total_score'] is not None]
+                max_score = max(scores) if scores else None
+                min_score = min(scores) if scores else None
+                
+                # 复考人数：统计每个用户的记录数
+                user_count = {}
+                for r in results:
+                    uid = r['user_id']
+                    user_count[uid] = user_count.get(uid, 0) + 1
+                
+                retake_count = sum(1 for count in user_count.values() if count > 1)
+                
+                stats_by_exam[eid] = {
+                    'max_score': max_score,
+                    'min_score': min_score,
+                    'retake_count': retake_count
+                }
+
             # 批量获取题目数量
             questions_counts = {}
             try:
@@ -1792,9 +1839,10 @@ def api_admin_exams_list():
             status = get_exam_status(exam)
             can_show_debug_push = is_super_admin and debug_mode and status == 'closed'
             
-            # ✅ 新增：为前端添加格式化字段
+            # 新增：为前端添加格式化字段
             created_date = exam.get('created_at', '')[:10] if exam.get('created_at') else ''
             quarter_val = _get_quarter_from_date(exam.get('created_at'))
+            stats = stats_by_exam.get(exam_id, {'max_score': None, 'min_score': None, 'retake_count': 0})
             
             exams_with_status.append({
                 "id": exam_id,
@@ -1811,9 +1859,9 @@ def api_admin_exams_list():
                 "question_count": questions_counts.get(exam_id, 0),
                 "assigned_count": assigned_count,
                 "submitted_count": submitted_count,
-                "max_score": None,
-                "min_score": None,
-                "retake_count": 0,
+                "max_score": stats.get('max_score'),
+                "min_score": stats.get('min_score'),
+                "retake_count": stats.get('retake_count', 0),
                 "reviewer": exam.get('reviewer', ''),
                 "deleted_at": exam.get('deleted_at'),
                 "can_show_debug_push": can_show_debug_push
@@ -2875,6 +2923,7 @@ def reopen_exam_for_testing(exam_id):
     new_start_time = data.get('start_time')
     new_end_time = data.get('end_time')
     new_duration = data.get('duration')
+    new_reviewer = data.get('reviewer')
     
     if not new_start_time or not new_end_time:
         return jsonify({"success": False, "message": "请设置新的有效期"}), 400
@@ -2891,6 +2940,8 @@ def reopen_exam_for_testing(exam_id):
         }
         if new_duration:
             update_data["duration"] = new_duration
+        if new_reviewer and new_reviewer.strip():
+            update_data["reviewer"] = new_reviewer.strip()
         
         db.table("exams").update(update_data).eq("id", exam_id).execute()
         

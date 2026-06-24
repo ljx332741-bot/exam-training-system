@@ -273,8 +273,6 @@
                     <input type="text" id="filterCountry" class="form-control" list="countryDatalist" 
                            data-i18n-placeholder="placeholder_country"
                            placeholder="国家" autocomplete="off">
-                    <datalist id="countryDatalist"></datalist>
-                    <input type="hidden" id="filterCountryCode">
                 </div>
                 <div class="col-md-3">
                     <input type="text" id="filterWhId" class="form-control" 
@@ -456,6 +454,29 @@
     let cachedTotal = 0;
     const perPage = 20;
 
+    const TRAINING_STATUS_CACHE_KEY = 'training_status_data';
+    const TRAINING_STATUS_CACHE_TIME_KEY = 'training_status_data_time';
+    const CACHE_DURATION = 5 * 60 * 1000; // 5分钟
+
+    // --- 缓存函数 (与用户管理页面类似) ---
+    function getCachedTrainingStatusData() {
+        try {
+            const cached = sessionStorage.getItem(TRAINING_STATUS_CACHE_KEY);
+            const cachedTime = sessionStorage.getItem(TRAINING_STATUS_CACHE_TIME_KEY);
+            if (cached && cachedTime && (Date.now() - parseInt(cachedTime)) < CACHE_DURATION) {
+                return JSON.parse(cached);
+            }
+        } catch (e) {}
+        return null;
+    }
+
+    function setCachedTrainingStatusData(data) {
+        try {
+            sessionStorage.setItem(TRAINING_STATUS_CACHE_KEY, JSON.stringify(data));
+            sessionStorage.setItem(TRAINING_STATUS_CACHE_TIME_KEY, String(Date.now()));
+        } catch (e) {}
+    }
+
     async function loadData(forceRefresh = false) {
         const urlParams = new URLSearchParams(window.location.search);
         const trainingId = urlParams.get('training_id');
@@ -472,22 +493,10 @@
             try {
                 updateProgress(10, t('preparing_load_attendance_data'));
                 
-                let url;
+                // 构建API请求，只传递 training_id，不传递搜索和筛选参数
+                let url = '/api/admin/training/users_with_status';
                 if (trainingId) {
-                    const params = new URLSearchParams({
-                        training_id: trainingId,
-                        search: filters.search,
-                        country: filters.country,
-                        wh_id: filters.wh_id
-                    });
-                    url = `/api/admin/training/users_with_status?${params}`;
-                } else {
-                    const params = new URLSearchParams({
-                        search: filters.search,
-                        country: filters.country,
-                        wh_id: filters.wh_id
-                    });
-                    url = `/api/admin/training/users_with_status?${params}`;
+                    url += `?training_id=${encodeURIComponent(trainingId)}`;
                 }
                 
                 updateProgress(40, t('data_acquisition_in_progress'));
@@ -499,11 +508,11 @@
                 allData = data.data || [];
 
                 // 缓存数据
+                setCachedTrainingStatusData({ data: allData });
                 cachedData = allData;
-                cachedTotal = allData.length;
 
                 updateProgress(85, t('rendering_table'));
-                applyFilters();
+                await applyFilters();
                 
                 updateProgress(100, t('report_data_loaded'));
                 
@@ -521,37 +530,76 @@
         });
     }
     
-    // 应用筛选（前端内存过滤）
-    function applyFilters() {
+    // 应用筛选（前端内存过滤）- 支持多关键词组合查询
+    async function applyFilters() {
         window.hideTableProgress('usersTableBody');
+
         const dataSource = allData.length > 0 ? allData : cachedData;
         let filtered = [...dataSource];
         
+        // 1. 姓名/邮箱搜索：支持多关键词组合查询
         if (filters.search) {
-            const searchLower = filters.search.toLowerCase();
-            filtered = filtered.filter(item => 
-                (item.name_en && item.name_en.toLowerCase().includes(searchLower)) ||
-                (item.email && item.email.toLowerCase().includes(searchLower))
-            );
+            const keywords = splitSearchKeywords(filters.search);
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    // 构建可搜索的字段组合
+                    const searchableText = [
+                        item.name_en || '',
+                        item.name_cn || '',
+                        item.email || '',
+                        item.wh_id || '',
+                        item.wh_name_en || '',
+                        item.country || '',
+                        item.user_country || ''
+                    ].join(' ').toLowerCase();
+                    
+                    // 所有关键词都必须匹配
+                    return keywords.every(k => searchableText.includes(k.toLowerCase()));
+                });
+            }
         }
         
+        // 2. 国家筛选：使用国家列表进行模糊匹配（支持中英文/代码）
         if (filters.country) {
-            filtered = filtered.filter(item => item.user_country === filters.country);
+            const searchLower = filters.country.toLowerCase().trim();
+            const countries = await loadCountryList();
+            filtered = filtered.filter(item => {
+                const userCountry = item.user_country || item.country || '';
+                if (!userCountry) return false;
+                const countryInfo = countries.find(c => c.code === userCountry);
+                if (!countryInfo) return false;
+                const nameZh = (countryInfo.name_zh || '').toLowerCase();
+                const nameEn = (countryInfo.name_en || '').toLowerCase();
+                const code = (countryInfo.code || '').toLowerCase();
+                return nameZh.includes(searchLower) || 
+                    nameEn.includes(searchLower) || 
+                    code.includes(searchLower);
+            });
         }
         
+        // 3. 库房筛选：支持多关键词组合查询
         if (filters.wh_id) {
-            const whLower = filters.wh_id.toLowerCase();
-            filtered = filtered.filter(item => 
-                (item.wh_id && item.wh_id.toLowerCase().includes(whLower)) ||
-                (item.wh_name_en && item.wh_name_en.toLowerCase().includes(whLower))
-            );
+            const keywords = splitSearchKeywords(filters.wh_id);
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const searchableText = [
+                        item.wh_id || '',
+                        item.wh_name_en || ''
+                    ].join(' ').toLowerCase();
+                    return keywords.every(k => searchableText.includes(k.toLowerCase()));
+                });
+            }
         }
         
+        // 4. 培训名称筛选：支持多关键词组合查询
         if (filters.training_name) {
-            const nameLower = filters.training_name.toLowerCase();
-            filtered = filtered.filter(item => 
-                item.training_name && item.training_name.toLowerCase().includes(nameLower)
-            );
+            const keywords = splitSearchKeywords(filters.training_name);
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const trainingName = (item.training_name || '').toLowerCase();
+                    return keywords.every(k => trainingName.includes(k.toLowerCase()));
+                });
+            }
         }
         
         filteredData = filtered;
@@ -1021,32 +1069,61 @@
             };
         };
         
-        const updateFilters = () => {
+        const updateFilters = async () => {
+            // ✅ 添加调试日志
+            console.log('=== updateFilters 被调用 ===');
             filters.search = searchInput?.value || '';
-            filters.country = document.getElementById('filterCountryCode')?.value || '';
+            // ✅ 关键修复：优先使用输入框的文本值，而不是隐藏字段
+            // 因为用户输入时，隐藏字段还没有被更新
+            const countryText = countryInput?.value || '';
+            filters.country = countryText;  // 直接使用文本值
+            
+            console.log('filters.country (文本):', filters.country);
+            
+            // 隐藏字段仅用于存储精确匹配的国家代码（从下拉列表选择时使用）
+            const countryCodeHidden = document.getElementById('filterCountryCode');
+            if (countryCodeHidden && countryCodeHidden.value) {
+                // 如果用户从下拉列表选择了精确的国家，用代码覆盖
+                // 但为了支持模糊匹配，我们应该同时支持文本和代码
+                // 这里我们保留文本，让前端做模糊匹配
+                console.log('隐藏字段有值:', countryCodeHidden.value);
+                // 注意：不要覆盖 filters.country，保留文本用于模糊匹配
+            }
+            
             filters.wh_id = whInput?.value || '';
             filters.training_name = trainingNameInput?.value || '';
             currentPage = 1;
-            applyFilters();
+            console.log('最终 filters:', filters);
+            await applyFilters();
         };
-        
-        const debouncedUpdate = debounce(updateFilters, 300);
+
+        const debouncedUpdate = (typeof createDebouncedSearch === 'function') 
+            ? createDebouncedSearch(updateFilters, 200)
+            : debounce(updateFilters, 200);
         
         if (searchInput) searchInput.addEventListener('input', debouncedUpdate);
-        if (countryInput) countryInput.addEventListener('change', updateFilters);
+        if (countryInput) {
+            // 移除之前可能绑定的旧事件
+            countryInput.removeEventListener('input', debouncedUpdate);
+            countryInput.addEventListener('input', debouncedUpdate);
+            
+            // ✅ 额外：监听 change 事件作为备用
+            countryInput.addEventListener('change', debouncedUpdate);
+        }
         if (whInput) whInput.addEventListener('input', debouncedUpdate);
         if (trainingNameInput) trainingNameInput.addEventListener('input', debouncedUpdate);
         
         if (resetBtn) {
-            resetBtn.addEventListener('click', () => {
+            resetBtn.addEventListener('click', async () => {
                 if (searchInput) searchInput.value = '';
                 if (countryInput) countryInput.value = '';
                 if (whInput) whInput.value = '';
                 if (trainingNameInput) trainingNameInput.value = '';
-                document.getElementById('filterCountryCode').value = '';
+                const countryCodeHidden = document.getElementById('filterCountryCode');
+                if (countryCodeHidden) countryCodeHidden.value = '';
                 filters = { search: '', country: '', wh_id: '', training_name: '' };
                 currentPage = 1;
-                applyFilters();
+                await applyFilters();
             });
         }
     }
@@ -1093,23 +1170,12 @@
         // 等待 i18n 就绪后加载列表
         await waitForI18n();
         window.i18n.applyTranslations();  // 处理静态文本
-        loadData();
-
-        // 关闭按钮
-        /*
-        const closePageBtn = document.getElementById('closePageBtn');
-        if (closePageBtn) {
-            closePageBtn.addEventListener('click', () => {
-                // 直接跳转到培训列表页面
-                window.location.replace('/admin/trainings');
-            });
-        }
-        */
+        await loadData();
 
         // 语言切换时只重新渲染，不重新加载数据
         if (window.i18n && window.i18n.subscribe) {
             let isInitialSubscribe = true;
-            window.i18n.subscribe(() => {
+            window.i18n.subscribe(async () => {
                 if (isInitialSubscribe) {
                     isInitialSubscribe = false;
                     return;
@@ -1117,7 +1183,7 @@
                 // 只重新渲染表格，不重新加载数据
                 if (cachedData && cachedData.length > 0) {
                     allData = cachedData;
-                    applyFilters();
+                    await applyFilters();
                 }
                 // 重新应用翻译
                 if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
