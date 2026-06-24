@@ -80,8 +80,9 @@
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
             {% endif %}
-            <button class="btn btn-outline-secondary" onclick="history.back();">
-                <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span></button>
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
+            </button>
         </div>
     </div>
 
@@ -187,7 +188,16 @@
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0" style="min-width: 1800px; white-space: nowrap;" id="userTable">
                     <tbody id="userTableBody">
-                        <tr><td colspan="18" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr>
+                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                                <div class="d-flex flex-column align-items-center justify-content-center">
+                                    <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted" data-i18n="loading">加载中...</span>
+                                </div>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -873,9 +883,6 @@
     // ==================== 主列表功能 ====================    
     async function loadUsers() {
 
-        console.log('=== loadUsers 被调用 ===');
-        console.log('currentPage 当前值:', currentPage);
-
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
@@ -883,21 +890,14 @@
             wh_id: filters.wh_id
         });
 
-        // ✅ 如果国家筛选不为空，前端过滤
         const countryFilter = filters.country ? filters.country.trim().toLowerCase() : '';
 
         try {
             const res = await fetch(`/api/admin/users?${params}`);
             const data = await res.json();
 
-            // ✅ 调试日志
-            console.log('API 返回数据:', data);
-            console.log('total:', data.total);
-            console.log('page:', data.page);
-            
             let users = data.data || [];
             
-            // ✅ 前端国家模糊匹配
             if (countryFilter) {
                 // 加载国家列表用于名称匹配
                 const countries = await loadCountryList();
@@ -926,25 +926,16 @@
                 });
             }
             
-            // ✅ 更新显示数据
             currentUsersData = users;
-            console.log('API 返回页码:', data.page);
-            console.log('currentPage 在渲染前:', currentPage);
-            console.log('loadUsers - currentPage:', currentPage);
             renderUserTable(currentUsersData);
 
             const total = data.total || users.length;
             document.getElementById('totalCount').innerText = total;
-
-            // ✅ 计算总页数
             const totalPages = Math.ceil(total / 20);
-            console.log('总页数:', totalPages);
-            
             const current = data.page || 1;
             renderPagination(current, totalPages);
 
             updateBatchDeleteButton();
-            // ✅ 渲染完成后恢复列宽
             setTimeout(() => {
                 restoreColumnWidths();
             }, 50);
@@ -971,7 +962,6 @@
                 selectAllCheckbox._hasListener = true;
             }
         }, 100);
-        // ✅ 刷新后，重新同步 selectedUserIds（只保留仍然存在的用户）
         const existingIds = new Set(currentUsersData.map(u => u.id));
         for (const id of selectedUserIds) {
             if (!existingIds.has(id)) {
@@ -986,7 +976,6 @@
         // 如果是受保护账号且不是自己 → 不可编辑
         if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
         
-        // ✅ 开发者可以编辑所有用户（包括超管）
         if (IS_DEVELOPER) return true;
         
         // 超管可以编辑所有用户（除开发者）
@@ -1116,8 +1105,6 @@
     }
 
     function renderUserTable(users) {
-        // ✅ 打印当前页码
-        console.log('renderUserTable - currentPage:', currentPage);
         if (typeof currentPage === 'undefined') {
             currentPage = 1;
         }
@@ -1155,7 +1142,17 @@
             displayUsers = users.filter(u => u.role === 'user');
         }
         if (!displayUsers.length) {
-            document.getElementById('userTableBody').innerHTML = `<tr><td colspan="18" class="text-center">${t('no_data')}</td></tr>`;
+            document.getElementById('userTableBody').innerHTML = `
+                <tr>
+                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                        <div class="d-flex flex-column align-items-center justify-content-center">
+                            <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span class="text-muted">${t('loading') || '加载中...'}</span>
+                        </div>
+                    </td>
+                </tr>`;
             return;
         }
 
@@ -1206,7 +1203,6 @@
         const perPage = 20;  // 每页显示数量，与后端一致
         const page = typeof currentPage !== 'undefined' ? currentPage : 1;
         const startIndex = (page - 1) * perPage + 1;
-        console.log('renderUserTable - startIndex:', startIndex);
         let rowIndex = startIndex;
         for (const u of displayUsers) {
             bodyHtml += `<tr>
@@ -1559,8 +1555,6 @@
             console.error('分页容器不存在');
             return;
         }
-        
-        console.log('renderPagination - current:', current, 'totalPages:', totalPages);
         
         if (totalPages <= 1) {
             pagination.innerHTML = '';

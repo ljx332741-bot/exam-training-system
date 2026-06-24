@@ -2,45 +2,158 @@
 {% extends "base.html" %}
 {% block title %}培训完成度报表{% endblock %}
 
+{% block extra_css %}
+<style>
+    .user-id-cell {
+        cursor: pointer;
+        position: relative;
+    }
+    .user-id-cell .copy-hint {
+        opacity: 0.3;
+        transition: opacity 0.2s;
+    }
+    .user-id-cell:hover .copy-hint {
+        opacity: 0.8;
+    }
+    .user-id-cell:active {
+        background-color: #e3f2fd !important;
+    }
+    .user-id-cell .user-id-display {
+        border-bottom: 1px dashed #dee2e6;
+        transition: border-color 0.2s;
+    }
+    .user-id-cell:hover .user-id-display {
+        border-bottom-color: #0d6efd;
+    }
+    .user-id-cell.copied {
+        background-color: #d4edda !important;
+        transition: background-color 0.3s;
+    }
+    .user-id-cell.copied .user-id-display {
+        border-bottom-color: #28a745;
+    }
+    /* 下拉框定位优化 */
+    .export-dropdown {
+        position: fixed !important;
+        z-index: 1060 !important;
+        max-height: 300px;
+        overflow-y: auto;
+        background: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        min-width: 200px;
+    }
+    .export-dropdown-item {
+        padding: 10px 12px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.2s ease;
+    }
+    .export-dropdown-item:hover {
+        background-color: #f0f7ff;
+    }
+    .export-dropdown-item .item-title {
+        font-weight: 500;
+        font-size: 0.9rem;
+    }
+    .export-dropdown-item .item-meta {
+        font-size: 0.7rem;
+        color: #6c757d;
+        margin-top: 4px;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .export-dropdown .dropdown-header {
+        position: sticky;
+        top: 0;
+        background: #f8f9fa;
+        padding: 8px 12px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #eee;
+        color: #495057;
+        z-index: 1;
+    }
+    /* 绑定标识徽章 */
+    .badge-bound {
+        background: #198754;
+        color: white;
+        font-size: 0.6rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-left: 6px;
+    }
+    .badge-unbound {
+        background: #6c757d;
+        color: white;
+        font-size: 0.6rem;
+        padding: 2px 8px;
+        border-radius: 10px;
+        margin-left: 6px;
+    }
+    /* 悬浮提示图标样式 */
+    .report-hint-icon {
+        transition: transform 0.2s ease;
+        margin-right: 4px;
+    }
+
+    .report-hint-icon:hover {
+        transform: scale(1.1);
+    }
+
+    /* 按钮组样式优化 */
+    .btn-group-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Tooltip 样式优化 */
+    .tooltip-inner {
+        max-width: 400px !important;
+        text-align: left !important;
+        padding: 8px 12px !important;
+        font-size: 0.85rem !important;
+        line-height: 1.5 !important;
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-bar-chart-steps me-2"></i><span data-i18n="training_completion_report">培训完成度报表</span></h2>
-        <button class="btn btn-outline-secondary" onclick="history.back();">
-            <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+        <button class="btn btn-secondary" onclick="window.close()">
+            <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
         </button>
     </div>
 
-    <!-- 筛选栏（实时模糊查询，无搜索按钮） -->
+    <!-- 筛选栏 -->
     <div class="card mb-3">
         <div class="card-body">
             <div class="row g-3">
-                <div class="col-md-2">
-                    <input type="text" id="filterName" class="form-control" 
-                           placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
-                </div>
-                <div class="col-md-2">
-                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist"
-                           placeholder="国家" data-i18n-placeholder="placeholder_country">
-                    <datalist id="countryDatalist"></datalist>
-                    <input type="hidden" id="filterCountryCode">
-                </div>
-                <!-- ✅ 优化：培训名称改为高级搜索 -->
                 <div class="col-md-3">
-                    <label class="form-label fw-bold small mb-1" for="filterTrainingName">
-                        <span data-i18n="training_name">培训名称</span>
-                    </label>
+                    <input type="text" id="filterName" class="form-control" 
+                        placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name"
+                        autocomplete="off">
+                </div>
+                <!-- 培训名称 -->
+                <div class="col-md-3">
                     <div class="position-relative">
                         <input type="text" id="filterTrainingName" class="form-control" 
-                               placeholder="点击选择培训或输入搜索..." 
-                               data-i18n-placeholder="placeholder_click_or_search_training"
-                               autocomplete="off">
+                                data-i18n-title="training_name"
+                                title="培训名称"
+                                placeholder="点击选择培训或输入搜索..." 
+                                data-i18n-placeholder="placeholder_click_or_search_training"
+                                autocomplete="off">
                         <span class="input-clear-btn" data-target="filterTrainingName" 
-                              style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999; z-index: 10; background: white; padding-left: 5px;">
+                                style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999; z-index: 10; background: white; padding-left: 5px;">
                             <i class="bi bi-x-circle-fill"></i>
                         </span>
-                        <div id="trainingDropdown" class="export-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1060; background: white; border: 1px solid #ddd; border-radius: 8px; max-height: 300px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                            <div class="dropdown-header" style="position: sticky; top: 0; background: #f8f9fa; padding: 8px 12px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid #eee; color: #495057;">
+                        <div id="trainingDropdown" class="export-dropdown" style="display: none;">
+                            <div class="dropdown-header">
                                 📋 <span data-i18n="recent_training">最近创建的培训</span>
                             </div>
                             <div id="trainingListContainer"></div>
@@ -54,42 +167,31 @@
                     </div>
                     <input type="hidden" id="selectedTrainingId" value="">
                 </div>
-                <!-- ✅ 优化：考试名称改为高级搜索 -->
+                <!-- 考试名称 - 高级搜索下拉 -->
                 <div class="col-md-3">
-                    <label class="form-label fw-bold small mb-1" for="filterExamName">
-                        <span data-i18n="exam_name">考试名称</span>
-                    </label>
                     <div class="position-relative">
                         <input type="text" id="filterExamName" class="form-control" 
-                               placeholder="点击选择考试或输入搜索..." 
-                               data-i18n-placeholder="placeholder_click_or_search_exam"
-                               autocomplete="off">
+                            data-i18n-title="exam_name"
+                            title="考试名称"
+                            placeholder="点击选择考试或输入搜索..." 
+                            data-i18n-placeholder="placeholder_click_or_search_exam"
+                            autocomplete="off">
                         <span class="input-clear-btn" data-target="filterExamName" 
-                              style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999; z-index: 10; background: white; padding-left: 5px;">
+                            style="display: none; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999; z-index: 10; background: white; padding-left: 5px;">
                             <i class="bi bi-x-circle-fill"></i>
                         </span>
-                        <div id="examDropdown" class="export-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1060; background: white; border: 1px solid #ddd; border-radius: 8px; max-height: 300px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
-                            <div class="dropdown-header" style="position: sticky; top: 0; background: #f8f9fa; padding: 8px 12px; font-weight: 600; font-size: 0.85rem; border-bottom: 1px solid #eee; color: #495057;">
-                                📋 <span data-i18n="recent_examination">最近创建的考试</span>
-                            </div>
-                            <div id="examListContainer"></div>
-                            <div id="examSearchLoading" class="p-2 text-center text-muted" style="display: none;">
-                                <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
-                            </div>
-                            <div id="examNoResult" class="p-3 text-center text-muted" style="display: none;">
-                                <span data-i18n="no_matching_exam_was_found">未找到匹配的考试</span>
-                            </div>
-                        </div>
                     </div>
                     <input type="hidden" id="selectedExamId" value="">
                 </div>
-                <div class="col-md-2">
-                    <input type="date" id="filterStartDate" class="form-control" placeholder="开始日期">
+                <div class="col-md-3">
+                    <input type="text" id="filterCountry" class="form-control" list="countryDatalist"
+                        placeholder="国家" data-i18n-placeholder="placeholder_country"
+                        autocomplete="off">
+                    <datalist id="countryDatalist"></datalist>
+                    <input type="hidden" id="filterCountryCode">
                 </div>
-                <div class="col-md-2">
-                    <input type="date" id="filterEndDate" class="form-control" placeholder="结束日期">
-                </div>
-                <div class="col-md-2">
+
+                <div class="col-md-3">
                     <select id="filterStatus" class="form-select">
                         <option value="" data-i18n="all_status">全部状态</option>
                         <option value="completed" data-i18n="completed_pass">已完成且及格</option>
@@ -99,18 +201,37 @@
                         <option value="not_exam" data-i18n="not_exam">已签到未考试</option>
                     </select>
                 </div>
-                <div class="col-md-2">
-                    <button id="resetFiltersBtn" class="btn btn-secondary w-100">
+
+                <div class="col-md-3">
+                    <input type="date" id="filterStartDate" class="form-control" placeholder="开始日期"
+                    data-i18n-title="title_start_date"
+                    title="开始日期">
+                </div>
+                <div class="col-md-3">
+                    <input type="date" id="filterEndDate" class="form-control" placeholder="结束日期"
+                    data-i18n-title="title_end_date"
+                    title="结束日期">
+                </div>
+                <!-- 将原来的悬浮提示图标和三个按钮放在同一个容器中 -->
+                <div class="col-md-3 d-flex justify-content-end align-items-end gap-2">
+                    <!-- 悬浮提示图标 -->
+                    <i class="bi bi-info-circle-fill report-hint-icon" 
+                    data-bs-toggle="tooltip" 
+                    data-bs-placement="top" 
+                    data-i18n-title="completion_report_hint"
+                    title="本报表仅展示已绑定考试的培训及学员完成度数据，用于分析培训与考试的关联完成情况。未绑定考试的培训不纳入统计。"
+                    style="cursor: help; color: #0d6efd; font-size: 1.2rem;">
+                    </i>
+                    
+                    <!-- 三个按钮 -->
+                    <button id="resetFiltersBtn" class="btn btn-secondary">
                         <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
                     </button>
-                </div>
-                <div class="col-md-2">
-                    <button id="exportExcelBtn" class="btn btn-success w-100">
-                        <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
+                    <button id="exportExcelBtn" class="btn btn-success">
+                        <i class="bi bi-download me-1"></i> <span data-i18n="export_excel">导出Excel</span>
                     </button>
-                </div>
-                <div class="col-md-1">
-                    <button id="refreshDataBtn" class="btn btn-primary w-100" 
+                    <button id="refreshDataBtn" class="btn btn-primary"
+                            data-i18n-title="title_refresh_and_sync_data"
                             title="刷新数据并同步">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
@@ -121,7 +242,6 @@
 
     <!-- 统计汇总卡片 -->
     <div class="row g-3 mb-4" id="summaryCards">
-        <!-- ... 统计卡片保持不变 ... -->
         <div class="col-md-3">
             <div class="card bg-primary text-white border-0 shadow-sm" style="border-radius: 10px;">
                 <div class="card-body py-3">
@@ -208,7 +328,16 @@
                         </tr>
                     </thead>
                     <tbody id="reportTableBody">
-                        <tr><td colspan="14" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr>
+                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                                <div class="d-flex flex-column align-items-center justify-content-center">
+                                    <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted" data-i18n="loading">加载中...</span>
+                                </div>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -219,316 +348,108 @@
         </div>
     </div>
 </div>
-
 <script>
     // ==================== 高级搜索功能 ====================
-    // 培训搜索下拉面板
     let trainingSearchTimeout = null;
-    let examSearchTimeout = null;
     let selectedTrainingId = '';
-    let selectedExamId = '';
 
-    // 初始化培训搜索
-    function initTrainingSearch() {
-        const input = document.getElementById('filterTrainingName');
-        const dropdown = document.getElementById('trainingDropdown');
-        const container = document.getElementById('trainingListContainer');
-        const loading = document.getElementById('trainingSearchLoading');
-        const noResult = document.getElementById('trainingNoResult');
-        const clearBtn = document.querySelector('.input-clear-btn[data-target="filterTrainingName"]');
-        
-        if (!input) return;
-
-        // 加载培训列表
-        async function loadTrainings(searchTerm = '') {
-            loading.style.display = 'block';
-            container.innerHTML = '';
-            noResult.style.display = 'none';
-            
-            try {
-                const params = new URLSearchParams();
-                if (searchTerm) params.append('q', searchTerm);
-                params.append('per_page', '20');
-                
-                const res = await fetch(`/api/search/trainings?${params}`);
-                const data = await res.json();
-                const trainings = Array.isArray(data) ? data : (data.data || []);
-                
-                loading.style.display = 'none';
-                
-                if (trainings.length === 0) {
-                    noResult.style.display = 'block';
-                    return;
-                }
-                
-                container.innerHTML = trainings.map(t => `
-                    <div class="export-dropdown-item" 
-                         data-id="${t.id}" 
-                         data-title="${escapeHtml(t.name)}"
-                         data-country="${escapeHtml(t.country || '-')}"
-                         style="padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.2s ease;">
-                        <div class="item-title" style="font-weight: 500; font-size: 0.9rem;">
-                            ${escapeHtml(t.name)}
-                            ${t.is_bound ? '<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> 已绑定</span>' : ''}
-                        </div>
-                        <div class="item-meta" style="font-size: 0.7rem; color: #6c757d; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;">
-                            <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '-')}</span>
-                            <span><i class="bi bi-calendar3"></i> ${t.created_date || ''}</span>
-                            <span><i class="bi bi-calendar-week"></i> ${t.quarter || ''}</span>
-                        </div>
-                    </div>
-                `).join('');
-                
-                // 绑定点击事件
-                container.querySelectorAll('.export-dropdown-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const id = item.dataset.id;
-                        const title = item.dataset.title;
-                        selectTraining(id, title);
-                    });
-                });
-            } catch (err) {
-                console.error('加载培训列表失败:', err);
-                loading.style.display = 'none';
-                container.innerHTML = '<div class="p-3 text-center text-danger">加载失败</div>';
-            }
-        }
-
-        // 选择培训
-        function selectTraining(id, title) {
-            selectedTrainingId = id;
-            document.getElementById('selectedTrainingId').value = id;
-            input.value = title;
-            dropdown.style.display = 'none';
-            clearBtn.style.display = 'block';
-            // 触发筛选
-            applyFiltersAndLoad();
-        }
-
-        // 清空培训选择
-        function clearTraining() {
-            selectedTrainingId = '';
-            document.getElementById('selectedTrainingId').value = '';
-            input.value = '';
-            clearBtn.style.display = 'none';
-            applyFiltersAndLoad();
-        }
-
-        // 输入事件
-        input.addEventListener('input', function(e) {
-            const value = this.value.trim();
-            clearBtn.style.display = value ? 'block' : 'none';
-            
-            // 如果输入内容与选中的培训名称不同，清除选中状态
-            const selectedTitle = document.querySelector('.export-dropdown-item[data-id="' + selectedTrainingId + '"]')?.dataset.title;
-            if (selectedTitle && value !== selectedTitle) {
-                selectedTrainingId = '';
-                document.getElementById('selectedTrainingId').value = '';
-            }
-            
-            clearTimeout(trainingSearchTimeout);
-            trainingSearchTimeout = setTimeout(() => {
-                if (value.length > 0) {
-                    const rect = input.getBoundingClientRect();
-                    dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
-                    dropdown.style.left = (rect.left + window.scrollX) + 'px';
-                    dropdown.style.width = rect.width + 'px';
-                    dropdown.style.display = 'block';
-                    loadTrainings(value);
-                } else {
-                    dropdown.style.display = 'none';
-                }
-            }, 300);
-        });
-
-        // 点击下拉项外部关闭
-        document.addEventListener('click', function(e) {
-            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-                dropdown.style.display = 'none';
-            }
-        });
-
-        // 清空按钮
-        clearBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            clearTraining();
-            input.focus();
-        });
-
-        // 失焦关闭
-        input.addEventListener('blur', function() {
-            setTimeout(() => {
-                dropdown.style.display = 'none';
-            }, 200);
-        });
-
-        // 初始加载
-        loadTrainings('');
-    }
-
-    // 初始化考试搜索
-    function initExamSearch() {
-        const input = document.getElementById('filterExamName');
-        const dropdown = document.getElementById('examDropdown');
-        const container = document.getElementById('examListContainer');
-        const loading = document.getElementById('examSearchLoading');
-        const noResult = document.getElementById('examNoResult');
-        const clearBtn = document.querySelector('.input-clear-btn[data-target="filterExamName"]');
-        
-        if (!input) return;
-
-        // 加载考试列表
-        async function loadExams(searchTerm = '') {
-            loading.style.display = 'block';
-            container.innerHTML = '';
-            noResult.style.display = 'none';
-            
-            try {
-                const params = new URLSearchParams();
-                if (searchTerm) params.append('name', searchTerm);
-                params.append('per_page', '20');
-                
-                // ✅ 如果已选择培训，传递 training_id 进行级联筛选
-                if (selectedTrainingId) {
-                    params.append('training_id', selectedTrainingId);
-                }
-                
-                const res = await fetch(`/api/admin/exams/list_light?${params}`);
-                const data = await res.json();
-                const exams = data.data || [];
-                
-                loading.style.display = 'none';
-                
-                if (exams.length === 0) {
-                    noResult.style.display = 'block';
-                    return;
-                }
-                
-                container.innerHTML = exams.map(e => `
-                    <div class="export-dropdown-item" 
-                         data-id="${e.id}" 
-                         data-title="${escapeHtml(e.title)}"
-                         data-countries="${escapeHtml(e.countries_display || '-')}"
-                         style="padding: 10px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0; transition: background 0.2s ease;">
-                        <div class="item-title" style="font-weight: 500; font-size: 0.9rem;">
-                            ${escapeHtml(e.title)}
-                            ${e.is_bound ? '<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> 已绑定</span>' : ''}
-                        </div>
-                        <div class="item-meta" style="font-size: 0.7rem; color: #6c757d; margin-top: 4px; display: flex; gap: 12px; flex-wrap: wrap;">
-                            <span><i class="bi bi-globe2"></i> ${escapeHtml(e.countries_display || '-')}</span>
-                            <span><i class="bi bi-calendar3"></i> ${e.created_at ? e.created_at.slice(0, 10) : ''}</span>
-                            <span><i class="bi bi-calendar-week"></i> ${e.status || ''}</span>
-                        </div>
-                    </div>
-                `).join('');
-                
-                // 绑定点击事件
-                container.querySelectorAll('.export-dropdown-item').forEach(item => {
-                    item.addEventListener('click', () => {
-                        const id = item.dataset.id;
-                        const title = item.dataset.title;
-                        selectExam(id, title);
-                    });
-                });
-            } catch (err) {
-                console.error('加载考试列表失败:', err);
-                loading.style.display = 'none';
-                container.innerHTML = '<div class="p-3 text-center text-danger">加载失败</div>';
-            }
-        }
-
-        // 选择考试
-        function selectExam(id, title) {
-            selectedExamId = id;
-            document.getElementById('selectedExamId').value = id;
-            input.value = title;
-            dropdown.style.display = 'none';
-            clearBtn.style.display = 'block';
-            applyFiltersAndLoad();
-        }
-
-        // 清空考试选择
-        function clearExam() {
-            selectedExamId = '';
-            document.getElementById('selectedExamId').value = '';
-            input.value = '';
-            clearBtn.style.display = 'none';
-            applyFiltersAndLoad();
-        }
-
-        // 输入事件
-        input.addEventListener('input', function(e) {
-            const value = this.value.trim();
-            clearBtn.style.display = value ? 'block' : 'none';
-            
-            const selectedTitle = document.querySelector('.export-dropdown-item[data-id="' + selectedExamId + '"]')?.dataset.title;
-            if (selectedTitle && value !== selectedTitle) {
-                selectedExamId = '';
-                document.getElementById('selectedExamId').value = '';
-            }
-            
-            clearTimeout(examSearchTimeout);
-            examSearchTimeout = setTimeout(() => {
-                if (value.length > 0) {
-                    const rect = input.getBoundingClientRect();
-                    dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
-                    dropdown.style.left = (rect.left + window.scrollX) + 'px';
-                    dropdown.style.width = rect.width + 'px';
-                    dropdown.style.display = 'block';
-                    loadExams(value);
-                } else {
-                    dropdown.style.display = 'none';
-                }
-            }, 300);
-        });
-
-        // 点击下拉项外部关闭
-        document.addEventListener('click', function(e) {
-            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
-                dropdown.style.display = 'none';
-            }
-        });
-
-        // 清空按钮
-        clearBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            clearExam();
-            input.focus();
-        });
-
-        // 失焦关闭
-        input.addEventListener('blur', function() {
-            setTimeout(() => {
-                dropdown.style.display = 'none';
-            }, 200);
-        });
-
-        // 初始加载（如果有培训ID则级联加载）
-        loadExams('');
-    }
-
-    // ==================== 原有变量和函数 ====================
+    // ==================== 变量声明 ====================
     let currentPage = 1;
     let filters = {
         name: '', country: '', training_name: '', exam_name: '',
         status: '', start_date: '', end_date: ''
     };
 
-    // 防抖函数
-    function debounce(fn, delay) {
-        let timer;
-        return function(...args) {
-            clearTimeout(timer);
-            timer = setTimeout(() => fn.apply(this, args), delay);
-        };
-    }
-
+    let allReportData = [];
+    let filteredReportData = [];
+    let cachedTotal = 0;
+    let searchTimer = null;
     let isLoading = false;
     let cachedTrainings = [];
-    let cachedReportData = [];
-    let currentReportData = [];
 
-    // 加载培训列表（用于下拉框）
+    // ==================== 工具函数 ====================
+    function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        str = String(str);
+        return str.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' })[m]);
+    }
+
+    function waitForI18n() {
+        return new Promise((resolve) => {
+            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                resolve();
+                return;
+            }
+            const check = setInterval(() => {
+                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
+                    clearInterval(check);
+                    resolve();
+                }
+            }, 50);
+        });
+    }
+
+    // ==================== 防抖搜索 ====================
+    function loadWithDebounce() {
+        if (searchTimer) {
+            clearTimeout(searchTimer);
+        }
+        searchTimer = setTimeout(() => {
+            currentPage = 1;
+            applyFilters();
+            searchTimer = null;
+        }, 500);
+    }
+
+    // ==================== 重置所有筛选条件 ====================
+    function resetAllFilters() {
+        // 1. 重置所有输入框
+        document.getElementById('filterName').value = '';
+        document.getElementById('filterCountry').value = '';
+        document.getElementById('filterTrainingName').value = '';
+        document.getElementById('filterExamName').value = '';
+        document.getElementById('filterStartDate').value = '';
+        document.getElementById('filterEndDate').value = '';
+        document.getElementById('filterStatus').value = '';
+        
+        // 2. 重置隐藏字段
+        document.getElementById('selectedTrainingId').value = '';
+        document.getElementById('selectedExamId').value = '';
+        document.getElementById('filterCountryCode').value = '';
+        
+        // 3. 重置全局变量
+        selectedTrainingId = '';
+        selectedExamId = '';
+        
+        // 4. 隐藏所有清空按钮
+        document.querySelectorAll('.input-clear-btn').forEach(btn => btn.style.display = 'none');
+        
+        // 5. 重置下拉框缓存数据
+        dropdownData = [];
+        
+        // 6. 重置 filters 对象
+        filters = { 
+            name: '', 
+            country: '', 
+            training_name: '', 
+            exam_name: '', 
+            status: '', 
+            start_date: '', 
+            end_date: '' 
+        };
+        
+        // 7. 重置分页
+        currentPage = 1;
+        
+        // 8. 不清空缓存，直接应用筛选（静默更新）
+        if (allReportData && allReportData.length > 0) {
+            applyFilters();
+        } else {
+            loadReportData();
+        }
+    }
+
+    // ==================== 加载培训列表 ====================
     async function loadTrainingsList() {
         if (cachedTrainings.length > 0) return;
         try {
@@ -540,14 +461,38 @@
         }
     }
 
-    // ========== 加载报表数据（使用表格内嵌进度条） ==========
+    // ==================== 加载报表数据 ====================
     async function loadReportData() {
+        const tbody = document.getElementById('reportTableBody');
+
+        // ✅ 立即显示加载动画（消除静态文字）
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                        <div class="d-flex flex-column align-items-center justify-content-center">
+                            <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span class="text-muted">${t('loading') || '加载中...'}</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+        
+        if (allReportData && allReportData.length > 0) {
+            console.log('📋 使用缓存数据，应用筛选');
+            applyFilters();
+            return;
+        }
+
         const trainingId = document.getElementById('selectedTrainingId')?.value || '';
         const examId = document.getElementById('selectedExamId')?.value || '';
         
         const params = new URLSearchParams({
-            page: currentPage,
-            per_page: 20,
+            page: 1,
+            per_page: 10000,
             name: filters.name,
             country: filters.country,
             training_name: filters.training_name,
@@ -559,7 +504,6 @@
             end_date: filters.end_date
         });
 
-        // ✅ 使用表格内嵌进度条
         await window.loadTableWithProgress('reportTableBody', async (updateProgress, updateDesc) => {
             try {
                 updateProgress(10, t('preparing_load_report_data'));
@@ -573,16 +517,13 @@
                 
                 updateProgress(70, t('processing_data'));
                 
-                cachedReportData = data.data || [];
-                currentReportData = [...cachedReportData];
+                allReportData = data.data || [];
+                cachedTotal = data.total || 0;
                 
                 updateProgress(85, t('rendering_table'));
                 
-                renderTable(currentReportData);
-                document.getElementById('totalCount').innerText = data.total || 0;
-                renderPagination(data.page, Math.ceil((data.total || 0) / data.per_page));
+                applyFilters();
                 
-                // 更新统计卡片
                 if (data.summary) {
                     document.getElementById('totalUsers').innerText = data.summary.total_users || 0;
                     document.getElementById('totalSigned').innerText = data.summary.total_signed || 0;
@@ -594,7 +535,6 @@
                 
             } catch (err) {
                 console.error('加载报表失败:', err);
-                // 错误会由 loadTableWithProgress 处理
                 throw err;
             }
         }, {
@@ -606,22 +546,321 @@
         });
     }
 
-    // 应用筛选并加载
-    function applyFiltersAndLoad() {
-        filters.training_name = document.getElementById('filterTrainingName')?.value || '';
-        filters.exam_name = document.getElementById('filterExamName')?.value || '';
-        currentPage = 1;
-        loadReportData();
+    // ==================== 应用筛选（内存过滤） ====================
+    function applyFilters() {
+        if (!allReportData || allReportData.length === 0) {
+            renderTable([]);
+            document.getElementById('totalCount').innerText = '0';
+            return;
+        }
+
+        let filtered = [...allReportData];
+        
+        // 1. 姓名/邮箱搜索（支持多关键词组合查询）
+        if (filters.name) {
+            const keywords = typeof splitSearchKeywords === 'function' 
+                ? splitSearchKeywords(filters.name) 
+                : filters.name.trim().split(/\s+/).filter(k => k.length > 0);
+            
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const userName = (item.user_name || '').toLowerCase();
+                    const userEmail = (item.user_email || '').toLowerCase();
+                    const searchableText = userName + ' ' + userEmail;
+                    return keywords.every(k => searchableText.includes(k.toLowerCase()));
+                });
+            }
+        }
+        
+        // 2. 国家筛选（支持模糊匹配）
+        if (filters.country) {
+            const countryLower = filters.country.toLowerCase();
+            filtered = filtered.filter(item => {
+                const country = (item.training_country || '').toLowerCase();
+                return country.includes(countryLower);
+            });
+        }
+        
+        // 3. 培训名称筛选（支持多关键词组合查询）
+        if (filters.training_name) {
+            const keywords = typeof splitSearchKeywords === 'function' 
+                ? splitSearchKeywords(filters.training_name) 
+                : filters.training_name.trim().split(/\s+/).filter(k => k.length > 0);
+            
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const trainingName = (item.training_name || '').toLowerCase();
+                    return keywords.every(k => trainingName.includes(k.toLowerCase()));
+                });
+            }
+        }
+        
+        // 4. 考试名称筛选（支持多关键词组合查询）
+        if (filters.exam_name) {
+            const keywords = typeof splitSearchKeywords === 'function' 
+                ? splitSearchKeywords(filters.exam_name) 
+                : filters.exam_name.trim().split(/\s+/).filter(k => k.length > 0);
+            
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const examName = (item.exam_name || '').toLowerCase();
+                    return keywords.every(k => examName.includes(k.toLowerCase()));
+                });
+            }
+        }
+        
+        // 5. 状态筛选
+        if (filters.status) {
+            filtered = filtered.filter(item => {
+                if (filters.status === 'completed') return item.is_passed === true;
+                if (filters.status === 'incomplete') return item.is_completed === false && item.is_signed === true;
+                if (filters.status === 'failed') return item.is_completed === true && item.is_passed === false;
+                if (filters.status === 'not_signed') return item.is_signed === false;
+                if (filters.status === 'not_exam') return item.is_signed === true && item.is_completed === false;
+                return true;
+            });
+        }
+        
+        // 6. 日期范围筛选
+        if (filters.start_date) {
+            filtered = filtered.filter(item => {
+                if (!item.training_start) return false;
+                return item.training_start >= filters.start_date;
+            });
+        }
+        if (filters.end_date) {
+            filtered = filtered.filter(item => {
+                if (!item.training_end) return false;
+                return item.training_end <= filters.end_date + 'T23:59:59';
+            });
+        }
+        
+        filteredReportData = filtered;
+        cachedTotal = filtered.length;
+        
+        const totalPages = Math.ceil(filtered.length / 20);
+        const start = (currentPage - 1) * 20;
+        const end = start + 20;
+        const pageData = filtered.slice(start, end);
+        
+        renderTable(pageData);
+        document.getElementById('totalCount').innerText = filtered.length;
+        renderPagination(currentPage, totalPages);
     }
 
-    // 渲染表格
+    // ==================== 优化后的 initTrainingSearch ====================
+    function initTrainingSearch() {
+        const input = document.getElementById('filterTrainingName');
+        const dropdown = document.getElementById('trainingDropdown');
+        const container = document.getElementById('trainingListContainer');
+        const loading = document.getElementById('trainingSearchLoading');
+        const noResult = document.getElementById('trainingNoResult');
+        const clearBtn = document.querySelector('.input-clear-btn[data-target="filterTrainingName"]');
+        
+        if (!input) return;
+
+        // 下拉列表缓存
+        let dropdownData = [];
+        let dropdownSearchTimer = null;
+
+        async function loadTrainings(searchTerm = '') {
+            // 如果搜索词为空且有缓存，直接使用缓存
+            if (!searchTerm && dropdownData.length > 0) {
+                renderDropdown(dropdownData);
+                return;
+            }
+            
+            loading.style.display = 'block';
+            container.innerHTML = '';
+            noResult.style.display = 'none';
+            
+            try {
+                const params = new URLSearchParams();
+                if (searchTerm) params.append('q', searchTerm);
+                params.append('per_page', '20');
+                
+                const res = await fetch(`/api/search/trainings?${params}`);
+                const data = await res.json();
+                const trainings = Array.isArray(data) ? data : (data.data || []);
+                
+                // 缓存数据
+                if (!searchTerm) {
+                    dropdownData = trainings;
+                }
+                
+                loading.style.display = 'none';
+                
+                if (trainings.length === 0) {
+                    noResult.style.display = 'block';
+                    return;
+                }
+                
+                renderDropdown(trainings);
+            } catch (err) {
+                console.error('加载培训列表失败:', err);
+                loading.style.display = 'none';
+                container.innerHTML = `<div class="p-3 text-center text-danger">${t('load_failed')}</div>`;
+            }
+        }
+
+        function renderDropdown(trainings) {
+            container.innerHTML = trainings.map(t => {
+                const isBound = t.is_bound === true;
+                return `
+                    <div class="export-dropdown-item" 
+                        data-id="${t.id}" 
+                        data-title="${escapeHtml(t.name)}"
+                        data-country="${escapeHtml(t.country || '-')}"
+                        data-is-bound="${isBound}">
+                        <div class="item-title">
+                            ${escapeHtml(t.name)}
+                            ${isBound 
+                                ? `<span class="badge-bound"><i class="bi bi-link"></i> ${safeT('binded')}</span>` 
+                                : `<span class="badge-unbound"><i class="bi bi-link-45deg"></i> ${safeT('no_bind')}</span>`}
+                            ${t.binding_count > 0 ? `<span class="badge bg-primary ms-1" style="font-size: 0.6rem;">${t.binding_count}门</span>` : ''}
+                        </div>
+                        <div class="item-meta">
+                            <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '-')}</span>
+                            <span><i class="bi bi-calendar3"></i> ${t.created_date || ''}</span>
+                            <span><i class="bi bi-calendar-week"></i> ${t.quarter || ''}</span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            container.querySelectorAll('.export-dropdown-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const id = item.dataset.id;
+                    const title = item.dataset.title;
+                    const isBound = item.dataset.isBound === 'true';
+                    if (!isBound) {
+                        if (typeof showToast === 'function') {
+                            showToast(t('no_bind_hint'), 'warning');
+                        }
+                        return;
+                    }
+                    selectTraining(id, title);
+                });
+            });
+        }
+
+        function selectTraining(id, title) {
+            selectedTrainingId = id;
+            document.getElementById('selectedTrainingId').value = id;
+            input.value = title;
+            dropdown.style.display = 'none';
+            clearBtn.style.display = 'block';
+            filters.training_name = title;
+            currentPage = 1;
+            
+            // 关键优化：使用内存过滤，不刷新页面
+            if (allReportData && allReportData.length > 0) {
+                applyFilters();
+            } else {
+                allReportData = [];
+                loadReportData();
+            }
+        }
+
+        function clearTraining() {
+            selectedTrainingId = '';
+            document.getElementById('selectedTrainingId').value = '';
+            input.value = '';
+            clearBtn.style.display = 'none';
+            filters.training_name = '';
+            dropdownData = [];
+            currentPage = 1;
+            applyFilters();
+        }
+
+        // 输入事件
+        input.addEventListener('input', function(e) {
+            const value = this.value;
+            clearBtn.style.display = value ? 'block' : 'none';
+            
+            const selectedItem = document.querySelector('.export-dropdown-item[data-id="' + selectedTrainingId + '"]');
+            const selectedTitle = selectedItem?.dataset.title;
+            if (selectedTitle && value !== selectedTitle) {
+                selectedTrainingId = '';
+                document.getElementById('selectedTrainingId').value = '';
+            }
+            
+            filters.training_name = value;
+            loadWithDebounce();
+            
+            // 下拉框搜索（防抖）
+            clearTimeout(dropdownSearchTimer);
+            dropdownSearchTimer = setTimeout(() => {
+                const rect = input.getBoundingClientRect();
+                dropdown.style.top = (rect.bottom) + 'px';
+                dropdown.style.left = (rect.left) + 'px';
+                dropdown.style.width = rect.width + 'px';
+                dropdown.style.display = 'block';
+                
+                if (value.trim().length > 0) {
+                    loadTrainings(value);
+                } else {
+                    if (dropdownData.length > 0) {
+                        renderDropdown(dropdownData);
+                    } else {
+                        loadTrainings('');
+                    }
+                }
+            }, 500);
+        });
+
+        // 点击下拉项外部关闭
+        document.addEventListener('click', function(e) {
+            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
+            }
+        });
+
+        clearBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            clearTraining();
+            input.focus();
+        });
+
+        input.addEventListener('blur', function() {
+            setTimeout(() => {
+                dropdown.style.display = 'none';
+            }, 200);
+        });
+
+        loadTrainings('');
+    }
+
+    // ==================== 初始化考试搜索 ====================
+    function initExamSearch() {
+        const input = document.getElementById('filterExamName');
+        const clearBtn = document.querySelector('.input-clear-btn[data-target="filterExamName"]');
+        if (!input || !clearBtn) return;
+
+        // 清空按钮点击事件
+        clearBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            input.value = '';
+            clearBtn.style.display = 'none';
+            document.getElementById('selectedExamId').value = '';
+            filters.exam_name = '';
+            currentPage = 1;
+            applyFilters();
+            input.focus();
+        });
+
+        // 输入时控制清空按钮显示
+        input.addEventListener('input', function() {
+            clearBtn.style.display = this.value ? 'block' : 'none';
+        });
+    }
+
+    // ==================== 渲染表格 ====================
     function renderTable(rows) {
         const tbody = document.getElementById('reportTableBody');
-
-        // ✅ 如果有进度条，先隐藏
         window.hideTableProgress('reportTableBody');
         
-        if (!rows.length) {
+        if (!rows || rows.length === 0) {
             tbody.innerHTML = `<tr><td colspan="14" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
@@ -681,7 +920,17 @@
                     <td>${escapeHtml(r.training_id || '-')}</td>
                     <td>${escapeHtml(r.training_country || '-')}</td>
                     <td>${escapeHtml(r.user_name)}</td>
-                    <td>${escapeHtml(r.user_id || '-')}</td>
+                    <td class="user-id-cell" 
+                        data-full-id="${escapeHtml(r.user_id || '')}" 
+                        title="${escapeHtml(r.user_id || '')}"
+                        style="cursor: pointer; user-select: none;">
+                        <span class="user-id-display" style="border-bottom: 1px dashed #ccc; padding-bottom: 1px;">
+                            ${r.user_id ? escapeHtml(r.user_id.slice(0, 8)) + '...' : '-'}
+                        </span>
+                        <span class="copy-hint" style="font-size: 0.6rem; color: #999; margin-left: 2px;">
+                            <i class="bi bi-clipboard" style="font-size: 0.6rem;"></i>
+                        </span>
+                    </td>
                     <td>${escapeHtml(r.user_email)}</td>
                     <td>${escapeHtml(r.wh_id || '-')}</td>
                     <td>${escapeHtml(r.exam_name)}</td>
@@ -701,6 +950,7 @@
                 </tr>
             `;
         }).join('');
+        setTimeout(initUserIdCopy, 100);
     }
 
     function renderPagination(current, totalPages) {
@@ -718,99 +968,196 @@
             link.addEventListener('click', (e) => {
                 e.preventDefault();
                 currentPage = parseInt(link.dataset.page);
-                loadReportData();
+                applyFilters();
             });
         });
     }
 
-    function escapeHtml(str) {
-        if (str === null || str === undefined) return '';
-        str = String(str);
-        return str.replace(/[&<>]/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;' })[m]);
+    // ==================== 用户ID双击复制功能 ====================
+    function initUserIdCopy() {
+        document.querySelectorAll('.user-id-cell').forEach(cell => {
+            cell.removeEventListener('dblclick', cell._copyHandler);
+            
+            cell._copyHandler = function(e) {
+                const fullId = this.dataset.fullId;
+                if (!fullId || fullId === '-' || fullId === '') return;
+                
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(fullId).then(() => {
+                        showCopyFeedback(this, fullId);
+                    }).catch(() => {
+                        fallbackCopy(fullId, this);
+                    });
+                } else {
+                    fallbackCopy(fullId, this);
+                }
+            };
+            cell.addEventListener('dblclick', cell._copyHandler);
+        });
     }
 
-    // ==================== 原有事件绑定 ====================
-    
-    // 筛选输入事件
-    document.getElementById('filterName').addEventListener('input', (e) => {
-        filters.name = e.target.value;
-        debouncedLoad();
-    });
-    
-    document.getElementById('filterCountry').addEventListener('input', (e) => {
-        filters.country = e.target.value;
-        debouncedLoad();
-    });
-    
-    document.getElementById('filterStartDate').addEventListener('change', (e) => {
-        filters.start_date = e.target.value;
-        debouncedLoad();
-    });
-    
-    document.getElementById('filterEndDate').addEventListener('change', (e) => {
-        filters.end_date = e.target.value;
-        debouncedLoad();
-    });
-    
-    document.getElementById('filterStatus').addEventListener('change', (e) => {
-        filters.status = e.target.value;
-        debouncedLoad();
-    });
+    function fallbackCopy(text, element) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            showCopyFeedback(element, text);
+        } catch (err) {
+            console.error('复制失败:', err);
+            if (typeof showToast === 'function') {
+                showToast('复制失败，请手动选中复制', 'error');
+            }
+        }
+        document.body.removeChild(textArea);
+    }
 
-    const debouncedLoad = debounce(() => {
-        if (isLoading) return;
-        currentPage = 1;
-        loadReportData();
-    }, 500);
+    function showCopyFeedback(element, text) {
+        if (typeof showToast === 'function') {
+            showToast('✅ 已复制用户ID: ' + text, 'success');
+        }
+        
+        element.classList.add('copied');
+        const display = element.querySelector('.user-id-display');
+        if (display) {
+            const originalText = display.textContent;
+            const originalBorderColor = display.style.borderBottomColor;
+            const originalFontWeight = display.style.fontWeight;
+            const originalColor = display.style.color;
+            
+            display.textContent = text;
+            display.style.borderBottomColor = '#28a745';
+            display.style.fontWeight = 'bold';
+            display.style.color = '#28a745';
+            element.style.backgroundColor = '#d4edda';
+            
+            setTimeout(() => {
+                display.textContent = originalText;
+                display.style.borderBottomColor = originalBorderColor || '';
+                display.style.fontWeight = originalFontWeight || '';
+                display.style.color = originalColor || '';
+                element.style.backgroundColor = '';
+                element.classList.remove('copied');
+            }, 1500);
+        }
+    }
 
-    // 重置按钮
-    document.getElementById('resetFiltersBtn').addEventListener('click', () => {
-        document.getElementById('filterName').value = '';
-        document.getElementById('filterCountry').value = '';
-        document.getElementById('filterTrainingName').value = '';
-        document.getElementById('filterExamName').value = '';
-        document.getElementById('filterStartDate').value = '';
-        document.getElementById('filterEndDate').value = '';
-        document.getElementById('filterStatus').value = '';
-        document.getElementById('selectedTrainingId').value = '';
-        document.getElementById('selectedExamId').value = '';
-        document.querySelector('.input-clear-btn[data-target="filterTrainingName"]').style.display = 'none';
-        document.querySelector('.input-clear-btn[data-target="filterExamName"]').style.display = 'none';
-        selectedTrainingId = '';
-        selectedExamId = '';
-        filters = { name: '', country: '', training_name: '', exam_name: '', status: '', start_date: '', end_date: '' };
-        currentPage = 1;
-        loadReportData();
-    });
+    // ==================== 绑定筛选事件 ====================
+    function bindFilterEvents() {
+        const nameInput = document.getElementById('filterName');
+        if (nameInput) {
+            nameInput.removeEventListener('input', handleNameInput);
+            nameInput.addEventListener('input', handleNameInput);
+        }
+        
+        function handleNameInput() {
+            const val = nameInput?.value || '';
+            if (val !== filters.name) {
+                filters.name = val;
+                loadWithDebounce();
+            }
+        }
+        
+        const countryInput = document.getElementById('filterCountry');
+        if (countryInput) {
+            countryInput.removeEventListener('input', handleCountryInput);
+            countryInput.addEventListener('input', handleCountryInput);
+        }
+        
+        function handleCountryInput() {
+            const val = countryInput?.value || '';
+            if (val !== filters.country) {
+                filters.country = val;
+                loadWithDebounce();
+            }
+        }
 
-    // 导出Excel
-    document.getElementById('exportExcelBtn').addEventListener('click', () => {
-        const trainingId = document.getElementById('selectedTrainingId')?.value || '';
-        const examId = document.getElementById('selectedExamId')?.value || '';
-        const params = new URLSearchParams({
-            ...filters,
-            training_id: trainingId,
-            exam_id: examId
-        });
-        window.open(`/api/admin/training/completion_report/export?${params}`, '_blank');
-    });
+        // 考试名称（纯输入即搜索，无下拉框）
+        const examInput = document.getElementById('filterExamName');
+        const examClearBtn = document.querySelector('.input-clear-btn[data-target="filterExamName"]');
+        if (examInput) {
+            examInput.removeEventListener('input', handleExamInput);
+            examInput.addEventListener('input', handleExamInput);
+        }
+        function handleExamInput() {
+            const val = examInput?.value || '';
+            if (examClearBtn) {
+                examClearBtn.style.display = val ? 'block' : 'none';
+            }
+            if (val !== filters.exam_name) {
+                filters.exam_name = val;
+                // 如果用户手动输入，清除选中的考试ID
+                if (document.getElementById('selectedExamId').value) {
+                    document.getElementById('selectedExamId').value = '';
+                }
+                loadWithDebounce();
+            }
+        }
+        
+        const startDateInput = document.getElementById('filterStartDate');
+        if (startDateInput) {
+            startDateInput.removeEventListener('change', handleStartDate);
+            startDateInput.addEventListener('change', handleStartDate);
+        }
+        
+        function handleStartDate() {
+            const val = startDateInput?.value || '';
+            if (val !== filters.start_date) {
+                filters.start_date = val;
+                loadWithDebounce();
+            }
+        }
+        
+        const endDateInput = document.getElementById('filterEndDate');
+        if (endDateInput) {
+            endDateInput.removeEventListener('change', handleEndDate);
+            endDateInput.addEventListener('change', handleEndDate);
+        }
+        
+        function handleEndDate() {
+            const val = endDateInput?.value || '';
+            if (val !== filters.end_date) {
+                filters.end_date = val;
+                loadWithDebounce();
+            }
+        }
+        
+        const statusSelect = document.getElementById('filterStatus');
+        if (statusSelect) {
+            statusSelect.removeEventListener('change', handleStatusChange);
+            statusSelect.addEventListener('change', handleStatusChange);
+        }
+        
+        function handleStatusChange() {
+            const val = statusSelect?.value || '';
+            if (val !== filters.status) {
+                filters.status = val;
+                loadWithDebounce();
+            }
+        }
+        
+        const resetBtn = document.getElementById('resetFiltersBtn');
+        if (resetBtn) {
+            resetBtn.removeEventListener('click', resetAllFilters);
+            resetBtn.addEventListener('click', resetAllFilters);
+        }
+    }
 
-    /**
-    * 显示同步结果详情
-    */
+    // ==================== 显示同步结果 ====================
     function showSyncResults(syncResults) {
         if (!syncResults) return;
         
-        // 计算总数（使用 || 避免 undefined）
         const total = (syncResults.assigned_exams || 0) + 
                     (syncResults.created_attendances || 0) + 
                     (syncResults.created_assignments || 0);
         
-        if (total === 0) {
-            return; // 没有需要同步的数据
-        }
+        if (total === 0) return;
         
-        // 构建详情列表
         let details = [];
         if (syncResults.assigned_exams > 0) {
             details.push(`📝 ${t('assigned_exams', '分配考试')}: ${syncResults.assigned_exams} ${t('people', '人')}`);
@@ -825,7 +1172,6 @@
             details.push(`📚 ${t('synced_trainings', '同步培训')}: ${syncResults.synced_trainings} ${t('count', '个')}`);
         }
         
-        // 创建提示框
         const alertDiv = document.createElement('div');
         alertDiv.className = 'alert alert-success alert-dismissible fade show mb-3';
         alertDiv.role = 'alert';
@@ -838,12 +1184,9 @@
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         `;
         
-        // 插入到统计卡片前面
         const summaryCards = document.getElementById('summaryCards');
         if (summaryCards) {
             summaryCards.parentNode.insertBefore(alertDiv, summaryCards);
-            
-            // 5秒后自动消失
             setTimeout(() => {
                 alertDiv.classList.remove('show');
                 setTimeout(() => alertDiv.remove(), 300);
@@ -851,9 +1194,7 @@
         }
     }
 
-    /**
-    * 刷新数据（包含同步）
-    */
+    // ==================== 刷新数据 ====================
     document.getElementById('refreshDataBtn').addEventListener('click', async () => {
         const btn = document.getElementById('refreshDataBtn');
         const originalHtml = btn.innerHTML;
@@ -862,17 +1203,14 @@
         showLoading(t('syncing_data', '正在同步数据...'));
         
         try {
-            // 获取当前筛选的培训ID
-            const trainingIdEl = document.getElementById('filterTrainingId');
+            const trainingIdEl = document.getElementById('selectedTrainingId');
             const trainingId = trainingIdEl?.value || '';
             
-            // 构建请求参数
             const payload = {};
             if (trainingId) {
                 payload.training_id = parseInt(trainingId);
             }
             
-            // 发送请求
             const response = await fetch('/api/admin/training/refresh_cache', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -882,13 +1220,9 @@
             const result = await response.json();
             
             if (result.success) {
-                // 获取同步结果
                 const syncResults = result.results?.sync_results || {};
-                
-                // 显示同步详情
                 showSyncResults(syncResults);
                 
-                // 构建 Toast 消息
                 const assigned = syncResults.assigned_exams || 0;
                 const attendances = syncResults.created_attendances || 0;
                 const assignments = syncResults.created_assignments || 0;
@@ -905,10 +1239,8 @@
                     toastMsg += '，' + (t('data_synced', '数据已同步'));
                 }
                 
-                // 显示 Toast
                 showToast(toastMsg, 'success');
-                
-                // 重新加载报表数据
+                allReportData = [];
                 await loadReportData();
                 
             } else {
@@ -925,41 +1257,40 @@
         }
     });
 
-    // 等待 i18n 就绪
-    function waitForI18n() {
-        return new Promise((resolve) => {
-            if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
-                resolve();
-                return;
-            }
-            const check = setInterval(() => {
-                if (window.i18n && Object.keys(window.i18n.translations || {}).length > 0) {
-                    clearInterval(check);
-                    resolve();
-                }
-            }, 50);
+    // ==================== 导出Excel ====================
+    document.getElementById('exportExcelBtn').addEventListener('click', () => {
+        const trainingId = document.getElementById('selectedTrainingId')?.value || '';
+        const examId = document.getElementById('selectedExamId')?.value || '';
+        const params = new URLSearchParams({
+            ...filters,
+            training_id: trainingId,
+            exam_id: examId
         });
-    }
+        window.open(`/api/admin/training/completion_report/export?${params}`, '_blank');
+    });
 
-    // 页面初始化
-    document.addEventListener('DOMContentLoaded', () => {
-        waitForI18n();
-        window.i18n.applyTranslations();
-        
-        // 初始化高级搜索
+    // ==================== 页面初始化 ====================
+    document.addEventListener('DOMContentLoaded', async () => {
+        await waitForI18n();
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+
+        await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
+
         initTrainingSearch();
         initExamSearch();
+        bindFilterEvents();
+
+        await loadTrainingsList();
+        await loadReportData();
         
-        // 加载数据
-        loadTrainingsList();
-        loadReportData();
-        
-        // 语言切换时只刷新UI
         if (window.i18n && window.i18n.subscribe) {
             window.i18n.subscribe(() => {
-                // 重新渲染表格
-                if (cachedReportData.length > 0) {
-                    renderTable(currentReportData);
+                if (filteredReportData.length > 0) {
+                    const start = (currentPage - 1) * 20;
+                    const end = start + 20;
+                    renderTable(filteredReportData.slice(start, end));
                 }
                 if (window.i18n.applyTranslations) {
                     window.i18n.applyTranslations();
@@ -968,13 +1299,23 @@
         }
         
         window.addEventListener('app:languageChanged', () => {
-            if (cachedReportData.length > 0) {
-                renderTable(currentReportData);
+            if (filteredReportData.length > 0) {
+                const start = (currentPage - 1) * 20;
+                const end = start + 20;
+                renderTable(filteredReportData.slice(start, end));
             }
             if (window.i18n.applyTranslations) {
                 window.i18n.applyTranslations();
             }
         });
+        
+        setTimeout(initUserIdCopy, 500);
+        // 初始化Tooltip
+        const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl, {
+            delay: { show: 300, hide: 100 },
+            html: true
+        }));
     });
 </script>
 {% endblock %}
