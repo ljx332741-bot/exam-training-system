@@ -197,6 +197,27 @@
 	const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
 	const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
 
+	// ========== 收集答案函数 ==========
+	function collectAnswers() {
+		const answers = {};
+		const form = document.getElementById('exam-form');
+		if (!form) return answers;
+		
+		const formData = new FormData(form);
+		for (let [key, value] of formData.entries()) {
+			if (key.startsWith('q_')) {
+				// 处理多选题（多个值）
+				if (answers[key]) {
+					// 如果已有值，拼接（多选用逗号分隔）
+					answers[key] = answers[key] + ',' + value;
+				} else {
+					answers[key] = value;
+				}
+			}
+		}
+		return answers;
+	}
+
 	document.addEventListener('DOMContentLoaded', function() {
 		// ==================== 常量与变量 ====================
 		const TOTAL = {{ questions|length }};
@@ -224,13 +245,10 @@
 		}
 		sessionStorage.setItem(LAST_USER_KEY, USER_ID);
 
+		// ==================== 重置处理（仅重置后首次进入时执行） ====================
 		// 获取上次存储的重置标识
 		const lastResetToken = sessionStorage.getItem(`${STORAGE_PREFIX}_reset_token`);
-		// ==================== 重置处理（仅重置后首次进入时执行） ====================
-		// const resetHandled = localStorage.getItem(RESET_HANDLED_KEY);  // 用于标记重置清除是否已执行（防止刷新时重复清除）
 		if (RESET_TIMER || (RESET_TOKEN && RESET_TOKEN !== lastResetToken)) {
-		console.log(safeT('t_detected_exam_reset_clear_cache'));
-		// 删除所有以 exam_{EXAM_ID}_ 开头的 localStorage 键
 		Object.keys(localStorage).forEach(key => {
 			if (key.startsWith(`${STORAGE_PREFIX}_`)) {
 				localStorage.removeItem(key);
@@ -562,13 +580,21 @@
 		document.body.insertAdjacentHTML('beforeend', modalHtml);
 		const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
 		resultModal.show();
+
+		// ✅ 修复：从 DOM 属性获取 exam_id 和 user_id
+		const examIdElem = document.querySelector('[data-exam-id]');
+		const userIdElem = document.querySelector('[data-user-id]');
+		const exam_id = examIdElem ? examIdElem.dataset.examId : {{ exam_id }};
+		const user_id = userIdElem ? userIdElem.dataset.userId : {{ user_id | tojson }};
+		const prefix = `exam_${user_id}_${exam_id}`;
+		
 		
 		// 清理本地存储
 		const keysToRemove = [
-			`${STORAGE_PREFIX}_time_left`,
-			`${STORAGE_PREFIX}_ans`,
-			`${STORAGE_PREFIX}_flag`,
-			`${STORAGE_PREFIX}_curr`
+			`${PREFIX}_time_left`,
+			`${PREFIX}_ans`,
+			`${PREFIX}_flag`,
+			`${PREFIX}_curr`
 		];
 		keysToRemove.forEach(k => localStorage.removeItem(k));
 		
@@ -635,6 +661,13 @@
 	let isSaving = false;
 	async function saveDraftWithRetry(retryCount = 0) {
 		const maxRetries = 3;
+
+		// ✅ 确保 collectAnswers 已定义
+		if (typeof collectAnswers !== 'function') {
+			console.warn('collectAnswers 函数未定义，跳过保存');
+			return;
+		}
+
 		const answers = collectAnswers();
 		
 		if (Object.keys(answers).length === 0) return;
@@ -751,7 +784,7 @@
 				transition: opacity 0.3s;
 				z-index: 9999;
 			`;
-			indicator.innerHTML = '<i class="bi bi-check-circle"></i> 草稿已保存';
+			indicator.innerHTML = `<i class="bi bi-check-circle"></i> ${t('draft_is_saved')}`;
 			document.body.appendChild(indicator);
 		}
 		
@@ -779,7 +812,7 @@
 <div id="saveIndicator" style="position: fixed; bottom: 20px; right: 20px; 
      background: #28a745; color: white; padding: 8px 16px; border-radius: 4px; 
      opacity: 0; transition: opacity 0.3s; z-index: 9999;">
-    <i class="bi bi-check-circle"></i> 草稿已保存
+    <i class="bi bi-check-circle"></i> <span data-i18n="draft_is_saved">草稿已保存</span>
 </div>
 
 {% endblock %}
