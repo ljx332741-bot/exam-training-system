@@ -106,8 +106,8 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
-        <button class="btn btn-outline-secondary" id="backToDashboardBtn">
-            <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+        <button class="btn btn-secondary" onclick="window.close()">
+            <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
         </button>
     </div>
 
@@ -1843,22 +1843,6 @@
 
     // 初始化国家列表和季度列表0429增加校验
     document.addEventListener('DOMContentLoaded', async () => {
-        const backBtn = document.getElementById('backToDashboardBtn');
-        if (backBtn) {
-            backBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                // 标记来源，让仪表盘知道是从培训页面返回的
-                sessionStorage.setItem('from_training_page', 'true');
-                sessionStorage.setItem('use_dashboard_cache', 'true');
-                // 使用 history.back() 或直接跳转
-                if (document.referrer && document.referrer.includes('/admin/dashboard')) {
-                    history.back();
-                } else {
-                    window.location.href = '/admin/dashboard';
-                }
-            });
-        }
-
         const fromDetail = sessionStorage.getItem('from_training_detail');
         if (fromDetail === 'true') {
             sessionStorage.removeItem('from_training_detail');

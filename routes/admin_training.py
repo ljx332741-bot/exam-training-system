@@ -279,8 +279,6 @@ def _get_trainings_list(db):
         else:
             t['has_inconsistent_templates'] = False
 
-    print(f"📊 返回数据: {len(paginated)} 条培训记录", flush=True)
-    logger.info(f"最终返回 {len(paginated)} 条培训记录")
     return {
         "data": paginated,
         "total": total,
@@ -1425,7 +1423,7 @@ def search_trainings():
     warehouse = request.args.get('warehouse', '').strip()
     start_date = request.args.get('start_date', '')
     end_date = request.args.get('end_date', '')
-    exam_id = request.args.get('exam_id', '').strip()  # ✅ 新增：用于标记绑定关系
+    exam_id = request.args.get('exam_id', '').strip()
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     
@@ -1482,12 +1480,25 @@ def search_trainings():
     
     # 添加额外信息
     for t in trainings:
-        t['created_date'] = t.get('created_at', '')[:10] if t.get('created_at') else ''
-        t['quarter'] = _get_quarter_from_date(t.get('created_at'))
-        t['is_bound'] = t['id'] in bound_training_ids  # ✅ 标记是否已绑定
-        t['bound_training_ids'] = list(bound_training_ids)  # 可选：返回所有绑定的培训ID
+        try:
+            admin_db = get_supabase_admin()
+            # ✅ 将 training_id 转为整数，确保类型匹配
+            training_id_int = int(t['id'])
+            bindings_res = admin_db.table("training_exam_bindings") \
+                .select("id", count="exact") \
+                .eq("training_id", training_id_int) \
+                .is_("deleted_at", "null") \
+                .execute()
+            cnt = bindings_res.count or 0
+            t['is_bound'] = cnt > 0
+            t['binding_count'] = cnt
+            t['created_date'] = t.get('created_at', '')[:10] if t.get('created_at') else ''
+            t['quarter'] = _get_quarter_from_date(t.get('created_at'))
+            t['bound_training_ids'] = list(bound_training_ids)
+        except Exception as e:
+            t['is_bound'] = False
+            t['binding_count'] = 0
     
-    # ✅ 排序：绑定的培训排在前面
     trainings.sort(key=lambda x: (not x['is_bound'], x.get('name', '')))
     
     return jsonify(trainings)

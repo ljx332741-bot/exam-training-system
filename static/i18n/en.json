@@ -726,7 +726,7 @@
   "title_header_input_vary_prompt": "Header templates vary by country. Please enter them separately on the group detail page.",
   "sign_in_details": "Sign-in details",
   "pending_sign": "Pending sign",
-  "export_excel": "Export excel",
+  "export_excel": "Excel",
   "sign_time": "Sing time",
   "edit_warehoues": "Edit Warehouse",
   "t_target_country_hint": "Click the search box to select the target country",
@@ -1026,5 +1026,11 @@
 "current_reviewer_not_configured": "Current reviewer is not configured",
 "save_only": "Save only",
 "reopen_exam_hint": "「Save only」Only update exam info，no reset exam status。「Confirm reopen」Will be reset all people's exam status, people can finish exam again.",
-"draft_is_saved": "Draft is safed"
+"draft_is_saved": "Draft is safed",
+"no_bind": "No bind",
+"completion_report_hint": "This report only displays training and learner completion data for exams that have been bound. Trainings without bound exams are excluded from the statistics.",
+"title_refresh_and_sync_data": "Refresh data and sync",
+"title_start_date": "Start date",
+"title_end_date": "End date",
+"no_bind_hint": "This training is not yet bound to an exam. Please bind an exam first before checking the completion status."
 }

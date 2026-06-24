@@ -724,7 +724,7 @@
   "title_header_input_vary_prompt": "存在多个国家的不同表头模板，无法统一编辑，请在分组详情页分别录入",
   "sign_in_details": "签到详情",
   "pending_sign": "待签到",
-  "export_excel": "导出Excel",
+  "export_excel": "报表",
   "sign_time": "签到时间",
   "edit_warehoues": "编辑库房",
   "t_target_country_hint": "点击搜索框选择目标国家",
@@ -1023,5 +1023,11 @@
 "current_reviewer_not_configured": "当前未设置阅卷人",
 "save_only": "仅保存设置",
 "reopen_exam_hint": "「仅保存设置」只更新考试信息，不重置考生状态。「确认重新打开」将重置所有考生的考试状态，考生可重新参加考试。",
-"draft_is_saved": "草稿已保存"
+"draft_is_saved": "草稿已保存",
+"no_bind": "未绑定",
+"completion_report_hint": "本报表仅展示已绑定考试的培训及学员完成度数据，用于分析培训与考试的关联完成情况。未绑定考试的培训不纳入统计。",
+"title_refresh_and_sync_data": "刷新数据并同步",
+"title_start_date": "开始日期",
+"title_end_date": "结束日期",
+"no_bind_hint": "该培训尚未绑定考试，请先绑定考试后再查看完成度"
 }

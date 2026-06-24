@@ -25,8 +25,8 @@
             <button class="btn btn-outline-danger me-2" id="showDeletedExamsBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="deleted_exams">已删除考试</span>
             </button>
-            <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="history.back();">
-                <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
             </button>
         </div>
     </div>
@@ -107,10 +107,15 @@
                             <th><span data-i18n="actions">操作</span></th>
                         </tr>
                     </thead>
-                    <tbody id="examsTbody" style="font-size: 1rem;">
+                    <tbody id="examsTbody">
                         <tr>
-                            <td colspan="15" class="text-center">
-                                <span data-i18n="loading">加载中...</span>
+                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                                <div class="d-flex flex-column align-items-center justify-content-center">
+                                    <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted" data-i18n="loading">加载中...</span>
+                                </div>
                             </td>
                         </tr>
                     </tbody>
@@ -580,6 +585,22 @@
 
     // ========== 加载考试列表（首次加载，获取全部数据） ==========
     async function loadExams() {
+        const tbody = document.getElementById('examsTbody');
+        // 立即显示加载动画（消除静态文字）
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                        <div class="d-flex flex-column align-items-center justify-content-center">
+                            <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span class="text-muted">${t('loading') || '加载中...'}</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
         // 如果已经有数据，直接使用缓存
         if (allData && allData.length > 0) {
             console.log('📋 使用缓存数据，应用筛选');

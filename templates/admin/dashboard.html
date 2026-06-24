@@ -409,13 +409,13 @@
         </button>
         <ul class="dropdown-menu dropdown-menu-end">
             <li>
-                <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;">
+                <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;" target="_blank">
                     <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
                 </a>
             </li>
             <!-- ✅ 新增：培训完成度报表 -->
             <li>
-                <a class="dropdown-item" href="{{ url_for('admin_training.completion_report_page') }}">
+                <a class="dropdown-item" href="{{ url_for('admin_training.completion_report_page') }}" target="_blank">
                     <i class="bi bi-bar-chart-steps me-2"></i> <span data-i18n="training_completion_report">培训完成度报表</span>
                 </a>
             </li>
@@ -423,7 +423,7 @@
             {% if session.get('role') in ['super_admin', 'developer'] %}
             <li><hr class="dropdown-divider"></li>
             <li>
-                <a class="dropdown-item" href="{{ url_for('admin_user.resigned_users_page') }}">
+                <a class="dropdown-item" href="{{ url_for('admin_user.resigned_users_page') }}" target="_blank">
                     <i class="bi bi-person-x me-2"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
                 </a>
             </li>
@@ -439,120 +439,129 @@
 <div class="row g-3 mb-4">
 	
 	<!-- 注册用户统计 -->
-	<div class="col-md-3">
-		<div class="card dashboard-stats-card card-user h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_user_list') }}`">
-			<div class="card-body">
-				<h6 class="mb-2 opacity-75"><span data-i18n="user_statistics_manage">用户统计与管理</span></h6>
-				<div class="d-flex align-items-center mt-2">
-					<i class="bi bi-people fs-2 me-3 opacity-75"></i>
-					<div>
-						<div class="d-flex align-items-baseline">
-							<h2 class="mb-0 fw-bold">{{ stats.users }}</h2>
-							<small class="opacity-75 ms-2"><span data-i18n="registered">已注册</span></small>
-						</div>
-						<div class="d-flex align-items-baseline mt-1">
-							<span class="fw-bold fs-6">{{ stats.users_imported }}</span>
-							<small class="opacity-75 ms-2"><span data-i18n="imported">已导入</span></small>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
-	</div>
+    <div class="col-md-3">
+        <a href="{{ url_for('admin_user_list') }}" target="_blank" class="text-decoration-none">
+            <div class="card dashboard-stats-card card-user h-100">
+                <div class="card-body">
+                    <h6 class="mb-2 opacity-75"><span data-i18n="user_statistics_manage">用户统计与管理</span></h6>
+                    <div class="d-flex align-items-center mt-2">
+                        <i class="bi bi-people fs-2 me-3 opacity-75"></i>
+                        <div>
+                            <div class="d-flex align-items-baseline">
+                                <h2 class="mb-0 fw-bold">{{ stats.users }}</h2>
+                                <small class="opacity-75 ms-2"><span data-i18n="registered">已注册</span></small>
+                            </div>
+                            <div class="d-flex align-items-baseline mt-1">
+                                <span class="fw-bold fs-6">{{ stats.users_imported }}</span>
+                                <small class="opacity-75 ms-2"><span data-i18n="imported">已导入</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
+    </div>
+
 	
 	<!-- 考试信息统计 -->
 	<div class="col-md-3">
-		<div class="card dashboard-stats-card card-exam h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_exams_page') }}`">
-			<div class="card-body">
-				<h6 class="mb-2 opacity-75"><span data-i18n="exam_statistics_manage">考试统计与管理</span></h6>
-				<div class="d-flex align-items-center mt-2">
-					<i class="bi bi-check-circle fs-2 me-3 opacity-75"></i>
-					<div>
-						<div class="d-flex align-items-baseline">
-							<h2 class="mb-0 fw-bold">{{ stats.exams_total }}</h2>
-							<small class="opacity-75 ms-2"><span data-i18n="total_exams">考试总数</span></small>
-						</div>
-						<div class="d-flex align-items-baseline mt-1 flex-wrap gap-2">
-                            <!-- ✅ 高级显示：使用符号 + 数字 -->
-                            <span 
-                                data-i18n-title-key="exam_completed_tooltip" 
-                                data-i18n-title-params='{"count": {{ stats.exams_closed }}}' 
-                                style="cursor: help;">
-                                <i class="bi bi-check" style="font-size: 0.75rem;"></i>
-                                <span class="fw-bold fs-6">{{ stats.exams_closed }}</span>
-                            </span>
-                            <span 
-                                data-i18n-title-key="exam_ongoing_tooltip" 
-                                data-i18n-title-params='{"count": {{ stats.exams_active }}}' 
-                                style="cursor: help;">
-                                <i class="bi bi-activity" style="font-size: 0.75rem;"></i>
-                                <span class="fw-bold fs-6">{{ stats.exams_active }}</span>
-                            </span>
-                            <span 
-                                data-i18n-title-key="exam_not_started_tooltip" 
-                                data-i18n-title-params='{"count": {{ stats.exams_created }}}' 
-                                style="cursor: help;">
-                                <i class="bi bi-hourglass-top" style="font-size: 0.75rem;"></i>
-                                <span class="fw-bold fs-6">{{ stats.exams_created }}</span>
-                            </span>
-                            <span 
-                                data-i18n-title-key="exam_draft_tooltip" 
-                                data-i18n-title-params='{"count": {{ stats.exams_draft }}}' 
-                                style="cursor: help;">
-                                <i class="bi bi-pencil" style="font-size: 0.75rem;"></i>
-                                <span class="fw-bold fs-6">{{ stats.exams_draft }}</span>
-                            </span>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
+        <a href="{{ url_for('admin_exams_page') }}" target="_blank" class="text-decoration-none">
+            <div class="card dashboard-stats-card card-exam h-100">
+                <div class="card-body">
+                    <h6 class="mb-2 opacity-75"><span data-i18n="exam_statistics_manage">考试统计与管理</span></h6>
+                    <div class="d-flex align-items-center mt-2">
+                        <i class="bi bi-check-circle fs-2 me-3 opacity-75"></i>
+                        <div>
+                            <div class="d-flex align-items-baseline">
+                                <h2 class="mb-0 fw-bold">{{ stats.exams_total }}</h2>
+                                <small class="opacity-75 ms-2"><span data-i18n="total_exams">考试总数</span></small>
+                            </div>
+                            <div class="d-flex align-items-baseline mt-1 flex-wrap gap-2">
+                                <!-- ✅ 高级显示：使用符号 + 数字 -->
+                                <span 
+                                    data-i18n-title-key="exam_completed_tooltip" 
+                                    data-i18n-title-params='{"count": {{ stats.exams_closed }}}' 
+                                    style="cursor: help;">
+                                    <i class="bi bi-check" style="font-size: 0.75rem;"></i>
+                                    <span class="fw-bold fs-6">{{ stats.exams_closed }}</span>
+                                </span>
+                                <span 
+                                    data-i18n-title-key="exam_ongoing_tooltip" 
+                                    data-i18n-title-params='{"count": {{ stats.exams_active }}}' 
+                                    style="cursor: help;">
+                                    <i class="bi bi-activity" style="font-size: 0.75rem;"></i>
+                                    <span class="fw-bold fs-6">{{ stats.exams_active }}</span>
+                                </span>
+                                <span 
+                                    data-i18n-title-key="exam_not_started_tooltip" 
+                                    data-i18n-title-params='{"count": {{ stats.exams_created }}}' 
+                                    style="cursor: help;">
+                                    <i class="bi bi-hourglass-top" style="font-size: 0.75rem;"></i>
+                                    <span class="fw-bold fs-6">{{ stats.exams_created }}</span>
+                                </span>
+                                <span 
+                                    data-i18n-title-key="exam_draft_tooltip" 
+                                    data-i18n-title-params='{"count": {{ stats.exams_draft }}}' 
+                                    style="cursor: help;">
+                                    <i class="bi bi-pencil" style="font-size: 0.75rem;"></i>
+                                    <span class="fw-bold fs-6">{{ stats.exams_draft }}</span>
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
 	</div>
 
 	<!-- 培训签到信息统计 -->
 	<div class="col-md-3">
-		<div class="card dashboard-stats-card card-training h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_trainings') }}`">
-			<div class="card-body">
-				<h6 class="mb-2 opacity-75"><span data-i18n="sign_in_statistics_manage">培训记录与管理</span></h6>
-				<div class="d-flex align-items-center mt-2">
-					<i class="bi bi-calendar-check fs-2 me-3 opacity-75"></i>
-					<div>
-						<div class="d-flex align-items-baseline">
-							<h2 class="mb-0 fw-bold">{{ stats.trainings_count }}</h2>
-							<small class="opacity-75 ms-2"><span data-i18n="training_count">场培训</span></small>
-						</div>
-						<div class="d-flex align-items-baseline mt-1">
-							<span class="fw-bold fs-6">{{ stats.total_attendances }}</span>
-							<small class="opacity-75 ms-2"><span data-i18n="total_sign_ins">总签到</span></small>
-							<span class="mx-1">|</span>
-							<span class="fw-bold fs-6">{{ stats.signins_today }}</span>
-							<small class="opacity-75 ms-2"><span data-i18n="today_sign_ins">今日签到</span></small>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
+        <a href="{{ url_for('admin_trainings') }}" target="_blank" class="text-decoration-none">
+            <div class="card dashboard-stats-card card-training h-100">
+                <div class="card-body">
+                    <h6 class="mb-2 opacity-75"><span data-i18n="sign_in_statistics_manage">培训记录与管理</span></h6>
+                    <div class="d-flex align-items-center mt-2">
+                        <i class="bi bi-calendar-check fs-2 me-3 opacity-75"></i>
+                        <div>
+                            <div class="d-flex align-items-baseline">
+                                <h2 class="mb-0 fw-bold">{{ stats.trainings_count }}</h2>
+                                <small class="opacity-75 ms-2"><span data-i18n="training_count">场培训</span></small>
+                            </div>
+                            <div class="d-flex align-items-baseline mt-1">
+                                <span class="fw-bold fs-6">{{ stats.total_attendances }}</span>
+                                <small class="opacity-75 ms-2"><span data-i18n="total_sign_ins">总签到</span></small>
+                                <span class="mx-1">|</span>
+                                <span class="fw-bold fs-6">{{ stats.signins_today }}</span>
+                                <small class="opacity-75 ms-2"><span data-i18n="today_sign_ins">今日签到</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
 	</div>
 
 	<!-- 访谈记录统计 -->
 	<div class="col-md-3">
-		<div class="card dashboard-stats-card card-interview h-100" style="cursor: pointer;" onclick="location.href=`{{ url_for('admin_interviewee_stats') }}`">
-			<div class="card-body">
-				<h6 class="mb-2 opacity-75"><span data-i18n="inspect_statistics_manage">访谈统计与管理</span></h6>
-				<div class="d-flex align-items-center mt-2">
-					<i class="bi bi-chat-dots fs-2 me-3 opacity-75"></i>
-					<div>
-						<div class="d-flex align-items-baseline">
-							<h2 class="mb-0 fw-bold">{{ interviewee_count }}</h2>
-							<small class="opacity-75 ms-2"><span data-i18n="interview_count">场访谈</span></small>
-						</div>
-						<div class="mt-1">
-							<small class="opacity-75"><span data-i18n="click_to_view_details">点击查看详情</span></small>
-						</div>
-					</div>
-				</div>
-			</div>
-		</div>
+        <a href="{{ url_for('admin_interviewee_stats') }}" target="_blank" class="text-decoration-none">
+            <div class="card dashboard-stats-card card-interview h-100">
+                <div class="card-body">
+                    <h6 class="mb-2 opacity-75"><span data-i18n="inspect_statistics_manage">访谈统计与管理</span></h6>
+                    <div class="d-flex align-items-center mt-2">
+                        <i class="bi bi-chat-dots fs-2 me-3 opacity-75"></i>
+                        <div>
+                            <div class="d-flex align-items-baseline">
+                                <h2 class="mb-0 fw-bold">{{ interviewee_count }}</h2>
+                                <small class="opacity-75 ms-2"><span data-i18n="interview_count">场访谈</span></small>
+                            </div>
+                            <div class="mt-1">
+                                <small class="opacity-75"><span data-i18n="click_to_view_details">点击查看详情</span></small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </a>
 	</div>
 
 	<!-- 题库信息统计（可选，取消注释使用） -->

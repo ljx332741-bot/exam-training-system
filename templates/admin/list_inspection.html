@@ -53,8 +53,8 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-chat-dots"></i> <span data-i18n="interview_statistics_management">访谈统计与管理</span></h2>
-        <button class="btn btn-outline-secondary" onclick="history.back();">
-            <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+        <button class="btn btn-secondary" onclick="window.close()">
+            <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
         </button>
     </div>
     <!-- 筛选栏 -->
@@ -108,7 +108,16 @@
                         </tr>
                     </thead>
                     <tbody id="interviewTableBody">
-                        <tr><td colspan="12" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr>
+                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                                <div class="d-flex flex-column align-items-center justify-content-center">
+                                    <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted" data-i18n="loading">加载中...</span>
+                                </div>
+                            </td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -591,6 +600,23 @@
 
     function renderInterviewTable(interviews) {
         const tbody = document.getElementById('interviewTableBody');
+
+        // ✅ 立即显示加载动画（消除静态文字）
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                        <div class="d-flex flex-column align-items-center justify-content-center">
+                            <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <span class="text-muted">${t('loading') || '加载中...'}</span>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+        
         if (!interviews.length) {
             tbody.innerHTML = `<tr><td colspan="12" class="text-center">${t('t_no_data')}</td></tr>`;
             return;
