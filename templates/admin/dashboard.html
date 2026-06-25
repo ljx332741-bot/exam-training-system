@@ -94,44 +94,6 @@
         color: rgba(255, 255, 255, 0.7);
     }
 
-    /* ===== 各卡片独有颜色（毛玻璃版本） ===== */
-
-    /* 1. 用户统计卡片 - 蓝色系 */
-    .dashboard-stats-card.card-user {
-        background: #0d6efd !important;
-    }
-    .dashboard-stats-card.card-user:hover {
-        border-color: rgba(13, 110, 253, 0.45) !important;
-        box-shadow: 0 12px 48px rgba(13, 110, 253, 0.2) !important;
-    }
-
-    /* 2. 考试统计卡片 - 绿色系 */
-    .dashboard-stats-card.card-exam {
-        background: #198754 !important;
-    }
-    .dashboard-stats-card.card-exam:hover {
-        border-color: rgba(25, 135, 84, 0.45) !important;
-        box-shadow: 0 12px 48px rgba(25, 135, 84, 0.2) !important;
-    }
-
-    /* 3. 培训统计卡片 - 青色系 */
-    .dashboard-stats-card.card-training {
-        background: #0dcaf0 !important;
-    }
-    .dashboard-stats-card.card-training:hover {
-        border-color: rgba(13, 202, 240, 0.40) !important;
-        box-shadow: 0 12px 48px rgba(13, 202, 240, 0.2) !important;
-    }
-
-    /* 4. 访谈统计卡片 - 灰色系（紫色调） */
-    .dashboard-stats-card.card-interview {
-        background: #6c757d !important;
-    }
-    .dashboard-stats-card.card-interview:hover {
-        border-color: rgba(108, 117, 125, 0.45) !important;
-        box-shadow: 0 12px 48px rgba(108, 117, 125, 0.2) !important;
-    }
-
     /* ==================== 导出模态框下拉面板样式 ==================== */
     .export-dropdown {
         position: absolute;
@@ -395,6 +357,203 @@
     .nav-tabs .nav-link.active {
         font-weight: 600;
     }
+
+    /* ==================== 水晶统计卡片样式 ==================== */
+    .crystal-card {
+        position: relative;
+        border: none;
+        border-radius: 20px;
+        padding: 20px 24px;
+        min-height: 110px;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
+        cursor: pointer;
+    }
+
+    /* 玻璃态背景 */
+    .crystal-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 20px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.08) 100%);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 0;
+    }
+
+    /* 顶部高光条 */
+    .crystal-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        border-radius: 20px 20px 0 0;
+        z-index: 1;
+    }
+
+    /* 卡片内容 */
+    .crystal-card .card-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+
+    .crystal-card .card-left {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+    }
+
+    .crystal-card .card-title {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        opacity: 0.7;
+        margin: 0 0 2px 0;
+    }
+
+    .crystal-card .card-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin: 0;
+    }
+
+    .crystal-card .card-value small {
+        font-size: 0.7rem;
+        font-weight: 400;
+        opacity: 0.7;
+    }
+
+    .crystal-card .card-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+        background: rgba(255,255,255,0.3);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.2);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+
+    .crystal-card .card-icon i {
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08));
+    }
+
+    /* 悬浮效果 */
+    .crystal-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
+    }
+
+    .crystal-card:hover .card-icon {
+        transform: scale(1.05) rotate(-2deg);
+    }
+
+    /* 不同主题颜色 */
+    .crystal-card.blue {
+        background: linear-gradient(135deg, #e8f0fe 0%, #d4e4fd 100%);
+        border: 1px solid rgba(66, 133, 244, 0.2);
+    }
+    .crystal-card.blue::after {
+        background: linear-gradient(90deg, #4285f4, #8ab4f8);
+    }
+    .crystal-card.blue .card-icon {
+        color: #4285f4;
+        background: rgba(66, 133, 244, 0.15);
+    }
+
+    .crystal-card.green {
+        background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+        border: 1px solid rgba(52, 168, 83, 0.2);
+    }
+    .crystal-card.green::after {
+        background: linear-gradient(90deg, #34a853, #81c995);
+    }
+    .crystal-card.green .card-icon {
+        color: #34a853;
+        background: rgba(52, 168, 83, 0.15);
+    }
+
+    .crystal-card.orange {
+        background: linear-gradient(135deg, #fef3e8 0%, #fde8d0 100%);
+        border: 1px solid rgba(251, 140, 0, 0.2);
+    }
+    .crystal-card.orange::after {
+        background: linear-gradient(90deg, #fb8c00, #ffb74d);
+    }
+    .crystal-card.orange .card-icon {
+        color: #fb8c00;
+        background: rgba(251, 140, 0, 0.15);
+    }
+
+    .crystal-card.purple {
+        background: linear-gradient(135deg, #f3e8f9 0%, #e8d5f5 100%);
+        border: 1px solid rgba(156, 39, 176, 0.2);
+    }
+    .crystal-card.purple::after {
+        background: linear-gradient(90deg, #9c27b0, #ce93d8);
+    }
+    .crystal-card.purple .card-icon {
+        color: #9c27b0;
+        background: rgba(156, 39, 176, 0.15);
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .crystal-card {
+            padding: 16px 18px;
+            min-height: 90px;
+        }
+        .crystal-card .card-value {
+            font-size: 1.3rem;
+        }
+        .crystal-card .card-icon {
+            width: 40px;
+            height: 40px;
+            font-size: 1.2rem;
+        }
+        .crystal-card .card-title {
+            font-size: 0.65rem;
+        }
+    }
+
+    /* ---加载动画--- */
+    .spin-icon {
+        display: inline-block;
+        transition: transform 0.5s ease;
+    }
+
+    .spin-icon.spinning {
+        animation: spin 5s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
 </style>
 {% endblock %}
 
@@ -438,131 +597,117 @@
 <!-- 创建管理员仪表盘里统计卡片 -->
 <div class="row g-3 mb-4">
 	
-	<!-- 注册用户统计 -->
+    <!-- 注册用户统计 -->
     <div class="col-md-3">
         <a href="{{ url_for('admin_user_list') }}" target="_blank" class="text-decoration-none">
-            <div class="card dashboard-stats-card card-user h-100">
-                <div class="card-body">
-                    <h6 class="mb-2 opacity-75"><span data-i18n="user_statistics_manage">用户统计与管理</span></h6>
-                    <div class="d-flex align-items-center mt-2">
-                        <i class="bi bi-people fs-2 me-3 opacity-75"></i>
-                        <div>
-                            <div class="d-flex align-items-baseline">
-                                <h2 class="mb-0 fw-bold">{{ stats.users }}</h2>
-                                <small class="opacity-75 ms-2"><span data-i18n="registered">已注册</span></small>
-                            </div>
-                            <div class="d-flex align-items-baseline mt-1">
-                                <span class="fw-bold fs-6">{{ stats.users_imported }}</span>
-                                <small class="opacity-75 ms-2"><span data-i18n="imported">已导入</span></small>
-                            </div>
+            <div class="crystal-card blue h-100">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="user_statistics_manage">用户统计与管理</span></p>
+                        <div class="d-flex align-items-baseline">
+                            <h3 class="card-value">{{ stats.users }}</h3>
+                            <small class="opacity-75 ms-2"><span data-i18n="registered">已注册</span></small>
                         </div>
+                        <div class="d-flex align-items-baseline mt-1">
+                            <span class="fw-bold fs-6">{{ stats.users_imported }}</span>
+                            <small class="opacity-75 ms-2"><span data-i18n="imported">已导入</span></small>
+                        </div>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-people-fill"></i>
                     </div>
                 </div>
             </div>
         </a>
     </div>
 
-	
-	<!-- 考试信息统计 -->
-	<div class="col-md-3">
+    <!-- 考试信息统计 -->
+    <div class="col-md-3">
         <a href="{{ url_for('admin_exams_page') }}" target="_blank" class="text-decoration-none">
-            <div class="card dashboard-stats-card card-exam h-100">
-                <div class="card-body">
-                    <h6 class="mb-2 opacity-75"><span data-i18n="exam_statistics_manage">考试统计与管理</span></h6>
-                    <div class="d-flex align-items-center mt-2">
-                        <i class="bi bi-check-circle fs-2 me-3 opacity-75"></i>
-                        <div>
-                            <div class="d-flex align-items-baseline">
-                                <h2 class="mb-0 fw-bold">{{ stats.exams_total }}</h2>
-                                <small class="opacity-75 ms-2"><span data-i18n="total_exams">考试总数</span></small>
-                            </div>
-                            <div class="d-flex align-items-baseline mt-1 flex-wrap gap-2">
-                                <!-- ✅ 高级显示：使用符号 + 数字 -->
-                                <span 
-                                    data-i18n-title-key="exam_completed_tooltip" 
-                                    data-i18n-title-params='{"count": {{ stats.exams_closed }}}' 
-                                    style="cursor: help;">
-                                    <i class="bi bi-check" style="font-size: 0.75rem;"></i>
-                                    <span class="fw-bold fs-6">{{ stats.exams_closed }}</span>
-                                </span>
-                                <span 
-                                    data-i18n-title-key="exam_ongoing_tooltip" 
-                                    data-i18n-title-params='{"count": {{ stats.exams_active }}}' 
-                                    style="cursor: help;">
-                                    <i class="bi bi-activity" style="font-size: 0.75rem;"></i>
-                                    <span class="fw-bold fs-6">{{ stats.exams_active }}</span>
-                                </span>
-                                <span 
-                                    data-i18n-title-key="exam_not_started_tooltip" 
-                                    data-i18n-title-params='{"count": {{ stats.exams_created }}}' 
-                                    style="cursor: help;">
-                                    <i class="bi bi-hourglass-top" style="font-size: 0.75rem;"></i>
-                                    <span class="fw-bold fs-6">{{ stats.exams_created }}</span>
-                                </span>
-                                <span 
-                                    data-i18n-title-key="exam_draft_tooltip" 
-                                    data-i18n-title-params='{"count": {{ stats.exams_draft }}}' 
-                                    style="cursor: help;">
-                                    <i class="bi bi-pencil" style="font-size: 0.75rem;"></i>
-                                    <span class="fw-bold fs-6">{{ stats.exams_draft }}</span>
-                                </span>
-                            </div>
+            <div class="crystal-card green h-100">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="exam_statistics_manage">考试统计与管理</span></p>
+                        <div class="d-flex align-items-baseline">
+                            <h3 class="card-value">{{ stats.exams_total }}</h3>
+                            <small class="opacity-75 ms-2"><span data-i18n="total_exams">考试总数</span></small>
                         </div>
+                        <div class="d-flex align-items-baseline mt-1 flex-wrap gap-2">
+                            <span data-i18n-title-key="exam_completed_tooltip" data-i18n-title-params='{"count": {{ stats.exams_closed }}}' style="cursor: help;">
+                                <i class="bi bi-check" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_closed }}</span>
+                            </span>
+                            <span data-i18n-title-key="exam_ongoing_tooltip" data-i18n-title-params='{"count": {{ stats.exams_active }}}' style="cursor: help;">
+                                <i class="bi bi-activity" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_active }}</span>
+                            </span>
+                            <span data-i18n-title-key="exam_not_started_tooltip" data-i18n-title-params='{"count": {{ stats.exams_created }}}' style="cursor: help;">
+                                <i class="bi bi-hourglass-top" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_created }}</span>
+                            </span>
+                            <span data-i18n-title-key="exam_draft_tooltip" data-i18n-title-params='{"count": {{ stats.exams_draft }}}' style="cursor: help;">
+                                <i class="bi bi-pencil" style="font-size: 0.75rem;"></i>
+                                <span class="fw-bold fs-6">{{ stats.exams_draft }}</span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-journal-check"></i>
                     </div>
                 </div>
             </div>
         </a>
-	</div>
+    </div>
 
-	<!-- 培训签到信息统计 -->
-	<div class="col-md-3">
+    <!-- 培训签到信息统计 -->
+    <div class="col-md-3">
         <a href="{{ url_for('admin_trainings') }}" target="_blank" class="text-decoration-none">
-            <div class="card dashboard-stats-card card-training h-100">
-                <div class="card-body">
-                    <h6 class="mb-2 opacity-75"><span data-i18n="sign_in_statistics_manage">培训记录与管理</span></h6>
-                    <div class="d-flex align-items-center mt-2">
-                        <i class="bi bi-calendar-check fs-2 me-3 opacity-75"></i>
-                        <div>
-                            <div class="d-flex align-items-baseline">
-                                <h2 class="mb-0 fw-bold">{{ stats.trainings_count }}</h2>
-                                <small class="opacity-75 ms-2"><span data-i18n="training_count">场培训</span></small>
-                            </div>
-                            <div class="d-flex align-items-baseline mt-1">
-                                <span class="fw-bold fs-6">{{ stats.total_attendances }}</span>
-                                <small class="opacity-75 ms-2"><span data-i18n="total_sign_ins">总签到</span></small>
-                                <span class="mx-1">|</span>
-                                <span class="fw-bold fs-6">{{ stats.signins_today }}</span>
-                                <small class="opacity-75 ms-2"><span data-i18n="today_sign_ins">今日签到</span></small>
-                            </div>
+            <div class="crystal-card orange h-100">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="sign_in_statistics_manage">培训记录与管理</span></p>
+                        <div class="d-flex align-items-baseline">
+                            <h3 class="card-value">{{ stats.trainings_count }}</h3>
+                            <small class="opacity-75 ms-2"><span data-i18n="training_count">场培训</span></small>
                         </div>
+                        <div class="d-flex align-items-baseline mt-1">
+                            <span class="fw-bold fs-6">{{ stats.total_attendances }}</span>
+                            <small class="opacity-75 ms-2"><span data-i18n="total_sign_ins">总签到</span></small>
+                            <span class="mx-1">|</span>
+                            <span class="fw-bold fs-6">{{ stats.signins_today }}</span>
+                            <small class="opacity-75 ms-2"><span data-i18n="today_sign_ins">今日签到</span></small>
+                        </div>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-calendar-event"></i>
                     </div>
                 </div>
             </div>
         </a>
-	</div>
+    </div>
 
-	<!-- 访谈记录统计 -->
-	<div class="col-md-3">
+    <!-- 访谈记录统计 -->
+    <div class="col-md-3">
         <a href="{{ url_for('admin_interviewee_stats') }}" target="_blank" class="text-decoration-none">
-            <div class="card dashboard-stats-card card-interview h-100">
-                <div class="card-body">
-                    <h6 class="mb-2 opacity-75"><span data-i18n="inspect_statistics_manage">访谈统计与管理</span></h6>
-                    <div class="d-flex align-items-center mt-2">
-                        <i class="bi bi-chat-dots fs-2 me-3 opacity-75"></i>
-                        <div>
-                            <div class="d-flex align-items-baseline">
-                                <h2 class="mb-0 fw-bold">{{ interviewee_count }}</h2>
-                                <small class="opacity-75 ms-2"><span data-i18n="interview_count">场访谈</span></small>
-                            </div>
-                            <div class="mt-1">
-                                <small class="opacity-75"><span data-i18n="click_to_view_details">点击查看详情</span></small>
-                            </div>
+            <div class="crystal-card purple h-100">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="inspect_statistics_manage">访谈统计与管理</span></p>
+                        <div class="d-flex align-items-baseline">
+                            <h3 class="card-value">{{ interviewee_count }}</h3>
+                            <small class="opacity-75 ms-2"><span data-i18n="interview_count">场访谈</span></small>
                         </div>
+                        <div class="mt-1">
+                            <small class="opacity-75"><span data-i18n="click_to_view_details">点击查看详情</span></small>
+                        </div>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-chat-dots"></i>
                     </div>
                 </div>
             </div>
         </a>
-	</div>
+    </div>
 
 	<!-- 题库信息统计（可选，取消注释使用） -->
 	<!--
@@ -585,7 +730,10 @@
 		<div class="col-lg-12">
 			<div class="card shadow-sm border-0">
 				<div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
-					<span class="fw-bold"><i class="bi bi-folder2-open me-1"></i><span data-i18n="exam_data_export_manage">考试管理</span></span>
+					<span class="fw-bold">
+                        <i class="bi bi-gear-wide-connected spin-icon spinning" id="gearIcon"></i> 
+                        <span data-i18n="exam_data_export_manage">考试管理</span>
+                    </span>
 					<div class="d-flex gap-2">
 						<button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#exportFilterModal">
 							<i class="bi bi-download me-1"></i><span data-i18n="export_training_exam_result">导出[Excel]培训测评结果</span>
@@ -5179,8 +5327,11 @@
      
 	// 初始化事件监听
 	document.addEventListener('DOMContentLoaded', async () => {
-
         document.addEventListener('DOMContentLoaded', function() {
+            const gearIcon = document.getElementById('gearIcon');
+            if (gearIcon) {
+                gearIcon.classList.add('spinning');
+            }
             console.log('🔍 [DEBUG] DOMContentLoaded 触发');
             
             // 等待 Bootstrap 初始化完成

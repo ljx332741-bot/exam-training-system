@@ -13,9 +13,8 @@ logger = logging.getLogger(__name__)
 @training_bp.route('/api/trainings/available')
 @login_required
 def api_available_trainings():
-    """获取当前用户可签到的培训列表（显示有效期内的所有培训，包括未开始的）"""
+    """获取当前用户可签到的培训列表（包括已完成考试需要补签的已关闭培训）"""
     db = get_supabase()
-    #db = get_supabase_admin
     admin_db = get_supabase_admin()
     user_id = session['user_id']
     now = datetime.now(timezone.utc).isoformat()
@@ -28,25 +27,63 @@ def api_available_trainings():
     if not user_country:
         return jsonify([])
 
-    # 详细日志
     logger.info(f"========== 学员请求培训列表 ==========")
-    logger.info(f"用户ID: {user_id}")
-    logger.info(f"用户国家: {user_country}")
+    logger.info(f"用户ID: {user_id}, 国家: {user_country}")
     
-    # 查询该用户被定点分配的培训ID
-    assigned_res = db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
+    # ========== 1. 获取学员的所有签到记录 ==========
+    att_res = db.table("training_attendances") \
+        .select("id, training_id, sign_time, signed_name, signature_url") \
+        .eq("user_id", user_id) \
+        .execute()
+    signed_dict = {a['training_id']: a for a in (att_res.data or [])}
+    signed_training_ids = set(signed_dict.keys())
+    
+    # ========== 2. 找出需要补签的培训ID ==========
+    pending_sign_training_ids = set()
+    
+    # 2.1 已有签到记录但无签名 → 待重新签名
+    resign_training_ids = set()
+    for att in (att_res.data or []):
+        signature_url = att.get('signature_url')
+        is_empty = not signature_url or signature_url == '' or signature_url == 'null'
+        if is_empty:
+            resign_training_ids.add(att['training_id'])
+            logger.info(f"待重新签名培训: {att['training_id']}")
+    
+    # 2.2 已完成绑定考试但未签到 → 待补签
+    completed_exams_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).execute()
+    completed_exam_ids = [r['exam_id'] for r in (completed_exams_res.data or [])]
+    
+    if completed_exam_ids:
+        # 查找这些考试绑定的培训
+        bindings_res = admin_db.table("training_exam_bindings").select("training_id").in_("exam_id", completed_exam_ids).execute()
+        for b in (bindings_res.data or []):
+            training_id = b['training_id']
+            # 检查用户是否已经签到（有签到记录）
+            if training_id not in signed_training_ids:
+                pending_sign_training_ids.add(training_id)
+                logger.info(f"待补签培训（已完成绑定考试）: {training_id}")
+    
+    # 合并：待重新签名 + 待补签
+    all_pending_training_ids = resign_training_ids | pending_sign_training_ids
+    logger.info(f"所有待处理培训ID: {list(all_pending_training_ids)}")
+    
+    # ========== 3. 查询用户被定点分配的培训ID ==========
+    assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
     assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
     logger.info(f"用户被分配的培训ID: {assigned_training_ids}")
     
-    # 查询激活的培训
-    trainings_res = db.table("trainings").select("*").eq("is_active", True).execute()
-    trainings = trainings_res.data or []
-    logger.info(f"所有激活的培训ID: {[t['id'] for t in trainings]}")
+    # ========== 4. 查询所有培训 ==========
+    trainings_res = db.table("trainings").select("*").execute()
+    all_trainings = trainings_res.data or []
+    logger.info(f"所有培训数量: {len(all_trainings)}")
     
-    # 根据学员国家过滤培训
+    # ========== 5. 筛选需要显示的培训 ==========
     filtered_trainings = []
-    for t in trainings:
+    for t in all_trainings:
+        training_id = t['id']
         training_country = t.get('country')
+        
         if not training_country:
             continue
         
@@ -65,38 +102,38 @@ def api_available_trainings():
             country_list = training_country
         else:
             country_list = [str(training_country)]
-
-        # 正确判断是否有分配记录
-        assign_check = db.table("training_assignments").select("id").eq("training_id", t['id']).execute()
+        
+        # 检查该培训是否有任何分配记录
+        assign_check = admin_db.table("training_assignments").select("id").eq("training_id", training_id).execute()
         has_targeted_assignments = len(assign_check.data or []) > 0
         
         show_training = False
         
         # 情况1：用户被定点分配了该培训
-        if t['id'] in assigned_training_ids:
+        if training_id in assigned_training_ids:
             show_training = True
+            logger.info(f"培训 {training_id} 用户在分配列表中")
         
-        # 情况2：没有分配记录时，才按国家过滤（全国推送）
+        # 情况2：没有分配记录时，按国家过滤（全国推送）
         elif not has_targeted_assignments:
             if user_country in country_list:
                 show_training = True
+                logger.info(f"培训 {training_id} 国家匹配（全国推送）")
         
-        # 情况3：有分配记录但用户未被分配 → 不显示
+        # 情况3：需要补签的培训，强制显示
+        if training_id in all_pending_training_ids:
+            show_training = True
+            logger.info(f"培训 {training_id} 需要补签，强制显示")
         
         if show_training:
             filtered_trainings.append(t)
     
     logger.info(f"过滤后培训数量: {len(filtered_trainings)}")
     
-    # 查询用户已签到记录
-    att_res = db.table("training_attendances") \
-        .select("id, training_id, sign_time, signed_name, signature_url") \
-        .eq("user_id", user_id) \
-        .execute()
-    signed_dict = {a['training_id']: a for a in (att_res.data or [])}
-    
+    # ========== 6. 构建返回数据 ==========
     result = []
     for t in filtered_trainings:
+        training_id = t['id']
         start = t.get('start_time')
         end = t.get('end_time')
         
@@ -104,11 +141,12 @@ def api_available_trainings():
         if not start or not end:
             continue
         
-        signed_info = signed_dict.get(t['id'])
+        signed_info = signed_dict.get(training_id)
         signed = signed_info is not None
         needs_resign = False
         if signed:
-            if not signed_info.get('signature_url'):
+            # 有签到记录但无签名 → 需要重新签名
+            if not signed_info.get('signature_url') or signed_info.get('signature_url') == '':
                 needs_resign = True
         
         # 判断培训状态
@@ -116,45 +154,134 @@ def api_available_trainings():
         is_active = start <= now <= end
         is_expired = now > end
         
-        if is_expired:
-            continue
+        # ========== 7. 状态判断逻辑 ==========
         
+        # 情况1：未开始 → 显示"未开始"
         if is_future:
-            status_text = "未开始"
-            status_badge = "bg-secondary"
-            can_sign = False
-            button_html = f'<button class="btn btn-secondary" disabled><span data-i18n="not_started">未开始</span></button>'
-        elif is_active:
-            if signed and not needs_resign:
-                status_text = "已签到"
-                status_badge = "bg-success"
-                can_sign = False
-                button_html = f'<button class="btn btn-success" disabled><span data-i18n="signed">已签到</span></button>'
-            else:
-                status_text = "待签到" if not signed else "需重新签名"
-                status_badge = "bg-warning text-dark"
-                can_sign = True
-                button_class = "btn-warning resign-btn" if needs_resign else "btn-primary sign-btn"
-                button_text = "重新签名" if needs_resign else "立即签到"
-                button_html = f'<button class="btn {button_class}" data-id="{t["id"]}">{button_text}</button>'
-        else:
+            result.append({
+                "id": training_id,
+                "name": t['name'],
+                "start_time": start,
+                "end_time": end,
+                "signed": False,
+                "sign_time": None,
+                "signed_name": None,
+                "needs_resign": False,
+                "status": "未开始",
+                "is_future": True,
+                "is_active": False,
+                "is_expired": False,
+                "can_sign": False,
+                "button_html": f'<button class="btn btn-secondary" disabled><span data-i18n="not_started">未开始</span></button>'
+            })
             continue
         
-        result.append({
-            "id": t['id'],
-            "name": t['name'],
-            "start_time": t['start_time'],
-            "end_time": t['end_time'],
-            "signed": signed,
-            "sign_time": signed_info['sign_time'] if signed_info else None,
-            "signed_name": signed_info['signed_name'] if signed_info else None,
-            "needs_resign": needs_resign,
-            "status": status_text,
-            "is_future": is_future,
-            "is_active": is_active,
-            "can_sign": can_sign,
-            "button_html": button_html
-        })
+        # 情况2：已关闭
+        if is_expired:
+            # 2.1 需要重新签名（有签到记录但无签名）→ 显示"重新签名"
+            if needs_resign:
+                result.append({
+                    "id": training_id,
+                    "name": t['name'],
+                    "start_time": start,
+                    "end_time": end,
+                    "signed": True,
+                    "sign_time": signed_info.get('sign_time') if signed_info else None,
+                    "signed_name": signed_info.get('signed_name') if signed_info else None,
+                    "needs_resign": True,
+                    "status": "需重新签名",
+                    "is_future": False,
+                    "is_active": False,
+                    "is_expired": True,
+                    "can_sign": True,
+                    "button_html": f'<button class="btn btn-warning resign-btn" data-id="{training_id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">重新签名</span></button>'
+                })
+                continue
+            
+            # 2.2 待补签（已完成绑定考试但未签到）→ 显示"补签"
+            if training_id in pending_sign_training_ids and not signed:
+                result.append({
+                    "id": training_id,
+                    "name": t['name'],
+                    "start_time": start,
+                    "end_time": end,
+                    "signed": False,
+                    "sign_time": None,
+                    "signed_name": None,
+                    "needs_resign": True,  # 复用此字段表示需要补签
+                    "status": "需补签",
+                    "is_future": False,
+                    "is_active": False,
+                    "is_expired": True,
+                    "can_sign": True,
+                    "button_html": f'<button class="btn btn-warning resign-btn" data-id="{training_id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">补签</span></button>'
+                })
+                continue
+            
+            # 2.3 已签到有签名 → 不显示（在"我的签到记录"中查看）
+            # 2.4 未签到且无绑定考试 → 不显示
+            continue
+        
+        # 情况3：进行中 (is_active = True)
+        if is_active:
+            if signed and not needs_resign:
+                # 已签到有签名
+                result.append({
+                    "id": training_id,
+                    "name": t['name'],
+                    "start_time": start,
+                    "end_time": end,
+                    "signed": True,
+                    "sign_time": signed_info.get('sign_time') if signed_info else None,
+                    "signed_name": signed_info.get('signed_name') if signed_info else None,
+                    "needs_resign": False,
+                    "status": "已签到",
+                    "is_future": False,
+                    "is_active": True,
+                    "is_expired": False,
+                    "can_sign": False,
+                    "button_html": f'<button class="btn btn-success" disabled><span data-i18n="signed">已签到</span></button>'
+                })
+            elif needs_resign:
+                # 待重新签名（进行中）
+                result.append({
+                    "id": training_id,
+                    "name": t['name'],
+                    "start_time": start,
+                    "end_time": end,
+                    "signed": True,
+                    "sign_time": signed_info.get('sign_time') if signed_info else None,
+                    "signed_name": signed_info.get('signed_name') if signed_info else None,
+                    "needs_resign": True,
+                    "status": "需重新签名",
+                    "is_future": False,
+                    "is_active": True,
+                    "is_expired": False,
+                    "can_sign": True,
+                    "button_html": f'<button class="btn btn-warning resign-btn" data-id="{training_id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">重新签名</span></button>'
+                })
+            else:
+                # 未签到（进行中）
+                result.append({
+                    "id": training_id,
+                    "name": t['name'],
+                    "start_time": start,
+                    "end_time": end,
+                    "signed": False,
+                    "sign_time": None,
+                    "signed_name": None,
+                    "needs_resign": False,
+                    "status": "待签到",
+                    "is_future": False,
+                    "is_active": True,
+                    "is_expired": False,
+                    "can_sign": True,
+                    "button_html": f'<button class="btn btn-primary sign-btn" data-id="{training_id}"><span data-i18n="sign_now">立即签到</span></button>'
+                })
+            continue
+        
+        # 其他情况（理论上不会到这里）
+        continue
     
     logger.info(f"最终返回培训数量: {len(result)}")
     return jsonify(result)
@@ -200,9 +327,9 @@ def api_training_sign():
 
     # 签到成功后，检查是否有分配记录，如果没有则创建（全国推送场景）
     try:
-        assign_check = db.table("training_assignments").select("id").eq("training_id", training_id).eq("user_id", user_id).execute()
+        assign_check = admin_db.table("training_assignments").select("id").eq("training_id", training_id).eq("user_id", user_id).execute()
         if not assign_check.data:
-            db.table("training_assignments").insert({
+            admin_db.table("training_assignments").insert({
                 "training_id": training_id,
                 "user_id": user_id,
                 "created_by": user_id  # 由学员自己触发

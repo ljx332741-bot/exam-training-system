@@ -7,8 +7,16 @@
     <!-- 培训签到卡片区（多培训） -->
     <div class="col-12">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white fw-bold">
-                <i class="bi bi-calendar-check me-2"></i><span data-i18n="training_signin">培训签到</span>
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center" style="flex-wrap: nowrap; gap: 12px;">
+                <div class="d-flex align-items-center" style="flex-shrink: 0;">
+                    <i class="bi bi-calendar-check me-2"></i>
+                    <span data-i18n="training_signin">培训签到</span>
+                </div>
+                <div style="flex-shrink: 0;">
+                    <button class="btn btn-sm btn-outline-primary" id="viewMyAttendancesBtn" data-bs-toggle="modal" data-bs-target="#myAttendancesModal">
+                        <i class="bi bi-list-columns-reverse"></i><span data-i18n="my_sign_in_records">我的签到记录</span>
+                    </button>
+                </div>
             </div>
             <div class="card-body" id="trainingsContainer">
                 <div class="row g-3" id="trainingCards">
@@ -22,8 +30,16 @@
     <!-- 我的访谈卡片区 -->
     <div class="col-12">
         <div class="card shadow-sm border-0">
-            <div class="card-header bg-white fw-bold">
-                <i class="bi bi-chat-dots me-2"></i><span data-i18n="my_interviews">我的访谈</span>
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center" style="flex-wrap: nowrap; gap: 12px;">
+                <div class="d-flex align-items-center" style="flex-shrink: 0;">
+                    <i class="bi bi-chat-dots me-2"></i>
+                    <span data-i18n="my_interviews">我的访谈</span>
+                </div>
+                <div style="flex-shrink: 0;">
+                    <button class="btn btn-sm btn-outline-success" id="viewMyInterviewsBtn" data-bs-toggle="modal" data-bs-target="#myInterviewsModal">
+                        <i class="bi bi-list-columns"></i><span data-i18n="my_interview_records">我的访谈记录</span>
+                    </button>
+                </div>
             </div>
             <div class="card-body" id="interviewsContainer">
                 <div class="row g-3" id="interviewCards">
@@ -174,10 +190,203 @@
         </div>
     </div>
 </div>
+
+<!-- ==================== 我的签到记录模态框 ==================== -->
+<div class="modal fade" id="myAttendancesModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-calendar-check me-2"></i>
+                    <span data-i18n="my_sign_in_records">我的签到记录</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="training_name">培训名称</span></th>
+                                <th>tid</th>
+                                <th><span data-i18n="sign_in_period">签到时间</span></th>
+                                <th><span data-i18n="signature">签名</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="myAttendancesBody">
+                            <tr>
+                                <td colspan="5" class="text-center">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                    <span data-i18n="loading">加载中...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 我的访谈记录模态框 ==================== -->
+<div class="modal fade" id="myInterviewsModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-chat-dots me-2"></i>
+                    <span data-i18n="my_interview_records">我的访谈记录</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="interview_name">访谈名称</span></th>
+                                <th>iid</th>
+                                <th><span data-i18n="question_qty">题目数量</span></th>
+                                <th><span data-i18n="correct_qty">答对数量</span></th>
+                                <th><span data-i18n="completed_time">完成时间</span></th>
+                                <th><span data-i18n="details">详情</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="myInterviewsBody">
+                            <tr>
+                                <td colspan="7" class="text-center">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                                    <span data-i18n="loading">加载中...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 访谈答题详情模态框 ==================== -->
+<div class="modal fade" id="interviewDetailModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-text me-2"></i>
+                    <span data-i18n="interview_answer_details">访谈答题详情</span>
+                    <span id="interviewDetailTitle" class="ms-2 text-white-50" style="font-size: 0.9rem;"></span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
+                <div id="interviewDetailContent">
+                    <!-- 动态加载内容 -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 签名查看模态框（复用学员端样式） ==================== -->
+<div class="modal fade" id="signatureViewModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered modal-md">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-pen-fill me-2"></i>
+                    <span data-i18n="signature_view">签名查看</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <div id="signatureViewLoading" style="display: none;">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted"><span data-i18n="loading">加载中...</span></p>
+                </div>
+                <div id="signatureViewContent">
+                    <img id="signatureViewImage" src="" alt="签名图片" style="max-width: 100%; max-height: 300px; border: 1px solid #ddd; border-radius: 8px; display: none;">
+                    <div id="signatureViewNoData" style="display: none;">
+                        <i class="bi bi-pencil-slash" style="font-size: 3rem; color: #ccc;"></i>
+                        <p class="text-muted mt-2"><span data-i18n="no_signature">暂无签名</span></p>
+                    </div>
+                </div>
+                <div class="mt-3 text-start">
+                    <p class="mb-1"><strong><span data-i18n="signature_name">签名姓名</span>：</strong><span id="signatureViewName">-</span></p>
+                    <p class="mb-0"><strong><span data-i18n="sign_in_period">签到时间</span>：</strong><span id="signatureViewTime">-</span></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
 <style>
+    /* 记录模态框美化 */
+    .record-table .table {
+        font-size: 0.9rem;
+        margin-bottom: 0;
+    }
+    .record-table .table th {
+        background: #f8f9fa;
+        font-weight: 600;
+        border-bottom: 2px solid #dee2e6;
+    }
+    .record-table .table td {
+        vertical-align: middle;
+        padding: 0.6rem 0.75rem;
+    }
+    .record-table .badge-country {
+        background: #e9ecef;
+        color: #495057;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+    }
+    .view-btn {
+        transition: all 0.2s ease;
+    }
+    .view-btn:hover {
+        transform: scale(1.15);
+        background: #0d6efd;
+        color: white;
+    }
+    /* 空状态美化 */
+    .empty-state {
+        padding: 40px 20px;
+        text-align: center;
+        color: #adb5bd;
+    }
+    .empty-state i {
+        font-size: 3rem;
+        display: block;
+        margin-bottom: 12px;
+    }
     /* 卡片通用美化 */
     .card-dashboard {
         border: none;
@@ -419,7 +628,7 @@
         return 'bg-success text-white';
     }
 
-    // 加载“我的访谈”// 加载“我的访谈”
+    // 加载“我的访谈”
     async function loadMyInterviews() {
         try {
             const res = await fetch('/api/my/interviews');
@@ -464,7 +673,7 @@
                     progressText = '✅ ' + safeT('js_completed');
                 } 
                 else if (!examCompleted && isActive) {
-                    // ✅ 考试未完成，不能进行访谈
+                    // 考试未完成，不能进行访谈
                     statusBarClass = 'warning';
                     statusBadge = '<span class="badge bg-warning text-dark ms-2">' + safeT('t_exam_required') + '</span>';
                     btnHtml = `<button class="btn btn-warning btn-sm w-100" disabled title="${safeT('t_complete_exam_first')}">${safeT('t_complete_exam_first')}</button>`;
@@ -596,7 +805,7 @@
     window.addEventListener('resize', () => {
       if (!signaturePad) return;
       const data = signaturePad.toData();
-      const canvas = signaturePad.canvas;      // ✅ 从签名板实例获取 canvas
+      const canvas = signaturePad.canvas;
       canvas.width = canvas.clientWidth;
       canvas.height = 200;
       signaturePad.clear();
@@ -609,7 +818,6 @@
 
     // 提交签到
     document.getElementById('submitSignatureBtn').onclick = async () => {
-        // ✅ 防止重复提交
         const submitBtn = document.getElementById('submitSignatureBtn');
         if (submitBtn.disabled) return;
         
@@ -624,7 +832,7 @@
             return;
         }
         
-        // ✅ 显示加载状态
+        // 显示加载状态
         const originalText = submitBtn.innerHTML;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> ' + (t('submitting') || '提交中...');
@@ -647,7 +855,7 @@
             const json = await res.json();
             
             if (json.success) {
-                // ✅ 显示成功提示
+                // 显示成功提示
                 const successMsg = currentSignAction === 'resign' ? t('t_re_sign_successful') : t('t_sign_in_successful');
                 if (typeof showToast === 'function') {
                     showToast(successMsg, 'success');
@@ -672,7 +880,7 @@
             console.error('签到失败:', error);
             alert(t('t_operation_failure') + '，请重试');
         } finally {
-            // ✅ 恢复按钮状态
+            // 恢复按钮状态
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalText;
             submitBtn.classList.remove('btn-secondary', 'opacity-75');
@@ -683,18 +891,434 @@
         }
     };
 
-    document.addEventListener('DOMContentLoaded', () => {
+    // ==================== 我的签到记录 ====================
+    async function loadMyAttendances() {
+        const tbody = document.getElementById('myAttendancesBody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span>${t('loading') || '加载中...'}</span>
+                </td>
+            </tr>
+        `;
+        
+        try {
+            const res = await fetch('/api/my/attendances');
+            const data = await res.json();
+            
+            if (!data || data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5">
+                            <div class="empty-state">
+                                <i class="bi bi-emoji-grimace-fill"></i>
+                                <p class="text-muted">${safeT('no_sign_in_records') || '暂无签到记录'}</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            tbody.innerHTML = data.map(att => {
+                // 判断签名状态
+                const signatureUrl = att.signature_url || '';
+                const needsResign = att.needs_resign === true;
+                const needsAdminContact = att.needs_admin_contact === true;
+                const isTrainingActive = att.is_training_active === true;
+                
+                // 签名按钮显示逻辑
+                let signatureBtnHtml = '';
+                if (needsResign) {
+                    // 待重新签名（培训仍在有效期内）
+                    signatureBtnHtml = `
+                        <span class="badge bg-warning text-dark" title="${safeT('need_re_sign') || '需要重新签名'}">
+                            <i class="bi bi-exclamation-triangle"></i> ${safeT('re_sign') || '重新签名'}
+                        </span>
+                        <button class="btn btn-sm btn-outline-warning view-signature-btn ms-1" 
+                                data-signature-url=""
+                                data-signed-name="${escapeHtml(att.signed_name || '')}"
+                                data-sign-time="${att.sign_time || ''}"
+                                data-needs-resign="true"
+                                title="${safeT('need_re_sign') || '需要重新签名'}">
+                            <i class="bi bi-eye-fill"></i>
+                        </button>
+                    `;
+                } else if (needsAdminContact) {
+                    // 待重新签名但培训已过期
+                    signatureBtnHtml = `
+                        <span class="badge bg-danger" title="${safeT('contact_admin') || '请联系管理员'}">
+                            <i class="bi bi-person-exclamation"></i> ${safeT('contact_admin') || '联系管理员'}
+                        </span>
+                    `;
+                } else if (signatureUrl && signatureUrl !== 'null' && signatureUrl !== '') {
+                    // 正常签到，有签名
+                    signatureBtnHtml = `
+                        <button class="btn btn-sm btn-outline-info view-signature-btn" 
+                                data-signature-url="${escapeHtml(signatureUrl)}"
+                                data-signed-name="${escapeHtml(att.signed_name || '')}"
+                                data-sign-time="${att.sign_time || ''}"
+                                data-needs-resign="false"
+                                title="${safeT('view_signature') || '查看签名'}">
+                            <i class="bi bi-eye-fill"></i>
+                        </button>
+                    `;
+                } else {
+                    // 无签名（异常情况）
+                    signatureBtnHtml = `
+                        <span class="badge bg-secondary">${safeT('no_signature') || '无签名'}</span>
+                    `;
+                }
+                
+                return `
+                    <tr>
+                        <td><span class="badge-country">${escapeHtml(att.country || '-')}</span></td>
+                        <td><strong>${escapeHtml(att.training_name)}</strong></td>
+                        <td><code>${att.training_id}</code></td>
+                        <td>${formatLocalTime(att.sign_time)}</td>
+                        <td>${signatureBtnHtml}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // 绑定查看签名事件
+            document.querySelectorAll('.view-signature-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const signatureUrl = this.dataset.signatureUrl;
+                    const signedName = this.dataset.signedName;
+                    const signTime = this.dataset.signTime;
+                    const needsResign = this.dataset.needsResign === 'true';
+                    if (needsResign) {
+                        // 显示"待重新签名"提示
+                        showResignNotice(signedName, signTime);
+                    } else {
+                        showSignatureView(signatureUrl, signedName, signTime);
+                    }
+                });
+            });
+            
+        } catch (err) {
+            console.error('加载签到记录失败:', err);
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-danger">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        ${safeT('load_failed') || '加载失败，请重试'}
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    // ==================== 显示"待重新签名"提示 ====================
+    function showResignNotice(signedName, signTime) {
+        const modal = new bootstrap.Modal(document.getElementById('signatureViewModal'));
+        const img = document.getElementById('signatureViewImage');
+        const noData = document.getElementById('signatureViewNoData');
+        const loading = document.getElementById('signatureViewLoading');
+        const nameSpan = document.getElementById('signatureViewName');
+        const timeSpan = document.getElementById('signatureViewTime');
+        
+        // 重置状态
+        img.style.display = 'none';
+        noData.style.display = 'none';
+        loading.style.display = 'none';
+        nameSpan.textContent = signedName || '-';
+        timeSpan.textContent = signTime ? formatLocalTime(signTime) : '-';
+        
+        // 显示待重新签名提示
+        const content = document.getElementById('signatureViewContent');
+        const existingNotice = document.getElementById('resignNotice');
+        if (existingNotice) existingNotice.remove();
+        
+        const noticeDiv = document.createElement('div');
+        noticeDiv.id = 'resignNotice';
+        noticeDiv.className = 'text-center py-4';
+        noticeDiv.innerHTML = `
+            <i class="bi bi-exclamation-triangle-fill" style="font-size: 3rem; color: #ffc107;"></i>
+            <h5 class="mt-3 text-warning">${safeT('need_re_sign') || '需要重新签名'}</h5>
+            <p class="text-muted">${safeT('resign_notice') || '您的签名已失效，需要重新签名。'}</p>
+            <p class="text-muted small">${safeT('resign_tip') || '请返回培训签到卡片区，点击"重新签到"按钮完成签名。'}</p>
+        `;
+        content.insertBefore(noticeDiv, content.firstChild);
+        
+        modal.show();
+    }
+
+    // 查看签名图片
+    function showSignatureView(signatureUrl, signedName, signTime) {
+        const modal = new bootstrap.Modal(document.getElementById('signatureViewModal'));
+        const img = document.getElementById('signatureViewImage');
+        const noData = document.getElementById('signatureViewNoData');
+        const loading = document.getElementById('signatureViewLoading');
+        const nameSpan = document.getElementById('signatureViewName');
+        const timeSpan = document.getElementById('signatureViewTime');
+        const content = document.getElementById('signatureViewContent');
+        
+        // 移除待重新签名提示（如果存在）
+        const existingNotice = document.getElementById('resignNotice');
+        if (existingNotice) existingNotice.remove();
+        
+        // 重置状态
+        img.style.display = 'none';
+        noData.style.display = 'none';
+        loading.style.display = 'block';
+        nameSpan.textContent = signedName || '-';
+        timeSpan.textContent = signTime ? formatLocalTime(signTime) : '-';
+        
+        modal.show();
+        
+        // 加载签名图片
+        if (signatureUrl && signatureUrl !== 'null' && signatureUrl !== '') {
+            const testImg = new Image();
+            testImg.onload = function() {
+                img.src = signatureUrl;
+                img.style.display = 'block';
+                loading.style.display = 'none';
+            };
+            testImg.onerror = function() {
+                loading.style.display = 'none';
+                noData.style.display = 'block';
+            };
+            testImg.src = signatureUrl;
+        } else {
+            loading.style.display = 'none';
+            noData.style.display = 'block';
+        }
+    }
+
+    // ==================== 我的访谈记录 ====================
+    async function loadMyInterviewsRecords() {
+        const tbody = document.getElementById('myInterviewsBody');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span>${t('loading') || '加载中...'}</span>
+                </td>
+            </tr>
+        `;
+        
+        try {
+            const res = await fetch('/api/my/interview_results');
+            const data = await res.json();
+            
+            if (!data || data.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <i class="bi bi-emoji-grimace"></i>
+                                <p class="text-muted">${safeT('no_interview_records') || '暂无访谈记录'}</p>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // 存储数据到全局变量
+            window._interviewDetails = {};
+            
+            tbody.innerHTML = data.map((inv) => {
+                const dataKey = `inv_${inv.interview_id}`;
+                window._interviewDetails[dataKey] = {
+                    title: inv.title,
+                    questions: inv.questions || []
+                };
+
+                // 计算答对数量（从后端返回，或前端计算）
+                const totalQuestions = inv.total_questions || inv.questions?.length || 0;
+                const correctCount = inv.correct_count || 0;
+                
+                return `
+                    <tr>
+                        <td><span class="badge-country">${escapeHtml(inv.country || '-')}</span></td>
+                        <td><strong>${escapeHtml(inv.title)}</strong></td>
+                        <td><code>${inv.interview_id}</code></td>
+                        <td><span class="badge bg-primary">${totalQuestions}</span></td>
+                        <td>
+                            <span class="badge ${correctCount === totalQuestions && totalQuestions > 0 ? 'bg-success' : correctCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'}">
+                                ${correctCount}/${totalQuestions}
+                            </span>
+                        </td>
+                        <td>${inv.completed_at ? formatLocalTime(inv.completed_at) : '-'}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-success view-interview-detail-btn" 
+                                    data-key="${dataKey}"
+                                    title="${safeT('view_interview_details') || '查看详情'}">
+                                <i class="bi bi-eye-fill"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+            
+            // 绑定查看访谈详情事件
+            document.querySelectorAll('.view-interview-detail-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const dataKey = this.dataset.key;
+                    const data = window._interviewDetails[dataKey];
+                    if (data) {
+                        showInterviewDetail(dataKey, data.title, data.questions);
+                    }
+                });
+            });
+            
+        } catch (err) {
+            console.error('加载访谈记录失败:', err);
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="7" class="text-center text-danger">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        ${safeT('load_failed') || '加载失败，请重试'}
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    // ==================== 显示访谈答题详情 ====================
+    function showInterviewDetail(interviewId, title, questions) {
+        const modal = new bootstrap.Modal(document.getElementById('interviewDetailModal'));
+        document.getElementById('interviewDetailTitle').textContent = ` - ${title}`;
+        
+        const content = document.getElementById('interviewDetailContent');
+        
+        if (!questions || questions.length === 0) {
+            content.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-chat"></i>
+                    <p class="text-muted">暂无答题记录</p>
+                </div>
+            `;
+            modal.show();
+            return;
+        }
+        
+        // 完全复用 list_inspection_details.html 中的渲染逻辑
+        let html = '<div class="list-group list-group-flush">';
+        questions.forEach((item, index) => {
+            const questionNum = index + 1;
+            
+            // 直接使用后端返回的 is_correct 字段
+            const isCorrect = item.is_correct === true;
+            const statusIcon = isCorrect ? '✅' : '❌';
+            const statusColor = isCorrect ? 'text-success' : 'text-danger';
+            
+            // 题型标签
+            const typeBadge = item.type === 'multi' ? `<span class="badge bg-warning ms-2">${t('t_multi')}</span>` :
+                            item.type === 'judge' ? `<span class="badge bg-info ms-2">${t('t_judge')}</span>` :
+                            `<span class="badge bg-primary ms-2">${t('t_single')}</span>`;
+            
+            // 构建选项显示（与 list_inspection_details.html 一致）
+            let optionsHtml = '';
+            if (item.type !== 'judge' && item.options && typeof item.options === 'object') {
+                const opts = item.options;
+                const sortedKeys = Object.keys(opts).filter(k => opts[k] && opts[k].toString().trim());
+                if (sortedKeys.length) {
+                    optionsHtml = '<ul class="mb-0" style="list-style: none; padding-left: 0;">' + 
+                        sortedKeys.map(k => {
+                            // 高亮考生已选的选项
+                            const isSelected = item.answer && item.answer.includes(k);
+                            return `
+                                <li style="padding: 2px 8px; border-radius: 4px; ${isSelected ? 'background-color: #e3f2fd;' : ''}">
+                                    ${k}. ${escapeHtml(opts[k])}
+                                    ${isSelected ? ` <span class="badge bg-primary">${t('selected')}</span>` : ''}
+                                </li>
+                            `;
+                        }).join('') + 
+                    '</ul>';
+                }
+            } else if (item.type === 'judge') {
+                optionsHtml = '<span class="text-muted">正确 True | 错误 False</span>';
+            }
+            
+            // 正确答案显示（与 list_inspection_details.html 一致）
+            let correctAnswerDisplay = '';
+            if (item.correct_answer) {
+                correctAnswerDisplay = `<span class="text-success fw-bold ms-2">(${t('correct_answer')}: ${escapeHtml(item.correct_answer)})</span>`;
+            }
+            
+            // 使用与 list_inspection_details.html 完全相同的结构
+            html += `
+                <div class="list-group-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div style="width: 100%;">
+                            <div class="d-flex align-items-center flex-wrap">
+                                <strong class="me-2">${questionNum}.</strong>
+                                <span>${escapeHtml(item.content || item.question_content || '')}</span>
+                                ${typeBadge}
+                            </div>
+                            ${optionsHtml}
+                            <div class="mt-2 d-flex align-items-center flex-wrap">
+                                <span>${t('answer')}：<strong class="text-primary">${escapeHtml(item.answer || item.user_answer || t('no_answer'))}</strong></span>
+                                ${item.answer && item.answer !== '未作答' ? 
+                                    `<span class="ms-3 ${statusColor} fw-bold">${statusIcon} ${isCorrect ? t('correct') : t('wrong')}</span>` : 
+                                    `<span class="ms-3 text-muted">${t('no_answer')}</span>`
+                                }
+                                ${correctAnswerDisplay}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        content.innerHTML = html;
+        modal.show();
+    }
+
+    // ==================== 绑定模态框打开事件 ====================
+    document.getElementById('myAttendancesModal')?.addEventListener('show.bs.modal', function() {
+        loadMyAttendances();
+    });
+
+    document.getElementById('myInterviewsModal')?.addEventListener('show.bs.modal', function() {
+        loadMyInterviewsRecords();
+    });
+
+    // 语言切换时刷新数据
+    if (window.i18n) {
+        window.i18n.subscribe(() => {
+            // 如果模态框已打开，刷新数据
+            if (document.getElementById('myAttendancesModal').classList.contains('show')) {
+                loadMyAttendances();
+            }
+            if (document.getElementById('myInterviewsModal').classList.contains('show')) {
+                loadMyInterviewsRecords();
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', async () => {
+        // ✅ 等待 i18n 就绪
+        await waitForI18n();
+        
+        // ✅ 应用翻译
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+        
+        // ✅ 处理时间显示
         document.querySelectorAll('.local-time').forEach(el => {
             const utc = el.dataset.utc;
             if (utc && utc !== '-') {
                 el.textContent = formatLocalTime(utc);
             }
         });
-        if (window.i18n) {
-          window.i18n.subscribe(() => {
-            loadTrainings();
-            loadMyInterviews();
-          });
+        
+        // ✅ 加载数据
+        await loadTrainings();
+        await loadMyInterviews();
+        
+        // ✅ 订阅语言切换
+        if (window.i18n && typeof window.i18n.subscribe === 'function') {
+            window.i18n.subscribe(() => {
+                loadTrainings();
+                loadMyInterviews();
+            });
         }
     });
 

@@ -18,11 +18,11 @@
     <style>
         /* ==================== 顶部导航栏 - 简约高级 ==================== */
         .navbar {
-            background: rgba(2, 2, 240, 0.635) !important;
-            backdrop-filter: blur(4px) saturate(1.4);
-            -webkit-backdrop-filter: blur(4px) saturate(1.4);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+            background: rgba(0, 0, 0, 0.699) !important;
+            backdrop-filter: blur(10px) saturate(180%);
+            -webkit-backdrop-filter: blur(10px) saturate(180%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
             padding: 0.6rem 0;
         }
 
@@ -1421,23 +1421,20 @@
                     
                     // 获取当前真实进度
                     const currentWidth = parseFloat(bar.style.width) || 0;
-                    
-                    // ✅ 如果当前进度小于 98%，快速模拟增加
+                     
                     if (currentWidth < 98) {
-                        // 动态速度：0-60% 快速，60-90% 中速，90-98% 慢速
+                        // 动态速度：越接近 98% 越慢
                         let increment;
-                        if (currentWidth < 30) {
-                            // 初始阶段：快速 5-10%
-                            increment = 5 + Math.random() * 5;
-                        } else if (currentWidth < 60) {
-                            // 中间阶段：中速 3-6%
-                            increment = 3 + Math.random() * 3;
-                        } else if (currentWidth < 85) {
-                            // 中后阶段：中慢速 1.5-3.5%
-                            increment = 1.5 + Math.random() * 2;
+                        if (currentWidth < 20) {
+                            increment = 8 + Math.random() * 4;   // 初始快速 8-12%
+                        } else if (currentWidth < 50) {
+                            increment = 4 + Math.random() * 3;   // 中速 4-7%
+                        } else if (currentWidth < 75) {
+                            increment = 2 + Math.random() * 2;   // 中慢速 2-4%
+                        } else if (currentWidth < 90) {
+                            increment = 0.8 + Math.random() * 1.2; // 慢速 0.8-2%
                         } else {
-                            // 最后阶段：慢速 0.3-1.2%（接近完成时等待真实数据）
-                            increment = 0.3 + Math.random() * 0.9;
+                            increment = 0.2 + Math.random() * 0.5; // 极慢 0.2-0.7%
                         }
                         
                         const newWidth = Math.min(currentWidth + increment, 98);
@@ -1447,15 +1444,15 @@
                             percentEl.textContent = Math.round(newWidth) + '%';
                         }
                         
-                        // ✅ 描述文字轮换，增加动态感
+                        // 描述文字轮换
                         const descEl = document.getElementById(`${tbodyId}_progress_desc`);
-                        if (descEl && Math.random() > 0.6) {
+                        if (descEl && Math.random() > 0.7) {
                             const tip = descriptions[descriptionIndex % descriptions.length];
                             descriptionIndex++;
                             descEl.textContent = typeof t === 'function' ? t(tip) : tip;
                         }
                     }
-                }, 120); // ✅ 120ms 更新一次，速度很快
+                }, 300);
             };
              
             /**
