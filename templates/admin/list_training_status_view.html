@@ -610,7 +610,8 @@
         // 重置分页
         currentPage = 1;
         renderTable();
-        renderPagination();
+        const totalPages = Math.ceil(filteredData.length / perPage);
+        renderPagination('pagination', currentPage, totalPages, loadData);
     }
 
     // 更新统计卡片
@@ -998,35 +999,6 @@
             closeImagePreview();
         }
     });
-
-    // 分页
-    function renderPagination() {
-        const totalCount = filteredData.length;
-        const totalPages = Math.ceil(totalCount / perPage);
-        const pagination = document.getElementById('pagination');
-        
-        if (totalPages <= 1) {
-            pagination.innerHTML = '';
-            return;
-        }
-        
-        let html = '';
-        for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === currentPage ? 'active' : ''}">
-                        <a class="page-link" href="#" data-page="${i}">${i}</a>
-                     </li>`;
-        }
-        pagination.innerHTML = html;
-        
-        pagination.querySelectorAll('.page-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                currentPage = parseInt(link.dataset.page);
-                renderTable();
-                renderPagination();
-            });
-        });
-    }
 
     // 导出Excel
     document.getElementById('exportExcelBtn').addEventListener('click', async () => {

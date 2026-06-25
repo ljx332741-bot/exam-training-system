@@ -445,7 +445,6 @@
         
         // 有缓存且有效
         if (cached && cached.data && cached.data.length > 0) {
-            console.log('📋 使用缓存渲染');
             renderTrainingsTable(cached.data);
             document.getElementById('totalCount').innerText = cached.total || cached.data.length;
             renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
@@ -717,6 +716,7 @@
         });
     }
     
+    /*
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
         if (totalPages <= 1) {
@@ -736,6 +736,7 @@
             });
         });
     }
+    */
 
     // ---------- 行内编辑名称 ----------
     function attachRowEvents() {

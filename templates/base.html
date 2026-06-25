@@ -18,9 +18,9 @@
     <style>
         /* ==================== 顶部导航栏 - 简约高级 ==================== */
         .navbar {
-            background: rgba(11, 60, 220, 0.804) !important;
-            backdrop-filter: blur(16px) saturate(1.4);
-            -webkit-backdrop-filter: blur(16px) saturate(1.4);
+            background: rgba(2, 2, 240, 0.635) !important;
+            backdrop-filter: blur(4px) saturate(1.4);
+            -webkit-backdrop-filter: blur(4px) saturate(1.4);
             border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
             padding: 0.6rem 0;
@@ -779,6 +779,7 @@
                 }
             }
         }
+
         // 3. 国家输入框失焦校验（自动匹配标准名称，写入隐藏字段）
         // 全局函数：校验国家输入，支持直接传元素或传 inputId, hiddenId
         async function validateCountryInput(inputArg, hiddenId) {
@@ -2006,6 +2007,72 @@
                     searchFn.apply(this, args);
                 }, delay);
             };
+        }
+
+        // 添加全局分页函数
+        function renderPagination(paginationId, currentPage, totalPages, loadCallback) {
+            const pagination = document.getElementById(paginationId);
+            if (!pagination) return;
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            const maxVisible = 5;
+            let pages = [];
+            
+            if (totalPages <= 7) {
+                for (let i = 1; i <= totalPages; i++) pages.push(i);
+            } else {
+                pages.push(1);
+                let startPage = Math.max(2, currentPage - maxVisible);
+                let endPage = Math.min(totalPages - 1, currentPage + maxVisible);
+                
+                if (currentPage <= maxVisible + 2) {
+                    endPage = Math.min(totalPages - 1, maxVisible + 2);
+                }
+                if (currentPage >= totalPages - maxVisible - 1) {
+                    startPage = Math.max(2, totalPages - maxVisible - 1);
+                }
+                
+                if (startPage > 2) pages.push('...');
+                for (let i = startPage; i <= endPage; i++) pages.push(i);
+                if (endPage < totalPages - 1) pages.push('...');
+                if (totalPages > 1) pages.push(totalPages);
+            }
+
+            html += `<li class="page-item ${currentPage <= 1 ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-page="${currentPage - 1}" ${currentPage <= 1 ? 'tabindex="-1"' : ''}>&laquo;</a>
+            </li>`;
+            
+            for (const p of pages) {
+                if (p === '...') {
+                    html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                } else {
+                    html += `<li class="page-item ${p === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${p}">${p}</a>
+                    </li>`;
+                }
+            }
+            
+            html += `<li class="page-item ${currentPage >= totalPages ? 'disabled' : ''}">
+                <a class="page-link" href="#" data-page="${currentPage + 1}" ${currentPage >= totalPages ? 'tabindex="-1"' : ''}>&raquo;</a>
+            </li>`;
+
+            pagination.innerHTML = html;
+            
+            pagination.querySelectorAll('.page-link:not(.disabled)').forEach(link => {
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    const page = parseInt(link.dataset.page);
+                    if (isNaN(page) || page < 1 || page > totalPages) return;
+                    if (typeof loadCallback === 'function') {
+                        loadCallback(page);
+                    }
+                });
+            });
         }
     </script>
 
