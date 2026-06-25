@@ -462,7 +462,10 @@
     }
 
     // ==================== 加载报表数据 ====================
-    async function loadReportData() {
+    async function loadReportData(page) {
+        if (page !== undefined && page !== null) {
+            currentPage = page;
+        }
         const tbody = document.getElementById('reportTableBody');
 
         // ✅ 立即显示加载动画（消除静态文字）
@@ -645,7 +648,7 @@
         
         renderTable(pageData);
         document.getElementById('totalCount').innerText = filtered.length;
-        renderPagination(currentPage, totalPages);
+        renderPagination('pagination', currentPage, totalPages, loadReportData);
     }
 
     // ==================== 优化后的 initTrainingSearch ====================
@@ -953,6 +956,7 @@
         setTimeout(initUserIdCopy, 100);
     }
 
+    /*
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
         if (totalPages <= 1) {
@@ -972,6 +976,7 @@
             });
         });
     }
+    */
 
     // ==================== 用户ID双击复制功能 ====================
     function initUserIdCopy() {
