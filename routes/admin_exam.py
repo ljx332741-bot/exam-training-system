@@ -1612,7 +1612,7 @@ def api_admin_exams_list():
     
     allowed_countries = get_admin_allowed_countries()
     is_super_admin = session.get('role') == 'super_admin' or is_developer()
-    debug_mode = session.get('exam_list_debug_mode', False)
+    reopen_mode = session.get('exam_list_reopen_mode', False)
     
     try:
         # ========== 1. 基础查询 ==========
@@ -1837,7 +1837,7 @@ def api_admin_exams_list():
             
             countries_display = ', '.join(filtered_countries) if filtered_countries else '-'
             status = get_exam_status(exam)
-            can_show_debug_push = is_super_admin and debug_mode and status == 'closed'
+            can_show_reopen_button = is_super_admin and reopen_mode and status == 'closed'
             
             # 新增：为前端添加格式化字段
             created_date = exam.get('created_at', '')[:10] if exam.get('created_at') else ''
@@ -1864,7 +1864,7 @@ def api_admin_exams_list():
                 "retake_count": stats.get('retake_count', 0),
                 "reviewer": exam.get('reviewer', ''),
                 "deleted_at": exam.get('deleted_at'),
-                "can_show_debug_push": can_show_debug_push
+                "can_show_reopen_button": can_show_reopen_button
             })
         
         # 分页
@@ -2877,29 +2877,29 @@ def cancel_force_reset_for_user(exam_id, user_id):
         "message": "已撤销强制重推"
     })
 
-@admin_exam_bp.route('/api/admin/exam/debug_mode', methods=['GET', 'POST'])
+@admin_exam_bp.route('/api/admin/exam/reopen_mode', methods=['GET', 'POST'])
 @login_required
-def exam_debug_mode():
+def exam_reopen_mode():
     """获取或设置考试列表调试模式（仅超管/开发者可用）"""
     # 权限检查
     if not is_developer() and session.get('role') != 'super_admin':
         if request.method == 'POST':
             return jsonify({"success": False, "message": "权限不足"}), 403
         else:
-            return jsonify({"debug_mode": False, "can_debug": False})
+            return jsonify({"reopen_mode": False, "can_reopen": False})
     
     if request.method == 'POST':
         data = request.json
         enabled = data.get('enabled', False)
-        session['exam_list_debug_mode'] = enabled
+        session['exam_list_reopen_mode'] = enabled
         logger.info(f"调试模式已{'开启' if enabled else '关闭'}，用户: {session.get('user_id')}")
-        return jsonify({"success": True, "debug_mode": enabled})
+        return jsonify({"success": True, "reopen_mode": enabled})
     else:
         # GET 请求
-        debug_mode = session.get('exam_list_debug_mode', False)
+        reopen_mode = session.get('exam_list_reopen_mode', False)
         return jsonify({
-            "debug_mode": debug_mode,
-            "can_debug": True,
+            "reopen_mode": reopen_mode,
+            "can_reopen": True,
             "role": session.get('role')
         })
 
@@ -2916,7 +2916,7 @@ def reopen_exam_for_testing(exam_id):
         return jsonify({"success": False, "message": "权限不足，仅超管或开发者可操作"}), 403
     
     # 检查调试模式是否开启
-    if not session.get('exam_list_debug_mode', False):
+    if not session.get('exam_list_reopen_mode', False):
         return jsonify({"success": False, "message": "请先开启调试模式"}), 400
     
     data = request.json

@@ -33,10 +33,10 @@ def dashboard():
     user_info = db.table("users").select("country").eq("id", user_id).single().execute()
     user_country = user_info.data.get('country') if user_info.data else None
 
-    # ✅ 初始化变量
+    # 初始化变量
     force_exam_ids = {}
     
-    # ✅ 查询强制重推记录
+    # 查询强制重推记录
     try:
         force_records = admin_db.table("user_exam_force_records").select("*")\
             .eq("user_id", user_id)\
@@ -65,7 +65,10 @@ def dashboard():
                     except Exception as e:
                         logger.warning(f"解析强制重推时间失败: {e}")
     except Exception as e:
-        logger.error(f"查询强制重推记录失败: {e}")
+        if 'timeout' in str(e).lower() or 'timed out' in str(e).lower():
+            logger.warning(f"查询强制重推记录超时，跳过: {e}")
+        else:
+            raise e
         force_exam_ids = {}
     
     logger.info(f"最终 force_exam_ids: {list(force_exam_ids.keys())}")
@@ -805,6 +808,29 @@ def my_interviews():
     
     if interview_ids:
         inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
+
+        # 获取所有关联的考试ID
+        exam_ids = list(set([i.get('exam_id') for i in (inv_res.data or []) if i.get('exam_id')]))
+        
+        # 查询考试的国家信息
+        exam_country_map = {}
+        if exam_ids:
+            exams_res = db.table("exams").select("id, countries, country").in_("id", exam_ids).execute()
+            for exam in (exams_res.data or []):
+                countries_data = exam.get('countries')
+                if countries_data:
+                    if isinstance(countries_data, str):
+                        try:
+                            countries_data = json.loads(countries_data)
+                        except:
+                            countries_data = [exam.get('country', '')] if exam.get('country') else []
+                    elif isinstance(countries_data, list):
+                        pass
+                    else:
+                        countries_data = [exam.get('country', '')] if exam.get('country') else []
+                else:
+                    countries_data = [exam.get('country', '')] if exam.get('country') else []
+                exam_country_map[exam['id']] = ', '.join(countries_data) if countries_data else ''
         
         for inv in (inv_res.data or []):
             interview_id = inv['id']
@@ -846,6 +872,7 @@ def my_interviews():
                 "is_completed": is_completed,
                 "exam_completed": exam_completed,
                 "exam_total_score": exam_total_score,
+                "country": exam_country_map.get(exam_id, ''),
                 "is_force": False
             }
     
@@ -854,6 +881,29 @@ def my_interviews():
     
     for force in (force_res.data or []):
         original_id = force.get('original_interview_id')
+
+        # 获取所有关联的考试ID
+        exam_ids = list(set([i.get('exam_id') for i in (force_res.data or []) if i.get('exam_id')]))
+        
+        # 查询考试的国家信息
+        exam_country_map = {}
+        if exam_ids:
+            exams_res = db.table("exams").select("id, countries, country").in_("id", exam_ids).execute()
+            for exam in (exams_res.data or []):
+                countries_data = exam.get('countries')
+                if countries_data:
+                    if isinstance(countries_data, str):
+                        try:
+                            countries_data = json.loads(countries_data)
+                        except:
+                            countries_data = [exam.get('country', '')] if exam.get('country') else []
+                    elif isinstance(countries_data, list):
+                        pass
+                    else:
+                        countries_data = [exam.get('country', '')] if exam.get('country') else []
+                else:
+                    countries_data = [exam.get('country', '')] if exam.get('country') else []
+                exam_country_map[exam['id']] = ', '.join(countries_data) if countries_data else ''
         
         # ✅ 如果普通访谈已经存在，删除强制访谈记录并跳过
         if original_id in result_map:
@@ -906,6 +956,7 @@ def my_interviews():
             "is_completed": is_completed,
             "exam_completed": exam_completed,
             "exam_total_score": exam_total_score,
+            "country": exam_country_map.get(exam_id, ''),
             "is_force": True,
             "force_record_id": force['id']
         }
@@ -987,3 +1038,217 @@ def debug_draft(exam_id):
         })
     else:
         return jsonify({"exists": False})
+
+# ==================== 我的签到记录 API ====================
+@exam_bp.route('/api/my/attendances')
+@login_required
+def my_attendances():
+    """获取当前用户的签到记录"""
+    user_id = session['user_id']
+    db = get_supabase()
+    
+    try:
+        # 查询签到记录，关联培训信息
+        res = db.table("training_attendances")\
+            .select("training_id, sign_time, signed_name, signature_url")\
+            .eq("user_id", user_id)\
+            .is_("deleted_at", "null")\
+            .order("sign_time", desc=True)\
+            .execute()
+        
+        attendances = res.data or []
+        
+        # 获取培训信息
+        if attendances:
+            training_ids = list(set([a['training_id'] for a in attendances]))
+            training_res = db.table("trainings").select("id, name, country, start_time, end_time").in_("id", training_ids).execute()
+            training_map = {t['id']: t for t in (training_res.data or [])}
+            now = datetime.now(timezone.utc).isoformat()
+            for att in attendances:
+                training = training_map.get(att['training_id'], {})
+                att['training_name'] = training.get('name', '未知培训')
+                att['country'] = training.get('country', '')
+
+                # 判断是否需要重新签名
+                # 条件1：有签到记录但无签名（signature_url 为空）
+                # 条件2：培训仍在有效期内
+                signature_url = att.get('signature_url', '')
+                is_resign_needed = not signature_url or signature_url == '' or signature_url == 'null'
+                
+                # 检查培训是否在有效期内
+                is_training_active = False
+                start_time = training.get('start_time')
+                end_time = training.get('end_time')
+                if start_time and end_time:
+                    try:
+                        is_training_active = start_time <= now <= end_time
+                    except:
+                        is_training_active = False
+                
+                att['needs_resign'] = is_resign_needed and is_training_active
+                att['is_training_active'] = is_training_active
+                
+                # 如果是待重新签名但培训已过期，标记为需要联系管理员
+                if is_resign_needed and not is_training_active:
+                    att['needs_admin_contact'] = True
+                else:
+                    att['needs_admin_contact'] = False
+        
+        return jsonify(attendances)
+    except Exception as e:
+        logger.error(f"获取签到记录失败: {e}")
+        return jsonify([])
+
+
+# ==================== 我的访谈记录 API ====================
+@exam_bp.route('/api/my/interview_results')
+@login_required
+def my_interview_results():
+    """获取当前用户的访谈答题记录"""
+    user_id = session['user_id']
+    db = get_supabase()
+    
+    try:
+        # 查询访谈答题记录，关联访谈信息
+        res = db.table("interview_results")\
+            .select("interview_id, question_id, answer, submitted_at, is_correct, interviews!fk_interview_results_interview_id(title, exam_id)")\
+            .eq("user_id", user_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        results = res.data or []
+        
+        if not results:
+            return jsonify([])
+        
+        # 获取访谈信息
+        interview_ids = list(set([r['interview_id'] for r in results]))
+        interview_res = db.table("interviews").select("id, title, exam_id").in_("id", interview_ids).execute()
+        interview_map = {i['id']: i for i in (interview_res.data or [])}
+
+        # 获取所有 question_id
+        question_ids = list(set([r['question_id'] for r in results if r.get('question_id')]))
+        
+        # 查询完整的题目信息（包括 content 和 options）
+        questions_map = {}
+        if question_ids:
+            q_res = db.table("questions").select("id, num, content, content_cn, content_en, content_raw, type, options").in_("id", question_ids).execute()
+            for q in (q_res.data or []):
+                # 解析 options
+                opts = q.get('options', {})
+                if isinstance(opts, str):
+                    try:
+                        opts = json.loads(opts)
+                    except:
+                        opts = {}
+                q['options'] = opts
+                questions_map[q['id']] = q
+        
+        # 获取所有关联的考试ID
+        exam_ids = list(set([i.get('exam_id') for i in interview_map.values() if i.get('exam_id')]))
+        exam_country_map = {}
+        if exam_ids:
+            exams_res = db.table("exams").select("id, countries, country").in_("id", exam_ids).execute()
+            for exam in (exams_res.data or []):
+                countries_data = exam.get('countries')
+                if countries_data:
+                    if isinstance(countries_data, str):
+                        try:
+                            countries_data = json.loads(countries_data)
+                        except:
+                            countries_data = [exam.get('country', '')] if exam.get('country') else []
+                    elif isinstance(countries_data, list):
+                        pass  # 已经是列表
+                    else:
+                        countries_data = [exam.get('country', '')] if exam.get('country') else []
+                else:
+                    countries_data = [exam.get('country', '')] if exam.get('country') else []
+                exam_country_map[exam['id']] = ', '.join(countries_data) if countries_data else ''
+        
+        # 按 interview_id 分组聚合
+        interviews = {}
+        for r in results:
+            inv_id = r.get('interview_id')
+            if not inv_id:
+                continue
+                
+            if inv_id not in interviews:
+                interview_info = interview_map.get(inv_id, {})
+                exam_id = interview_info.get('exam_id')
+                country_display = exam_country_map.get(exam_id, '')
+                
+                interviews[inv_id] = {
+                    'interview_id': inv_id,
+                    'title': interview_info.get('title', '未知访谈'),
+                    'country': country_display,
+                    'questions': [],
+                    'completed_at': None,
+                    'correct_count': 0,
+                    'total_questions': 0,
+                    'answered_count': 0
+                }
+            
+            q_info = questions_map.get(r.get('question_id'), {})
+
+            # 确保 is_correct 是布尔值
+            is_correct_raw = r.get('is_correct')
+            if is_correct_raw is None:
+                is_correct_bool = False
+            elif isinstance(is_correct_raw, bool):
+                is_correct_bool = is_correct_raw
+            elif isinstance(is_correct_raw, str):
+                is_correct_bool = is_correct_raw.lower() == 'true'
+            elif isinstance(is_correct_raw, (int, float)):
+                is_correct_bool = is_correct_raw == 1
+            else:
+                is_correct_bool = False
+            
+            # 统计答对数量
+            has_answer = r.get('answer') and r.get('answer') != '未作答'
+            if has_answer and is_correct_bool:
+                interviews[inv_id]['correct_count'] += 1
+            if has_answer:
+                interviews[inv_id]['answered_count'] += 1
+            interviews[inv_id]['total_questions'] += 1
+            
+            # 获取正确答案
+            correct_answer = q_info.get('answer', '')
+            if q_info.get('type') == 'judge' and correct_answer:
+                if correct_answer.upper() in ('T', 'TRUE', '√', '正确', '对'):
+                    correct_answer = 'T (正确)'
+                elif correct_answer.upper() in ('F', 'FALSE', '×', '错误', '错'):
+                    correct_answer = 'F (错误)'
+            
+            interviews[inv_id]['questions'].append({
+                'question_id': r.get('question_id'),
+                'answer': r.get('answer', '未作答'),
+                'user_answer': r.get('answer', ''),
+                'is_correct': r.get('is_correct'),
+                'correct_answer': correct_answer,
+                'content': q_info.get('content_cn') or q_info.get('content') or q_info.get('content_raw', ''),
+                'options': q_info.get('options', {}),
+                'type': q_info.get('type', 'single'),
+                'num': q_info.get('num', 0)
+            })
+            
+            # 更新完成时间（取最新的 submitted_at）
+            submitted_at = r.get('submitted_at')
+            if submitted_at:
+                if not interviews[inv_id]['completed_at'] or submitted_at > interviews[inv_id]['completed_at']:
+                    interviews[inv_id]['completed_at'] = submitted_at
+        
+        # 转换为列表
+        result_list = []
+        for inv in interviews.values():
+            inv['question_count'] = len(inv['questions'])
+            result_list.append(inv)
+            
+        result_list.sort(key=lambda x: x.get('completed_at', ''), reverse=True)
+
+        return jsonify(result_list)
+        
+    except Exception as e:
+        logger.error(f"获取访谈记录失败: {e}")
+        return jsonify([])
+
+

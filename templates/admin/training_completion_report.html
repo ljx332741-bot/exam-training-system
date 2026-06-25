@@ -118,6 +118,202 @@
         font-size: 0.85rem !important;
         line-height: 1.5 !important;
     }
+
+    /* ==================== 水晶统计卡片样式（紧凑版） ==================== */
+    .crystal-card {
+        position: relative;
+        border: none;
+        border-radius: 14px;
+        padding: 12px 16px;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+        cursor: default;
+    }
+
+    /* 玻璃态背景 */
+    .crystal-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.08) 100%);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 0;
+    }
+
+    /* 顶部高光条 */
+    .crystal-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        border-radius: 14px 14px 0 0;
+        z-index: 1;
+    }
+
+    .crystal-card .card-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+
+    .crystal-card .card-left {
+        display: flex;
+        flex-direction: column;
+        gap: 0px;
+        flex: 1;
+    }
+
+    .crystal-card .card-title {
+        font-size: 0.65rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        opacity: 0.7;
+        margin: 0;
+        line-height: 1.3;
+    }
+
+    .crystal-card .card-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin: 0;
+    }
+
+    .crystal-card .card-icon {
+        width: 38px;
+        height: 38px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+        flex-shrink: 0;
+        background: rgba(255,255,255,0.3);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.2);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+
+    .crystal-card .card-icon i {
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08));
+    }
+
+    /* 悬浮效果 */
+    .crystal-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 28px rgba(0, 0, 0, 0.1);
+    }
+
+    .crystal-card:hover .card-icon {
+        transform: scale(1.05);
+    }
+
+    /* 不同主题颜色 */
+    .crystal-card.blue {
+        background: linear-gradient(135deg, #e8f0fe 0%, #d4e4fd 100%);
+        border: 1px solid rgba(66, 133, 244, 0.2);
+    }
+    .crystal-card.blue::after {
+        background: linear-gradient(90deg, #4285f4, #8ab4f8);
+    }
+    .crystal-card.blue .card-icon {
+        color: #4285f4;
+        background: rgba(66, 133, 244, 0.15);
+    }
+
+    .crystal-card.green {
+        background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+        border: 1px solid rgba(52, 168, 83, 0.2);
+    }
+    .crystal-card.green::after {
+        background: linear-gradient(90deg, #34a853, #81c995);
+    }
+    .crystal-card.green .card-icon {
+        color: #34a853;
+        background: rgba(52, 168, 83, 0.15);
+    }
+
+    .crystal-card.orange {
+        background: linear-gradient(135deg, #fef3e8 0%, #fde8d0 100%);
+        border: 1px solid rgba(251, 140, 0, 0.2);
+    }
+    .crystal-card.orange::after {
+        background: linear-gradient(90deg, #fb8c00, #ffb74d);
+    }
+    .crystal-card.orange .card-icon {
+        color: #fb8c00;
+        background: rgba(251, 140, 0, 0.15);
+    }
+
+    .crystal-card.purple {
+        background: linear-gradient(135deg, #f3e8f9 0%, #e8d5f5 100%);
+        border: 1px solid rgba(156, 39, 176, 0.2);
+    }
+    .crystal-card.purple::after {
+        background: linear-gradient(90deg, #9c27b0, #ce93d8);
+    }
+    .crystal-card.purple .card-icon {
+        color: #9c27b0;
+        background: rgba(156, 39, 176, 0.15);
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .crystal-card {
+            padding: 10px 14px;
+            min-height: 50px;
+            border-radius: 12px;
+        }
+        .crystal-card .card-value {
+            font-size: 1.3rem;
+        }
+        .crystal-card .card-icon {
+            width: 32px;
+            height: 32px;
+            font-size: 0.9rem;
+        }
+        .crystal-card .card-title {
+            font-size: 0.55rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .crystal-card {
+            padding: 8px 10px;
+            min-height: 50px;
+            border-radius: 10px;
+        }
+        .crystal-card .card-value {
+            font-size: 1.1rem;
+        }
+        .crystal-card .card-icon {
+            width: 26px;
+            height: 26px;
+            font-size: 0.75rem;
+        }
+        .crystal-card .card-title {
+            font-size: 0.5rem;
+        }
+    }
 </style>
 {% endblock %}
 
@@ -203,12 +399,12 @@
                 </div>
 
                 <div class="col-md-3">
-                    <input type="date" id="filterStartDate" class="form-control" placeholder="开始日期"
+                    <input type="date" id="filterStartDate" class="form-control"
                     data-i18n-title="title_start_date"
                     title="开始日期">
                 </div>
                 <div class="col-md-3">
-                    <input type="date" id="filterEndDate" class="form-control" placeholder="结束日期"
+                    <input type="date" id="filterEndDate" class="form-control"
                     data-i18n-title="title_end_date"
                     title="结束日期">
                 </div>
@@ -225,7 +421,7 @@
                     
                     <!-- 三个按钮 -->
                     <button id="resetFiltersBtn" class="btn btn-secondary">
-                        <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                        <i class="bi bi-circle"></i> <span data-i18n="reset">重置</span>
                     </button>
                     <button id="exportExcelBtn" class="btn btn-success">
                         <i class="bi bi-download me-1"></i> <span data-i18n="export_excel">导出Excel</span>
@@ -240,64 +436,56 @@
         </div>
     </div>
 
-    <!-- 统计汇总卡片 -->
-    <div class="row g-3 mb-4" id="summaryCards">
+    <!-- 统计汇总卡片 - 水晶样式（紧凑版） -->
+    <div class="row g-2 mb-3" id="summaryCards">
         <div class="col-md-3">
-            <div class="card bg-primary text-white border-0 shadow-sm" style="border-radius: 10px;">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="total_users">总学员数</span></h6>
-                            <h3 class="mb-0 fw-bold" id="totalUsers">0</h3>
-                        </div>
-                        <div class="fs-3 opacity-50">
-                            <i class="bi bi-people-fill"></i>
-                        </div>
+            <div class="crystal-card blue stat-card" data-stat="total">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="total_users">总学员数</span></p>
+                        <h3 class="card-value" id="totalUsers">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-people-fill"></i>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-info text-white border-0 shadow-sm" style="border-radius: 10px;">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="signed_count">已签到人数</span></h6>
-                            <h3 class="mb-0 fw-bold" id="totalSigned">0</h3>
-                        </div>
-                        <div class="fs-3 opacity-50">
-                            <i class="bi bi-check-circle-fill"></i>
-                        </div>
+            <div class="crystal-card green stat-card" data-stat="signed">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="signed_count">已签到人数</span></p>
+                        <h3 class="card-value" id="totalSigned">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-check-circle-fill"></i>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-warning text-white border-0 shadow-sm" style="border-radius: 10px;">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="completed_count">已完成考试人数</span></h6>
-                            <h3 class="mb-0 fw-bold" id="totalCompleted">0</h3>
-                        </div>
-                        <div class="fs-3 opacity-50">
-                            <i class="bi bi-clipboard-check-fill"></i>
-                        </div>
+            <div class="crystal-card orange stat-card" data-stat="completed">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="completed_count">已完成考试人数</span></p>
+                        <h3 class="card-value" id="totalCompleted">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-clipboard-check-fill"></i>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-success text-white border-0 shadow-sm" style="border-radius: 10px;">
-                <div class="card-body py-3">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="card-title mb-1 opacity-75"><span data-i18n="pass_rate">及格率</span></h6>
-                            <h3 class="mb-0 fw-bold" id="passRate">0%</h3>
-                        </div>
-                        <div class="fs-3 opacity-50">
-                            <i class="bi bi-percent"></i>
-                        </div>
+            <div class="crystal-card purple stat-card" data-stat="passrate">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="pass_rate">及格率</span></p>
+                        <h3 class="card-value" id="passRate">0%</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-percent"></i>
                     </div>
                 </div>
             </div>

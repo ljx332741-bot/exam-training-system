@@ -239,6 +239,209 @@
     .preview-close:hover {
         transform: rotate(90deg);
     }
+
+    /* ==================== 水晶统计卡片样式 ==================== */
+    .crystal-card {
+        position: relative;
+        border: none;
+        border-radius: 14px;
+        padding: 10px 14px;
+        min-height: 50px;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+        cursor: pointer;
+        user-select: none;
+    }
+
+    /* 玻璃态背景 */
+    .crystal-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 16px;
+        background: linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.08) 100%);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        z-index: 0;
+    }
+
+    /* 顶部高光条 */
+    .crystal-card::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        border-radius: 16px 16px 0 0;
+        z-index: 1;
+    }
+
+    .crystal-card .card-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+    }
+
+    .crystal-card .card-left {
+        display: flex;
+        flex-direction: column;
+        gap: 0px;
+        flex: 1;
+    }
+
+    .crystal-card .card-title {
+        font-size: 0.6rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        opacity: 0.7;
+        margin: 0;
+    }
+
+    .crystal-card .card-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin: 0;
+    }
+
+    .crystal-card .card-icon {
+        width: 34px;
+        height: 44px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.95rem;
+        flex-shrink: 0;
+        background: rgba(255,255,255,0.3);
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.2);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+    }
+
+    .crystal-card .card-icon i {
+        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08));
+    }
+
+    /* 悬浮效果 */
+    .crystal-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+    }
+
+    .crystal-card:hover .card-icon {
+        transform: scale(1.05);
+    }
+
+    /* 点击激活状态（筛选高亮） */
+    .crystal-card.active {
+        transform: translateY(-3px);
+        box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.5), 0 12px 40px rgba(0, 0, 0, 0.12);
+    }
+
+    /* 不同主题颜色 */
+    .crystal-card.green {
+        background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
+        border: 1px solid rgba(52, 168, 83, 0.2);
+    }
+    .crystal-card.green::after {
+        background: linear-gradient(90deg, #34a853, #81c995);
+    }
+    .crystal-card.green .card-icon {
+        color: #34a853;
+        background: rgba(52, 168, 83, 0.15);
+    }
+
+    .crystal-card.orange {
+        background: linear-gradient(135deg, #fef3e8 0%, #fde8d0 100%);
+        border: 1px solid rgba(251, 140, 0, 0.2);
+    }
+    .crystal-card.orange::after {
+        background: linear-gradient(90deg, #fb8c00, #ffb74d);
+    }
+    .crystal-card.orange .card-icon {
+        color: #fb8c00;
+        background: rgba(251, 140, 0, 0.15);
+    }
+
+    .crystal-card.pink {
+        background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%);
+        border: 1px solid rgba(233, 30, 99, 0.2);
+    }
+    .crystal-card.pink::after {
+        background: linear-gradient(90deg, #e91e63, #f06292);
+    }
+    .crystal-card.pink .card-icon {
+        color: #e91e63;
+        background: rgba(233, 30, 99, 0.15);
+    }
+
+    .crystal-card.purple {
+        background: linear-gradient(135deg, #f3e8f9 0%, #e8d5f5 100%);
+        border: 1px solid rgba(156, 39, 176, 0.2);
+    }
+    .crystal-card.purple::after {
+        background: linear-gradient(90deg, #9c27b0, #ce93d8);
+    }
+    .crystal-card.purple .card-icon {
+        color: #9c27b0;
+        background: rgba(156, 39, 176, 0.15);
+    }
+
+    /* 响应式调整 */
+    @media (max-width: 768px) {
+        .crystal-card {
+            padding: 8px 12px;
+            min-height: 48px;
+            border-radius: 12px;
+        }
+        .crystal-card .card-value {
+            font-size: 1.1rem;
+        }
+        .crystal-card .card-icon {
+            width: 28px;
+            height: 28px;
+            font-size: 0.8rem;
+        }
+        .crystal-card .card-title {
+            font-size: 0.5rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .crystal-card {
+            padding: 6px 8px;
+            min-height: 40px;
+            border-radius: 10px;
+        }
+        .crystal-card .card-value {
+            font-size: 0.95rem;
+        }
+        .crystal-card .card-icon {
+            width: 22px;
+            height: 22px;
+            font-size: 0.65rem;
+            border-radius: 6px;
+        }
+        .crystal-card .card-title {
+            font-size: 0.45rem;
+        }
+    }
 </style>
 {% endblock %}
 {% block content %}
@@ -247,10 +450,10 @@
         <h2><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_status">培训签到人员状态</span></h2>
         <div>
             <button class="btn btn-success me-2" id="exportExcelBtn">
-                <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
+                <i class="bi bi-filetype-xlsx"></i> <span data-i18n="export_excel">导出Excel</span>
             </button>
             <button class="btn btn-outline-secondary" id="backToTrainingsBtn">
-                <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+                <i class="bi bi-arrow-return-left"></i> <span data-i18n="back">返回</span>
             </button>
             <!--
             <button class="btn btn-outline-secondary" id="closePageBtn">
@@ -293,56 +496,56 @@
         </div>
     </div>
 
-    <!-- 统计卡片 -->
+    <!-- 统计卡片 - 水晶样式 -->
     <div class="row mb-3">
         <div class="col-md-3">
-            <div class="card bg-success text-white">
-                <div class="card-body py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div><i class="bi bi-check-circle-fill fs-4"></i></div>
-                        <div class="text-end">
-                            <h5 class="mb-0" id="signedCount">0</h5>
-                            <small data-i18n="signed">已签到</small>
-                        </div>
+            <div class="crystal-card green stat-card" data-filter="signed">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="signed">已签到</span></p>
+                        <h3 class="card-value" id="signedCount">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-check-circle-fill"></i>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-warning text-dark">
-                <div class="card-body py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div><i class="bi bi-clock-history fs-4"></i></div>
-                        <div class="text-end">
-                            <h5 class="mb-0" id="pendingCount">0</h5>
-                            <small data-i18n="pending_sign">待签到</small>
-                        </div>
+            <div class="crystal-card orange stat-card" data-filter="pending">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="pending_sign">待签到</span></p>
+                        <h3 class="card-value" id="pendingCount">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-clock-history"></i>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-danger text-white">
-                <div class="card-body py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div><i class="bi bi-exclamation-triangle-fill fs-4"></i></div>
-                        <div class="text-end">
-                            <h5 class="mb-0" id="resignCount">0</h5>
-                            <small data-i18n="need_re-sign">需重新签名</small>
-                        </div>
+            <div class="crystal-card pink stat-card" data-filter="resign">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="need_re-sign">需重新签名</span></p>
+                        <h3 class="card-value" id="resignCount">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-exclamation-triangle-fill"></i>
                     </div>
                 </div>
             </div>
         </div>
         <div class="col-md-3">
-            <div class="card bg-secondary text-white">
-                <div class="card-body py-2">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div><i class="bi bi-people fs-4"></i></div>
-                        <div class="text-end">
-                            <h5 class="mb-0" id="totalCount">0</h5>
-                            <small data-i18n="total">总计</small>
-                        </div>
+            <div class="crystal-card purple stat-card" data-filter="all">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="total">总计</span></p>
+                        <h3 class="card-value" id="totalCount">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-people-fill"></i>
                     </div>
                 </div>
             </div>
@@ -477,7 +680,10 @@
         } catch (e) {}
     }
 
-    async function loadData(forceRefresh = false) {
+    async function loadData(page, forceRefresh = false) {
+        if (page !== undefined && page !== null) {
+            currentPage = page;
+        }
         const urlParams = new URLSearchParams(window.location.search);
         const trainingId = urlParams.get('training_id');
 
@@ -492,7 +698,7 @@
         await window.loadTableWithProgress('usersTableBody', async (updateProgress, updateDesc) => {
             try {
                 updateProgress(10, t('preparing_load_attendance_data'));
-                
+            
                 // 构建API请求，只传递 training_id，不传递搜索和筛选参数
                 let url = '/api/admin/training/users_with_status';
                 if (trainingId) {
@@ -607,11 +813,17 @@
         // 更新统计卡片
         updateStats(filteredData);
         
-        // 重置分页
-        currentPage = 1;
         renderTable();
         const totalPages = Math.ceil(filteredData.length / perPage);
-        renderPagination('pagination', currentPage, totalPages, loadData);
+        // 使用 loadData 作为回调，渲染分页（使用内存数据，不重新加载）
+        renderPagination('pagination', currentPage, totalPages, function(page) {
+            // 丝滑翻页：只更新 currentPage，重新渲染表格
+            currentPage = page;
+            renderTable();
+            // 重新渲染分页（保持高亮）
+            const newTotalPages = Math.ceil(filteredData.length / perPage);
+            renderPagination('pagination', currentPage, newTotalPages, arguments.callee);
+        });
     }
 
     // 更新统计卡片
@@ -1042,30 +1254,19 @@
         };
         
         const updateFilters = async () => {
-            // ✅ 添加调试日志
-            console.log('=== updateFilters 被调用 ===');
             filters.search = searchInput?.value || '';
-            // ✅ 关键修复：优先使用输入框的文本值，而不是隐藏字段
-            // 因为用户输入时，隐藏字段还没有被更新
             const countryText = countryInput?.value || '';
-            filters.country = countryText;  // 直接使用文本值
-            
-            console.log('filters.country (文本):', filters.country);
-            
-            // 隐藏字段仅用于存储精确匹配的国家代码（从下拉列表选择时使用）
+            filters.country = countryText;
             const countryCodeHidden = document.getElementById('filterCountryCode');
             if (countryCodeHidden && countryCodeHidden.value) {
-                // 如果用户从下拉列表选择了精确的国家，用代码覆盖
-                // 但为了支持模糊匹配，我们应该同时支持文本和代码
-                // 这里我们保留文本，让前端做模糊匹配
                 console.log('隐藏字段有值:', countryCodeHidden.value);
-                // 注意：不要覆盖 filters.country，保留文本用于模糊匹配
             }
             
             filters.wh_id = whInput?.value || '';
             filters.training_name = trainingNameInput?.value || '';
             currentPage = 1;
             console.log('最终 filters:', filters);
+            currentPage = 1;
             await applyFilters();
         };
 
@@ -1094,7 +1295,10 @@
                 const countryCodeHidden = document.getElementById('filterCountryCode');
                 if (countryCodeHidden) countryCodeHidden.value = '';
                 filters = { search: '', country: '', wh_id: '', training_name: '' };
+                delete filters.status_filter;
                 currentPage = 1;
+                currentFilter = 'all';
+                document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
                 await applyFilters();
             });
         }
@@ -1138,7 +1342,10 @@
     document.addEventListener('DOMContentLoaded', async () => {
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         bindFilterEvents();
-    
+
+        // 绑定统计卡片点击事件
+        bindStatCardEvents();
+        
         // 等待 i18n 就绪后加载列表
         await waitForI18n();
         window.i18n.applyTranslations();  // 处理静态文本
@@ -1176,5 +1383,147 @@
             window.i18n.applyTranslations();
         }
     });
+
+    // ==================== 统计卡片筛选功能 ====================
+    let currentFilter = 'all'; // 当前筛选状态: 'all', 'signed', 'pending', 'resign'
+
+    // 绑定卡片点击事件
+    function bindStatCardEvents() {
+        document.querySelectorAll('.stat-card').forEach(card => {
+            card.removeEventListener('click', handleStatCardClick);
+            card.addEventListener('click', handleStatCardClick);
+        });
+    }
+
+    function handleStatCardClick(e) {
+        const card = e.currentTarget;
+        const filter = card.dataset.filter;
+        
+        // 如果点击的是同一个卡片，取消筛选
+        if (currentFilter === filter) {
+            // 取消筛选
+            currentFilter = 'all';
+            document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+            // 重置筛选条件
+            filters.search = document.getElementById('searchInput')?.value || '';
+            filters.country = document.getElementById('filterCountry')?.value || '';
+            filters.wh_id = document.getElementById('filterWhId')?.value || '';
+            filters.training_name = document.getElementById('filterTrainingName')?.value || '';
+            // 移除额外的状态筛选
+            delete filters.status_filter;
+            currentPage = 1;
+            applyFilters();
+            return;
+        }
+        
+        // 高亮当前卡片
+        document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+        card.classList.add('active');
+        
+        // 更新筛选条件
+        currentFilter = filter;
+        
+        // 在 filters 中添加状态筛选
+        filters.status_filter = filter;
+        
+        // 重置分页
+        currentPage = 1;
+        
+        // 应用筛选
+        applyFilters();
+    }
+
+    // 修改 applyFilters 函数，增加状态筛选
+    // 在现有的 applyFilters 函数中，在库房筛选之后、培训名称筛选之前添加：
+
+    async function applyFilters() {
+        window.hideTableProgress('usersTableBody');
+
+        const dataSource = allData.length > 0 ? allData : cachedData;
+        let filtered = [...dataSource];
+        
+        // 1. 姓名/邮箱搜索：支持多关键词组合查询
+        if (filters.search) {
+            const keywords = splitSearchKeywords(filters.search);
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const searchableText = [
+                        item.name_en || '',
+                        item.name_cn || '',
+                        item.email || '',
+                        item.wh_id || '',
+                        item.wh_name_en || '',
+                        item.country || '',
+                        item.user_country || ''
+                    ].join(' ').toLowerCase();
+                    return keywords.every(k => searchableText.includes(k.toLowerCase()));
+                });
+            }
+        }
+        
+        // 2. 国家筛选
+        if (filters.country) {
+            const searchLower = filters.country.toLowerCase().trim();
+            const countries = await loadCountryList();
+            filtered = filtered.filter(item => {
+                const userCountry = item.user_country || item.country || '';
+                if (!userCountry) return false;
+                const countryInfo = countries.find(c => c.code === userCountry);
+                if (!countryInfo) return false;
+                const nameZh = (countryInfo.name_zh || '').toLowerCase();
+                const nameEn = (countryInfo.name_en || '').toLowerCase();
+                const code = (countryInfo.code || '').toLowerCase();
+                return nameZh.includes(searchLower) || 
+                    nameEn.includes(searchLower) || 
+                    code.includes(searchLower);
+            });
+        }
+        
+        // 3. 库房筛选
+        if (filters.wh_id) {
+            const keywords = splitSearchKeywords(filters.wh_id);
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const searchableText = [
+                        item.wh_id || '',
+                        item.wh_name_en || ''
+                    ].join(' ').toLowerCase();
+                    return keywords.every(k => searchableText.includes(k.toLowerCase()));
+                });
+            }
+        }
+        
+        // 4. 状态筛选（新增）
+        if (filters.status_filter && filters.status_filter !== 'all') {
+            filtered = filtered.filter(item => {
+                return item.sign_status === filters.status_filter;
+            });
+        }
+        
+        // 5. 培训名称筛选
+        if (filters.training_name) {
+            const keywords = splitSearchKeywords(filters.training_name);
+            if (keywords.length > 0) {
+                filtered = filtered.filter(item => {
+                    const trainingName = (item.training_name || '').toLowerCase();
+                    return keywords.every(k => trainingName.includes(k.toLowerCase()));
+                });
+            }
+        }
+        
+        filteredData = filtered;
+        
+        // 更新统计卡片
+        updateStats(filteredData);
+        
+        renderTable();
+        const totalPages = Math.ceil(filteredData.length / perPage);
+        renderPagination('pagination', currentPage, totalPages, function(page) {
+            currentPage = page;
+            renderTable();
+            const newTotalPages = Math.ceil(filteredData.length / perPage);
+            renderPagination('pagination', currentPage, newTotalPages, arguments.callee);
+        });
+    }
 </script>
 {% endblock %}

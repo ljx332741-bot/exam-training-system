@@ -881,8 +881,10 @@
     }
 
     // ==================== 主列表功能 ====================    
-    async function loadUsers() {
-
+    async function loadUsers(page) {
+        if (page !== undefined && page !== null) {
+            currentPage = page;
+        }
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
@@ -933,7 +935,7 @@
             document.getElementById('totalCount').innerText = total;
             const totalPages = Math.ceil(total / 20);
             const current = data.page || 1;
-            renderPagination(current, totalPages);
+            renderPagination('pagination', currentPage, totalPages, loadUsers);
 
             updateBatchDeleteButton();
             setTimeout(() => {
@@ -1549,6 +1551,7 @@
         }
     };
 
+    /*
     function renderPagination(current, totalPages) {
         const pagination = document.getElementById('pagination');
         if (!pagination) {
@@ -1602,6 +1605,7 @@
         // 存储 totalPages 供事件使用
         pagination._totalPages = totalPages;
     }
+    */
 
     async function batchDeleteSelected() {
         if (selectedUserIds.size === 0) {

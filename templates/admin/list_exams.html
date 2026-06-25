@@ -2,6 +2,29 @@
 {% extends "base.html" %}
 {% block title %}{{ _('exam_statistics') }}{% endblock %}
 
+{% block extra_css %}
+<style>
+    .spin-icon {
+        display: inline-block;
+        transition: transform 0.2s ease;
+    }
+
+    .spin-icon.spinning {
+        animation: spin 2s linear infinite;
+    }
+
+    /* 高级模式开启时，所有重新打开按钮的图标持续旋转 */
+    .reopen-mode-active .reopen-push-btn .spin-icon {
+        animation: spin 3s linear infinite;
+    }
+
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -9,15 +32,15 @@
         <div>
             <!-- 调试开关（仅超管/开发者可见） -->
             {% if session.get('role') in ['super_admin', 'developer'] %}
-                <div class="form-check form-switch d-inline-block me-3" id="debugModeContainer" style="display: none;">
-                    <input class="form-check-input" type="checkbox" id="debugModeSwitch" 
+                <div class="form-check form-switch d-inline-block me-3" id="reopenModeContainer" style="display: none;">
+                    <input class="form-check-input" type="checkbox" id="reopenModeSwitch" 
                         style="width: 2.5rem; height: 1.3rem;">
-                    <label class="form-check-label" for="debugModeSwitch"
+                    <label class="form-check-label" for="reopenModeSwitch"
                         data-bs-toggle="tooltip" 
                         data-bs-placement="bottom"
                         data-i18n-title="title_advanced_mode_allow_repush"
                         title="启用高级模式后，可以重新推送已关闭的考试">
-                        <i class="bi bi-bug"></i> 
+                        <i class="bi bi-arrow-repeat spin-icon" id="reopenSpinIcon"></i>
                         <span data-i18n="advanced_mode">高级模式</span>
                     </label>
                 </div>
@@ -64,7 +87,7 @@
                 </div>
                 <div class="col-md-3 d-flex gap-2">
                     <button id="resetFiltersBtn" class="btn btn-outline-secondary flex-grow-1">
-                        <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                        <i class="bi bi-circle"></i> <span data-i18n="reset">重置</span>
                     </button>
                     <div class="form-check form-switch d-flex align-items-center ms-2">
                         <input type="checkbox" id="includeDeletedCheckbox" class="form-check-input" style="width: 2.5rem; height: 1.2rem;">
@@ -423,7 +446,7 @@
     let filters = { name: '', status: '', quarter: '', country: '' };
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
     let currentReopenExamId = null;
-    let debugModeEnabled = false;
+    let reopenModeEnabled = false;
     let cachedExamsData = [];
     let cachedTotal = 0;
     let searchTimer = null;
@@ -463,48 +486,54 @@
     }
 
     // ========== 初始化调试开关 ==========
-    async function initDebugMode() {
-        const debugContainer = document.getElementById('debugModeContainer');
-        const debugSwitch = document.getElementById('debugModeSwitch');
-        
-        const canDebug = CURRENT_USER_ROLE === 'super_admin' || CURRENT_USER_ROLE === 'developer';
-        
-        if (!canDebug) {
-            if (debugContainer) debugContainer.style.display = 'none';
+    async function initReopenMode() {
+        const reopenContainer = document.getElementById('reopenModeContainer');
+        const reopenSwitch = document.getElementById('reopenModeSwitch');
+        const spinIcon = document.getElementById('reopenSpinIcon');
+        const canReopen = CURRENT_USER_ROLE === 'super_admin' || CURRENT_USER_ROLE === 'developer';
+        const examsTable = document.querySelector('.table-responsive') || document.body;
+        if (!canReopen) {
+            if (reopenContainer) reopenContainer.style.display = 'none';
             return;
         }
         
-        if (debugContainer) debugContainer.style.display = 'inline-block';
+        if (reopenContainer) reopenContainer.style.display = 'inline-block';
         
         try {
-            const res = await fetch('/api/admin/exam/debug_mode');
+            const res = await fetch('/api/admin/exam/reopen_mode');
             const data = await res.json();
-            debugModeEnabled = data.debug_mode || false;
-            if (debugSwitch) debugSwitch.checked = debugModeEnabled;
+            reopenModeEnabled = data.reopen_mode || false;
+            if (reopenSwitch) reopenSwitch.checked = reopenModeEnabled;
         } catch (err) {
             console.error('获取调试模式状态失败:', err);
         }
         
-        if (debugSwitch) {
-            debugSwitch.addEventListener('change', async function(e) {
-                debugModeEnabled = e.target.checked;
+        if (reopenSwitch) {
+            reopenSwitch.addEventListener('change', async function(e) {
+                reopenModeEnabled = e.target.checked;
+                // 切换高级模式类
+                if (reopenModeEnabled) {
+                    examsTable.classList.add('reopen-mode-active');
+                } else {
+                    examsTable.classList.remove('reopen-mode-active');
+                }
                 try {
-                    const res = await fetch('/api/admin/exam/debug_mode', {
+                    const res = await fetch('/api/admin/exam/reopen_mode', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ enabled: debugModeEnabled })
+                        body: JSON.stringify({ enabled: reopenModeEnabled })
                     });
                     const data = await res.json();
                     if (data.success) {
-                        console.log('调试模式:', debugModeEnabled ? '开启' : '关闭');
-                        // ✅ 方案：更新缓存中的 can_show_debug_push 字段，无需刷新页面
+                        console.log('调试模式:', reopenModeEnabled ? '开启' : '关闭');
+                        // 更新缓存中的 can_show_reopen_button 字段，无需刷新页面
                         const isSuperAdmin = CURRENT_USER_ROLE === 'super_admin' || CURRENT_USER_ROLE === 'developer';
                         allData = allData.map(exam => {
                             // 只有关闭状态的考试才显示调试推送按钮
                             const isClosed = exam.status === 'closed';
                             return {
                                 ...exam,
-                                can_show_debug_push: isSuperAdmin && debugModeEnabled && isClosed
+                                can_show_reopen_button: isSuperAdmin && reopenModeEnabled && isClosed
                             };
                         });
                         
@@ -513,8 +542,27 @@
                     }
                 } catch (err) {
                     console.error('切换调试模式失败:', err);
-                    debugSwitch.checked = !debugModeEnabled;
-                    debugModeEnabled = !debugModeEnabled;
+                    reopenSwitch.checked = !reopenModeEnabled;
+                    reopenModeEnabled = !reopenModeEnabled;
+                }
+                // 初始化状态
+                if (reopenSwitch.checked) {
+                    examsTable.classList.add('reopen-mode-active');
+                }
+            });
+        }
+        // 控制图标旋转
+        if (reopenSwitch && spinIcon) {
+            // 初始化状态
+            if (reopenSwitch.checked) {
+                spinIcon.classList.add('spinning');
+            }
+            
+            reopenSwitch.addEventListener('change', function(e) {
+                if (e.target.checked) {
+                    spinIcon.classList.add('spinning');
+                } else {
+                    spinIcon.classList.remove('spinning');
                 }
             });
         }
@@ -577,10 +625,25 @@
         const start = (currentPage - 1) * 20;
         const end = start + 20;
         const pageData = filtered.slice(start, end);
-        
-        renderExamsTable(pageData);
-        document.getElementById('totalCount').innerText = filtered.length;
-        renderPagination(currentPage, totalPages);
+         
+        // 使用 requestAnimationFrame 优化渲染
+        if (window.requestAnimationFrame) {
+            requestAnimationFrame(() => {
+                renderExamsTable(pageData);
+                document.getElementById('totalCount').innerText = filtered.length;
+                renderPagination('pagination', currentPage, totalPages, function(page) {
+                    currentPage = page;
+                    applyFilters();
+                });
+            });
+        } else {
+            renderExamsTable(pageData);
+            document.getElementById('totalCount').innerText = filtered.length;
+            renderPagination('pagination', currentPage, totalPages, function(page) {
+                currentPage = page;
+                applyFilters();
+            });
+        }
     }
 
     // ========== 加载考试列表（首次加载，获取全部数据） ==========
@@ -617,21 +680,38 @@
                     page: 1,
                     per_page: 10000,  // 获取所有数据
                     include_deleted: document.getElementById('includeDeletedCheckbox').checked ? 'true' : 'false',
-                    debug_mode: debugModeEnabled
+                    reopen_mode: reopenModeEnabled
                 });
 
+                updateProgress(15, t('building_request'));
+                updateProgress(25, t('sending_request'));
                 updateProgress(40, t('data_acquisition_in_progress'));
-                const res = await fetch(`/api/admin/exams/list?${params}`);
+
+                // 使用 AbortController 设置超时（可选）
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000);
+                
+                const res = await fetch(`/api/admin/exams/list?${params}`, {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                
+                updateProgress(45, t('server_processing'));
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                updateProgress(55, t('receiving_data'));
                 const data = await res.json();
 
-                // ✅ 缓存所有数据
+                updateProgress(70, t('processing_data'));
+                // 缓存所有数据
                 allData = data.data || [];
                 cachedTotal = data.total || 0;
 
-                updateProgress(70, t('processing_data'));
-                updateProgress(85, t('rendering_table'));
+                updateProgress(80, t('preparing_render'));
                 
+                currentPage = 1;
+                updateProgress(90, t('rendering_table'));
+                updateProgress(95, t('about_to_complete'));
                 // 应用筛选（首次加载时无筛选）
                 applyFilters();
                 
@@ -696,10 +776,68 @@
         });
 
         // 调试推送按钮
-        document.querySelectorAll('.debug-push-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDebugPush);
-            btn.addEventListener('click', handleDebugPush);
+        document.querySelectorAll('.reopen-push-btn').forEach(btn => {
+            btn.removeEventListener('click', handleReopenPush);
+            btn.addEventListener('click', handleReopenPush);
         });
+    }
+
+    // ========== 构建单行 HTML（提取为独立函数） ==========
+    function buildExamRow(ex, globalIdx) {
+        const isDeleted = ex.deleted_at !== null && ex.deleted_at !== undefined;
+        // 使用 getQuarterFromDate 函数计算季度
+        const quarter = typeof getQuarterFromDate === 'function' 
+            ? getQuarterFromDate(ex.created_at) 
+            : (ex.quarter || '-');
+        
+        let countryDisplay = ex.countries_display || '-';
+        
+        const showDetail = ['active', 'closed'].includes(ex.status);
+        const showPush = ['draft', 'created', 'active'].includes(ex.status) || 
+                        (ex.status === 'closed' && ex.assigned_count === 0);
+        const showExport = ['active', 'closed'].includes(ex.status);
+        const showEdit = ['draft', 'created', 'active'].includes(ex.status);
+        const showDelete = ['super_admin', 'developer'].includes(CURRENT_USER_ROLE);
+        const showReopenBtn = ex.can_show_reopen_button === true;
+        
+        let actionButtons = '';
+        if (isDeleted) {
+            actionButtons = `<button class="btn btn-sm btn-outline-success restore-exam-btn" data-id="${ex.id}">${t('t_recover')}</button>`;
+        } else {
+            actionButtons = `
+                ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${t('t_details')}</button>` : ''}
+                ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
+                ${showReopenBtn ? `
+                    <button class="btn btn-sm btn-outline-warning reopen-push-btn" data-id="${ex.id}" data-title="${escapeHtml(ex.title)}">
+                        <i class="bi bi-bootstrap-reboot spin-icon"></i>
+                        ${t('reopen') || '重新打开'}
+                    </button>` : ''}
+                <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
+                ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
+                ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
+                ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
+            `;
+        }
+        
+        return `
+        <tr>
+            <td>${globalIdx}</td>
+            <td>${escapeHtml(countryDisplay)}</td>
+            <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
+            <td>${ex.id}</td>
+            <td>${quarter}</td>
+            <td>${getStatusText(ex.status)}</td>
+            <td>${formatLocalTime(ex.created_at)}</td>
+            <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
+            <td>${ex.question_count}</td>
+            <td>${ex.duration}</td>
+            <td>${ex.assigned_count}/${ex.submitted_count}</td>
+            <td>${ex.max_score ?? '-'}</td>
+            <td>${ex.min_score ?? '-'}</td>
+            <td>${ex.retake_count}</td>
+            <td>${actionButtons}</td>
+        </tr>
+        `;
     }
 
     // ========== 渲染表格 ==========
@@ -708,69 +846,34 @@
         if (!tbody) return;
         window.hideTableProgress('examsTbody');
         
-        if (!exams.length) {
-            tbody.innerHTML = '<tr><td colspan="15" class="text-center">' + t('t_no_data') + '</td></tr>';
+        if (!exams || exams.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="15" class="text-center">' + t('no_data') + '</td></tr>';
             return;
         }
         
-        tbody.innerHTML = exams.map((ex, idx) => {
-            const isDeleted = ex.deleted_at !== null && ex.deleted_at !== undefined;
-            // ✅ 使用 getQuarterFromDate 函数计算季度
-            const quarter = typeof getQuarterFromDate === 'function' 
-                ? getQuarterFromDate(ex.created_at) 
-                : (ex.quarter || '-');
-            
-            let countryDisplay = ex.countries_display || '-';
-            
-            const showDetail = ['active', 'closed'].includes(ex.status);
-            const showPush = ['draft', 'created', 'active'].includes(ex.status) || 
-                             (ex.status === 'closed' && ex.assigned_count === 0);
-            const showExport = ['active', 'closed'].includes(ex.status);
-            const showEdit = ['draft', 'created', 'active'].includes(ex.status);
-            const showDelete = ['super_admin', 'developer'].includes(CURRENT_USER_ROLE);
-            const showDebugPush = ex.can_show_debug_push === true;
-            
-            let actionButtons = '';
-            if (isDeleted) {
-                actionButtons = `<button class="btn btn-sm btn-outline-success restore-exam-btn" data-id="${ex.id}">${t('t_recover')}</button>`;
-            } else {
-                actionButtons = `
-                    ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${t('t_details')}</button>` : ''}
-                    ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
-                    ${showDebugPush ? `<button class="btn btn-sm btn-outline-warning debug-push-btn" data-id="${ex.id}" data-title="${escapeHtml(ex.title)}">🐛 ${t('reopen') || '重新打开'}</button>` : ''}
-                    <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
-                    ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
-                    ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
-                    ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
-                `;
-            }
-            
-            return `
-            <tr>
-                <td>${(currentPage-1)*20 + idx + 1}</td>
-                <td>${escapeHtml(countryDisplay)}</td>
-                <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
-                <td>${ex.id}</td>
-                <td>${quarter}</td>
-                <td>${getStatusText(ex.status)}</td>
-                <td>${formatLocalTime(ex.created_at)}</td>
-                <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
-                <td>${ex.question_count}</td>
-                <td>${ex.duration}</td>
-                <td>${ex.assigned_count}/${ex.submitted_count}</td>
-                <td>${ex.max_score ?? '-'}</td>
-                <td>${ex.min_score ?? '-'}</td>
-                <td>${ex.retake_count}</td>
-                <td>${actionButtons}</td>
-            </tr>
-            `;
-        }).join('');
+        // ✅ 使用 DocumentFragment 批量构建 DOM（性能优化）
+        const fragment = document.createDocumentFragment();
+        const perPage = 20;
+        const startIdx = (currentPage - 1) * perPage;
         
+        exams.forEach((ex, idx) => {
+            const globalIdx = startIdx + idx + 1;
+            // 创建临时容器解析 HTML
+            const temp = document.createElement('tbody');
+            temp.innerHTML = buildExamRow(ex, globalIdx);
+            fragment.appendChild(temp.firstElementChild);
+        });
+        
+        // 清空并追加
+        tbody.innerHTML = '';
+        tbody.appendChild(fragment);
+        
+        // 绑定所有按钮事件
         bindExamTableButtons();
     }
 
     // ========== 调试推送处理（增强版） ==========
-    function handleDebugPush(e) {
+    function handleReopenPush(e) {
         const btn = e.currentTarget;
         const examId = btn.dataset.id;
         currentReopenExamId = examId;
@@ -948,24 +1051,6 @@
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
             return m;
-        });
-    }
-
-    function renderPagination(current, totalPages) {
-        const pagination = document.getElementById('pagination');
-        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
-        let html = '';
-        for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        pagination.innerHTML = html;
-        pagination.querySelectorAll('.page-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                currentPage = parseInt(link.dataset.page);
-                // 分页切换时也使用内存过滤
-                applyFilters();
-            });
         });
     }
 
@@ -1683,7 +1768,7 @@
             }
         }
 
-        // ✅ 显示已删除复选框
+        // 显示已删除复选框
         if (includeDeleted) {
             includeDeleted.removeEventListener('change', handleDeletedChange);
             includeDeleted.addEventListener('change', handleDeletedChange);
@@ -1699,7 +1784,7 @@
             loadExams();
         }
 
-        // ✅ 重置按钮
+        // 重置按钮
         if (resetBtn) {
             resetBtn.removeEventListener('click', resetAllFilters);
             resetBtn.addEventListener('click', resetAllFilters);
@@ -1708,7 +1793,7 @@
 
     // ========== 修改页面加载完成后的初始化 ==========
     document.addEventListener('DOMContentLoaded', async () => {
-        await initDebugMode();
+        await initReopenMode();
         await waitForI18n();
         if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
             window.i18n.applyTranslations();
