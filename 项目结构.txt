@@ -23,6 +23,7 @@ exam-system/
 │   ├── permissions.py                      # 权限工具函数
 │   ├── timezone_utils.py                   # 统一的时区处理工具函数
 │   ├── i18n_messages.py                    # 统一的国际化消息模板
+│   ├── admin_messages.py                   # 统一的消息工具函数
 │   ├── common.py                           # 国家和季度处理逻辑的工具函数
 │   ├── cache_manager.py                    # 稳定、兼容、高性能的缓存优化工具函数
 │   ├── employment_history.py               # 完整的离复职历史记录工具管理函数
@@ -82,6 +83,7 @@ exam-system/
 │   ├── api_auth.py                         # 认证模块
 │   ├── api_exam.py                         # 学员考试模块
 │   ├── api_training.py                     # 学员培训模块 
+│   ├── admin_message.py                    # 消息 API 路由
 │   ├── admin_stats.py                      # 统计专用函数
 │   ├── admin_wh.py                         # 库房管理API模块
 │   ├── admin_exam.py                       # 管理员：考试 & 仪表盘

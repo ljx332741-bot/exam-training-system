@@ -44,7 +44,14 @@ from routes.helpers import (
     is_user_resigned,
     get_default_exam_values
 )
-
+from utils.admin_messages import (
+    log_exam_delete,
+    log_exam_restore,
+    log_result_delete,
+    log_admin_push_exam,
+    log_import_exam,
+    log_exam_reset
+)
 
 logger = logging.getLogger(__name__)
 
@@ -674,7 +681,13 @@ def admin_delete_exam(exam_id):
         
         if permanent:
             logger.info(f"开始永久删除考试 {exam_id}")
-            
+            log_exam_delete(
+                db=db,
+                exam_id=exam_id,
+                exam_title=exam_title,
+                admin_id=session.get('user_id'),
+                is_permanent=True
+            )
             # 按顺序删除关联数据
             tables_to_delete = [
                 ("questions", "题目"),
@@ -726,6 +739,13 @@ def admin_delete_exam(exam_id):
         
         else:
             # 软删除
+            log_exam_delete(
+                db=db,
+                exam_id=exam_id,
+                exam_title=exam_title,
+                admin_id=session.get('user_id'),
+                is_permanent=False
+            )
             now_utc = datetime.now(timezone.utc).isoformat()
             update_result = db.table("exams").update({
                 "deleted_at": now_utc
@@ -1525,6 +1545,15 @@ def admin_push_exam_with_settings(exam_id):
         # 全国推送（user_ids 为空）：只更新有效期，不修改分配关系
         logger.info(f"全国推送，不修改分配关系")
 
+    log_admin_push_exam(
+        db=db,
+        exam_id=exam_id,
+        exam_title=exam_title,
+        user_count=len(user_ids),
+        admin_id=session.get('user_id'),
+        is_all=(len(user_ids) == 0)  # 空数组表示全国推送
+    )
+    
     return jsonify({"success": True})
 
 @admin_exam_bp.route('/api/admin/exam/<int:exam_id>/push', methods=['POST'])
@@ -2419,6 +2448,14 @@ def api_admin_restore_exam(exam_id):
         
         logger.info(f"考试 {exam_id} 已恢复")
         return jsonify({"success": True})
+
+        log_exam_restore(
+            db=db,
+            exam_id=exam_id,
+            exam_title=exam_title,
+            admin_id=session.get('user_id')
+        )
+
     except Exception as e:
         logger.error(f"恢复考试失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500

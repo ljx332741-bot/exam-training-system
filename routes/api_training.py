@@ -7,6 +7,7 @@ from flask import request, jsonify, render_template, session, flash
 from . import training_bp
 from services.db import get_supabase, get_supabase_admin
 from routes.helpers import login_required, upload_signature
+from utils.admin_messages import log_exam_auto_extend, log_exam_assign_from_signin
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +32,7 @@ def api_available_trainings():
     logger.info(f"用户ID: {user_id}, 国家: {user_country}")
     
     # ========== 1. 获取学员的所有签到记录 ==========
-    att_res = db.table("training_attendances") \
+    att_res = admin_db.table("training_attendances") \
         .select("id, training_id, sign_time, signed_name, signature_url") \
         .eq("user_id", user_id) \
         .execute()
@@ -67,7 +68,7 @@ def api_available_trainings():
     # 合并：待重新签名 + 待补签
     all_pending_training_ids = resign_training_ids | pending_sign_training_ids
     logger.info(f"所有待处理培训ID: {list(all_pending_training_ids)}")
-    
+    logger.info(f"✅ resign_training_ids: {list(resign_training_ids)}")
     # ========== 3. 查询用户被定点分配的培训ID ==========
     assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
     assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
@@ -185,7 +186,7 @@ def api_available_trainings():
                     "name": t['name'],
                     "start_time": start,
                     "end_time": end,
-                    "signed": True,
+                    "signed": False,
                     "sign_time": signed_info.get('sign_time') if signed_info else None,
                     "signed_name": signed_info.get('signed_name') if signed_info else None,
                     "needs_resign": True,
@@ -322,7 +323,7 @@ def api_training_sign():
 
     # 5. 保存签到记录
     try:
-        db.table("training_attendances").insert({"training_id": training_id, "user_id": user_id, "signature_url": url, "signed_name": name, "sign_time": now}).execute()
+        admin_db.table("training_attendances").insert({"training_id": training_id, "user_id": user_id, "signature_url": url, "signed_name": name, "sign_time": now}).execute()
     except Exception as e: return jsonify({"success": False, "message": "数据保存失败"}), 500
 
     # 签到成功后，检查是否有分配记录，如果没有则创建（全国推送场景）
@@ -352,6 +353,37 @@ def api_training_sign():
         
         for binding in (bindings_res.data or []):
             exam_id = binding['exam_id']
+
+            # 检查考试是否过期，如果过期则自动延长
+            exam_res = admin_db.table("exams").select("title, start_time, end_time, status").eq("id", exam_id).maybe_single().execute()
+            if exam_res.data:
+                now_utc = datetime.now(timezone.utc)
+                end_time = exam_res.data.get('end_time')
+                
+                if end_time:
+                    try:
+                        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                        if end_dt < now_utc:
+                            new_end_time = (now_utc + timedelta(days=2)).isoformat()
+                            new_start_time = now_utc.isoformat()
+                            
+                            admin_db.table("exams").update({
+                                "start_time": new_start_time,
+                                "end_time": new_end_time,
+                                "status": "active",
+                                "is_active": True
+                            }).eq("id", exam_id).execute()
+                            
+                            # 记录消息
+                            log_exam_auto_extend(
+                                db=admin_db,
+                                exam_id=exam_id,
+                                exam_title=exam_res.data.get('title', f'考试#{exam_id}'),
+                                new_end_time=new_end_time,
+                                triggered_by=user_id
+                            )
+                    except Exception as e:
+                        logger.warning(f"检查考试有效期失败: {e}")
             
             # 检查是否已分配
             existing = admin_db.table("exam_assignments").select("id")\
@@ -367,8 +399,16 @@ def api_training_sign():
                     "created_by": user_id
                 }).execute()
                 logger.info(f"培训签到后自动分配考试: user={user_id}, exam={exam_id}")
-                
-                # ✅ 激活绑定模式的考试（如果尚未激活）
+
+                # 记录消息
+                log_exam_assign_from_signin(
+                    db=admin_db,
+                    exam_id=exam_id,
+                    exam_title=exam_res.data.get('title', f'考试#{exam_id}') if exam_res.data else f'考试#{exam_id}',
+                    user_id=user_id,
+                    user_name=name or user_id
+                )
+                # 激活绑定模式的考试（如果尚未激活）
                 exam_res = admin_db.table("exams").select("is_active, is_binding_exam").eq("id", exam_id).maybe_single().execute()
                 if exam_res.data and exam_res.data.get('is_binding_exam') and not exam_res.data.get('is_active'):
                     # 设置默认有效期
@@ -394,13 +434,22 @@ def api_resign_training():
     training_id = data.get('training_id')
     sig = data.get('signature')
     name = data.get('name', '').strip()
-    if not training_id or not sig: return jsonify({"success": False, "message": "缺少必要参数"}), 400
+    if not training_id or not sig: 
+        return jsonify({"success": False, "message": "缺少必要参数"}), 400
+
     db = get_supabase()
+    admin_db = get_supabase_admin()
     user_id = session['user_id']
+
     exist = db.table("training_attendances").select("id, signature_url").eq("training_id", training_id).eq("user_id", user_id).maybe_single().execute()
-    if not exist.data: return jsonify({"success": False, "message": "签到记录不存在"}), 404
-    if exist.data.get('signature_url'): return jsonify({"success": False, "message": "签名已存在，无需重新签字"}), 400
+    if not exist.data: 
+        return jsonify({"success": False, "message": "签到记录不存在"}), 404
+    if exist.data.get('signature_url'): 
+        return jsonify({"success": False, "message": "签名已存在，无需重新签字"}), 400
+
     try: url = upload_signature(sig, training_id, user_id)
-    except: return jsonify({"success": False, "message": "签名保存失败"}), 500
-    db.table("training_attendances").update({"signature_url": url, "signed_name": name}).eq("id", exist.data['id']).execute()
+    except: 
+        return jsonify({"success": False, "message": "签名保存失败"}), 500
+
+    admin_db.table("training_attendances").update({"signature_url": url, "signed_name": name}).eq("id", exist.data['id']).execute()
     return jsonify({"success": True})

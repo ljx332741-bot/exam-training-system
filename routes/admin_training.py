@@ -20,6 +20,12 @@ from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, get_allowed_countries, is_developer
 from utils.cache_manager import cache_get, invalidate_cache_on_change, training_cache
+from utils.admin_messages import (
+    log_signature_reset,
+    log_training_unassign,
+    log_admin_push_training,
+    log_training_auto_assign
+)
 
 logger = logging.getLogger(__name__)
 
@@ -761,6 +767,85 @@ def admin_reset_signature(attendance_id):
     
     logger.info(f"管理员重置签到 {attendance_id} 的签名")
     return jsonify({"success": True})
+
+@admin_training_bp.route('/api/admin/training/<int:training_id>/reset-signature/<user_id>', methods=['POST'])
+@login_required
+@admin_required
+def admin_reset_signature_by_user(training_id, user_id):
+    """
+    管理员强制重置学员的签到签名（保留分配关系和签到时间）
+    - 只清空 signature_url 和 signed_name
+    - 保留 sign_time（签到时间）
+    - 保留分配关系（training_assignments）
+    """
+    db = get_supabase()
+    
+    # 1. 检查培训是否存在
+    training_res = db.table("trainings").select("name, country").eq("id", training_id).maybe_single().execute()
+    if not training_res.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
+    
+    # 2. 检查用户是否存在
+    user_res = db.table("users").select("name_en").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+    
+    # 3. 权限检查
+    allowed = get_admin_allowed_countries()
+    training_country = training_res.data.get('country')
+    if allowed is not None and training_country and training_country not in allowed:
+        return jsonify({"success": False, "message": "无权操作此培训"}), 403
+    
+    # 4. 查找该用户的签到记录
+    att_res = db.table("training_attendances") \
+        .select("id, sign_time") \
+        .eq("training_id", training_id) \
+        .eq("user_id", user_id) \
+        .is_("deleted_at", "null") \
+        .maybe_single() \
+        .execute()
+    
+    if not att_res.data:
+        # 没有签到记录，自动创建一条（保留签到时间）
+        # 注意：这种情况理论上不应该发生，因为调用此接口的前提是已有签到记录
+        return jsonify({
+            "success": False, 
+            "message": "该学员没有签到记录，请先签到"
+        }), 404
+    
+    attendance_id = att_res.data['id']
+    sign_time = att_res.data.get('sign_time')
+    
+    # 5. 只清空签名相关字段，保留 sign_time
+    db.table("training_attendances").update({
+        "signature_url": None,
+        "signed_name": None
+    }).eq("id", attendance_id).execute()
+    
+    training_name = training_res.data.get('name', '')
+    user_name = user_res.data.get('name_en', '')
+
+    # 消息记录（独立于主流程，失败不影响返回）
+    try:
+        from utils.admin_messages import log_signature_reset
+        log_signature_reset(
+            training_id=training_id,
+            training_name=training_name,
+            user_id=user_id,
+            user_name=user_name,
+            admin_id=session.get('user_id')
+        )
+    except Exception as msg_err:
+        # 消息记录失败只记录日志，不影响主流程
+        logger.warning(f"消息记录失败（不影响主流程）: {msg_err}")
+
+    logger.info(f"✅ 重置签名成功: 培训={training_name} ({training_id}), 学员={user_name} ({user_id}), 签到时间={sign_time}")
+    
+    return jsonify({
+        "success": True,
+        "message": f"已重置 {user_name} 的签名，签到时间保留",
+        "sign_time": sign_time
+    })
 
 @admin_training_bp.route('/admin/training/<int:training_id>/attendance')
 @login_required
@@ -3093,7 +3178,15 @@ def unassign_training_from_users(training_id):
     db.table("training_attendances").delete().eq("training_id", training_id).in_("user_id", user_ids).execute()
     
     logger.info(f"培训 {training_id} ({training_name}) 取消了 {deleted_count} 名学员的分配")
-    
+
+    log_training_unassign(
+        db=db,
+        training_id=training_id,
+        training_name=training_name,
+        user_id=user_id,
+        user_name=user_name,
+        admin_id=session.get('user_id')
+    )
     return jsonify({
         "success": True, 
         "unassigned_count": deleted_count,

@@ -944,6 +944,64 @@
         bindActionButtons();
         bindAttendanceViewButtons();
     }
+    
+    /**
+     * 重置签名后局部更新该行数据（无需刷新整个页面）
+     * @param {number|string} trainingId - 培训ID
+     * @param {string} userId - 用户ID
+     */
+    function updateRowAfterReset(trainingId, userId) {
+        // 1. 在 allData 中找到该用户的数据
+        const index = allData.findIndex(item => 
+            item.training_id == trainingId && item.user_id == userId
+        );
+        
+        if (index === -1) {
+            // 如果没找到，回退到重新加载
+            console.warn('未找到要更新的数据，回退到全量刷新');
+            loadData(true);
+            return;
+        }
+        
+        // 2. 更新数据
+        const item = allData[index];
+        item.sign_status = 'resign';
+        item.signature_url = null;
+        item.signed_name = null;
+        
+        // 3. 同步更新 cachedData
+        const cachedIndex = cachedData.findIndex(item => 
+            item.training_id == trainingId && item.user_id == userId
+        );
+        if (cachedIndex !== -1) {
+            cachedData[cachedIndex].sign_status = 'resign';
+            cachedData[cachedIndex].signature_url = null;
+            cachedData[cachedIndex].signed_name = null;
+        }
+        
+        // 4. 更新缓存（持久化到 sessionStorage）
+        try {
+            const cacheData = {
+                data: cachedData
+            };
+            setCachedTrainingStatusData(cacheData);
+        } catch (e) {
+            console.warn('更新缓存失败:', e);
+        }
+        
+        // 5. 重新应用筛选（会重新渲染表格）
+        applyFilters();
+        
+        // 6. 如果当前有状态筛选，确保数据正确显示
+        if (filters.status_filter === 'signed') {
+            // 如果筛选的是"已签到"，重置后该行会消失，需要提示用户
+            if (typeof showToast === 'function') {
+                showToast('⚠️ 该学员已变为"需重新签名"状态，当前筛选"已签到"会隐藏此行', 'info');
+            }
+        }
+        
+        console.log('✅ 局部更新完成:', { trainingId, userId, newStatus: 'resign' });
+    }
 
     // 绑定分配/取消分配/重新签到按钮事件
     function bindActionButtons() {
@@ -1038,7 +1096,7 @@
             btn.addEventListener('click', btn._unassignHandler);
         });
         
-        // 重新签到按钮（管理员强制重置）
+        // 重新签到按钮（管理员强制重置签名）- 优化版：局部更新
         document.querySelectorAll('.resign-btn').forEach(btn => {
             btn.removeEventListener('click', btn._resignHandler);
             btn._resignHandler = async () => {
@@ -1046,11 +1104,17 @@
                 const userId = btn.dataset.userId;
                 const userName = btn.dataset.userName;
                 
-                if (!confirm(t('confirm_reset_sign_status', userName ))) return;
+                if (!confirm(t('confirm_reset_sign_status', userName))) return;
+
+                // 保存按钮原始状态
+                const originalHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
                 
                 showLoading(t('resetting'));
                 try {
-                    const res = await fetch(`/api/admin/training/${trainingId}/resign/${userId}`, {
+                    // ✅ 修复：调用统一的重置签名接口（保留分配关系和签到时间）
+                    const res = await fetch(`/api/admin/training/${trainingId}/reset-signature/${userId}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' }
                     });
@@ -1059,11 +1123,10 @@
                     
                     if (data.success) {
                         if (typeof showToast === 'function') {
-                            showToast(t('re_sign_in_success') || t('reset_success', userName ), 'success');
-                        } else {
-                            alert(t('reset_success', userName ));
+                            showToast(t('reset_success', userName), 'success');
                         }
-                        loadData(true);
+                        // 局部更新：只更新这一行数据，不重新加载整个表格
+                        updateRowAfterReset(trainingId, userId);
                     } else {
                         const msg = data.message || t('reset_failed');
                         if (typeof showToast === 'function') {
@@ -1071,11 +1134,15 @@
                         } else {
                             alert(msg);
                         }
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
                     }
                 } catch (err) {
                     hideLoading();
                     console.error(t('reset_failed'), err);
-                    alert('网络错误，请重试');
+                    showToast('网络错误，请重试', 'error');
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
                 }
             };
             btn.addEventListener('click', btn._resignHandler);

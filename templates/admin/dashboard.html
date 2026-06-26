@@ -364,7 +364,7 @@
         border: none;
         border-radius: 20px;
         padding: 20px 24px;
-        min-height: 110px;
+        min-height: 80px;
         display: flex;
         align-items: center;
         overflow: hidden;
@@ -540,10 +540,14 @@
         }
     }
 
-    /* ---加载动画--- */
+    /* ==================== 悬浮触发旋转图标 ==================== */
+    /* ✅ 默认静态，不消耗任何资源 */
     .spin-icon {
         display: inline-block;
-        transition: transform 0.5s ease;
+        transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+        will-change: transform;
+        transform: translateZ(0);
+        backface-visibility: hidden;
     }
 
     .spin-icon.spinning {
@@ -554,43 +558,90 @@
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
     }
+
+    /* ==================== 悬浮触发容器 ==================== */
+    /* ✅ 卡片标题悬浮时触发齿轮旋转 */
+    .card-header-trigger:hover .spin-icon {
+        animation: spin 5s linear infinite;
+    }
+
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h3 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2"></i><span data-i18n="mc">管理控制台</span></h3>
-    
-    <!-- 更多信息下拉菜单 -->
-    <div class="dropdown">
-        <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-            <i class="bi bi-three-dots-vertical"></i> <span data-i18n="more_info">更多信息</span>
-        </button>
-        <ul class="dropdown-menu dropdown-menu-end">
-            <li>
-                <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;" target="_blank">
-                    <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
-                </a>
-            </li>
-            <!-- ✅ 新增：培训完成度报表 -->
-            <li>
-                <a class="dropdown-item" href="{{ url_for('admin_training.completion_report_page') }}" target="_blank">
-                    <i class="bi bi-bar-chart-steps me-2"></i> <span data-i18n="training_completion_report">培训完成度报表</span>
-                </a>
-            </li>
-            <!-- ✅ 新增：离职人员管理（仅超管/开发者可见） -->
-            {% if session.get('role') in ['super_admin', 'developer'] %}
-            <li><hr class="dropdown-divider"></li>
-            <li>
-                <a class="dropdown-item" href="{{ url_for('admin_user.resigned_users_page') }}" target="_blank">
-                    <i class="bi bi-person-x me-2"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
-                </a>
-            </li>
-            {% endif %}
-            <!-- 后续可扩展其他功能 -->
-            <!-- <li><hr class="dropdown-divider"></li>
-            <li><a class="dropdown-item" href="#">其他功能</a></li> -->
-        </ul>
+
+    <!-- 消息通知图标 -->
+    <div class="d-flex align-items-center gap-3">
+        <div class="dropdown" id="messageDropdown">
+            <button class="btn btn-outline-primary position-relative" type="button" data-bs-toggle="dropdown" 
+                    id="messageBellBtn" title="消息中心" data-i18n-title="message_center">
+                <i class="bi bi-bell-fill"></i>
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" 
+                      id="unreadBadge" style="font-size: 0.6rem; display: none;">
+                    0
+                </span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end" style="min-width: 400px; max-height: 500px; overflow-y: auto;" id="messageDropdownMenu">
+                <li class="dropdown-header d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-inbox"></i> <span data-i18n="message_center">消息中心</span></span>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-1" id="markAllReadBtn" style="font-size: 0.7rem;">
+                            <i class="bi bi-check2-all"></i> <span data-i18n="mark_all_read">全部已读</span>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" id="refreshMessagesBtn" style="font-size: 0.7rem;">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li id="messageList">
+                    <div class="text-center text-muted py-3">
+                        <span class="spinner-border spinner-border-sm me-2"></span>
+                        <span data-i18n="loading">加载中...</span>
+                    </div>
+                </li>
+                <li><hr class="dropdown-divider"></li>
+                <li class="text-center">
+                    <a href="#" class="dropdown-item" id="viewAllMessagesBtn" data-i18n="view_all_messages">
+                        查看全部消息
+                    </a>
+                </li>
+            </ul>
+        </div>
+        
+        <!-- 更多信息下拉菜单 -->
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-three-dots-vertical"></i> <span data-i18n="more_info">更多信息</span>
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;" target="_blank">
+                        <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
+                    </a>
+                </li>
+                <!-- 培训完成度报表 -->
+                <li>
+                    <a class="dropdown-item" href="{{ url_for('admin_training.completion_report_page') }}" target="_blank">
+                        <i class="bi bi-bar-chart-steps me-2"></i> <span data-i18n="training_completion_report">培训完成度报表</span>
+                    </a>
+                </li>
+                <!-- 离职人员管理（仅超管/开发者可见） -->
+                {% if session.get('role') in ['super_admin', 'developer'] %}
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <a class="dropdown-item" href="{{ url_for('admin_user.resigned_users_page') }}" target="_blank">
+                        <i class="bi bi-person-x me-2"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
+                    </a>
+                </li>
+                {% endif %}
+                <!-- 后续可扩展其他功能 -->
+                <!-- <li><hr class="dropdown-divider"></li>
+                <li><a class="dropdown-item" href="#">其他功能</a></li> -->
+            </ul>
+        </div>
     </div>
 </div>
 
@@ -730,8 +781,8 @@
 		<div class="col-lg-12">
 			<div class="card shadow-sm border-0">
 				<div class="card-header bg-light d-flex justify-content-between align-items-center flex-wrap gap-2">
-					<span class="fw-bold">
-                        <i class="bi bi-gear-wide-connected spin-icon spinning" id="gearIcon"></i> 
+					<span class="fw-bold card-header-trigger">
+                        <i class="bi bi-gear-wide-connected spin-icon" id="gearIcon"></i> 
                         <span data-i18n="exam_data_export_manage">考试管理</span>
                     </span>
 					<div class="d-flex gap-2">
@@ -5666,5 +5717,278 @@
 		}
 	});
 
+    // ==================== 消息盒子功能 ====================
+
+    let messageCache = [];
+    let messagePage = 1;
+    let hasMoreMessages = true;
+    // 前端消息渲染增强
+    function getMessageStyle(category, level) {
+        const styles = {
+            // 系统自动操作
+            'auto_extend': { icon: 'bi bi-arrow-repeat', color: 'text-info' },
+            'auto_assign_exam': { icon: 'bi bi-check-circle', color: 'text-success' },
+            'auto_assign_training': { icon: 'bi bi-check-circle', color: 'text-success' },
+            
+            // 管理员操作
+            'admin_reset_sign': { icon: 'bi bi-pencil-square', color: 'text-warning' },
+            'admin_reset_exam': { icon: 'bi bi-arrow-counterclockwise', color: 'text-warning' },
+            'admin_unassign': { icon: 'bi bi-person-x', color: 'text-danger' },
+            'admin_delete': { icon: 'bi bi-trash', color: 'text-danger' },
+            'admin_restore': { icon: 'bi bi-arrow-counterclockwise', color: 'text-success' },
+            'admin_import': { icon: 'bi bi-upload', color: 'text-success' },
+            'admin_push': { icon: 'bi bi-megaphone', color: 'text-primary' },
+            
+            // 用户行为
+            'user_login': { icon: 'bi bi-box-arrow-in-right', color: 'text-info' },
+            'user_signin': { icon: 'bi bi-calendar-check', color: 'text-success' },
+            'user_submit_exam': { icon: 'bi bi-file-check', color: 'text-success' },
+            
+            // 警告
+            'exam_expired': { icon: 'bi bi-exclamation-triangle', color: 'text-warning' },
+            'training_expired': { icon: 'bi bi-exclamation-triangle', color: 'text-warning' },
+        };
+        
+        return styles[category] || { icon: 'bi bi-envelope', color: 'text-secondary' };
+    }
+    
+    async function loadMessages(append = false) {
+        if (!append) {
+            messagePage = 1;
+            hasMoreMessages = true;
+        }
+        
+        if (!hasMoreMessages && append) return;
+        
+        const container = document.getElementById('messageList');
+        if (!container) return;
+        
+        if (!append) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-3">
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span data-i18n="loading">加载中...</span>
+                </div>
+            `;
+        }
+        
+        try {
+            const params = new URLSearchParams({
+                page: messagePage,
+                per_page: 20,
+                unread_only: false
+            });
+            
+            const res = await fetch(`/api/admin/messages?${params}`);
+            const data = await res.json();
+            
+            if (data.success) {
+                const messages = data.data || [];
+                const total = data.total || 0;
+                
+                if (append) {
+                    messageCache = [...messageCache, ...messages];
+                } else {
+                    messageCache = messages;
+                }
+                
+                hasMoreMessages = messageCache.length < total;
+                
+                renderMessages(messageCache);
+                updateUnreadBadge();
+                
+                // 如果还有更多，加载更多
+                if (hasMoreMessages && messageCache.length < 5) {
+                    messagePage++;
+                    setTimeout(() => loadMessages(true), 300);
+                }
+            }
+        } catch (err) {
+            console.error('加载消息失败:', err);
+            if (!append) {
+                container.innerHTML = `
+                    <div class="text-center text-danger py-3">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <span data-i18n="load_failed">加载失败</span>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    function renderMessages(messages) {
+        const container = document.getElementById('messageList');
+        if (!container) return;
+        
+        if (!messages || messages.length === 0) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox" style="font-size: 2rem; display: block; margin-bottom: 8px;"></i>
+                    <span data-i18n="no_messages">暂无消息</span>
+                </div>
+            `;
+            return;
+        }
+        
+        // 按是否已读分组
+        const unread = messages.filter(m => !m.is_read);
+        const read = messages.filter(m => m.is_read);
+        const sorted = [...unread, ...read];
+        
+        container.innerHTML = sorted.map(m => {
+            const levelIcon = {
+                'info': 'bi bi-info-circle text-info',
+                'warning': 'bi bi-exclamation-triangle text-warning',
+                'error': 'bi bi-x-circle text-danger',
+                'success': 'bi bi-check-circle text-success'
+            }[m.level] || 'bi bi-envelope';
+            
+            const levelBg = {
+                'info': 'bg-info-subtle',
+                'warning': 'bg-warning-subtle',
+                'error': 'bg-danger-subtle',
+                'success': 'bg-success-subtle'
+            }[m.level] || '';
+            
+            const isUnread = !m.is_read;
+            
+            return `
+                <div class="dropdown-item ${isUnread ? 'fw-bold' : ''} message-item" 
+                    style="padding: 10px 16px; border-bottom: 1px solid #f0f0f0; ${isUnread ? 'background-color: #f0f7ff;' : ''}"
+                    data-id="${m.id}" data-read="${m.is_read}">
+                    <div class="d-flex align-items-start gap-2">
+                        <i class="${levelIcon} mt-1" style="font-size: 1.1rem;"></i>
+                        <div style="flex: 1; min-width: 0;">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <span style="font-size: 0.85rem;">${escapeHtml(m.title)}</span>
+                                ${isUnread ? '<span class="badge bg-primary" style="font-size: 0.5rem; flex-shrink: 0;">新</span>' : ''}
+                            </div>
+                            ${m.content ? `<div class="text-muted small" style="font-size: 0.75rem; margin-top: 2px;">${escapeHtml(m.content)}</div>` : ''}
+                            <div class="text-muted" style="font-size: 0.6rem; margin-top: 4px;">
+                                <span>${escapeHtml(m.created_by_name || '系统')}</span>
+                                <span class="mx-1">·</span>
+                                <span>${m.created_at_local || ''}</span>
+                                ${m.category ? `<span class="mx-1">·</span><span class="badge bg-secondary" style="font-size: 0.5rem;">${escapeHtml(m.category)}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        // 绑定点击事件 - 点击消息标记为已读
+        container.querySelectorAll('.message-item').forEach(item => {
+            item.addEventListener('click', async function(e) {
+                // 防止点击内部按钮时触发
+                if (e.target.closest('button')) return;
+                
+                const id = this.dataset.id;
+                const isRead = this.dataset.read === 'true';
+                
+                if (!isRead) {
+                    try {
+                        const res = await fetch(`/api/admin/messages/${id}/read`, { method: 'POST' });
+                        if (res.ok) {
+                            this.dataset.read = 'true';
+                            this.classList.remove('fw-bold');
+                            this.style.backgroundColor = '';
+                            const badge = this.querySelector('.badge.bg-primary');
+                            if (badge) badge.remove();
+                            updateUnreadBadge();
+                        }
+                    } catch (err) {
+                        console.error('标记已读失败:', err);
+                    }
+                }
+            });
+        });
+        
+        // 添加"加载更多"按钮
+        if (hasMoreMessages && messages.length > 0) {
+            const loadMore = document.createElement('div');
+            loadMore.className = 'text-center py-2';
+            loadMore.innerHTML = `
+                <button class="btn btn-sm btn-outline-secondary load-more-btn" style="font-size: 0.7rem;">
+                    <span data-i18n="load_more">加载更多</span>
+                </button>
+            `;
+            container.appendChild(loadMore);
+            
+            loadMore.querySelector('.load-more-btn').addEventListener('click', () => {
+                messagePage++;
+                loadMessages(true);
+            });
+        }
+    }
+
+    async function updateUnreadBadge() {
+        try {
+            const res = await fetch('/api/admin/messages/unread_count');
+            const data = await res.json();
+            if (data.success) {
+                const badge = document.getElementById('unreadBadge');
+                if (badge) {
+                    if (data.count > 0) {
+                        badge.style.display = 'inline';
+                        badge.textContent = data.count > 99 ? '99+' : data.count;
+                    } else {
+                        badge.style.display = 'none';
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('获取未读数量失败:', err);
+        }
+    }
+
+    // 标记全部已读
+    document.getElementById('markAllReadBtn')?.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/admin/messages/read_all', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                showToast(data.message || '全部已标记为已读', 'success');
+                // 刷新消息列表
+                messageCache = [];
+                loadMessages();
+                updateUnreadBadge();
+            }
+        } catch (err) {
+            console.error('标记全部已读失败:', err);
+            showToast('操作失败，请重试', 'error');
+        }
+    });
+
+    // 刷新消息
+    document.getElementById('refreshMessagesBtn')?.addEventListener('click', () => {
+        messageCache = [];
+        loadMessages();
+        updateUnreadBadge();
+    });
+
+    // 查看全部消息
+    document.getElementById('viewAllMessagesBtn')?.addEventListener('click', (e) => {
+        e.preventDefault();
+        // 可以跳转到专门的消息页面，或者展开所有消息
+        messageCache = [];
+        messagePage = 1;
+        loadMessages();
+    });
+
+    // 下拉菜单打开时加载消息
+    document.getElementById('messageDropdown')?.addEventListener('show.bs.dropdown', function() {
+        if (messageCache.length === 0) {
+            loadMessages();
+        }
+        updateUnreadBadge();
+    });
+
+    // 定时刷新未读数量（每30秒）
+    setInterval(updateUnreadBadge, 30000);
+
+    // 初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        updateUnreadBadge();
+    });
 </script>
 {% endblock %}
