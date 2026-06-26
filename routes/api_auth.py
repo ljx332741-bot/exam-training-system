@@ -359,7 +359,17 @@ def login():
             
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
-            
+
+            if login_success:
+                log_user_login(
+                    db=db,
+                    user_id=user_data['id'],
+                    user_name=user_data.get('name_en') or user_data.get('name_cn', ''),
+                    email=user_data.get('email', ''),
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get('User-Agent')
+                )
+                
             flash({'msg': 'login_success', 'params': []}, 'success')
             return redirect(url_for('exam.dashboard'))
         else:

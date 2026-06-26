@@ -509,12 +509,12 @@
 </style>
 <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
 <script>
-  function safeT(key, fallback = '') {
-      if (window.i18n && typeof window.i18n.t === 'function') {
-          return window.i18n.t(key) || fallback || key;
-      }
-      return fallback || key;
-  }
+    function safeT(key, fallback = '') {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key) || fallback || key;
+        }
+        return fallback || key;
+    }
 
     let currentSignAction = 'sign';  // 'sign' 或 'resign'
     let currentTrainingId = null;
@@ -523,94 +523,98 @@
 
     // 加载可签到的培训
     async function loadTrainings() {
-      const res = await fetch('/api/trainings/available');
-      const trainings = await res.json();
-      const container = document.getElementById('trainingCards');
-      if (!trainings.length) {
-        container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('no_ongoing_sign_ins') + '</div>';
-        return;
-      }
-      container.innerHTML = '';
+        const res = await fetch('/api/trainings/available');
+        const trainings = await res.json();
+        const container = document.getElementById('trainingCards');
+        if (!trainings.length) {
+            container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('no_ongoing_sign_ins') + '</div>';
+            return;
+        }
+        container.innerHTML = '';
 
-      trainings.forEach(t => {
-        const col = document.createElement('div');
-        col.className = 'col-md-6 col-lg-4';
-        const card = document.createElement('div');
-        card.className = 'card h-100 shadow-sm';
-        
-        // 根据后端返回的状态确定徽章样式
-        let statusBadge = '';
-        let actionHtml = '';
+        trainings.forEach(t => {
+            const col = document.createElement('div');
+            col.className = 'col-md-6 col-lg-4';
+            const card = document.createElement('div');
+            card.className = 'card h-100 shadow-sm';
+            
+            // 根据后端返回的状态确定徽章样式
+            let statusBadge = '';
+            let actionHtml = '';
 
-        if (t.is_future) {
-            // 未开始的培训
-            statusBadge = '<span class="badge bg-secondary">' + safeT('t_not_started') + '</span>';
-            actionHtml = `<button class="btn btn-secondary" disabled>${safeT('t_not_started')}</button>`;
-        } else if (t.is_active) {
-            if (!t.signed) {
-                statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
-                actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${safeT('sign_now')}</button>`;
+            if (t.is_future) {
+                // 未开始
+                statusBadge = '<span class="badge bg-secondary">' + safeT('t_not_started') + '</span>';
+                actionHtml = `<button class="btn btn-secondary" disabled>${safeT('t_not_started')}</button>`;
             } else if (t.needs_resign) {
-                statusBadge = '<span class="badge bg-warning text-dark">' + safeT('need_re-sign') + '</span>';
-                actionHtml = `<button class="btn btn-warning resign-btn" data-id="${t.id}"><i class="bi bi-exclamation-triangle"></i> ${safeT('re-sign')}</button>`;
-            } else {
-                statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
-                actionHtml = `<button class="btn btn-success" disabled>${safeT('signed')}</button>`;
+                // ✅ 优先判断：需要重新签名（无论培训状态如何）
+                statusBadge = '<span class="badge bg-danger">' + safeT('need_re-sign') + '</span>';
+                actionHtml = `<button class="btn btn-warning resign-btn" data-id="${t.id}">${safeT('re-sign')}</button>`;
+            } else if (t.is_active) {
+                if (t.signed) {
+                    // 已签到
+                    statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
+                    actionHtml = `<button class="btn btn-success" disabled>${safeT('signed')}</button>`;
+                } else {
+                    // 待签到
+                    statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
+                    actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${safeT('sign_now')}</button>`;
+                }
             }
-        }
 
-        // 签到时间显示
-        let signTimeHtml = '';
-        if (t.signed && t.sign_time && !t.is_future) {
-            signTimeHtml = `<div class="small text-muted mt-2">${safeT('sign_in_period')}：${formatLocalTime(t.sign_time)}</div>`;
-        }
-        card.innerHTML = `
-            <div class="card-dashboard training-card position-relative">
-                <div class="card-status-bar ${getStatusBarClass(t)}"></div>
-                <div class="card-body">
-                    <div class="card-title">
-                        <i class="bi bi-calendar-check-fill text-primary"></i>
-                        ${escapeHtml(t.name)}
-                        <span class="badge-status ${getStatusBadgeClass(t)}">${statusBadge}</span>
-                    </div>
-                    <div class="card-meta">
-                        <div class="date-range">
-                            <i class="bi bi-calendar-range"></i>
-                            <span>${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}</span>
+            // 签到时间显示
+            let signTimeHtml = '';
+            if (t.signed && t.sign_time && !t.is_future) {
+                signTimeHtml = `<div class="small text-muted mt-2">${safeT('sign_in_period')}：${formatLocalTime(t.sign_time)}</div>`;
+            }
+
+            card.innerHTML = `
+                <div class="card-dashboard training-card position-relative">
+                    <div class="card-status-bar ${getStatusBarClass(t)}"></div>
+                    <div class="card-body">
+                        <div class="card-title">
+                            <i class="bi bi-calendar-check-fill text-primary"></i>
+                            ${escapeHtml(t.name)}
+                            <span class="badge-status ${getStatusBadgeClass(t)}">${statusBadge}</span>
                         </div>
-                        ${t.signed && !t.is_future ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
+                        <div class="card-meta">
+                            <div class="date-range">
+                                <i class="bi bi-calendar-range"></i>
+                                <span>${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}</span>
+                            </div>
+                            ${t.signed && !t.is_future ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
+                        </div>
+                        ${signTimeHtml}
+                        <div class="mt-2">${actionHtml}</div>
                     </div>
-                    ${signTimeHtml}
-                    <div class="mt-2">${actionHtml}</div>
                 </div>
-            </div>
-        `;
+            `;
 
-        col.appendChild(card);
-        container.appendChild(col);
-      });
+            col.appendChild(card);
+            container.appendChild(col);
+        });
 
-      // 绑定签到按钮事件
-      document.querySelectorAll('.sign-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          currentTrainingId = btn.dataset.id;
-          currentSignAction = 'sign';
-          // 重置签名画板
-          if(signaturePad) signaturePad.clear();
-          new bootstrap.Modal(document.getElementById('signatureModal')).show();
-          document.getElementById('signatureCanvas').focus(); // 可选
+        // 绑定签到按钮事件
+        document.querySelectorAll('.sign-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+            currentTrainingId = btn.dataset.id;
+            currentSignAction = 'sign';
+            // 重置签名画板
+            if(signaturePad) signaturePad.clear();
+            new bootstrap.Modal(document.getElementById('signatureModal')).show();
+            document.getElementById('signatureCanvas').focus(); // 可选
+            });
         });
-      });
-      // 绑定重新签字事件
-      document.querySelectorAll('.resign-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          currentTrainingId = btn.dataset.id;
-          currentSignAction = 'resign';
-          // 显示签名模态框，行为与首次签到类似，但提交时调用 resign 接口
-          if(signaturePad) signaturePad.clear();
-          new bootstrap.Modal(document.getElementById('signatureModal')).show();
+        // 绑定重新签字事件
+        document.querySelectorAll('.resign-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+            currentTrainingId = btn.dataset.id;
+            currentSignAction = 'resign';
+            // 显示签名模态框，行为与首次签到类似，但提交时调用 resign 接口
+            if(signaturePad) signaturePad.clear();
+            new bootstrap.Modal(document.getElementById('signatureModal')).show();
+            });
         });
-      });
     }
 
     // 辅助函数
@@ -803,17 +807,17 @@
 
     // 监听窗口大小变化，重新调整画板内容比例
     window.addEventListener('resize', () => {
-      if (!signaturePad) return;
-      const data = signaturePad.toData();
-      const canvas = signaturePad.canvas;
-      canvas.width = canvas.clientWidth;
-      canvas.height = 200;
-      signaturePad.clear();
-      if (data && data.length) signaturePad.fromData(data);
+        if (!signaturePad) return;
+        const data = signaturePad.toData();
+        const canvas = signaturePad.canvas;
+        canvas.width = canvas.clientWidth;
+        canvas.height = 200;
+        signaturePad.clear();
+        if (data && data.length) signaturePad.fromData(data);
     });
     // 清除按钮
     document.getElementById('clearSignatureBtn').onclick = () => {
-      if (signaturePad) signaturePad.clear();
+        if (signaturePad) signaturePad.clear();
     };
 
     // 提交签到

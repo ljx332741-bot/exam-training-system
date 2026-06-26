@@ -11,6 +11,12 @@ from .admin_stats import (
 )
 
 
+# 注意：admin_bp 是管理员主蓝图，用于挂载所有管理功能
+admin_bp = Blueprint('admin', __name__)
+
+# 然后导入 admin_message 模块（它会在内部使用 admin_bp）
+from .admin_message import admin_bp as admin_message_bp
+
 # ========== 1. 定义所有蓝图 ==========
 auth_bp = Blueprint('auth', __name__)
 exam_bp = Blueprint('exam', __name__)
@@ -69,7 +75,7 @@ ENDPOINT_ALIAS = {
     'admin_exam_status': 'admin_exam.admin_exam_status',
     'admin_result_detail': 'admin_exam.admin_result_detail',
     
-    # ✅ 考试清单和成绩页面 - 使用不同的键名
+    # 考试清单和成绩页面 - 使用不同的键名
     'admin_exams_page': 'admin_exam.admin_exams_page',
     'admin_exam_scores_page': 'admin_exam.admin_exam_scores_page',
     'api_admin_exams_stats': 'admin_exam.api_admin_exams_stats',
@@ -157,6 +163,11 @@ def register_blueprints(app):
     from . import admin_export
     from . import admin_wh
 
+    # 注册 admin_bp 和 admin_message_bp
+    app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_message_bp)
+
+    # 注册 API 蓝图
     app.register_blueprint(api_auth.auth_bp)
     app.register_blueprint(api_exam.exam_bp)
     app.register_blueprint(api_training.training_bp)
