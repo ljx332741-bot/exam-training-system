@@ -143,7 +143,7 @@ def admin_dashboard():
     registered_count, imported_count = get_user_stats(allowed_countries)
     
     # ========== 3. 考试统计 ==========
-    # ✅ 正确获取 get_exam_stats 返回的各个值
+    # 正确获取 get_exam_stats 返回的各个值
     (exams_total_from_stats, exams_completed_from_stats, exam_stats_from_stats, 
     filtered_exams, allowed_user_ids, allowed_exam_ids) = get_exam_stats(allowed_countries)
     
@@ -1242,18 +1242,18 @@ def api_admin_exam_detail(exam_id):
     """获取单个考试信息接口（用于模态框回显）"""
     db = get_supabase()
 
-    # ✅ 先获取 data
+    # 先获取 data
     result = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
     if not result.data:
         return jsonify({"error": "考试不存在"}), 404
 
     exam_data = result.data  # 这是字典
 
-    # ✅ 2. 权限检查
+    # 2. 权限检查
     if not can_access_exam(exam_data):
         return jsonify({"error": "无权访问此考试"}), 403
 
-    # ✅ 3. 获取考试状态
+    # 3. 获取考试状态
     status = get_exam_status(exam_data)
     countries = parse_exam_countries(exam_data)
     return jsonify({
@@ -1266,8 +1266,6 @@ def api_admin_exam_detail(exam_id):
         "countries": countries
     })
 
-# routes/admin_exam.py
-
 @admin_exam_bp.route('/api/admin/exam/<int:exam_id>/assignments')
 @login_required
 @admin_required
@@ -1275,22 +1273,22 @@ def api_admin_exam_assignments(exam_id):
     """获取考试已分配考生列表（带权限检查）"""
     db = get_supabase()
     
-    # ✅ 1. 首先检查管理员是否有权查看这个考试
+    # 1. 首先检查管理员是否有权查看这个考试
     exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
         return jsonify({"user_ids": []})
     
     exam = exam_res.data
     
-    # ✅ 使用权限检查函数
+    # 使用权限检查函数
     if not can_access_exam(exam):
         return jsonify({"user_ids": []})
     
-    # ✅ 2. 获取分配的用户ID，但需要过滤
+    # 2. 获取分配的用户ID，但需要过滤
     res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
     user_ids = [row['user_id'] for row in (res.data or [])]
     
-    # ✅ 3. 如果管理员有权限范围，只返回权限范围内的用户
+    # 3. 如果管理员有权限范围，只返回权限范围内的用户
     if not is_developer():
         allowed = get_admin_allowed_countries()
         if allowed is not None and allowed:
@@ -1635,7 +1633,7 @@ def api_admin_exams_list():
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
     
-    # ✅ 新增：级联筛选参数
+    # 级联筛选参数
     warehouse = request.args.get('warehouse', '').strip()
     training_id = request.args.get('training_id', '')
     
@@ -1697,7 +1695,7 @@ def api_admin_exams_list():
         if end_date:
             all_exams = [e for e in all_exams if e.get('start_time') and e['start_time'] <= end_date]
         
-        # ========== 7. ✅ 新增：库房筛选 ==========
+        # ========== 7. 库房筛选 ==========
         if warehouse:
             # 获取该库房下的用户ID
             users_res = db.table("users").select("id").eq("wh_id", warehouse).execute()
@@ -1713,7 +1711,7 @@ def api_admin_exams_list():
             else:
                 all_exams = []
         
-        # ========== 8. ✅ 新增：培训绑定筛选 ==========
+        # ========== 8. 培训绑定筛选 ==========
         # 在培训绑定筛选部分添加详细日志
         if training_id:
             try:

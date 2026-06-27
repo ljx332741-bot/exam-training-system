@@ -280,7 +280,7 @@ def take_exam(exam_id):
             force_data = force_record.data[0]
             effective_start_time = force_data.get('start_time')
             effective_end_time = force_data.get('end_time')
-            # ✅ 优先使用原考试时长，如果没有则使用记录中的时长
+            # 优先使用原考试时长，如果没有则使用记录中的时长
             duration_minutes = exam.get('duration', force_data.get('duration', 60))
         else:
             effective_start_time = exam.get('start_time')
@@ -305,7 +305,7 @@ def take_exam(exam_id):
         is_first_entry = (started_at is None)
         
         if is_first_entry:
-            # ✅ 检查强制重推或普通考试的有效期
+            # 检查强制重推或普通考试的有效期
             if effective_end_time:
                 try:
                     end_dt = safe_parse_datetime(effective_end_time)
