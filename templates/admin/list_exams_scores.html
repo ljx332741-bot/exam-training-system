@@ -5,10 +5,22 @@
 {% block content %}
 <div class="container-fluid px-0">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><span data-i18n="exam_scores_detail">考生成绩详情</span> - <span id="examTitle">{{exam_title}}</span></h2>
-        <button class="btn btn-outline-secondary" onclick="history.back();">
-            <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
-        </button>
+        <h2>
+            <span data-i18n="exam_scores_detail">考生成绩详情</span> 
+            - <span id="examTitle">{{exam_title}}</span>
+            <span id="fromTrainingBadge" class="badge bg-info ms-2" style="display: none; font-size: 0.75rem; margin-top: -4px;">
+                <i class="bi bi-link mt-1" data-i18n="opened_from_binding">从培训绑定打开</i>
+            </span>
+        </h2>
+        <div>
+            <!-- 动态显示返回或关闭按钮 -->
+            <button id="navBackBtn" class="btn btn-outline-secondary" onclick="handleNavigation()">
+                <i class="bi bi-arrow-left me-1"></i> <span id="navBtnText" data-i18n="back">返回</span>
+            </button>
+            <button id="navCloseBtn" class="btn btn-outline-secondary" onclick="window.close()" style="display: none;">
+                <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
+            </button>
+        </div>
     </div>
 
     <!-- ========== 筛选栏（输入即搜索） ========== -->
@@ -656,6 +668,83 @@
         });
     }
 
+    // ========== 导航控制完整逻辑 ==========
+    function isFromTrainingBinding() {
+        // 检查多种来源标记
+        const urlParam = new URLSearchParams(window.location.search).get('from') === 'training';
+        const sessionFlag = sessionStorage.getItem('from_training_binding') === 'true';
+        return urlParam || sessionFlag;
+    }
+
+    function handleNavigation() {
+        if (isFromTrainingBinding()) {
+            // 从培训绑定跳转：关闭窗口
+            if (window.opener) {
+                // 如果有父窗口，尝试关闭
+                window.close();
+                // 备选方案
+                setTimeout(() => {
+                    if (!window.closed) {
+                        // 如果无法关闭，跳转到培训管理页
+                        window.location.href = '/admin/trainings';
+                    }
+                }, 500);
+            } else {
+                // 没有父窗口，跳转到培训管理页
+                window.location.href = '/admin/trainings';
+            }
+        } else {
+            // 从考试页面跳转：返回上一页
+            if (document.referrer && document.referrer.includes('/admin/exams')) {
+                history.back();
+            } else {
+                // 安全回退
+                window.location.href = '/admin/exams';
+            }
+        }
+    }
+
+    function handleClose() {
+        window.close();
+        // 备选方案
+        setTimeout(() => {
+            if (!window.closed) {
+                window.location.href = '/admin/trainings';
+            }
+        }, 500);
+    }
+
+    function initNavigation() {
+        const fromTraining = isFromTrainingBinding();
+        const backBtn = document.getElementById('navBackBtn');
+        const closeBtn = document.getElementById('navCloseBtn');
+        const badge = document.getElementById('fromTrainingBadge');
+        
+        if (fromTraining) {
+            // 显示关闭按钮，隐藏返回按钮
+            backBtn.style.display = 'none';
+            closeBtn.style.display = 'inline-block';
+            if (badge) badge.style.display = 'inline-block';
+            // 更新按钮文本
+            document.querySelector('#navCloseBtn span').textContent = `${t('close')}`;
+            // 添加样式标识
+            document.body.classList.add('from-training-binding');
+        } else {
+            backBtn.style.display = 'inline-block';
+            closeBtn.style.display = 'none';
+            if (badge) badge.style.display = 'none';
+            document.body.classList.remove('from-training-binding');
+        }
+    }
+
+    // 如果需要在关闭时清理，可以添加：
+    window.addEventListener('pagehide', function() {
+        // 只有在正常关闭时才清理，刷新时保留
+        if (!window.closed) {
+            sessionStorage.removeItem('from_training_binding');
+        }
+    });
+
     // ========== 页面初始化 ==========
     document.addEventListener('DOMContentLoaded', async () => {
         await loadExamStatus();
@@ -675,6 +764,7 @@
         if (batchDeleteBtn) {
             batchDeleteBtn.addEventListener('click', batchDeleteSelected);
         }
+        initNavigation();
     });
 
     // 语言切换时重新渲染

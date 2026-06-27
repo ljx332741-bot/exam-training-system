@@ -174,6 +174,13 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+	let saveTimeout = null;
+	let lastSaveTime = 0;
+	const MIN_SAVE_INTERVAL = 2000; // 至少间隔2秒
+	let autoSaveTimer = null;
+	let isSaving = false;
+    let isExamSubmitted = false;
+
 	function safeT(key, fallback = '') {
 		if (window.i18n && typeof window.i18n.t === 'function') {
 			return window.i18n.t(key) || fallback || key;
@@ -231,6 +238,19 @@
 		const STORAGE_FLAG = `${STORAGE_PREFIX}_flag`;
 		const STORAGE_CURR = `${STORAGE_PREFIX}_curr`;
 		const RESET_HANDLED_KEY = `${STORAGE_PREFIX}_reset_handled`;
+
+		// ========== 从服务器加载保存的答案 ==========
+		const savedAnswers = {{ saved_answers | safe }};
+
+		// 将变量暴露到全局，供其他函数使用
+		window.TOTAL = TOTAL;
+		window.USER_ID = USER_ID;
+		window.EXAM_ID = EXAM_ID;
+		window.STORAGE_PREFIX = STORAGE_PREFIX;
+		window.STORAGE_TIME = STORAGE_TIME;
+		window.STORAGE_ANS = STORAGE_ANS;
+		window.STORAGE_FLAG = STORAGE_FLAG;
+		window.STORAGE_CURR = STORAGE_CURR;
 
 		// 在页面加载时检查 sessionStorage 中存储的上次用户 ID，如果不匹配则清空所有相关 localStorage
 		const LAST_USER_KEY = `exam_last_user`;
@@ -451,11 +471,12 @@
 		};
 
 		document.querySelectorAll('input').forEach(i => {
-		i.addEventListener('change', () => {
-			refreshAnsweredStatus();
-			saveState();
-			updateUI();
-		});
+			i.addEventListener('change', () => {
+				refreshAnsweredStatus();
+				saveDraftWithDebounce(); // 使用防抖
+				saveState();
+				updateUI();
+			});
 		});
 
 		// ==================== 提交控制 ====================
@@ -486,7 +507,6 @@
 				try {
 					const formData = new FormData(document.getElementById('exam-form'));
 					
-					// 添加 X-Requested-With 头标识 AJAX 请求
 					const response = await fetch(`/exam/submit/${EXAM_ID}`, {
 						method: 'POST',
 						headers: {
@@ -500,6 +520,26 @@
 					if (result.success) {
 						// 关闭确认模态框
 						if (modal) modal.hide();
+						
+						// 标记考试已提交
+						isExamSubmitted = true;
+						
+						// 停止自动保存定时器
+						if (autoSaveTimer) {
+							clearInterval(autoSaveTimer);
+							autoSaveTimer = null;
+							console.log('⏹️ 自动保存已停止（考试提交成功）');
+						}
+						
+						// 清除本地存储的草稿
+						const keysToRemove = [
+							`${STORAGE_PREFIX}_time_left`,
+							`${STORAGE_PREFIX}_ans`,
+							`${STORAGE_PREFIX}_flag`,
+							`${STORAGE_PREFIX}_curr`
+						];
+						keysToRemove.forEach(k => localStorage.removeItem(k));
+						console.log('🗑️ 本地草稿已清除');
 						
 						// 显示结果弹窗
 						showResultModal(result.score, result.is_passed, result.pass_score, result.exam_title);
@@ -525,8 +565,7 @@
 				}
 			};
 		}
-		// 防误关页
-		window.onbeforeunload = () => safeT('exam_active_leave_page_lost_answer');
+		// 防误关页window.onbeforeunload = () => safeT('exam_active_leave_page_lost_answer');
 
 		// 定期自动保存
 		setInterval(saveState, 15000);
@@ -536,11 +575,19 @@
 		updateUI();
 		refreshQuestionTypes()
 		if (window.i18n) {
-		window.i18n.subscribe(() => {
-			updateUI();
-			refreshQuestionTypes()
-		});
+			window.i18n.subscribe(() => {
+				updateUI();
+				refreshQuestionTypes()
+			});
 		}
+
+		// 不影响现有逻辑，只是额外的恢复功能
+		if (savedAnswers && Object.keys(savedAnswers).length > 0) {
+			console.log('恢复草稿答案:', Object.keys(savedAnswers).length);
+			restoreSavedAnswers(savedAnswers);
+		}
+		// 启动自动保存（不影响手动保存）
+		startAutoSave();
 	});
 
 	// ==================== 新增：提交评分弹窗 ====================
@@ -581,41 +628,21 @@
 		const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
 		resultModal.show();
 
-		// ✅ 修复：从 DOM 属性获取 exam_id 和 user_id
-		const examIdElem = document.querySelector('[data-exam-id]');
-		const userIdElem = document.querySelector('[data-user-id]');
-		const exam_id = examIdElem ? examIdElem.dataset.examId : {{ exam_id }};
-		const user_id = userIdElem ? userIdElem.dataset.userId : {{ user_id | tojson }};
-		const prefix = `exam_${user_id}_${exam_id}`;
-		
+		// 从 DOM 属性获取 exam_id 和 user_id
+		const prefix = `exam_${window.USER_ID}_${window.EXAM_ID}`;
 		
 		// 清理本地存储
 		const keysToRemove = [
-			`${PREFIX}_time_left`,
-			`${PREFIX}_ans`,
-			`${PREFIX}_flag`,
-			`${PREFIX}_curr`
+			`${prefix}_time_left`,
+			`${prefix}_ans`,
+			`${prefix}_flag`,
+			`${prefix}_curr`
 		];
 		keysToRemove.forEach(k => localStorage.removeItem(k));
 		
 		// 停止计时器
 		if (window.examTimer) clearInterval(window.examTimer);
 	}
-
-	// ========== 从服务器加载保存的答案 ==========
-	const savedAnswers = {{ saved_answers | safe }};
-
-	// 页面加载时恢复答案（仅当有保存的答案时）
-	document.addEventListener('DOMContentLoaded', function() {
-		// 不影响现有逻辑，只是额外的恢复功能
-		if (savedAnswers && Object.keys(savedAnswers).length > 0) {
-			console.log('恢复草稿答案:', Object.keys(savedAnswers).length);
-			restoreSavedAnswers(savedAnswers);
-		}
-		
-		// 启动自动保存（不影响手动保存）
-		startAutoSave();
-	});
 
 	// 恢复保存的答案（新增函数）
 	function restoreSavedAnswers(answers) {
@@ -657,12 +684,15 @@
 	}
 
 	// ========== 自动保存功能 ==========
-	let autoSaveTimer = null;
-	let isSaving = false;
 	async function saveDraftWithRetry(retryCount = 0) {
+		// ✅ 新增：如果考试已提交，不保存草稿
+		if (isExamSubmitted) {
+			console.log('⏭️ 考试已提交，跳过草稿保存');
+			return;
+		}
+		
 		const maxRetries = 3;
 
-		// ✅ 确保 collectAnswers 已定义
 		if (typeof collectAnswers !== 'function') {
 			console.warn('collectAnswers 函数未定义，跳过保存');
 			return;
@@ -700,24 +730,92 @@
 		}
 	}
 
+    // 修改提交成功后的处理
+    async function handleSubmitSuccess(result) {
+        // 标记考试已提交
+        isExamSubmitted = true;
+        
+        // 停止自动保存
+        if (autoSaveTimer) {
+            clearInterval(autoSaveTimer);
+            autoSaveTimer = null;
+            console.log('⏹️ 自动保存已停止');
+        }
+        
+		// 使用 window 上挂载的全局变量
+		const prefix = `exam_${window.USER_ID}_${window.EXAM_ID}`;
+		const keysToRemove = [
+			`${prefix}_time_left`,
+			`${prefix}_ans`,
+			`${prefix}_flag`,
+			`${prefix}_curr`
+		];
+		keysToRemove.forEach(k => localStorage.removeItem(k));
+        
+        // 显示结果弹窗
+        showResultModal(result.score, result.is_passed, result.pass_score, result.exam_title);
+    }
+
+	function saveDraftWithDebounce() {
+		const now = Date.now();
+		if (now - lastSaveTime < MIN_SAVE_INTERVAL) {
+			// 如果距离上次保存时间太短，延迟执行
+			if (saveTimeout) clearTimeout(saveTimeout);
+			saveTimeout = setTimeout(() => {
+				saveDraftWithRetry();
+			}, MIN_SAVE_INTERVAL);
+			return;
+		}
+		saveDraftWithRetry();
+	}
+
 	function startAutoSave() {
 		if (autoSaveTimer) clearInterval(autoSaveTimer);
 		
 		// 每30秒自动保存
 		autoSaveTimer = setInterval(() => {
+			// 如果考试已提交，停止定时器
+			if (isExamSubmitted) {
+				clearInterval(autoSaveTimer);
+				autoSaveTimer = null;
+				console.log('⏹️ 自动保存已停止（考试已提交）');
+				return;
+			}
 			saveDraftWithRetry();
 		}, 30000);
-		
-		// 页面关闭前强制保存
-		window.addEventListener('beforeunload', () => {
-			saveDraftSync();
-		});
-		
+				
 		// 每5分钟检查一次是否还有未保存的答案
 		setInterval(() => {
+			// 如果考试已提交，跳过检查
+			if (isExamSubmitted) return;
 			checkPendingSave();
 		}, 300000);
 	}
+
+	// ==================== 页面卸载处理 ====================
+	// ✅ 合并所有 beforeunload 逻辑到一个地方
+	window.addEventListener('beforeunload', function(e) {
+		// 提示用户（仅当考试未提交时）
+		if (!isExamSubmitted) {
+			// 防误关页
+			e.preventDefault();
+			e.returnValue = safeT('exam_active_leave_page_lost_answer');
+			return e.returnValue;
+		}
+	});
+
+	// ✅ 页面关闭前保存（仅当考试未提交时）
+	window.addEventListener('pagehide', function() {
+		if (!isExamSubmitted) {
+			autoSaveDraft();
+		}
+		// 停止自动保存
+		if (autoSaveTimer) {
+			clearInterval(autoSaveTimer);
+			autoSaveTimer = null;
+		}
+	});
+
 	// 同步保存（用于页面关闭）
 	function saveDraftSync() {
 		const answers = collectAnswers();
@@ -735,16 +833,13 @@
 	async function autoSaveDraft() {
 		// 避免重复保存
 		if (isSaving) return;
-		
 		isSaving = true;
 		try {
 			const answers = collectAnswers();
-			
 			// 只在有答案时才保存
 			if (Object.keys(answers).length === 0) {
 				return;
 			}
-			
 			const response = await fetch('/api/exam/draft', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -793,19 +888,6 @@
 			indicator.style.opacity = '0';
 		}, 2000);
 	}
-
-	// 页面关闭前保存
-	window.addEventListener('beforeunload', () => {
-		// 异步保存，不阻塞页面关闭
-		autoSaveDraft();
-	});
-
-	// 停止自动保存（页面卸载时）
-	window.addEventListener('beforeunload', () => {
-		if (autoSaveTimer) {
-			clearInterval(autoSaveTimer);
-		}
-	});
 </script>
 
 <!-- 添加保存提示 -->
