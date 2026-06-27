@@ -1059,5 +1059,8 @@
 "custom_push_hint": "Click [Confirm & Push] → Open settings, pick targets.",
 "target_push": "Target push(for specific users)",
 "notify_sing_in_hint": "‌Let all registered users here know it's time to check in",
-"push_to_all_user": "Push to all users"
+"push_to_all_user": "Push to all users",
+"opened_from_binding": "Opened from training binding",
+"reassign_exam_to_checked_in_trainees": "Reassign this exam to checked-in trainees",
+"confirm_reassign": "‌Confirm to reassign exam {0} to all checked-in trainees?"
 }

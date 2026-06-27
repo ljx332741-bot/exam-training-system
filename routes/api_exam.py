@@ -488,7 +488,6 @@ def submit_exam(exam_id):
     
     logger.info(f"📥 收到交卷请求：用户 {user_id}，考试 {exam_id}")
 
-    # 检测是否为 AJAX 请求
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     
     # 获取开始时间和提交时间
@@ -496,29 +495,20 @@ def submit_exam(exam_id):
     started_at_str = None
     if status and status.data:
         started_at_str = status.data.get('started_at')
-        
-        # 检查是否已交卷
         if status.data.get('is_submitted'):
             flash({'msg': 'already_submitted', 'params': []}, 'warning')
             return redirect(url_for('exam.dashboard'))
     
-    # ✅ 计算用时
+    # 计算用时
     time_used = None
     if started_at_str:
         try:
-            # 统一处理时间格式
             start_str = started_at_str.replace('Z', '+00:00') if started_at_str.endswith('Z') else started_at_str
             start_dt = datetime.fromisoformat(start_str)
             time_used = int((now - start_dt).total_seconds())
             logger.info(f"📊 计算用时: {time_used} 秒")
-            print(f"[DEBUG] started_at: {started_at_str}")
-            print(f"[DEBUG] now: {now.isoformat()}")
-            print(f"[DEBUG] time_used: {time_used}")
         except Exception as e:
             logger.warning(f"计算用时失败: {e}")
-            print(f"[DEBUG] 计算用时异常: {e}")
-    else:
-        print(f"[DEBUG] 没有找到 started_at")
     
     # 更新考试状态
     update_data = {
@@ -539,13 +529,14 @@ def submit_exam(exam_id):
         db.table("user_exam_status").insert(update_data).execute()
         logger.info(f"✅ 插入考试状态成功")
     
-    # 超时检查# ✅ 获取及格分数
+    # 获取考试信息
     exam_info = db.table("exams").select("duration, pass_score, title").eq("id", exam_id).maybe_single().execute()
     duration_minutes = exam_info.data.get("duration", 60) if exam_info.data else 60
     pass_score = exam_info.data.get('pass_score', 85) if exam_info.data else 85
     exam_title = exam_info.data.get('title', '考试') if exam_info.data else '考试'
     total_seconds = duration_minutes * 60
     
+    # 超时检查
     if started_at_str and time_used and time_used > total_seconds:
         if is_ajax:
             return jsonify({"success": False, "message": "exam_timeout", "params": []}), 400
@@ -574,16 +565,10 @@ def submit_exam(exam_id):
         flash({'msg': 'grading_error', 'params': []}, 'danger')
         return redirect(url_for('exam.dashboard'))
 
-    
     total_score = grade['total']
     is_passed = total_score >= pass_score
-    pass_status = "及格" if is_passed else "不及格"
     
-    # 可以存储到 exam_results 表（如果需要）
-    # 或者在 flash 消息中显示
-    flash(f'✅ 交卷成功！得分：{total_score}（{pass_status}，及格线：{pass_score}分）', 
-          'success' if is_passed else 'warning')
-    # 保存成绩（传入用时）
+    # 保存成绩
     customs = {f"c{i}": request.form.get(f"custom{i}", "") for i in range(1, 6)}
     try:
         exam.save_result(
@@ -600,34 +585,23 @@ def submit_exam(exam_id):
         flash({'msg': 'save_score_failed', 'params': []}, 'danger')
         return redirect(url_for('exam.dashboard'))
     
-    # 更新考试状态（设置 submitted_at）
+    # ========== 关键修复：删除草稿 ==========
     try:
-        update_data = {
-            "is_submitted": True,
-            "submitted_at": now.isoformat(),
-            "reset_at": None
-        }
-        
-        if status and status.data:
-            db.table("user_exam_status").update(update_data).eq("id", status.data['id']).execute()
+        delete_result = db.table("user_exam_drafts")\
+            .delete()\
+            .eq("user_id", user_id)\
+            .eq("exam_id", int(exam_id))\
+            .execute()
+        if delete_result.data:
+            logger.info(f"🗑️ 草稿已删除: user={user_id}, exam={exam_id}, 删除了 {len(delete_result.data)} 条记录")
         else:
-            update_data.update({
-                "user_id": user_id,
-                "exam_id": exam_id,
-                "started_at": started_at_str or now.isoformat()
-            })
-            db.table("user_exam_status").insert(update_data).execute()
-        
-        logger.info(f"✅ 考试状态已更新")
+            logger.info(f"🗑️ 无需删除草稿: user={user_id}, exam={exam_id} (不存在)")
     except Exception as e:
-        logger.error(f"❌ 状态写入失败: {e}")
+        # 删除草稿失败不影响主流程，只记录日志
+        logger.warning(f"删除草稿失败（不影响主流程）: {e}")
     
-    # 清理草稿
-    db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-
-    # ✅ 根据请求类型返回不同格式
+    # 根据请求类型返回
     if is_ajax:
-        # 返回 JSON 供前端弹窗显示
         return jsonify({
             "success": True,
             "score": total_score,
@@ -637,7 +611,6 @@ def submit_exam(exam_id):
             "message": f'交卷成功！得分：{total_score}（{"及格" if is_passed else "不及格"}，及格线：{pass_score}分）'
         })
     else:
-        # 传统表单提交：显示 flash 消息并重定向
         if is_passed:
             flash(f'✅ 交卷成功！得分：{total_score}（及格，及格线：{pass_score}分）', 'success')
         else:
@@ -983,34 +956,45 @@ def save_exam_draft():
         if not user_id:
             return jsonify({"success": False, "message": "未登录"}), 401
         
-        # ✅ 关键修复：确保 answers 是字典，不要手动 json.dumps
+        # 确保 answers 是字典，不要手动 json.dumps
         if isinstance(answers, str):
             try:
                 answers = json.loads(answers)
             except:
                 answers = {}
         
-        # ✅ 直接存储字典对象（让 Supabase 自动处理 JSON）
+        # 直接存储字典对象（让 Supabase 自动处理 JSON）
         now_utc = datetime.now(timezone.utc).isoformat()
+
+        # 使用 upsert - 先查询是否存在，决定是否设置 created_at
+        # 方式1：直接 upsert，让数据库自动处理（如果 created_at 有默认值）
+        # 方式2：先检查是否存在
+        existing = db.table("user_exam_drafts")\
+            .select("created_at")\
+            .eq("user_id", user_id)\
+            .eq("exam_id", int(exam_id))\
+            .maybe_single()\
+            .execute()
+
+        # 准备数据
+        data_to_upsert = {
+            "user_id": user_id,
+            "exam_id": int(exam_id),
+            "answers": answers,
+            "updated_at": now_utc
+        }
         
-        existing = db.table("user_exam_drafts").select("id").eq("user_id", user_id).eq("exam_id", int(exam_id)).maybe_single().execute()
+        # 如果不存在，设置 created_at；否则不设置（让数据库保留原值）
+        if not existing or not existing.data:
+            data_to_upsert["created_at"] = now_utc
         
-        if existing and existing.data:
-            db.table("user_exam_drafts").update({
-                "answers": answers,  # ✅ 直接传字典
-                "updated_at": now_utc
-            }).eq("id", existing.data['id']).execute()
-            logger.info(f"草稿已更新: user={user_id}, exam={exam_id}, 答案数={len(answers)}")
-        else:
-            db.table("user_exam_drafts").insert({
-                "user_id": user_id,
-                "exam_id": int(exam_id),
-                "answers": answers,  # ✅ 直接传字典
-                "created_at": now_utc,
-                "updated_at": now_utc
-            }).execute()
-            logger.info(f"草稿已创建: user={user_id}, exam={exam_id}, 答案数={len(answers)}")
+        result = db.table("user_exam_drafts").upsert(
+            data_to_upsert,
+            on_conflict="user_id, exam_id"
+        ).execute()
         
+        action = "创建" if not existing or not existing.data else "更新"
+        logger.info(f"草稿已{action}(upsert): user={user_id}, exam={exam_id}, 答案数={len(answers)}")
         return jsonify({"success": True, "saved_count": len(answers)})
         
     except Exception as e:

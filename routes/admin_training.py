@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 from services.db import get_supabase, get_supabase_admin
 from services import auth
 from services.export import find_wkhtmltopdf
-from utils.status import get_exam_status
+from utils.status import get_exam_status, get_training_status
 from utils.training_helpers import get_training_country_templates_status, _save_country_template
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
@@ -1765,351 +1765,6 @@ def completion_report_page():
     """完成度报表页面"""
     return render_template('admin/training_completion_report.html')
 
-'''
-@admin_training_bp.route('/api/admin/training/completion_report')
-@login_required
-@admin_required
-def get_completion_report():
-    """获取培训完成度报表数据"""
-    try:
-        db = get_supabase_admin()
-        
-        # 获取当前管理员的权限范围
-        allowed_countries = get_admin_allowed_countries()
-        is_dev = is_developer()
-        current_role = session.get('role')
-        
-        # 获取筛选参数
-        name = request.args.get('name', '').strip()
-        country_filter = request.args.get('country', '').strip()
-        training_name = request.args.get('training_name', '').strip()
-        training_id = request.args.get('training_id', '').strip()
-        exam_name = request.args.get('exam_name', '').strip()
-        status = request.args.get('status', '').strip()
-        start_date = request.args.get('start_date', '')
-        end_date = request.args.get('end_date', '')
-        page = request.args.get('page', 1, type=int)
-        per_page = request.args.get('per_page', 20, type=int)
-        
-        # ========== 1. 获取培训 ==========
-        trainings_query = db.table("trainings").select("*").is_("deleted_at", "null")
-        
-        if training_id:
-            trainings_query = trainings_query.eq("id", int(training_id))
-        elif training_name:
-            trainings_query = trainings_query.ilike("name", f"%{training_name}%")
-        
-        if start_date:
-            trainings_query = trainings_query.gte("start_time", start_date)
-        if end_date:
-            trainings_query = trainings_query.lte("end_time", end_date)
-        
-        all_trainings = trainings_query.execute().data or []
-        
-        if not is_dev and allowed_countries:
-            filtered_trainings = []
-            for t in all_trainings:
-                training_country = t.get('country')
-                if training_country and training_country in allowed_countries:
-                    filtered_trainings.append(t)
-            all_trainings = filtered_trainings
-        
-        if not all_trainings:
-            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
-        
-        training_ids = [t['id'] for t in all_trainings]
-        trainings_dict = {t['id']: t for t in all_trainings}
-        
-        # ========== 2. 获取绑定关系 ==========
-        bindings_result = db.table("training_exam_bindings").select("*")\
-            .in_("training_id", training_ids)\
-            .is_("deleted_at", "null")\
-            .execute()
-        bindings = bindings_result.data if bindings_result else []
-        
-        if not bindings:
-            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
-        
-        # ========== 3. 获取考试信息 ==========
-        exam_ids = list(set([b.get('exam_id') for b in bindings]))
-        exams_result = db.table("exams").select("*").in_("id", exam_ids).is_("deleted_at", "null").execute()
-        exams_dict = {e['id']: e for e in (exams_result.data or [])}
-        
-        if exam_name:
-            filtered_bindings = []
-            for b in bindings:
-                exam = exams_dict.get(b['exam_id'])
-                if exam and exam_name.lower() in exam.get('title', '').lower():
-                    filtered_bindings.append(b)
-            bindings = filtered_bindings
-        
-        if not bindings:
-            return jsonify({"data": [], "total": 0, "page": 1, "per_page": per_page, "summary": {}})
-        
-        # ========== 4. 获取用户 ==========
-        all_countries = set()
-        for t in all_trainings:
-            country = t.get('country')
-            if country:
-                all_countries.add(country)
-        
-        if all_countries:
-            users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
-                .in_("country", list(all_countries))\
-                .eq("user_status", "registered")\
-                .is_("deleted_at", "null")\
-                .eq("is_resign", False)
-        else:
-            users_query = db.table("users").select("*")\
-                .eq("user_status", "registered")\
-                .is_("deleted_at", "null")\
-                .eq("is_resign", False)
-        
-        if country_filter:
-            users_query = users_query.ilike("country", f"%{country_filter}%")
-        
-        users_result = users_query.execute()
-        all_users = users_result.data if users_result else []
-
-        if name:
-            name_lower = name.lower()
-            filtered_users = []
-            for u in all_users:
-                name_en = (u.get('name_en') or '').lower()
-                name_cn = (u.get('name_cn') or '').lower()
-                email = (u.get('email') or '').lower()
-                if name_lower in name_en or name_lower in name_cn or name_lower in email:
-                    filtered_users.append(u)
-            all_users = filtered_users
-
-        users_by_country = {}
-        for u in all_users:
-            country = u.get('country')
-            if country not in users_by_country:
-                users_by_country[country] = []
-            users_by_country[country].append(u)
-        
-        # ========== 5. 获取分配关系 ==========
-        # 培训分配
-        training_assign_res = db.table("training_assignments").select("training_id, user_id")\
-            .in_("training_id", training_ids)\
-            .execute()
-        training_assign_map = {}
-        for a in (training_assign_res.data or []):
-            key = f"{a['training_id']}_{a['user_id']}"
-            training_assign_map[key] = True
-        
-        # 考试分配
-        exam_assign_res = db.table("exam_assignments").select("exam_id, user_id")\
-            .in_("exam_id", exam_ids)\
-            .execute()
-        exam_assign_map = {}
-        for a in (exam_assign_res.data or []):
-            key = f"{a['exam_id']}_{a['user_id']}"
-            exam_assign_map[key] = True
-        
-        # ========== 6. 获取完成度数据 ==========
-        summary_result = db.table("training_completion_summary").select("*")\
-            .in_("training_id", training_ids)\
-            .in_("exam_id", exam_ids)\
-            .execute()
-        summary_list = summary_result.data if summary_result else []
-        
-        summary_index = {}
-        for s in summary_list:
-            key = (s.get('training_id'), s.get('exam_id'), s.get('user_id'))
-            summary_index[key] = s
-        
-        # ========== 7. 组装数据（修复状态判断）==========
-        all_data = []
-        
-        for binding in bindings:
-            training_id_val = binding.get('training_id')
-            exam_id = binding.get('exam_id')
-            pass_score = binding.get('pass_score', 85)
-            
-            training = trainings_dict.get(training_id_val)
-            exam = exams_dict.get(exam_id)
-            
-            if not training or not exam:
-                continue
-            
-            training_country = training.get('country', '')
-            if not training_country:
-                continue
-            
-            users = users_by_country.get(training_country, [])
-            
-            # 角色过滤
-            if current_role == 'admin':
-                users = [u for u in users if u.get('role') not in ['super_admin', 'developer']]
-            elif current_role == 'super_admin' and not is_dev:
-                users = [u for u in users if u.get('role') != 'developer']
-            
-            for user in users:
-                user_id = user.get('id')
-                if not user_id:
-                    continue
-                
-                key = (training_id_val, exam_id, user_id)
-                summary_data = summary_index.get(key, {})
-                
-                # ✅ 获取分配关系
-                training_assign_key = f"{training_id_val}_{user_id}"
-                exam_assign_key = f"{exam_id}_{user_id}"
-                
-                has_training_assign = training_assign_key in training_assign_map
-                has_exam_assign = exam_assign_key in exam_assign_map
-                
-                # ✅ 获取签到和考试状态
-                is_signed = summary_data.get('is_signed', False)
-                is_completed = summary_data.get('is_completed', False)
-                is_passed = summary_data.get('is_passed', False)
-                score = summary_data.get('score')
-                
-                # ✅ 修复：培训状态判断
-                if is_signed:
-                    training_status_display = 'signed'  # 已签到
-                elif has_training_assign:
-                    training_status_display = 'pending'  # 待签到
-                else:
-                    training_status_display = 'not_assigned'  # 未推送
-                
-                # ✅ 修复：考试状态判断
-                if is_completed:
-                    exam_status_display = 'completed'  # 已完成
-                elif has_exam_assign:
-                    exam_status_display = 'pending'  # 待考试（已分配）
-                elif is_signed:
-                    # 已签到但考试未分配（理论上签到后会自动分配，这里作为兜底）
-                    exam_status_display = 'pending'
-                else:
-                    exam_status_display = 'not_assigned'  # 未推送
-                
-                # 状态筛选（前端筛选逻辑）
-                if status:
-                    if status == 'completed' and not is_passed:
-                        continue
-                    if status == 'incomplete' and (is_completed or is_passed):
-                        continue
-                    if status == 'failed' and (not is_completed or is_passed):
-                        continue
-                    if status == 'not_signed' and is_signed:
-                        continue
-                    if status == 'not_exam' and (is_completed or not is_signed):
-                        continue
-                
-                all_data.append({
-                    "training_id": training_id_val,
-                    "training_name": training.get('name', ''),
-                    "training_country": training_country,
-                    "training_start": training.get('start_time'),
-                    "training_end": training.get('end_time'),
-                    "exam_id": exam_id,
-                    "exam_name": exam.get('title', ''),
-                    "pass_score": pass_score,
-                    "user_id": user_id,
-                    "user_name": user.get('name_cn') or user.get('name_en', ''),
-                    "user_email": user.get('email', ''),
-                    "user_country": user.get('country', ''),
-                    "wh_id": user.get('wh_id', ''),
-                    "user_role": user.get('role', 'user'),
-                    "is_signed": is_signed,
-                    "is_completed": is_completed,
-                    "is_passed": is_passed,
-                    "score": score,
-                    "training_status": training_status_display,  # ✅ 新增
-                    "exam_status": exam_status_display,          # ✅ 新增
-                    "has_training_assign": has_training_assign,  # ✅ 新增
-                    "has_exam_assign": has_exam_assign,          # ✅ 新增
-                    "signed_at": summary_data.get('signed_at'),
-                    "completed_at": summary_data.get('completed_at')
-                })
-        
-        # 分页
-        total = len(all_data)
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        paginated = all_data[start_idx:end_idx]
-
-        # ✅ 修复：统计汇总（基于唯一学员，避免重复计数）
-        unique_users = set()
-        unique_users_signed = set()      # 已签到的唯一学员
-        unique_users_completed = set()   # 已完成考试的唯一学员
-        unique_users_passed = set()      # 已及格的唯一学员
-
-        # 用于计算签到率的辅助数据
-        training_user_map = {}  # {training_id: set(user_ids)}
-
-        for d in all_data:
-            user_id = d.get('user_id')
-            training_id = d.get('training_id')
-            
-            if not user_id:
-                continue
-            
-            unique_users.add(user_id)
-            
-            if d.get('is_signed'):
-                unique_users_signed.add(user_id)
-            
-            if d.get('is_completed'):
-                unique_users_completed.add(user_id)
-            
-            if d.get('is_passed'):
-                unique_users_passed.add(user_id)
-
-        # 计算及格率（基于唯一学员）
-        total_users_count = len(unique_users)
-        passed_users_count = len(unique_users_passed)
-
-        if total_users_count > 0:
-            pass_rate = round(passed_users_count / total_users_count * 100, 1)
-        else:
-            pass_rate = 0
-
-        # 可选：计算签到率
-        signed_users_count = len(unique_users_signed)
-        if total_users_count > 0:
-            sign_rate = round(signed_users_count / total_users_count * 100, 1)
-        else:
-            sign_rate = 0
-
-        # 可选：计算考试完成率
-        completed_users_count = len(unique_users_completed)
-        if total_users_count > 0:
-            completion_rate = round(completed_users_count / total_users_count * 100, 1)
-        else:
-            completion_rate = 0
-
-        logger.info(f"统计汇总: 总学员={total_users_count}, 已签到={signed_users_count} ({sign_rate}%), "
-                    f"已完成考试={completed_users_count} ({completion_rate}%), "
-                    f"已及格={passed_users_count} ({pass_rate}%)")
-
-        summary_stats = {
-            "total_users": total_users_count,
-            "total_signed": signed_users_count,
-            "total_completed": completed_users_count,
-            "total_passed": passed_users_count,
-            "pass_rate": pass_rate,
-            "sign_rate": sign_rate,           # 可选：返回签到率
-            "completion_rate": completion_rate  # 可选：返回完成率
-        }
-        
-        return jsonify({
-            "data": paginated,
-            "total": total,
-            "page": page,
-            "per_page": per_page,
-            "summary": summary_stats
-        })
-        
-    except Exception as e:
-        logger.error(f"报表API错误: {e}")
-        logger.error(traceback.format_exc())
-        return jsonify({"error": str(e), "data": [], "total": 0}), 500
-'''
-
 @admin_training_bp.route('/api/admin/training/completion_report')
 @login_required
 @admin_required
@@ -2130,6 +1785,8 @@ def get_completion_report():
         training_id = request.args.get('training_id', '').strip()
         exam_name = request.args.get('exam_name', '').strip()
         status = request.args.get('status', '').strip()
+        training_status_filter = request.args.get('training_status', '').strip()
+        exam_status_filter = request.args.get('exam_status', '').strip()
         start_date = request.args.get('start_date', '')
         end_date = request.args.get('end_date', '')
         page = request.args.get('page', 1, type=int)
@@ -2226,11 +1883,7 @@ def get_completion_report():
                     filtered_users.append(u)
             all_users = filtered_users
 
-        # ========== ✅ 关键修复：使用 permissions.py 的过滤函数 ==========
-        # 注意：filter_users_by_permission 会同时处理：
-        # 1. 角色权限（管理员看不到超管/开发者）
-        # 2. 国家权限
-        # 3. 添加 created_by_name 字段
+        # ========== 使用 permissions.py 的过滤函数 ==========
         all_users = filter_users_by_permission(
             all_users, 
             allowed_countries=allowed_countries,
@@ -2274,7 +1927,7 @@ def get_completion_report():
             key = f"{a['training_id']}_{a['user_id']}"
             attendance_map[key] = {
                 'sign_time': a.get('sign_time'),
-                'signature_url': a.get('signature_url')  # ✅ 增加 signature_url
+                'signature_url': a.get('signature_url')
             }
         
         # 5.4 获取考试成绩记录
@@ -2289,8 +1942,18 @@ def get_completion_report():
                 'score': r.get('total_score'),
                 'submitted_at': r.get('submitted_at')
             }
+
+        # ========== 6. 预计算培训和考试状态（使用 status.py） ==========
+        training_status_cache = {}
+        exam_status_cache = {}
         
-        # ========== 6. 组装数据（实时计算）==========
+        for training in all_trainings:
+            training_status_cache[training['id']] = get_training_status(training)
+        
+        for exam in exams_dict.values():
+            exam_status_cache[exam['id']] = get_exam_status(exam)
+  
+        # ========== 7. 组装数据（实时计算）==========
         all_data = []
         
         for binding in bindings:
@@ -2307,7 +1970,11 @@ def get_completion_report():
             training_country = training.get('country', '')
             if not training_country:
                 continue
-            
+
+            # 使用预计算的状态
+            training_status_global = training_status_cache.get(training_id_val, 'unknown')
+            exam_status_global = exam_status_cache.get(exam_id, 'unknown')
+  
             users = users_by_country.get(training_country, [])
             
             # 角色过滤
@@ -2341,10 +2008,10 @@ def get_completion_report():
                 score = exam_result.get('score')
                 is_passed = score is not None and score >= pass_score if is_completed else False
 
-                # ✅ 修复：判断是否真正签到（有签名）
+                # 判断是否真正签到（有签名）
                 is_signed_completed = is_signed and signature_url  # 有签到记录且有签名
 
-                # ✅ 判断是否需要重新签名
+                # 判断是否需要重新签名
                 is_resign_needed = is_signed and not signature_url  # 有签到记录但无签名
 
                 # 状态判断
@@ -2365,7 +2032,13 @@ def get_completion_report():
                     exam_status_display = 'pending'
                 else:
                     exam_status_display = 'not_assigned'
-                
+
+                # 状态筛选（新增培训和考试全局状态筛选）
+                if training_status_filter and training_status_global != training_status_filter:
+                    continue
+                if exam_status_filter and exam_status_global != exam_status_filter:
+                    continue
+    
                 # 状态筛选
                 if status:
                     if status == 'completed' and not is_passed:
@@ -2385,8 +2058,10 @@ def get_completion_report():
                     "training_country": training_country,
                     "training_start": training.get('start_time'),
                     "training_end": training.get('end_time'),
+                    "training_status_global": training_status_global,
                     "exam_id": exam_id,
                     "exam_name": exam.get('title', ''),
+                    "exam_status_global": exam_status_global,
                     "pass_score": pass_score,
                     "user_id": user_id,
                     "user_name": user.get('name_cn') or user.get('name_en', ''),
@@ -2532,7 +2207,7 @@ def export_completion_report():
         users_result = users_query.execute()
         all_users = users_result.data if users_result else []
 
-        # ========== ✅ 关键修复：使用 permissions.py 的过滤函数 ==========
+        # ========== 使用 permissions.py 的过滤函数 ==========
         all_users = filter_users_by_permission(
             all_users,
             allowed_countries=allowed_countries,

@@ -23,7 +23,7 @@ def get_exam_status(exam, has_started=False):
     start_dt = datetime.fromisoformat(start_time)
     end_dt = datetime.fromisoformat(end_time)
 
-    # ✅ 关键修改：如果有考生已经开始考试，即使有效期已过，也返回 active
+    # 如果有考生已经开始考试，即使有效期已过，也返回 active
     if has_started and now > end_dt:
         return 'active'  # 保持进行中状态
         
@@ -34,3 +34,33 @@ def get_exam_status(exam, has_started=False):
         return 'closed'
     else:
         return 'active'
+
+def get_training_status(training):
+    """根据培训对象计算状态"""
+    if not training:
+        return 'unknown'
+    
+    now = datetime.now(timezone.utc)
+    start_time = training.get('start_time')
+    end_time = training.get('end_time')
+    
+    # 检查是否已删除
+    if training.get('deleted_at'):
+        return 'deleted'
+    
+    if not start_time or not end_time:
+        return 'draft'
+    
+    try:
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+        
+        if now < start_dt:
+            return 'pending'  # 未开始
+        elif now > end_dt:
+            return 'closed'   # 已关闭
+        else:
+            return 'active'   # 进行中
+    except Exception as e:
+        logger.warning(f"解析培训时间失败: {e}")
+        return 'draft'

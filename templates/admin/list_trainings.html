@@ -50,7 +50,33 @@
         width: 70px;
         display: inline-block;
     }
-    /* 在 list_trainings.html 的 style 标签中添加 */
+
+    /* 绑定关系绑定考试绑定链接样式 */
+    .exam-binding-link {
+        color: #0d6efd !important;
+        text-decoration: none;
+        font-weight: 600;
+        transition: all 0.2s ease;
+    }
+
+    .exam-binding-link:hover {
+        color: #0a58ca !important;
+        text-decoration: underline !important;
+    }
+
+    /* 或者使用不同的颜色突出显示 */
+    .exam-binding-link {
+        color: #6f42c1 !important;  /* 紫色，更醒目 */
+        text-decoration: none;
+        font-weight: 600;
+    }
+
+    .exam-binding-link:hover {
+        color: #5a32a3 !important;
+        text-decoration: underline !important;
+    }
+
+    /* 绑定关系绑定考试的三角形符号样式 */
     .expand-icon-wrapper {
         position: relative;
         display: inline-block;
@@ -1418,11 +1444,11 @@
 
         const newRow = tbody.insertRow(0);
         newRow.id = 'new-training-row';
-        // ✅ 安全提取预填值，全部设默认空字符串
+        // 安全提取预填值，全部设默认空字符串
         const prefillCountry = prefillData ? (prefillData.country || '') : '';
         const prefillName = prefillData ? (prefillData.name || '') : '';
     
-        // ✅ 关键修复1：新增时自动填充起止时间
+        // 新增时自动填充起止时间
         let prefillStart = '';
         let prefillEnd = '';
         
@@ -1461,7 +1487,8 @@
                 <input type="hidden" id="newCountryCode">
             </td>
             <td><input type="text" id="newName" class="form-control form-control-sm" value="${escapeHtml(prefillName)}" 
-                data-i18n-placeholder="placeholder_training_name" placeholder="培训名称"></td>
+                data-i18n-placeholder="placeholder_training_name" placeholder="培训名称">
+            </td>
             <td colspan="4"></td>
             <td>
                 <input type="datetime-local" id="newStartTime" class="form-control form-control-sm" value="${prefillStart}">
@@ -1528,7 +1555,7 @@
                 alert(safeT('country_requred'));
                 return;
             }
-            // ✅ 关键修复：将本地时间转换为 UTC 字符串
+            // 将本地时间转换为 UTC 字符串
             let startISO = null;
             let endISO = null;
             if (start) {
@@ -1565,14 +1592,14 @@
                     // 刷新列表
                     await loadTrainings();
                     
-                    // ✅ 弹出推送对象选择对话框
+                    // 弹出推送对象选择对话框
                     showPushTargetDialog(newTrainingId, name, countryCode);
                     
                     // 移除新增行
                     newRow.remove();
                 } else {
                     const error = await res.json();
-                    // ✅ 使用 apiToast 自动翻译
+                    // 使用 apiToast 自动翻译
                     if (typeof apiToast === 'function') {
                         apiToast(error, 'operation_failed', 'error');
                     } else {
@@ -1880,7 +1907,7 @@
         await waitForI18n();                 // 确保 i18n 已就绪
         window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
 
-        // ✅ 检查是否从下级页面返回，如果是则不重复加载
+        // 检查是否从下级页面返回，如果是则不重复加载
         const fromDetail = sessionStorage.getItem('from_training_detail');
         if (fromDetail === 'true') {
             // 已经由 DOMContentLoaded 处理了，这里不再重复加载
@@ -1939,12 +1966,12 @@
                 }
             });
         }
-        // ✅ 只重新渲染表格，不重新加载数据
+        // 只重新渲染表格，不重新加载数据
         if (cachedData && cachedData.length > 0) {
             renderTrainingsTable(cachedData);
         }
         
-        // ✅ 重新应用翻译到页面
+        // 重新应用翻译到页面
         if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
             window.i18n.applyTranslations();
         }
@@ -1958,16 +1985,16 @@
         // 检查是否已存在展开行
         let detailRow = document.getElementById(detailRowId);
         if (detailRow) {
-            // ✅ 存在：删除行
+            // 存在：删除行
             detailRow.remove();
-            // ✅ 同步更新图标状态
+            // 同步更新图标状态
             if (iconElement) {
                 iconElement.classList.remove('expanded');
             }
             return;
         }
         
-        // ✅ 在当前行下方插入加载行
+        // 在当前行下方插入加载行
         const newRow = rowElement.insertAdjacentElement('afterend', document.createElement('tr'));
         newRow.id = detailRowId;
         newRow.className = 'binding-detail-row';
@@ -1979,7 +2006,7 @@
             const bindings = data.bindings || [];
             const availableExams = data.available_exams || [];
             
-            // ✅ 再次检查行是否已被其他操作删除（防止竞态）
+            // 再次检查行是否已被其他操作删除（防止竞态）
             const existingRow = document.getElementById(detailRowId);
             if (!existingRow) {
                 return;
@@ -2021,7 +2048,20 @@
                                     <tr>
                                         <td>${b.exam_countries ? b.exam_countries.join(', ') : '-'}</td>
                                         <td><strong>${b.exam_id}</strong></td>
-                                        <td><strong>${escapeHtml(b.exam_title)}</strong></td>
+                                        <td>
+                                            <a href="/admin/exam/${b.exam_id}/scores?from=training" 
+                                            class="exam-binding-link" 
+                                            target="_blank"
+                                            onclick="sessionStorage.setItem('from_training_binding', 'true');"
+                                            style="color: #0d6efd; text-decoration: none; font-weight: 600;"
+                                            onmouseover="this.style.color='#0a58ca'; this.style.textDecoration='underline';"
+                                            onmouseout="this.style.color='#0d6efd'; this.style.textDecoration='none';"
+                                            data-i18n-title="click_to_view_details"
+                                            title="点击查看考试详情">
+                                                ${escapeHtml(b.exam_title)}
+                                                <span class="badge bg-secondary ms-1" style="font-size: 0.6rem; cursor: default;">↗</span>
+                                            </a>
+                                        </td>
                                         <td>${b.exam_status ? b.exam_status  : '-'}</td>
                                         <td>${b.completed_count ? b.completed_count  : '-'}</td>
                                         <td><input type="number" class="form-control form-control-sm pass-score-input" style="width: 70px;" value="${b.pass_score}" data-binding-id="${b.id}" data-field="pass_score" min="0" max="100"></td>
@@ -2032,6 +2072,7 @@
                                                     data-binding-id="${b.id}" 
                                                     data-training-id="${trainingId}"
                                                     data-exam-title="${escapeHtml(b.exam_title)}"
+                                                    data-i18n-title="reassign_exam_to_checked_in_trainees"
                                                     title="为已签到学员补分配此考试">
                                                 <i class="bi bi-arrow-repeat"></i> ${safeT('reassign')}
                                             </button>
@@ -2055,7 +2096,7 @@
             
         } catch (err) {
             console.error(t('bind_loading_failed'), err);
-            // ✅ 检查行是否还存在
+            // 检查行是否还存在
             const errorRow = document.getElementById(detailRowId);
             if (errorRow) {
                 errorRow.innerHTML = `<td colspan="8" class="p-0"><div class="binding-content"><div class="text-danger text-center py-3">${t('failed_to_load_try_again')}</div></div></td>`;
@@ -2102,9 +2143,9 @@
                 const trainingId = btn.dataset.trainingId;
                 const examTitle = btn.dataset.examTitle;
                 
-                // ✅ 使用 safeT 或直接硬编码
+                // 使用 safeT 或直接硬编码
                 const confirmMsg = (typeof safeT === 'function') 
-                    ? safeT('confirm_reassign') 
+                    ? safeT('confirm_reassign', examTitle) 
                     : `确定要为考试「${examTitle}」补分配所有已签到学员吗？`;
                 
                 if (!confirm(confirmMsg)) return;
@@ -2232,7 +2273,7 @@
         const trainingRow = document.querySelector(`tr[data-id="${trainingId}"]`);
         const trainingName = trainingRow ? trainingRow.querySelector('.name-cell')?.innerText || trainingId : trainingId;
         
-        // ✅ 创建模态框，增加"新建考试"选项
+        // 创建模态框，增加"新建考试"选项
         const modalId = 'addExamModal_' + Date.now();
         const modalHtml = `
             <div class="modal fade" id="${modalId}" tabindex="-1" data-bs-backdrop="static">

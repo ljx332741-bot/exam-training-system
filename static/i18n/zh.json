@@ -1055,5 +1055,8 @@
 "custom_push_hint": "点击[确认并推送]后将打开推送设置窗口，您可以选择特定的库房、服务商或具体人员。",
 "target_push": "定点推送（选择特定学员）",
 "notify_sing_in_hint": "将向该国家下所有注册用户发送签到通知",
-"push_to_all_user": "推送给全国所有学员"
+"push_to_all_user": "推送给全国所有学员",
+"opened_from_binding": "从培训绑定打开",
+"reassign_exam_to_checked_in_trainees": "为已签到学员补分配此考试",
+"confirm_reassign": "确定要为考试「{0}」补分配所有已签到学员吗？"
 }

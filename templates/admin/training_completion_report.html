@@ -397,7 +397,26 @@
                         <option value="not_exam" data-i18n="not_exam">已签到未考试</option>
                     </select>
                 </div>
-
+                <!-- 在筛选栏中添加 -->
+                <div class="col-md-2">
+                    <select id="filterTrainingStatus" class="form-select">
+                        <option value="" data-i18n="all_training_status">全部培训状态</option>
+                        <option value="draft" data-i18n="t_draft">草稿</option>
+                        <option value="pending" data-i18n="t_not_started">未开始</option>
+                        <option value="active" data-i18n="t_on_going">进行中</option>
+                        <option value="closed" data-i18n="t_closed">已关闭</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <select id="filterExamStatus" class="form-select">
+                        <option value="" data-i18n="all_exam_status">全部考试状态</option>
+                        <option value="draft" data-i18n="t_draft">草稿</option>
+                        <option value="created" data-i18n="t_not_started">未开始</option>
+                        <option value="active" data-i18n="t_on_going">进行中</option>
+                        <option value="closed" data-i18n="t_closed">已关闭</option>
+                    </select>
+                </div>
+                <!--
                 <div class="col-md-3">
                     <input type="date" id="filterStartDate" class="form-control"
                     data-i18n-title="title_start_date"
@@ -408,6 +427,7 @@
                     data-i18n-title="title_end_date"
                     title="结束日期">
                 </div>
+                -->
                 <!-- 将原来的悬浮提示图标和三个按钮放在同一个容器中 -->
                 <div class="col-md-3 d-flex justify-content-end align-items-end gap-2">
                     <!-- 悬浮提示图标 -->
@@ -502,6 +522,7 @@
                             <th><span data-i18n="sequence">序号</span></th>
                             <th><span data-i18n="training_name">培训名称</span></th>
                             <th>tid</th>
+                            <th><span data-i18n="status">状态</span></th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="name_en">姓名</span></th>
                             <th>userid</th>
@@ -509,6 +530,7 @@
                             <th><span data-i18n="wh_id">库房编码</span></th>
                             <th><span data-i18n="exam_name">考试名称</span></th>
                             <th>exid</th>
+                            <th><span data-i18n="status">状态</span></th>
                             <th><span data-i18n="sign_in_status">签到状态</span></th>
                             <th><span data-i18n="exam_status">考试状态</span></th>
                             <th><span data-i18n="candidate_score">得分</span></th>
@@ -517,7 +539,7 @@
                     </thead>
                     <tbody id="reportTableBody">
                         <tr>
-                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                            <td colspan="16" class="text-center" style="padding: 40px 20px;">
                                 <div class="d-flex flex-column align-items-center justify-content-center">
                                     <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
                                         <span class="visually-hidden">Loading...</span>
@@ -545,7 +567,9 @@
     let currentPage = 1;
     let filters = {
         name: '', country: '', training_name: '', exam_name: '',
-        status: '', start_date: '', end_date: ''
+        status: '', start_date: '', end_date: '',
+        training_status: '',
+        exam_status: ''
     };
 
     let allReportData = [];
@@ -599,6 +623,8 @@
         document.getElementById('filterStartDate').value = '';
         document.getElementById('filterEndDate').value = '';
         document.getElementById('filterStatus').value = '';
+        document.getElementById('filterTrainingStatus').value = '';
+        document.getElementById('filterExamStatus').value = '';
         
         // 2. 重置隐藏字段
         document.getElementById('selectedTrainingId').value = '';
@@ -623,7 +649,9 @@
             exam_name: '', 
             status: '', 
             start_date: '', 
-            end_date: '' 
+            end_date: '',
+            training_status: '',
+            exam_status: ''
         };
         
         // 7. 重置分页
@@ -656,11 +684,11 @@
         }
         const tbody = document.getElementById('reportTableBody');
 
-        // ✅ 立即显示加载动画（消除静态文字）
+        // 立即显示加载动画（消除静态文字）
         if (tbody) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                    <td colspan="16" class="text-center" style="padding: 30px 20px;">
                         <div class="d-flex flex-column align-items-center justify-content-center">
                             <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
                                 <span class="visually-hidden">Loading...</span>
@@ -673,7 +701,6 @@
         }
         
         if (allReportData && allReportData.length > 0) {
-            console.log('📋 使用缓存数据，应用筛选');
             applyFilters();
             return;
         }
@@ -692,7 +719,9 @@
             exam_id: examId,
             status: filters.status,
             start_date: filters.start_date,
-            end_date: filters.end_date
+            end_date: filters.end_date,
+            training_status: filters.training_status,
+            exam_status: filters.exam_status
         });
 
         await window.loadTableWithProgress('reportTableBody', async (updateProgress, updateDesc) => {
@@ -1052,7 +1081,7 @@
         window.hideTableProgress('reportTableBody');
         
         if (!rows || rows.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="14" class="text-center">${t('no_data')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="16" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
 
@@ -1109,6 +1138,7 @@
                     <td>${(currentPage-1)*20 + idx + 1}</td>
                     <td>${escapeHtml(r.training_name)}</td>
                     <td>${escapeHtml(r.training_id || '-')}</td>
+                    <td>${escapeHtml(r.training_status_global || '-')}</td>
                     <td>${escapeHtml(r.training_country || '-')}</td>
                     <td>${escapeHtml(r.user_name)}</td>
                     <td class="user-id-cell" 
@@ -1126,6 +1156,7 @@
                     <td>${escapeHtml(r.wh_id || '-')}</td>
                     <td>${escapeHtml(r.exam_name)}</td>
                     <td>${escapeHtml(r.exam_id)}</td>
+                    <td>${escapeHtml(r.exam_status_global || '-')}</td>
                     <td>
                         <span class="badge ${getTrainingStatusBadge(r.training_status)}">
                             ${getTrainingStatusText(r.training_status)}
@@ -1143,28 +1174,6 @@
         }).join('');
         setTimeout(initUserIdCopy, 100);
     }
-
-    /*
-    function renderPagination(current, totalPages) {
-        const pagination = document.getElementById('pagination');
-        if (totalPages <= 1) {
-            pagination.innerHTML = '';
-            return;
-        }
-        let html = '';
-        for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        pagination.innerHTML = html;
-        pagination.querySelectorAll('.page-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                currentPage = parseInt(link.dataset.page);
-                applyFilters();
-            });
-        });
-    }
-    */
 
     // ==================== 用户ID双击复制功能 ====================
     function initUserIdCopy() {
@@ -1333,7 +1342,37 @@
                 loadWithDebounce();
             }
         }
+
+        // 培训状态筛选
+        const trainingStatusSelect = document.getElementById('filterTrainingStatus');
+        if (trainingStatusSelect) {
+            trainingStatusSelect.removeEventListener('change', handleTrainingStatusChange);
+            trainingStatusSelect.addEventListener('change', handleTrainingStatusChange);
+        }
         
+        function handleTrainingStatusChange() {
+            const val = trainingStatusSelect?.value || '';
+            if (val !== filters.training_status) {
+                filters.training_status = val;
+                loadWithDebounce();
+            }
+        }
+    
+        // 考试状态筛选
+        const examStatusSelect = document.getElementById('filterExamStatus');
+        if (examStatusSelect) {
+            examStatusSelect.removeEventListener('change', handleExamStatusChange);
+            examStatusSelect.addEventListener('change', handleExamStatusChange);
+        }
+        
+        function handleExamStatusChange() {
+            const val = examStatusSelect?.value || '';
+            if (val !== filters.exam_status) {
+                filters.exam_status = val;
+                loadWithDebounce();
+            }
+        }
+
         const resetBtn = document.getElementById('resetFiltersBtn');
         if (resetBtn) {
             resetBtn.removeEventListener('click', resetAllFilters);
