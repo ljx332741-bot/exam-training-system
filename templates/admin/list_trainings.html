@@ -193,9 +193,11 @@
                     <tbody id="trainingsTbody">
                         <tr id="newTrainingTemplate" style="display: none;">
                             <td><input type="text" id="newCountry" class="form-control form-control-sm" list="countryDatalist" 
-                                data-i18n-placeholder="placeholder_country_code" placeholder="国家代码"></td>
+                                data-i18n-placeholder="placeholder_country_code" placeholder="国家代码">
+                            </td>
                             <td><input type="text" id="newName" class="form-control form-control-sm" 
-                                data-i18n-placeholder="placeholder_training_name" placeholder="培训名称"></td>
+                                data-i18n-placeholder="placeholder_training_name" placeholder="培训名称">
+                            </td>
                             <td colspan="3"></td>
                             <td><input type="datetime-local" id="newStartTime" class="form-control form-control-sm"> - <input type="datetime-local" id="newEndTime" class="form-control form-control-sm"></td>
                             <td colspan="1"></td>
@@ -532,7 +534,7 @@
                 renderTrainingsTable(cached.data);
                 document.getElementById('totalCount').innerText = cached.total || cached.data.length;
                 renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-                // ✅ 不触发刷新
+                // 不触发刷新
             }
         }
     });
@@ -541,11 +543,11 @@
         const tbody = document.getElementById('trainingsTbody');
         if (!tbody) return;
 
-        // ✅ 如果有进度条，先隐藏
+        // 如果有进度条，先隐藏
         window.hideTableProgress('trainingsTbody');
         
         const perPage = 20; // 与后端分页大小一致
-        // ✅ 使用 DocumentFragment 批量构建
+        // 使用 DocumentFragment 批量构建
         const fragment = document.createDocumentFragment();
         
         tbody.innerHTML = '';
@@ -555,7 +557,7 @@
             const row = tbody.insertRow();
             row.setAttribute('data-id', t.id);
 
-            // ✅ 使用 safeT 函数，如果不可用则使用 fallback
+            // 使用 safeT 函数，如果不可用则使用 fallback
             const tooltipText = (typeof safeT === 'function') 
                 ? safeT('click_view_exam_bindings') 
                 : '点击查看已绑定考试';
@@ -568,14 +570,14 @@
                                             data-id="${t.id}" 
                                             disabled 
                                             style="pointer-events: auto; cursor: not-allowed; opacity: 0.65;">
-                                        📋 ${safeT('t_header_input')}
+                                        📋 ${safeT('header_input')}
                                     </button>
                                 </span>`;
             } else {
                 headerBtnHtml = `<button class="btn btn-sm btn-outline-info header-btn" 
                                         data-id="${t.id}"
                                         title="录入表头字段">
-                                    📋 ${safeT('t_header_input')}
+                                    📋 ${safeT('header_input')}
                                 </button>`;
             }
 
@@ -605,8 +607,8 @@
                     statusClass = 'bg-light text-dark';
             }
 
-            // ✅ 修改培训名称列：根据是否有国家决定跳转方式
-            // const expandIcon = `<span class="expand-icon" data-training-id="${t.id}">▶</span>`;
+            // 修改培训名称列：根据是否有国家决定跳转方式
+            // 绑定考试的位置以及绑定考试的查看方式三角形const expandIcon = `<span class="expand-icon" data-training-id="${t.id}">▶</span>`;
             const expandIcon = `
                 <span class="expand-icon-wrapper" style="position: relative; display: inline-block; margin-right: 2px;">
                     <span class="badge-count" style="
@@ -646,7 +648,7 @@
             // 构建行内容...
             row.innerHTML = `
                 <td class="seq-column">${rowNumber}</td>  <!-- 使用连续序号 -->
-                <td class="country-cell" title="${escapeHtml(t.country || safeT('t_general'))}">${escapeHtml(t.country || safeT('t_general'))}</td>
+                <td class="country-cell" title="${escapeHtml(t.country || safeT('general'))}">${escapeHtml(t.country || safeT('general'))}</td>
                 <td class="name-cell">${nameHtml}</td>
                 <td>
                     <a href="#" class="training-id-link" data-id="${t.id}" data-name="${escapeHtml(t.name)}" 
@@ -663,19 +665,19 @@
                 <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>
                     ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary" data-i18n-key="t_details">${safeT('t_details')}</a>` : 
-                    `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}" data-i18n-key="t_details_by_country">${safeT('t_details_by_country')}</button>`}
+                    `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}" data-i18n-key="details_by_country">${safeT('details_by_country')}</button>`}
                     ${inconsistent ? 
                         `<button class="btn btn-sm btn-outline-info header-btn" 
                                 data-id="${t.id}"
                                 style="pointer-events: none; opacity: 0.65;"
                                 title="${safeT('title_header_input_vary_prompt')}">
-                            📋 ${safeT('t_header_input')}
+                            📋 ${safeT('header_input')}
                         </button>` : 
                         `<button class="btn btn-sm btn-outline-info header-btn" 
                                 data-id="${t.id}"
                                 data-i18n-title="title_header_input"
                                 title="${safeT('title_header_input')}">
-                            📋 ${safeT('t_header_input')}
+                            📋 ${safeT('header_input')}
                         </button>`
                     }
                     <button class="btn btn-sm btn-outline-success push-btn" data-id="${t.id}" data-start="${t.start_time || ''}" data-end="${t.end_time || ''}" data-i18n-key="t_push">${safeT('t_push')}</button>
@@ -811,13 +813,13 @@
                     const newEndTime = timeRangeCell.querySelector('.edit-end-time').value;
                     
                     if (!newName) {
-                        alert(safeT('t_training_name_cannot_empty'));
+                        alert(safeT('training_name_cannot_empty'));
                         return;
                     }
                     
                     // 验证国家
                     if (newCountryDisplay && !newCountryCode) {
-                        alert(safeT('t_country_requred'));
+                        alert(safeT('country_requred'));
                         return;
                     }
                     
@@ -884,7 +886,7 @@
 
         document.querySelectorAll('.delete-btn').forEach(btn => {
             btn.onclick = async (e) => {
-                if(confirm(safeT('t_training_delete_tip'))) {
+                if(confirm(safeT('training_delete_tip'))) {
                     const id = btn.dataset.id;
                     const originalHtml = btn.innerHTML;
                     btn.disabled = true;
@@ -936,7 +938,7 @@
                 const data = await res.json();
                 const training = Array.isArray(data) ? data[0] : data.data?.[0];
                 if (!training) {
-                    alert(safeT('t_failed_to_obtain_training_data'));
+                    alert(safeT('failed_to_obtain_training_data'));
                     return;
                 }
                 // 准备预填数据
@@ -1266,8 +1268,8 @@
                     <td>${g.country}</td>
                     <td>${g.count}</td>
                     <td>
-                        <button class="btn btn-sm btn-primary view-country-attendance" data-training-id="${trainingId}" data-country="${g.country}">${safeT('t_view_sign_in_records_export')}</button>
-                        <button class="btn btn-sm btn-outline-info country-header-btn" data-training-id="${trainingId}" data-country="${g.country}">${safeT('t_header_input')}</button>
+                        <button class="btn btn-sm btn-primary view-country-attendance" data-training-id="${trainingId}" data-country="${g.country}">${safeT('view_sign_in_records_export')}</button>
+                        <button class="btn btn-sm btn-outline-info country-header-btn" data-training-id="${trainingId}" data-country="${g.country}">${safeT('header_input')}</button>
                     </td>
                 </tr>
             `).join('');
@@ -1402,8 +1404,8 @@
             document.getElementById('lecturer').value = template.lecturer || '';
             document.getElementById('translator').value = template.translator || '';
         } catch (err) {
-            console.error(safeT('t_failed_load_training_detals'), err);
-            alert(safeT('t_failed_load_training_detals_try_later'));
+            console.error(safeT('failed_load_training_detals'), err);
+            alert(safeT('failed_load_training_detals_try_later'));
         }
     }
 
@@ -1451,7 +1453,7 @@
         let copiedHeaderTemplate = prefillData ? prefillData.header_template : null;
 
         newRow.innerHTML = `
-            <td>${safeT('t_new')}</td>
+            <td>${safeT('new')}</td>
             <td>
                 <input type="text" id="newCountry" class="form-control form-control-sm" list="countryDatalist" value="${escapeHtml(prefillCountry)}" 
                 data-i18n-placeholder="placeholder_country_code" placeholder="国家代码" autocomplete="off">
@@ -1468,8 +1470,8 @@
             </td>
             <td colspan="1"></td>
             <td>
-                <button class="btn btn-sm btn-success save-new-training">${safeT('t_save')}</button>
-                <button class="btn btn-sm btn-secondary cancel-new-training">${safeT('t_cancel')}</button>
+                <button class="btn btn-sm btn-success save-new-training">${safeT('save')}</button>
+                <button class="btn btn-sm btn-secondary cancel-new-training">${safeT('cancel')}</button>
             </td>
         `;
         
@@ -1518,12 +1520,12 @@
             const end = newRow.querySelector('#newEndTime').value;
 
             if (!name) {
-                alert(safeT('t_training_name_cannot_empty'));
+                alert(safeT('training_name_cannot_empty'));
                 return;
             }
             const countryInputVal = countryInput.value.trim();
             if (countryInputVal && !countryCode) {
-                alert(safeT('t_country_requred'));
+                alert(safeT('country_requred'));
                 return;
             }
             // ✅ 关键修复：将本地时间转换为 UTC 字符串
@@ -1572,7 +1574,7 @@
                     const error = await res.json();
                     // ✅ 使用 apiToast 自动翻译
                     if (typeof apiToast === 'function') {
-                        apiToast(error, 't_operation_failed', 'error');
+                        apiToast(error, 'operation_failed', 'error');
                     } else {
                         alert(error.message || '操作失败');
                     }
@@ -1601,39 +1603,39 @@
                     <div class="modal-content">
                         <div class="modal-header bg-primary text-white">
                             <h5 class="modal-title">
-                                <i class="bi bi-bell"></i> 推送培训签到 - ${escapeHtml(trainingName)}
+                                <i class="bi bi-bell"></i> ${t('push_sign_in_notify')} - ${escapeHtml(trainingName)}
                             </h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
                             <div class="mb-3">
-                                <label class="form-label fw-bold">选择推送对象</label>
+                                <label class="form-label fw-bold">${t('select_push_recipient')}</label>
                                 <div class="form-check mb-2">
                                     <input type="radio" name="pushTarget" id="pushAllRadio" class="form-check-input" value="all" checked>
                                     <label class="form-check-label" for="pushAllRadio">
-                                        📢 推送给全国所有学员 (${escapeHtml(countryCode || '未知')})
+                                        📢 ${t('push_to_all_user')} (${escapeHtml(countryCode || '未知')})
                                     </label>
-                                    <div class="text-muted small mt-1 ms-4">将向该国家下所有注册用户发送签到通知</div>
+                                    <div class="text-muted small mt-1 ms-4">${t('notify_sing_in_hint')}</div>
                                 </div>
                                 <div class="form-check">
                                     <input type="radio" name="pushTarget" id="pushCustomRadio" class="form-check-input" value="custom">
                                     <label class="form-check-label" for="pushCustomRadio">
-                                        🎯 定点推送（选择特定学员）
+                                        🎯 ${t('target_push')}
                                     </label>
-                                    <div class="text-muted small mt-1 ms-4">可指定库房、服务商或具体人员</div>
+                                    <div class="text-muted small mt-1 ms-4">${t('target_any_aim')}</div>
                                 </div>
                             </div>
                             <div id="customPushPanel" style="display: none;">
                                 <hr>
                                 <div class="alert alert-info">
                                     <i class="bi bi-info-circle"></i> 
-                                    点击"确认并推送"后将打开推送设置窗口，您可以选择特定的库房、服务商或具体人员。
+                                    ${t('custom_push_hint')}
                                 </div>
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">稍后推送</button>
-                            <button type="button" class="btn btn-primary" id="confirmPushTargetBtn">确认并推送</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${t('push_later')}</button>
+                            <button type="button" class="btn btn-primary" id="confirmPushTargetBtn">${t('confirm_push')}</button>
                         </div>
                     </div>
                 </div>
@@ -1678,7 +1680,7 @@
         const startISO = localDateTimeToUTC(now.toISOString().slice(0, 16));
         const endISO = localDateTimeToUTC(endDate.toISOString().slice(0, 16));
         
-        showLoading('正在推送...');
+        showLoading(t('pushing'));
         
         try {
             const res = await fetch('/api/admin/trainings', {
@@ -1695,9 +1697,9 @@
             
             if (res.ok) {
                 if (typeof showToast === 'function') {
-                    showToast('培训已创建并推送给所有学员', 'success');
+                    showToast(t('training_created_pushed_tip'), 'success');
                 } else {
-                    alert('培训已创建并推送给所有学员');
+                    alert(t('training_created_pushed_tip'));
                 }
             } else {
                 const error = await res.json();
@@ -1758,7 +1760,7 @@
         filters.country = document.getElementById('filterCountry').value;
         filters.quarter = document.getElementById('filterQuarter').value;
         currentPage = 1;
-        loadTrainings(true);  // ✅ 强制刷新，直接显示进度条
+        loadTrainings(true);  // 强制刷新，直接显示进度条
     });
 
     // 保存表头模板
@@ -2003,9 +2005,11 @@
                         <table class="table table-sm binding-table">
                             <thead>
                                 <tr>
-                                    <th>${t('exam_name')}</th>
+                                    <th>${t('country')}</th>
                                     <th>eid</th>
-                                    <th>${t('applicable_countries')}</th>
+                                    <th>${t('exam_name')}</th>
+                                    <th>${t('exam_status')}</th>
+                                    <th>${t('completed_count')}</th>
                                     <th>${t('passing_grade')}</th>
                                     <th>${t('auto_assign')}</th>
                                     <th>${t('compulsory')}</th>
@@ -2015,9 +2019,11 @@
                             <tbody>
                                 ${bindings.map(b => `
                                     <tr>
-                                        <td><strong>${escapeHtml(b.exam_title)}</strong></td>
-                                        <td><strong>${b.exam_id}</strong></td>
                                         <td>${b.exam_countries ? b.exam_countries.join(', ') : '-'}</td>
+                                        <td><strong>${b.exam_id}</strong></td>
+                                        <td><strong>${escapeHtml(b.exam_title)}</strong></td>
+                                        <td>${b.exam_status ? b.exam_status  : '-'}</td>
+                                        <td>${b.completed_count ? b.completed_count  : '-'}</td>
                                         <td><input type="number" class="form-control form-control-sm pass-score-input" style="width: 70px;" value="${b.pass_score}" data-binding-id="${b.id}" data-field="pass_score" min="0" max="100"></td>
                                         <td><input type="checkbox" class="form-check-input auto-assign-checkbox" ${b.is_auto_assign ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_auto_assign"></td>
                                         <td><input type="checkbox" class="form-check-input required-checkbox" ${b.is_required ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_required"></td>
@@ -2041,7 +2047,7 @@
                         </table>
                     </div>
                 `;
-                newRow.innerHTML = `<td colspan="10" class="p-0">${bindingsHtml}</td>`;
+                newRow.innerHTML = `<td colspan="8" class="p-0">${bindingsHtml}</td>`;
             }
             
             // 绑定修改事件
@@ -2052,7 +2058,7 @@
             // ✅ 检查行是否还存在
             const errorRow = document.getElementById(detailRowId);
             if (errorRow) {
-                errorRow.innerHTML = `<td colspan="10" class="p-0"><div class="binding-content"><div class="text-danger text-center py-3">${t('failed_to_load_try_again')}</div></div></td>`;
+                errorRow.innerHTML = `<td colspan="8" class="p-0"><div class="binding-content"><div class="text-danger text-center py-3">${t('failed_to_load_try_again')}</div></div></td>`;
             }
         }
     }

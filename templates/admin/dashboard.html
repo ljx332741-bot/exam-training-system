@@ -5767,7 +5767,7 @@
             container.innerHTML = `
                 <div class="text-center text-muted py-3">
                     <span class="spinner-border spinner-border-sm me-2"></span>
-                    <span data-i18n="loading">加载中...</span>
+                    <span>${t('loading')}</span>
                 </div>
             `;
         }
@@ -5861,7 +5861,7 @@
                         <div style="flex: 1; min-width: 0;">
                             <div class="d-flex justify-content-between align-items-start">
                                 <span style="font-size: 0.85rem;">${escapeHtml(m.title)}</span>
-                                ${isUnread ? '<span class="badge bg-primary" style="font-size: 0.5rem; flex-shrink: 0;">新</span>' : ''}
+                                ${isUnread ? `<span class="badge bg-primary" style="font-size: 0.5rem; flex-shrink: 0;">${(t('new'))}</span>` : ''}
                             </div>
                             ${m.content ? `<div class="text-muted small" style="font-size: 0.75rem; margin-top: 2px;">${escapeHtml(m.content)}</div>` : ''}
                             <div class="text-muted" style="font-size: 0.6rem; margin-top: 4px;">
@@ -5909,7 +5909,7 @@
             loadMore.className = 'text-center py-2';
             loadMore.innerHTML = `
                 <button class="btn btn-sm btn-outline-secondary load-more-btn" style="font-size: 0.7rem;">
-                    <span data-i18n="load_more">加载更多</span>
+                    <span>${t('load_more')}</span>
                 </button>
             `;
             container.appendChild(loadMore);

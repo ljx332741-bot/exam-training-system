@@ -14,12 +14,21 @@ from datetime import datetime, timezone, timedelta
 from services.db import get_supabase, get_supabase_admin
 from services import auth
 from services.export import find_wkhtmltopdf
-from routes.helpers import login_required, admin_required, get_attendance_data, get_training_status, upload_signature, parse_exam_countries
+from utils.status import get_exam_status
 from utils.training_helpers import get_training_country_templates_status, _save_country_template
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, get_allowed_countries, is_developer
 from utils.cache_manager import cache_get, invalidate_cache_on_change, training_cache
+from routes.helpers import (
+    login_required, 
+    admin_required, 
+    get_attendance_data, 
+    get_training_status, 
+    can_access_exam, 
+    upload_signature, 
+    parse_exam_countries
+)
 from utils.admin_messages import (
     log_signature_reset,
     log_training_unassign,
@@ -2781,8 +2790,6 @@ def refresh_report_cache():
 @cache_get(ttl=300, prefix='training_bindings', include_user=True)
 def get_training_bindings(training_id):
     """获取培训绑定的考试列表"""
-    from utils.permissions import get_admin_allowed_countries, is_developer
-    
     db = get_supabase_admin()
     
     # 获取当前用户角色和权限
@@ -2793,6 +2800,10 @@ def get_training_bindings(training_id):
     # 获取培训信息（用于国家过滤）
     training_res = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
     training_country = training_res.data.get('country') if training_res.data else None
+
+    # 获取该培训下所有已签到学员（用于去重统计）
+    signed_users_res = db.table("training_attendances").select("user_id").eq("training_id", training_id).execute()
+    signed_user_ids = [u['user_id'] for u in (signed_users_res.data or [])]
     
     # 获取绑定关系
     bindings = db.table("training_exam_bindings").select("*")\
@@ -2804,11 +2815,19 @@ def get_training_bindings(training_id):
     # 获取考试信息
     result = []
     for b in (bindings.data or []):
-        exam = db.table("exams").select("id, title, countries, duration")\
+        exam = db.table("exams").select("id, title, countries, duration, start_time, end_time")\
             .eq("id", b['exam_id'])\
             .maybe_single()\
             .execute()
-        
+
+        # 获取考试状态
+        if not exam.data:
+            return jsonify({"error": "考试不存在"}), 404
+        exam_data = exam.data
+        if not can_access_exam(exam_data):
+            return jsonify({"error": "无权访问此考试"}), 403
+        status = get_exam_status(exam_data)
+
         # 解析 countries
         countries_list = []
         if exam.data:
@@ -2820,6 +2839,17 @@ def get_training_bindings(training_id):
                     countries_list = []
             elif isinstance(countries_data, list):
                 countries_list = countries_data
+
+        # 计算该考试已分配的用户数（去重）
+        assigned_res = db.table("exam_assignments").select("user_id").eq("exam_id", b['exam_id']).execute()
+        assigned_user_ids = [a['user_id'] for a in (assigned_res.data or [])]
+        
+        # 计算该考试已完成的用户数（去重）
+        completed_res = db.table("exam_results").select("user_id").eq("exam_id", b['exam_id']).execute()
+        completed_user_ids = [r['user_id'] for r in (completed_res.data or [])]
+        
+        # 计算该考试已完成且已签到培训的用户数（交集）
+        completed_and_signed = set(completed_user_ids) & set(signed_user_ids)
         
         result.append({
             "id": b['id'],
@@ -2831,7 +2861,13 @@ def get_training_bindings(training_id):
             "is_auto_assign": b.get('is_auto_assign', True),
             "is_required": b.get('is_required', True),
             "sort_order": b.get('sort_order', 0),
-            "created_at": b.get('created_at')
+            "created_at": b.get('created_at'),
+            # ✅ 新增统计字段
+            "exam_status": status,
+            "assigned_count": len(set(assigned_user_ids)),           # 已分配人数（去重）
+            "completed_count": len(set(completed_user_ids)),         # 已完成人数（去重）
+            "signed_count": len(set(signed_user_ids)),               # 已签到人数（去重）
+            "completed_and_signed_count": len(completed_and_signed)  # 已完成且已签到人数
         })
     
     # 获取可选考试列表（未绑定的）- 根据角色过滤
@@ -3281,7 +3317,7 @@ def get_training_users(training_id):
         signature_url = attendance.get('signature_url', '')
         has_attendance = user_id in attendance_map
         
-        # ✅ 修复：优先检查是否有签到记录（全国推送场景）
+        # 优先检查是否有签到记录（全国推送场景）
         if has_attendance:
             # 有签到记录
             if not signature_url:
