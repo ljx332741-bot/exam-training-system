@@ -621,6 +621,32 @@
             }, 3000);
         });
 
+        // ==================== 统一的翻译工具函数 ====================
+        function translateDataI18nTitle() {
+            if (!window.i18n || !window.i18n.t) {
+                console.warn('i18n 未就绪，延迟处理 data-i18n-title');
+                // 如果 i18n 未就绪，延迟重试
+                setTimeout(translateDataI18nTitle, 500);
+                return;
+            }
+            
+            document.querySelectorAll('[data-i18n-title]').forEach(el => {
+                const key = el.getAttribute('data-i18n-title');
+                if (key) {
+                    const translated = window.i18n.t(key);
+                    if (translated && translated !== key) {
+                        el.setAttribute('title', translated);
+                    } else {
+                        // 如果翻译返回的是 key 本身，说明翻译可能未加载，尝试用 safeT
+                        const fallback = safeT(key);
+                        if (fallback && fallback !== key) {
+                            el.setAttribute('title', fallback);
+                        }
+                    }
+                }
+            });
+        }
+        
         // 全局翻译辅助函数（支持占位符）
         function t(key, ...args) {
             let msg = window.i18n?.t(key) || key;

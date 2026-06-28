@@ -1062,5 +1062,6 @@
 "push_to_all_user": "Push to all users",
 "opened_from_binding": "Opened from training binding",
 "reassign_exam_to_checked_in_trainees": "Reassign this exam to checked-in trainees",
-"confirm_reassign": "‌Confirm to reassign exam {0} to all checked-in trainees?"
+"confirm_reassign": "‌Confirm to reassign exam {0} to all checked-in trainees?",
+"confirm_assign_single": "Confirm to assign exam to {0} ?"
 }

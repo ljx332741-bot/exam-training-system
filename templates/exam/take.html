@@ -404,70 +404,78 @@
 
 		// 💾 保存状态
 		function saveState() {
-		localStorage.setItem(STORAGE_CURR, current);
-		localStorage.setItem(STORAGE_FLAG, JSON.stringify([...flagged]));
+			localStorage.setItem(STORAGE_CURR, current);
+			localStorage.setItem(STORAGE_FLAG, JSON.stringify([...flagged]));
 
-		const fd = new FormData(document.getElementById('exam-form'));
-		const ans = {};
-		for (let [k, v] of fd.entries()) {
-			if (k.startsWith('q_')) {
-			if (ans[k]) {
-				ans[k] += v;
-			} else {
-				ans[k] = v;
+			const fd = new FormData(document.getElementById('exam-form'));
+			const ans = {};
+			for (let [k, v] of fd.entries()) {
+				if (k.startsWith('q_')) {
+					if (ans[k]) {
+						ans[k] += v;
+					} else {
+						ans[k] = v;
+					}
+				}
 			}
-			}
-		}
-		localStorage.setItem(STORAGE_ANS, JSON.stringify(ans));
-		
-		// 上传到服务器草稿
-		fetch('/api/exam/draft', {
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
-		}).catch(e => console.warn(safeT('t_upload_draft_failed'), e));
+			
+			localStorage.setItem(STORAGE_ANS, JSON.stringify(ans));
+			
+			// 上传到服务器草稿
+			fetch('/api/exam/draft', {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({ exam_id: EXAM_ID, answers: ans })
+			})
+			.then(response => response.json())
+			.then(result => {
+				if (result.success) {
+					showSaveIndicator();
+				}
+			})
+			.catch(e => console.warn(safeT('t_upload_draft_failed'), e));
 		}
 
 		// 刷新已回答状态
 		function refreshAnsweredStatus() {
-		answered.clear();
-		document.querySelectorAll('.question-card').forEach(card => {
-			const qid = card.dataset.qid;
-			const inputs = card.querySelectorAll('input');
-			let hasAnswer = false;
-			if (inputs.length > 0) {
-			const firstInput = inputs[0];
-			if (firstInput.type === 'radio') {
-				hasAnswer = card.querySelector('input[type="radio"]:checked') !== null;
-			} else if (firstInput.type === 'checkbox') {
-				hasAnswer = card.querySelectorAll('input[type="checkbox"]:checked').length > 0;
-			} else {
-				hasAnswer = firstInput.value.trim() !== '';
-			}
-			}
-			if (hasAnswer) answered.add(qid);
-		});
-		document.getElementById('answered-count').textContent = answered.size;
+			answered.clear();
+			document.querySelectorAll('.question-card').forEach(card => {
+				const qid = card.dataset.qid;
+				const inputs = card.querySelectorAll('input');
+				let hasAnswer = false;
+				if (inputs.length > 0) {
+				const firstInput = inputs[0];
+				if (firstInput.type === 'radio') {
+					hasAnswer = card.querySelector('input[type="radio"]:checked') !== null;
+				} else if (firstInput.type === 'checkbox') {
+					hasAnswer = card.querySelectorAll('input[type="checkbox"]:checked').length > 0;
+				} else {
+					hasAnswer = firstInput.value.trim() !== '';
+				}
+				}
+				if (hasAnswer) answered.add(qid);
+			});
+			document.getElementById('answered-count').textContent = answered.size;
 		}
 
 		// ==================== 事件绑定 ====================
 		document.getElementById('prev-btn').onclick = () => { if (current > 0) { current--; updateUI(); saveState(); } };
 		document.getElementById('next-btn').onclick = () => { if (current < TOTAL - 1) { current++; updateUI(); saveState(); } };
 		document.getElementById('toggle-nav').onclick = () => {
-		const p = document.getElementById('nav-panel');
-		p.style.display = p.style.display === 'none' ? 'block' : 'none';
+			const p = document.getElementById('nav-panel');
+			p.style.display = p.style.display === 'none' ? 'block' : 'none';
 		};
 		document.querySelectorAll('.nav-btn').forEach(b => {
-		b.onclick = () => {
-			current = parseInt(b.dataset.index);
-			updateUI();
-			saveState();
-		};
+			b.onclick = () => {
+				current = parseInt(b.dataset.index);
+				updateUI();
+				saveState();
+			};
 		});
 		document.getElementById('flag-btn').onclick = () => {
-		flagged.has(current) ? flagged.delete(current) : flagged.add(current);
-		updateUI();
-		saveState();
+			flagged.has(current) ? flagged.delete(current) : flagged.add(current);
+			updateUI();
+			saveState();
 		};
 
 		document.querySelectorAll('input').forEach(i => {
@@ -482,8 +490,8 @@
 		// ==================== 提交控制 ====================
 		const submitModal = new bootstrap.Modal(document.getElementById('submitModal'));
 		document.getElementById('submit-btn').onclick = () => {
-		refreshAnsweredStatus();
-		submitModal.show();
+			refreshAnsweredStatus();
+			submitModal.show();
 		};
 
 		const confirmSubmitBtn = document.getElementById('confirm-submit');
@@ -685,7 +693,7 @@
 
 	// ========== 自动保存功能 ==========
 	async function saveDraftWithRetry(retryCount = 0) {
-		// ✅ 新增：如果考试已提交，不保存草稿
+		// 如果考试已提交，不保存草稿
 		if (isExamSubmitted) {
 			console.log('⏭️ 考试已提交，跳过草稿保存');
 			return;
@@ -719,6 +727,7 @@
 				lastSaveTime = Date.now();
 				pendingAnswers = null;
 				console.log('草稿保存成功');
+				showSaveIndicator();
 			} else if (retryCount < maxRetries) {
 				setTimeout(() => saveDraftWithRetry(retryCount + 1), 2000);
 			}
@@ -781,19 +790,27 @@
 				console.log('⏹️ 自动保存已停止（考试已提交）');
 				return;
 			}
+			console.log('💾 自动保存触发');
 			saveDraftWithRetry();
 		}, 30000);
-				
+
 		// 每5分钟检查一次是否还有未保存的答案
 		setInterval(() => {
 			// 如果考试已提交，跳过检查
 			if (isExamSubmitted) return;
 			checkPendingSave();
 		}, 300000);
+
+		// 页面关闭前强制保存
+		window.addEventListener('beforeunload', () => {
+			if (isExamSubmitted) return;
+			saveDraftSync();
+		});
+		
 	}
 
 	// ==================== 页面卸载处理 ====================
-	// ✅ 合并所有 beforeunload 逻辑到一个地方
+	// 合并所有 beforeunload 逻辑到一个地方
 	window.addEventListener('beforeunload', function(e) {
 		// 提示用户（仅当考试未提交时）
 		if (!isExamSubmitted) {
@@ -804,7 +821,7 @@
 		}
 	});
 
-	// ✅ 页面关闭前保存（仅当考试未提交时）
+	// 页面关闭前保存（仅当考试未提交时）
 	window.addEventListener('pagehide', function() {
 		if (!isExamSubmitted) {
 			autoSaveDraft();
@@ -861,7 +878,7 @@
 		}
 	}
 
-	// ========== 新增：显示保存提示 ==========
+	// ========== 优化：显示保存提示 ==========
 	function showSaveIndicator() {
 		let indicator = document.getElementById('saveIndicator');
 		if (!indicator) {
@@ -878,13 +895,24 @@
 				opacity: 0;
 				transition: opacity 0.3s;
 				z-index: 9999;
+				font-size: 14px;
+				box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 			`;
-			indicator.innerHTML = `<i class="bi bi-check-circle"></i> ${t('draft_is_saved')}`;
+			indicator.innerHTML = `<i class="bi bi-check-circle"></i> ${safeT('draft_is_saved') || '草稿已保存'}`;
 			document.body.appendChild(indicator);
 		}
 		
+		// 显示提示
 		indicator.style.opacity = '1';
-		setTimeout(() => {
+		indicator.style.transform = 'translateY(0)';
+		
+		// 清除之前的定时器
+		if (window._saveIndicatorTimer) {
+			clearTimeout(window._saveIndicatorTimer);
+		}
+		
+		// 2秒后自动隐藏
+		window._saveIndicatorTimer = setTimeout(() => {
 			indicator.style.opacity = '0';
 		}, 2000);
 	}

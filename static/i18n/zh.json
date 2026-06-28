@@ -1058,5 +1058,6 @@
 "push_to_all_user": "推送给全国所有学员",
 "opened_from_binding": "从培训绑定打开",
 "reassign_exam_to_checked_in_trainees": "为已签到学员补分配此考试",
-"confirm_reassign": "确定要为考试「{0}」补分配所有已签到学员吗？"
+"confirm_reassign": "确定要为考试「{0}」补分配所有已签到学员吗？",
+"confirm_assign_single": "确定要为「{0}」分配考试吗？"
 }
