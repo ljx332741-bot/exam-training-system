@@ -740,7 +740,6 @@ def admin_delete_exam(exam_id):
         else:
             # 软删除
             log_exam_delete(
-                db=db,
                 exam_id=exam_id,
                 exam_title=exam_title,
                 admin_id=session.get('user_id'),
@@ -1544,7 +1543,6 @@ def admin_push_exam_with_settings(exam_id):
         logger.info(f"全国推送，不修改分配关系")
 
     log_admin_push_exam(
-        db=db,
         exam_id=exam_id,
         exam_title=exam_title,
         user_count=len(user_ids),
@@ -2448,7 +2446,6 @@ def api_admin_restore_exam(exam_id):
         return jsonify({"success": True})
 
         log_exam_restore(
-            db=db,
             exam_id=exam_id,
             exam_title=exam_title,
             admin_id=session.get('user_id')
@@ -2690,7 +2687,7 @@ def admin_quick_assign_exam(exam_id):
         existing_ids = {row['user_id'] for row in (existing_res.data or [])}
         
         # 5. 只添加未分配的考生
-        # ✅ 过滤掉离职人员
+        # 过滤掉离职人员
         user_ids = [uid for uid in user_ids if not is_user_resigned(uid)]
         
         to_add = [uid for uid in user_ids if uid not in existing_ids]

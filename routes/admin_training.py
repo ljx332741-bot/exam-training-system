@@ -2891,7 +2891,6 @@ def unassign_training_from_users(training_id):
     logger.info(f"培训 {training_id} ({training_name}) 取消了 {deleted_count} 名学员的分配")
 
     log_training_unassign(
-        db=db,
         training_id=training_id,
         training_name=training_name,
         user_id=user_id,

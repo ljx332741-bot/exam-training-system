@@ -795,6 +795,7 @@
 					</div>
 				</div>
 				<div class="card-body p-0">
+                    <!-- 仪表盘考试管理exams_for_table = get_exams_for_display  -->
 					<div class="table-responsive">
 						<table class="table table-hover align-middle mb-0" style="min-width: 1000px;" >
 							<style>
@@ -826,7 +827,7 @@
 								{% for ex in exams_table | default([]) %}
 									<tr>
 										<td class="fw-medium" style="display: flex; flex-direction: column;">
-											{# ✅ 进行中的考试名称显示为可点击链接 #}
+											{# 进行中的考试名称显示为可点击链接 #}
 											{% if ex.status == 'active' %}
 												<a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" 
 													class="text-decoration-none fw-semibold">
@@ -852,7 +853,7 @@
                                                 </span>
 											{% endif %}
 											<small class="text-muted" style="margin-top: 4px;">
-												<!-- ✅ 显示多个国家标签 -->
+												<!-- 显示多个国家标签 -->
 												<span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
 												{{ (ex.start_time | format_datetime_local) or '' }}
 												- 
@@ -882,13 +883,13 @@
 										<td>
 											<div class="btn-group btn-group-sm" role="group">
 												<button class="btn btn-outline-secondary batch-export" data-id="{{ ex.id }}">PDF</button> 
-												<!-- ✅ 新增：重置考生状态（需配合用户选择，示例中简化） -->
+												<!-- 重置考生状态（需配合用户选择，示例中简化） -->
 												<button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}"><span data-i18n="setting">推送</span></button>
 												{% if ex.dynamic_status == 'draft' %}
 													<button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}">✏️ <span data-i18n="edit">编辑</span></button>
 												{% endif %}
 												<button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}"><span data-i18n="copy">拷贝</span></button>
-												<!-- ✅ 新增：删除考试（危险操作） -->
+												<!-- 删除考试（危险操作） -->
 												<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="{{ ex.id }}">
 													🗑️ <span data-i18n="delete">删除</span>
 												</button>
@@ -896,13 +897,13 @@
 										</td>
 									</tr>
 								{% else %}
-									<tr><td colspan="4" class="text-center text-muted py-4"><span data-i18n="no_exam_datas">暂无考试数据</span></td></tr>
+									<tr><td colspan="5" class="text-center text-muted py-4"><span data-i18n="no_exam_datas">暂无考试数据</span></td></tr>
 								{% endfor %}
 							</tbody>
 						</table>
 					</div>
 
-					<!-- 考生考试状态 -->
+					<!-- 仪表盘考生考试状态 exams_for_selector = get_exams_for_display-->
 					<div class="card shadow-sm border-0 mt-4">
 						<div class="card-header bg-light fw-bold">
 							<i class="bi bi-people me-2"></i><span data-i18n="view_status">考生考试状态（选择考试查看）</span>
@@ -919,7 +920,7 @@
                                     </option>
 								{% endfor %}
 							</select>
-							<!-- 新增筛选栏 -->
+							<!-- 筛选栏 -->
 							<div class="row g-2 mb-3 px-3">
 								<div class="col-md-3">
 									<input type="text" id="statusFilterName" class="form-control form-control-sm" 
@@ -5048,7 +5049,7 @@
 					<th>${t('status')}</th>
 					<th>${t('candidate_score')}</th>
 					<th>${t('submitted_at')}</th>
-					<th colspan="3">${t('actions')}</th>
+					<th ${t('actions')}</th>
 				</tr>
 				</thead>
 				<tbody>
@@ -5084,22 +5085,54 @@
 				? `<a href="/admin/export_pdf_by_result/${u.result_id}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>`
 				: '';
 			const resetBtn = submitted
-				? `<button class="btn btn-sm btn-outline-warning reset-btn" data-exam-id="${currentExamId}" data-user-id="${u.user_id}">🔄 ${t('reset')}</button>`
+				? `<button type="button" class="btn btn-sm btn-outline-warning reset-btn" data-exam-id="${currentExamId}" data-user-id="${u.user_id}">
+                        🔄 ${t('reset')}
+                    </button>`
 				: '';
 
+            // 分配按钮：未分配时显示
+            const assignBtn = (u.exam_status === 'not_assigned')
+                ? `<button type="button" class="btn btn-sm btn-outline-success assign-single-btn" 
+                        data-exam-id="${currentExamId}" 
+                        data-user-id="${u.user_id}"
+                        data-user-name="${escapeHtml(u.name)}"
+                        data-i18n-title="title_exam_task_assign"
+                        title="考试任务分配">
+                        <i class="bi bi-plus-circle"></i> ${t('assign')}
+                    </button>`
+                : '';
+
+            // 取消分配按钮：已分配且未提交时显示（待考试/进行中）
+            const removeBtn = (u.exam_status !== 'not_assigned' && !submitted)
+                ? `<button type="button" class="btn btn-sm btn-outline-danger remove-single-btn" 
+                        data-exam-id="${currentExamId}" 
+                        data-user-id="${u.user_id}"
+                        data-user-name="${escapeHtml(u.name)}"
+                        data-i18n-title="title_remove_exam_assign"
+                        title="移除考试分配">
+                        <i class="bi bi-trash"></i> ${t('unassign')}
+                    </button>`
+                : '';
+                
 			html += `
 				<tr>
-				<td>${escapeHtml(u.name)}</td>
-				<td>${escapeHtml(u.email)}</td>
-				<td>${escapeHtml(u.wh_id || '-')}</td>
-				<td>${partnerText}</td>
-				<td>${escapeHtml(u.country || '-')}</td>
-				<td>${statusBadge}</td>
-				<td>${scoreDisplay}</td>
-				<td>${submitTime}</td>
-				<td>${detailLink}</td>
-				<td>${pdfLink}</td>
-				<td>${resetBtn}</td>
+                    <td>${escapeHtml(u.name)}</td>
+                    <td>${escapeHtml(u.email)}</td>
+                    <td>${escapeHtml(u.wh_id || '-')}</td>
+                    <td>${partnerText}</td>
+                    <td>${escapeHtml(u.country || '-')}</td>
+                    <td>${statusBadge}</td>
+                    <td>${scoreDisplay}</td>
+                    <td>${submitTime}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm" role="group">
+                            ${detailLink}
+                            ${pdfLink}
+                            ${resetBtn}
+                            ${assignBtn}
+                            ${removeBtn}
+                        </div>
+                    </td>
 				</tr>
 			`;
 		}
@@ -5111,6 +5144,18 @@
 			btn.removeEventListener('click', handleReset);
 			btn.addEventListener('click', handleReset);
 		});
+        // 绑定分配按钮事件
+        document.querySelectorAll('.assign-single-btn').forEach(btn => {
+            btn.removeEventListener('click', handleAssign);
+            btn.addEventListener('click', handleAssign);
+        });
+
+        // 绑定取消分配按钮事件
+        document.querySelectorAll('.remove-single-btn').forEach(btn => {
+            btn.removeEventListener('click', handleRemove);
+            btn.addEventListener('click', handleRemove);
+        });
+
 	}
 
     // 加载数据（仅首次从后端获取）
@@ -5195,6 +5240,14 @@
                 if (!userInfo || userInfo.user_status !== 'registered') {
                     continue;
                 }
+
+                const statusMap = {
+                    'not_assigned': 'not_assigned',
+                    'pending': 'pending',
+                    'in_progress': 'in_progress',
+                    'submitted': 'submitted'
+                };
+
                 merged.push({
                     ...item,
                     wh_id: userInfo.wh_id || '',
@@ -5202,7 +5255,8 @@
                     is_partner: userInfo.is_partner || false,
                     country: userInfo.country || '',
                     name: userInfo.name_cn || userInfo.name_en || item.name || '',
-                    email: userInfo.email || item.email || ''
+                    email: userInfo.email || item.email || '',
+                    exam_status: item.exam_status || 'not_assigned'
                 });
             }
 
@@ -5248,6 +5302,108 @@
 			alert(t('js_reset_failed'));
 		}
 	}
+
+    // ==================== 集成版：分配按钮处理 ====================
+    async function handleAssign(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        const examId = btn.dataset.examId;
+        const userId = btn.dataset.userId;
+        const userName = btn.dataset.userName || '';
+        
+        // 确认弹窗
+        const confirmMsg = userName 
+            ? `确认分配考试给 "${userName}" 吗？`
+            : t('confirm_assign_single');
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading(t('assigning') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/quick_assign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                // ✅ 局部更新：修改缓存中该用户的状态
+                const userIndex = currentExamUsers.findIndex(u => u.user_id == userId);
+                if (userIndex !== -1) {
+                    currentExamUsers[userIndex].exam_status = 'pending';
+                    currentExamUsers[userIndex].is_submitted = false;
+                    currentExamUsers[userIndex].score = null;
+                    currentExamUsers[userIndex].submitted_at = null;
+                    currentExamUsers[userIndex].result_id = null;
+                }
+                // 重新渲染表格
+                renderExamStatusTable();
+                if (typeof showToast === 'function') {
+                    showToast(result.message || t('operation_success'), 'success');
+                }
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('分配失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    }
+
+    // ==================== 集成版：取消分配按钮处理 ====================
+    async function handleRemove(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const btn = e.currentTarget;
+        const examId = btn.dataset.examId;
+        const userId = btn.dataset.userId;
+        const userName = btn.dataset.userName || '';
+        
+        const confirmMsg = userName 
+            ? `确认移除 "${userName}" 的考试分配吗？`
+            : t('confirm_remove_single');
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading(t('removing') + '...');
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/batch_remove`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                // ✅ 局部更新：修改缓存中该用户的状态
+                const userIndex = currentExamUsers.findIndex(u => u.user_id == userId);
+                if (userIndex !== -1) {
+                    currentExamUsers[userIndex].exam_status = 'not_assigned';
+                    currentExamUsers[userIndex].is_submitted = false;
+                    currentExamUsers[userIndex].score = null;
+                    currentExamUsers[userIndex].submitted_at = null;
+                    currentExamUsers[userIndex].result_id = null;
+                }
+                renderExamStatusTable();
+                if (typeof showToast === 'function') {
+                    showToast(result.message || t('operation_success'), 'success');
+                }
+            } else {
+                showToast(result.message || t('operation_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('移除失败:', err);
+            showToast(t('operation_failed'), 'error');
+        }
+    }
 
 	// ==================== 级联筛选状态管理 ====================
 	// 清空输入框时触发刷新
