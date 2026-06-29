@@ -31,7 +31,6 @@ async function initUserTimezone() {
             });
             
             if (response.ok) {
-                console.log('时区已同步到服务器:', timezone);
                 sessionStorage.setItem('user_timezone', timezone);
             }
         } catch(e) {

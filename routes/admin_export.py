@@ -21,8 +21,8 @@ from config import Config
 from utils.status import get_exam_status
 from utils.common import (
     match_country_code, quarter_to_date_range, get_reviewer_by_country, format_admin_countries_display,
-    format_countries_display,  # ✅ 新增
-    format_single_country_display  # ✅ 新增（可选）
+    format_countries_display,
+    format_single_country_display
 )
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time, _send_training_notifications
 from utils.permissions import (

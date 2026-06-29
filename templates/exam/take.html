@@ -204,24 +204,43 @@
 	const RESET_TIMER = {{ reset_timer | default(false) | tojson }};
 	const RESET_TOKEN = {{ reset_token | default('') | tojson }};  // 后端可传递重置标识
 
-	// ========== 收集答案函数 ==========
 	function collectAnswers() {
 		const answers = {};
 		const form = document.getElementById('exam-form');
 		if (!form) return answers;
 		
 		const formData = new FormData(form);
+		// ✅ 使用 Map 收集多选题答案
+		const multiMap = new Map();
+		
 		for (let [key, value] of formData.entries()) {
 			if (key.startsWith('q_')) {
-				// 处理多选题（多个值）
-				if (answers[key]) {
-					// 如果已有值，拼接（多选用逗号分隔）
-					answers[key] = answers[key] + ',' + value;
+				// 判断是否是多选题
+				const inputs = document.querySelectorAll(`input[name="${key}"]`);
+				let isMulti = false;
+				if (inputs.length > 0 && inputs[0].type === 'checkbox') {
+					isMulti = true;
+				}
+				
+				if (isMulti) {
+					// 多选题：收集所有选中的值
+					if (multiMap.has(key)) {
+						multiMap.set(key, multiMap.get(key) + ',' + value);
+					} else {
+						multiMap.set(key, value);
+					}
 				} else {
+					// 单选/判断题：直接赋值
 					answers[key] = value;
 				}
 			}
 		}
+		
+		// ✅ 将多选题从 "A,B,C,D,E" 转换为 "ABCDE"（与历史数据保持一致）
+		for (let [key, value] of multiMap) {
+			answers[key] = value.replace(/,/g, '');
+		}
+		
 		return answers;
 	}
 
@@ -352,7 +371,7 @@
 		function updateTimerDisplay() {
 		const m = Math.floor(timeLeft / 60).toString().padStart(2, '0');
 		const s = (timeLeft % 60).toString().padStart(2, '0');
-		timerEl.textContent = `${safeT('t_remaining')}：${m}:${s}`;
+		timerEl.textContent = `${safeT('remaining')}：${m}:${s}`;
 		}
 		updateTimerDisplay();
 

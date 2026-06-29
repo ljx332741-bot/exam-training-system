@@ -3,10 +3,13 @@
 管理员消息盒子 API
 """
 import logging
+import httpx
+from functools import lru_cache
+from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from routes.helpers import login_required, admin_required
 from services.db import get_supabase, get_supabase_admin
-from utils.admin_messages import (
+from utils.manage_messages import (
     get_unread_message_count,
     get_recent_messages,
     mark_message_read,
@@ -96,20 +99,49 @@ def get_admin_messages():
         logger.error(f"获取消息列表失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
+# 简单缓存
+_unread_count_cache = {
+    'count': 0,
+    'timestamp': None,
+    'ttl_seconds': 30  # 30秒缓存
+}
 
 @admin_bp.route('/api/admin/messages/unread_count')
 @login_required
 @admin_required
 def get_unread_count():
-    """获取未读消息数量"""
+    """获取未读消息数量（带超时保护）"""
+    global _unread_count_cache
+    
+    # 检查缓存是否有效
+    now = datetime.now()
+    if (_unread_count_cache['timestamp'] is not None and 
+        (now - _unread_count_cache['timestamp']).total_seconds() < _unread_count_cache['ttl_seconds']):
+        return jsonify({"success": True, "count": _unread_count_cache['count']})
+    
     try:
         admin_db = get_supabase_admin()
-        count = get_unread_message_count(admin_db)
-        return jsonify({"success": True, "count": count})
-    except Exception as e:
-        logger.error(f"获取未读数量失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+        
+        result = admin_db.table("admin_messages").select("id", count="exact").eq("is_read", False).execute()
 
+        # 安全获取 count
+        count = result.count if hasattr(result, 'count') and result.count is not None else 0
+
+        # 更新缓存
+        _unread_count_cache['count'] = count
+        _unread_count_cache['timestamp'] = now
+        
+        return jsonify({"success": True, "count": count})
+
+    except Exception as e:
+        error_msg = str(e)
+        if any(keyword in error_msg.lower() for keyword in ['timeout', 'timed out', 'connect']):
+            logger.warning(f"获取未读数量超时，使用缓存值: {e}")
+            # 返回缓存值（即使过期）
+            return jsonify({"success": True, "count": _unread_count_cache['count']})
+        else:
+            logger.error(f"获取未读数量失败: {e}")
+            return jsonify({"success": True, "count": 0})
 
 @admin_bp.route('/api/admin/messages/<int:message_id>/read', methods=['POST'])
 @login_required

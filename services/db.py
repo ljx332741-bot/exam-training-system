@@ -1,12 +1,14 @@
 # services/db.py
-import httpx
 import os
 import time
 import logging
+import traceback
+import httpx
 from functools import wraps
 from supabase import create_client, Client
 from config import Config
 from datetime import datetime, timezone
+
 
 logger = logging.getLogger(__name__)
 
@@ -78,13 +80,16 @@ def retry_on_timeout(max_retries=3, delay=2, backoff=True):
 # ============================================================
 def get_supabase():
     """获取 Supabase 客户端（带超时配置）"""
-    global supabase
+    global supabase, http_client
     if supabase is None:
         Config.check()
         supabase = create_client(Config.SUPABASE_URL, Config.SUPABASE_KEY)
-        # 设置超时时间
-        supabase.postgrest.session.timeout = 30.0
-        supabase.storage.session.timeout = 30.0
+        # 设置超时（兼容不同版本）
+        try:
+            if hasattr(supabase, 'postgrest') and hasattr(supabase.postgrest, 'session'):
+                supabase.postgrest.session.timeout = 30.0
+        except Exception as e:
+            logger.debug(f"设置超时失败（可忽略）: {e}")
     return supabase
 
 
@@ -92,30 +97,18 @@ def get_supabase_admin():
     """获取管理员客户端（使用 service_role key，绕过 RLS）"""
     supabase_url = Config.SUPABASE_URL
     supabase_service_key = os.environ.get('SUPABASE_SERVICE_KEY', Config.SUPABASE_KEY)
-    return create_client(supabase_url, supabase_service_key)
-
-
-def get_supabase_with_timeout(timeout_seconds=60):
-    """
-    获取带自定义超时的 Supabase 客户端
-    
-    Args:
-        timeout_seconds: 超时时间（秒）
-    
-    Returns:
-        Client: Supabase 客户端
-    """
-    client = get_supabase()
-    client.postgrest.session.timeout = timeout_seconds
-    client.storage.session.timeout = timeout_seconds
+    client = create_client(supabase_url, supabase_service_key)
+    # 设置超时
+    try:
+        if hasattr(client, 'postgrest') and hasattr(client.postgrest, 'session'):
+            client.postgrest.session.timeout = 30.0
+    except Exception as e:
+        logger.debug(f"设置超时失败（可忽略）: {e}")
     return client
-
 
 # ============================================================
 # 4. 安全查询包装器
 # ============================================================
-# services/db.py
-
 class SafeQuery:
     """安全查询包装器，自动处理超时和重试"""
     
@@ -125,6 +118,7 @@ class SafeQuery:
         self.timeout = timeout
         self._query = None  # 存储查询构建器
         self._client = None
+        self._executed = False
     
     def _get_client(self):
         if self.use_admin:
@@ -241,13 +235,21 @@ class SafeQuery:
     @retry_on_timeout(max_retries=3, delay=2)
     def execute(self):
         """执行查询（带重试）"""
+        # 只检查 _query 是否存在
         if self._query is None:
+            logger.error(f"SafeQuery.execute() 被调用但 _query 为 None")
+            logger.error(f"调用栈: {traceback.format_stack()}")
             raise ValueError("请先调用 select/insert/update/delete 方法")
+        
         try:
             result = self._query.execute()
+            if result is None:
+                return type('EmptyResult', (), {'data': [], 'count': 0})()
             return result
+        except Exception as e:
+            logger.error(f"查询执行失败: {e}")
+            raise
         finally:
-            # 重置查询，避免重复执行
             self._query = None
 
 def safe_table(table_name, use_admin=False, timeout=None):
@@ -272,6 +274,9 @@ def safe_table(table_name, use_admin=False, timeout=None):
         # 管理员查询
         result = safe_table('trainings', use_admin=True).select('*')
     """
+    # 为调度器增加默认超时
+    if timeout is None:
+        timeout = 120  # 默认 120 秒
     return SafeQuery(table_name, use_admin, timeout)
 
 

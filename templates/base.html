@@ -579,7 +579,6 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ timezone: timezone })
                 });
-                console.log('时区已同步到服务器:', timezone);
             } catch(e) {
                 console.error('同步时区失败:', e);
             }
@@ -650,8 +649,23 @@
         // 全局翻译辅助函数（支持占位符）
         function t(key, ...args) {
             let msg = window.i18n?.t(key) || key;
-            for (let i = 0; i < args.length; i++) {
-                msg = msg.replace(new RegExp(`\\{${i}\\}`, 'g'), args[i]);
+            
+            // 支持对象参数 { name: 'xxx' }
+            if (args && args.length === 1 && typeof args[0] === 'object' && !Array.isArray(args[0])) {
+                const params = args[0];
+                Object.keys(params).forEach(k => {
+                    const value = params[k];
+                    if (value !== undefined && value !== null) {
+                        msg = msg.replace(new RegExp(`\\{${k}\\}`, 'g'), String(value));
+                    }
+                });
+            } else {
+                // 支持数组参数 {0}, {1}
+                for (let i = 0; i < args.length; i++) {
+                    if (args[i] !== undefined && args[i] !== null) {
+                        msg = msg.replace(new RegExp(`\\{${i}\\}`, 'g'), String(args[i]));
+                    }
+                }
             }
             return msg;
         }

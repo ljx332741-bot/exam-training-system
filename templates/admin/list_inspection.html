@@ -102,7 +102,7 @@
                             <th><span data-i18n="interviewee_number">访谈人数</span></th>
                             <th><span data-i18n="quenstion_number">题目数量</span></th>
                             <th><span data-i18n="inspector">检查人员</span></th>
-                            <th><span data-i18n="feedback_person">反馈人</span></th>  <!-- ✅ 新增 -->
+                            <th><span data-i18n="feedback_person">反馈人</span></th>
                             <th><span data-i18n="status">状态</span></th>
                             <th><span data-i18n="actions">操作</span></th>
                         </tr>
@@ -152,14 +152,14 @@
                             <!-- 下拉建议面板 -->
                             <div id="examDropdown" class="exam-dropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1050; background: white; border: 1px solid #ddd; border-radius: 4px; max-height: 280px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
                                 <div class="dropdown-header p-2 bg-light fw-bold border-bottom">
-                                    <i class="bi bi-clock-history me-1"></i> 最近创建的考试
+                                    <i class="bi bi-clock-history me-1"></i> <span data-i18n="recent_examination">最近创建的考试</span>
                                 </div>
                                 <div id="examListContainer"></div>
                                 <div id="examSearch" class="p-2 text-center text-muted" style="display: none;">
-                                    <div class="spinner-border spinner-border-sm me-1"></div> 搜索中...
+                                    <div class="spinner-border spinner-border-sm me-1"></div><span data-i18n="searching">搜索中...</span>
                                 </div>
                                 <div id="examNoResult" class="p-3 text-center text-muted" style="display: none;">
-                                    未找到匹配的考试
+                                    <span data-i18n="no_matching_exam_was_found">未找到匹配的考试</span>
                                 </div>
                             </div>
                         </div>
@@ -388,6 +388,17 @@
         }
     }
 
+    // ==================== 状态徽章映射函数 ====================
+    function getExamStatusBadge(status) {
+        const map = {
+            'draft': `<span class="badge bg-secondary">⚠️ ${t('draft')}</span>`,
+            'created': `<span class="badge bg-info">📋 ${t('not_started')}</span>`,
+            'active': `<span class="badge bg-success">✅ ${t('t_on_going')}</span>`,
+            'closed': `<span class="badge bg-danger">🔒 ${t('closed')}</span>`
+        };
+        return map[status] || `<span class="badge bg-secondary">${status}</span>`;
+    }
+
     // 5渲染考试下拉面板
     async function renderExamDropdown(searchTerm = '') {
         const container = document.getElementById('examListContainer');
@@ -413,12 +424,14 @@
             // 无搜索词：显示最近创建的8个考试
             exams = allExamsList;
         }
+
+        exams = exams.filter(exam => exam.status !== 'draft');
         
         if (exams.length === 0) {
             if (searchTerm) {
                 noResultEl.style.display = 'block';
             } else {
-                container.innerHTML = '<div class="p-3 text-center text-muted">暂无可用考试</div>';
+                container.innerHTML = `<div class="p-3 text-center text-muted">${t('no_data')}</div>`;
             }
             return;
         }
@@ -444,15 +457,18 @@
             } else {
                 titleHtml = escapeHtml(exam.title);
             }
+
+            const statusBadge = getExamStatusBadge(exam.status);
             
             html += `
                 <div class="exam-dropdown-item" data-id="${exam.id}" data-title="${escapeHtml(exam.title)}">
                     <div class="exam-title">${titleHtml}</div>
                     <div class="exam-meta">
-                        <span><i class="bi bi-calendar3"></i> 创建: ${createdDate}</span>
-                        <span><i class="bi bi-calendar-week"></i> 季度: ${quarter}</span>
+                        <span><i class="bi bi-calendar3"></i> ${t('create')}: ${createdDate}</span>
+                        <span><i class="bi bi-calendar-week"></i> ${t('quarter')}: ${quarter}</span>
                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
-                        <span><i class="bi bi-question-circle"></i> ${exam.question_count || 0}题</span>
+                        <span><i class="bi bi-question-circle"></i> ${exam.question_count || 0}${t('question_unit')}</span>
+                        <span>${statusBadge}</span>
                     </div>
                 </div>
             `;
@@ -479,13 +495,72 @@
     }
 
     // 7选择考试
+    // ==================== 选择考试 ====================
     function selectExam(examId, examTitle) {
+        // 设置考试信息
         document.getElementById('examSelect').value = examTitle;
         document.getElementById('selectedExamId').value = examId;
-        document.getElementById('selectedExamInfo').innerHTML = `<i class="bi bi-check-circle-fill text-success"></i> 已选择: ${escapeHtml(examTitle)}`;
-        
-        // 关闭下拉面板
+        document.getElementById('selectedExamInfo').innerHTML = `<i class="bi bi-check-circle-fill text-success"></i> ${t('selected')}: ${escapeHtml(examTitle)}`;
         document.getElementById('examDropdown').style.display = 'none';
+        
+        // 选择考试后自动刷新人员列表
+        const tbody = document.getElementById('userListBody');
+        if (tbody) {
+            tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-center text-muted">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                     ${t('loading')}...
+                    </td>
+                </tr>
+            `;
+        }
+        
+        // 异步刷新人员列表
+        loadUserListForInterview().then(() => {
+            console.log(`✅ 人员列表已刷新 (考试: ${examTitle}, ID: ${examId})`);
+        }).catch(err => {
+            console.error('❌ 刷新人员列表失败:', err);
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${t('loading_failed')}</td></tr>`;
+            }
+        });
+    }
+
+    // ==================== 清空考试选择 ====================
+    function clearSelectedExam() {
+        document.getElementById('examSelect').value = '';
+        document.getElementById('selectedExamId').value = '';
+        document.getElementById('selectedExamInfo').innerHTML = '';
+        document.getElementById('examDropdown').style.display = 'none';
+        
+        // 清空考试后刷新人员列表（显示所有用户，受权限限制）
+        const tbody = document.getElementById('userListBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        ${t('loading')}...
+                    </td>
+                </tr>
+            `;
+        }
+        
+        loadUserListForInterview().then(() => {
+            console.log('✅ 人员列表已刷新 (清空考试)');
+        }).catch(err => {
+            console.error('❌ 刷新人员列表失败:', err);
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-danger">
+                            ${t('t_loading_failed')}
+                        </td>
+                    </tr>
+                `;
+            }
+        });
     }
 
     // 8初始化考试选择器
@@ -551,10 +626,10 @@
         window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
         loadInterviews();
 
-        // ✅ 初始化考试选择增强
+        // 初始化考试选择增强
         await initExamSelector();
         
-        // ✅ 为新增访谈模态框中的国家选择器添加自动完成
+        // 为新增访谈模态框中的国家选择器添加自动完成
         await setupCountryAutocomplete('countryFilter', 'countryDatalist', 'countryCodeForInterview');
         
         // 语言切换时重新加载列表，实现实时翻译
@@ -568,6 +643,21 @@
         await loadInterviews();
         await loadRecentExams();
         });
+
+        // 监听新增访谈模态框关闭事件，重置所有禁用状态
+        const modalEl = document.getElementById('newInterviewModal');
+        if (modalEl) {
+            modalEl.addEventListener('hidden.bs.modal', function() {
+                // 重置所有表单字段的禁用状态
+                document.getElementById('examSelect').disabled = false;
+                document.getElementById('questionCount').disabled = false;
+                document.getElementById('userSearch').disabled = false;
+                document.getElementById('isPartnerFilter').disabled = false;
+                document.getElementById('whIdFilter').disabled = false;
+                document.getElementById('countryFilter').disabled = false;
+                document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = false);
+            });
+        }
     });
 
     // ========== 列表加载 ==========
@@ -586,7 +676,7 @@
     }
 
     function getStatusText(status) {
-        const map = { 'draft': t('t_draft'), 'created': t('t_not_started'), 'active': t('t_on_going'), 'closed': t('t_closed') };
+        const map = { 'draft': t('draft'), 'created': t('not_started'), 'active': t('t_on_going'), 'closed': t('closed') };
         return map[status] || status;
     }
     function formatDate(iso) {
@@ -601,7 +691,7 @@
     function renderInterviewTable(interviews) {
         const tbody = document.getElementById('interviewTableBody');
 
-        // ✅ 立即显示加载动画（消除静态文字）
+        // 立即显示加载动画（消除静态文字）
         if (tbody) {
             tbody.innerHTML = `
                 <tr>
@@ -650,14 +740,14 @@
             <tr>
                 <td>${(currentPage-1)*20 + idx + 1}</td>
                 <td>${escapeHtml(inv.country || '-')}</td>
-                <td><a href="/admin/interview/${inv.id}" class="text-decoration-none">${escapeHtml(inv.title)}</a></td>
+                <td><a href="/admin/interview/${inv.id}" target = "_blank" class="text-decoration-none">${escapeHtml(inv.title)}</a></td>
                 <td>${inv.id}</td>
                 <td>${formatLocalTime(inv.created_at)}</td>
                 <td>${formatLocalTime(inv.start_time)} - ${formatLocalTime(inv.end_time)}</td>
                 <td>${inv.interviewee_count} ${t('t_people')}</td>
                 <td>${inv.question_count} ${t('t_question_per_people')}</td>
                 <td>${escapeHtml(inv.reviewer || '-')}</td>
-                <td>${escapeHtml(inv.feedback || '-')}</td>  <!-- ✅ 新增反馈人列 -->
+                <td>${escapeHtml(inv.feedback || '-')}</td>
                 <td>${getStatusBadge(status)}</td>
                 <td>${actionButtons}</td>
             </tr>
@@ -666,7 +756,7 @@
 
         // 绑定事件
         document.querySelectorAll('.detail-btn').forEach(btn => {
-            btn.addEventListener('click', () => location.href = `/admin/interview/${btn.dataset.id}/details`);
+            btn.addEventListener('click', () => window.open(`/admin/interview/${btn.dataset.id}/details`, '_blank'));
         });
         document.querySelectorAll('.edit-interview-btn').forEach(btn => {
             btn.addEventListener('click', () => openEditInterviewModal(btn.dataset.id));
@@ -683,10 +773,10 @@
 
     function getStatusBadge(status) {
         const map = {
-            'draft': `<span class="badge bg-secondary">${t('t_draft')}</span>`,
-            'created': `<span class="badge bg-info">${t('t_not_started')}</span>`,
+            'draft': `<span class="badge bg-secondary">${t('draft')}</span>`,
+            'created': `<span class="badge bg-info">${t('not_started')}</span>`,
             'active': `<span class="badge bg-success">${t('t_on_going')}</span>`,
-            'closed': `<span class="badge bg-danger">${t('t_closed')}</span>`
+            'closed': `<span class="badge bg-danger">${t('closed')}</span>`
         };
         return map[status] || status;
     }
@@ -721,9 +811,26 @@
         loadInterviews();
     });
 
-    // ========== 新增访谈模态框 ==========
-    document.getElementById('newInterviewBtn').addEventListener('click', async () => {
-        // 重置表单
+    // 在页面加载时添加模态框关闭事件监听
+    document.addEventListener('DOMContentLoaded', function() {
+        const modalEl = document.getElementById('newInterviewModal');
+        if (modalEl) {
+            modalEl.addEventListener('hidden.bs.modal', function() {
+                // 重置所有表单字段的禁用状态
+                document.getElementById('examSelect').disabled = false;
+                document.getElementById('questionCount').disabled = false;
+                document.getElementById('userSearch').disabled = false;
+                document.getElementById('isPartnerFilter').disabled = false;
+                document.getElementById('whIdFilter').disabled = false;
+                document.getElementById('countryFilter').disabled = false;
+                document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = false);
+            });
+        }
+    });
+
+    // 先显示模态框，再异步加载数据
+    document.getElementById('newInterviewBtn').addEventListener('click', function() {
+        // 1. 重置表单（同步操作，立即执行）
         document.getElementById('examSelect').value = '';
         document.getElementById('selectedExamId').value = '';
         document.getElementById('selectedExamInfo').innerHTML = '';
@@ -736,25 +843,79 @@
         document.getElementById('countryFilter').value = '';
         document.getElementById('countryCodeForInterview').value = '';
 
-        // ✅ 预填日期（当前时间 + 5天）
+        // 强制启用 examSelect（重置可能的禁用状态）
+        document.getElementById('examSelect').disabled = false;
+        document.getElementById('questionCount').disabled = false;
+        document.getElementById('userSearch').disabled = false;
+        document.getElementById('isPartnerFilter').disabled = false;
+        document.getElementById('whIdFilter').disabled = false;
+        document.getElementById('countryFilter').disabled = false;
+        document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = false);
+
+        // 2. 预填日期（同步操作，立即执行）
         const defaultDates = getDefaultInterviewDates();
         document.getElementById('startTime').value = defaultDates.start;
         document.getElementById('endTime').value = defaultDates.end;
         
-        // 清空预览相关
+        // 3. 清空预览相关
         editMode = false;
         previewData = [];
         pendingSaveData = null;
+
+        // 4. 每次重新创建模态框实例（确保配置最新）
+        const modalEl = document.getElementById('newInterviewModal');
         
-        // ✅ 自动加载学员列表
-        await loadUserListForInterview();
-        
-        // ✅ 确保考试列表已加载
-        if (allExamsList.length === 0) {
-            await loadRecentExams();
+        // 先销毁旧实例（如果存在）
+        if (window.interviewModalInstance) {
+            try {
+                window.interviewModalInstance.dispose();
+            } catch(e) {}
+            window.interviewModalInstance = null;
         }
         
-        new bootstrap.Modal(document.getElementById('newInterviewModal')).show();
+        // 创建新实例
+        window.interviewModalInstance = new bootstrap.Modal(modalEl, {
+            backdrop: true,
+            keyboard: true
+        });
+        window.interviewModalInstance.show();
+        
+        // 5. 显示加载状态（用户列表显示加载中）
+        const tbody = document.getElementById('userListBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        ${t('loading')}...
+                    </td>
+                </tr>
+            `;
+        }
+        
+        // 6. 异步加载数据（不阻塞UI）
+        setTimeout(() => {
+            // 加载用户列表
+            loadUserListForInterview().catch(err => {
+                console.error('加载用户列表失败:', err);
+                if (tbody) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center text-danger">
+                                ${t('loading_failed')}
+                            </td>
+                        </tr>
+                    `;
+                }
+            });
+            
+            // 加载考试列表
+            if (allExamsList.length === 0) {
+                loadRecentExams().catch(err => {
+                    console.error('加载考试列表失败:', err);
+                });
+            }
+        }, 50);
     });
 
     // 加载学员列表
@@ -766,10 +927,10 @@
         const whId = document.getElementById('whIdFilter').value;
         const isPartner = document.getElementById('isPartnerFilter').value;
         
-        // ✅ 如果没有传入 examId，从表单中获取
+        // 如果没有传入 examId，从表单中获取
         const effectiveExamId = examId || document.getElementById('selectedExamId').value;
         
-        // ✅ 构建URL参数
+        // 构建URL参数
         const url = new URL('/api/admin/users', window.location.origin);
         url.searchParams.append('search', search);
         url.searchParams.append('status', 'registered');
@@ -777,10 +938,9 @@
         url.searchParams.append('per_page', '100');
         url.searchParams.append('exclude_resigned', 'true');
         
-        // ✅ 如果指定了考试ID，添加 exam_id 参数让后端根据考试国家过滤
+        // 如果指定了考试ID，添加 exam_id 参数让后端根据考试国家过滤
         if (effectiveExamId) {
             url.searchParams.append('exam_id', effectiveExamId);
-            console.log('根据考试ID过滤用户:', effectiveExamId);
         }
         
         // 如果手动指定了国家，作为额外过滤（优先级高于考试国家）
@@ -788,12 +948,12 @@
             url.searchParams.append('country', countryCode);
         }
         
-        console.log('请求URL:', url.toString());
-        
         try {
             const res = await fetch(url);
             const data = await res.json();
-            let users = data.data.filter(u => u.user_status === 'registered');
+            //let users = data.data.filter(u => u.user_status === 'registered');
+            let users = data.data || [];
+            users = users.filter(u => u.user_status === 'registered');
             
             // 前端额外过滤
             if (whId) {
@@ -897,7 +1057,7 @@
         const examId = document.getElementById('selectedExamId').value;
         const questionCount = parseInt(document.getElementById('questionCount').value) || 5;
         const reviewer = document.getElementById('reviewerInput').value;
-        const feedback = document.getElementById('feedbackInput').value;  // ✅ 新增
+        const feedback = document.getElementById('feedbackInput').value;
         const startTime = localDateTimeToUTC(document.getElementById('startTime').value);
         const endTime = localDateTimeToUTC(document.getElementById('endTime').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
@@ -908,7 +1068,7 @@
             exam_id: examId,
             question_count: questionCount,
             reviewer: reviewer,
-            feedback: feedback,  // ✅ 新增
+            feedback: feedback,
             is_draft: isDraft,
             start_time: startTime || null,
             end_time: endTime || null,
@@ -945,11 +1105,11 @@
     }
 
     function resetInterviewForm() {
-        document.getElementById('examSearch').value = '';
+        document.getElementById('examSelect').value = '';
         document.getElementById('selectedExamId').value = '';
         document.getElementById('questionCount').value = 5;
         document.getElementById('reviewerInput').value = '';
-        document.getElementById('feedbackInput').value = '';  // ✅ 新增
+        document.getElementById('feedbackInput').value = '';
         document.getElementById('startTime').value = '';
         document.getElementById('endTime').value = '';
         document.getElementById('userSearch').value = '';
@@ -958,7 +1118,7 @@
         document.getElementById('countryFilter').value = '';
         document.getElementById('userListBody').innerHTML = '';
         // 重新启用所有字段（防止残留禁用状态）
-        document.getElementById('examSearch').disabled = false;
+        document.getElementById('examSelect').disabled = false;
         document.getElementById('questionCount').disabled = false;
         document.getElementById('userSearch').disabled = false;
         document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = false);
@@ -987,69 +1147,204 @@
         });
     }
 
-    // ========== 编辑访谈 ==========
     async function openEditInterviewModal(invId) {
-        function toLocalDatetimeLocal(isoString) {
-            if (!isoString) return '';
+        const modalEl = document.getElementById('newInterviewModal');
+
+        // 显示加载状态
+        const tbody = document.getElementById('userListBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        <span class="spinner-border spinner-border-sm me-1"></span>
+                        ${t('loading')}...
+                    </td>
+                </tr>
+            `;
+        }
+        
+        try {
+            const res = await fetch(`/api/admin/interview/${invId}/detail`);
+            const result = await res.json();
+            
+            if (!result.success || !result.data) {
+                alert(t('t_failed_load_interview'));
+                return;
+            }
+            
+            const interview = result.data;
+
+            // ========== 🔍 调试日志 ==========
+            console.log('========== 访谈详情调试 ==========');
+            console.log('interview 完整数据:', JSON.stringify(interview, null, 2));
+            console.log('interview.status:', interview.status);
+            console.log('interview.status 类型:', typeof interview.status);
+            console.log('interview.status 是否等于 draft:', interview.status === 'draft');
+            console.log('interview.status 是否等于 created:', interview.status === 'created');
+            console.log('interview.status 是否等于 active:', interview.status === 'active');
+            console.log('interview.status 是否等于 closed:', interview.status === 'closed');
+            console.log('interview 所有字段:', Object.keys(interview));
+            console.log('=====================================');
+            // ========== 调试日志结束 ==========
+            
+            editMode = true;
+            editingInterviewId = invId;
+
+            //1. 先重置所有禁用状态
+            const examSelect = document.getElementById('examSelect');
+            const questionCount = document.getElementById('questionCount');
+            const userSearch = document.getElementById('userSearch');
+            const isPartnerFilter = document.getElementById('isPartnerFilter');
+            const whIdFilter = document.getElementById('whIdFilter');
+            const countryFilter = document.getElementById('countryFilter');
+            const startTime = document.getElementById('startTime');
+            const endTime = document.getElementById('endTime');
+            const reviewerInput = document.getElementById('reviewerInput');
+            const feedbackInput = document.getElementById('feedbackInput');
+            const selectAllUsers = document.getElementById('selectAllUsers');
+            const allCheckboxes = document.querySelectorAll('.user-checkbox');
+            
+            // 重置所有字段
+            [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter].forEach(el => {
+                if (el) {
+                    el.disabled = false;
+                    el.readOnly = false;
+                    el.style.pointerEvents = 'auto';
+                }
+            });
+            allCheckboxes.forEach(cb => cb.disabled = false);
+            if (selectAllUsers) selectAllUsers.disabled = false;
+            
+            // 填充基本信息
+            if (examSelect) examSelect.value = interview.exam_title || '';
+            document.getElementById('selectedExamId').value = interview.exam_id || '';
+            if (questionCount) questionCount.value = interview.question_count || 8;
+            if (reviewerInput) reviewerInput.value = interview.reviewer || '';
+            if (feedbackInput) feedbackInput.value = interview.feedback || '';
+            if (startTime) startTime.value = toLocalDatetimeLocal(interview.start_time);
+            if (endTime) endTime.value = toLocalDatetimeLocal(interview.end_time);
+            
+            // 加载并勾选已分配的学员
+            await loadUserListForInterview(interview.exam_id);
+            
+            const userIds = interview.user_ids || [];
+            allCheckboxes.forEach(cb => {
+                cb.checked = userIds.includes(cb.value);
+            });
+            
+            //2. 根据状态控制字段
+            const status = interview.status;
+            
+            if (status === 'closed') {
+                // 已关闭：所有字段禁用
+                [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter, startTime, endTime, reviewerInput, feedbackInput].forEach(el => {
+                    if (el) el.disabled = true;
+                });
+                allCheckboxes.forEach(cb => cb.disabled = true);
+                if (selectAllUsers) selectAllUsers.disabled = true;
+                showToast(t('t_closed_interview_readonly'), 'warning');
+            } else if (status === 'active') {
+                // 进行中：考试和人员禁用，有效期等可编辑
+                [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter].forEach(el => {
+                    if (el) el.disabled = true;
+                });
+                allCheckboxes.forEach(cb => cb.disabled = true);
+                if (selectAllUsers) selectAllUsers.disabled = true;
+                // 有效期、阅卷人、反馈人可编辑
+                [startTime, endTime, reviewerInput, feedbackInput].forEach(el => {
+                    if (el) el.disabled = false;
+                });
+            } else {
+                //草稿和未开始：所有字段可编辑（明确设置）
+                [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter, startTime, endTime, reviewerInput, feedbackInput].forEach(el => {
+                    if (el) {
+                        el.disabled = false;
+                        el.readOnly = false;
+                        el.style.pointerEvents = 'auto';
+                        el.style.opacity = '1';
+                        el.style.backgroundColor = '';
+                    }
+                });
+                allCheckboxes.forEach(cb => {
+                    cb.disabled = false;
+                    cb.style.pointerEvents = 'auto';
+                });
+                if (selectAllUsers) selectAllUsers.disabled = false;
+                
+                //确保 examSelect 可以获得焦点
+                if (examSelect) {
+                    // 移除可能残留的禁用属性
+                    examSelect.removeAttribute('readonly');
+                    examSelect.removeAttribute('disabled');
+                    // 确保样式正常
+                    examSelect.style.backgroundColor = '#ffffff';
+                    examSelect.style.cursor = 'text';
+                    // 重新触发事件绑定（如果有需要）
+                }
+                
+                console.log('✅ 草稿/未开始状态，所有字段已启用');
+                console.log('examSelect disabled:', examSelect.disabled);
+                console.log('examSelect readonly:', examSelect.readOnly);
+            }
+            
+            //3. 显示模态框
+            if (window.interviewModalInstance) {
+                try {
+                    window.interviewModalInstance.dispose();
+                } catch(e) {}
+                window.interviewModalInstance = null;
+            }
+            
+            window.interviewModalInstance = new bootstrap.Modal(modalEl, {
+                backdrop: true,
+                keyboard: true
+            });
+             
+            // 监听模态框显示完成事件，确保字段状态
+            modalEl.addEventListener('shown.bs.modal', function onShown() {
+                modalEl.removeEventListener('shown.bs.modal', onShown);
+                
+                // 如果是草稿或未开始，再次确保启用
+                if (status !== 'closed' && status !== 'active') {
+                    const examSelectEl = document.getElementById('examSelect');
+                    if (examSelectEl) {
+                        examSelectEl.disabled = false;
+                        examSelectEl.readOnly = false;
+                        examSelectEl.style.pointerEvents = 'auto';
+                        examSelectEl.style.backgroundColor = '#ffffff';
+                        // 强制聚焦
+                        setTimeout(() => {
+                            examSelectEl.focus();
+                        }, 150);
+                    }
+                    document.querySelectorAll('.user-checkbox').forEach(cb => {
+                        cb.disabled = false;
+                    });
+                }
+            });
+            window.interviewModalInstance.show();
+
+        } catch (err) {
+            console.error('加载访谈详情失败:', err);
+            alert(t('t_failed_load_interview'));
+        }
+    }
+
+    // 辅助函数：UTC 转本地 datetime-local
+    function toLocalDatetimeLocal(isoString) {
+        if (!isoString) return '';
+        try {
             const date = new Date(isoString);
+            if (isNaN(date.getTime())) return '';
             const year = date.getFullYear();
             const month = String(date.getMonth() + 1).padStart(2, '0');
             const day = String(date.getDate()).padStart(2, '0');
             const hours = String(date.getHours()).padStart(2, '0');
             const minutes = String(date.getMinutes()).padStart(2, '0');
             return `${year}-${month}-${day}T${hours}:${minutes}`;
+        } catch {
+            return '';
         }
-        // 获取访谈完整数据
-        let interview;
-        // 尝试从列表数据中获取（如果页面已加载）
-        const res = await fetch(`/api/admin/interviews?per_page=100`);
-        const data = await res.json();
-        interview = (data.data || []).find(inv => inv.id == invId);
-        if (!interview) return alert('未找到访谈信息');
-
-        const examId = interview.exam_id;
-        if (examId) {
-            document.getElementById('selectedExamId').value = examId;
-        } else {
-            console.warn('编辑的访谈缺少 exam_id');
-        }
-        // 准备打开新增模态框并填充数据
-        editMode = true;
-        editingInterviewId = invId;
-
-        // 填充基本信息
-        document.getElementById('examSearch').value = interview.exam_title || '';
-        document.getElementById('selectedExamId').value = interview.exam_id || '';
-        document.getElementById('questionCount').value = interview.question_count || 8;
-        document.getElementById('reviewerInput').value = interview.reviewer || '';
-        document.getElementById('feedbackInput').value = interview.feedback || '';  // ✅ 新增
-        document.getElementById('startTime').value = toLocalDatetimeLocal(interview.start_time);
-        document.getElementById('endTime').value = toLocalDatetimeLocal(interview.end_time);
-
-        // 加载学员列表并勾选已存在的学员
-        await loadUserListForInterview(); // 先加载全部可选学员
-        // 通过异步请求获取该访谈已有的 user_ids（需后端提供简单接口）
-        const userRes = await fetch(`/api/admin/interview/${invId}/user_ids`);
-        const userIds = (await userRes.json()).user_ids || [];
-        // 勾选对应复选框
-        document.querySelectorAll('.user-checkbox').forEach(cb => {
-            cb.checked = userIds.includes(cb.value);
-        });
-
-        // 根据状态控制字段是否可修改
-        const status = interview.status;
-        const disableFields = status === 'active'; // 进行中禁用人员、考试、题目数量
-        document.getElementById('examSearch').disabled = disableFields;
-        document.getElementById('questionCount').disabled = disableFields;
-        document.getElementById('userSearch').disabled = disableFields;
-        // 禁用复选框（通过禁用整个表格区域？更优雅的是禁用所有复选框）
-        document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = disableFields);
-        document.getElementById('isPartnerFilter').disabled = disableFields;
-        document.getElementById('whIdFilter').disabled = disableFields;
-        document.getElementById('countryFilter').disabled = disableFields;
-
-        // 显示模态框
-        new bootstrap.Modal(document.getElementById('newInterviewModal')).show();
     }
 
     document.getElementById('saveEditBtn').addEventListener('click', async () => {

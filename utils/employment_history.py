@@ -1,6 +1,6 @@
 # utils/employment_history.py
 from datetime import datetime, timezone
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 import logging
 
 logger = logging.getLogger(__name__)
@@ -17,7 +17,7 @@ def add_employment_event(user_id: str, event_type: str, created_by: str = None, 
         notes: 备注
     """
     try:
-        db = get_supabase()
+        db = get_supabase_admin()
         now = datetime.now(timezone.utc).isoformat()
         
         db.table("user_employment_history").insert({
@@ -49,7 +49,7 @@ def get_employment_history(user_id: str, limit: int = None):
         list: 历史记录列表，按时间倒序
     """
     try:
-        db = get_supabase()
+        db = get_supabase_admin()
         query = db.table("user_employment_history") \
             .select("*") \
             .eq("user_id", user_id) \

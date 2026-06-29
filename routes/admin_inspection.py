@@ -240,6 +240,61 @@ def api_admin_interviews():
         
         return jsonify({"success": True})
 
+@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/detail')
+@login_required
+@admin_required
+def api_get_interview_detail(interview_id):
+    db = get_supabase()
+    
+    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"success": False, "message": "访谈不存在"}), 404
+    
+    interview = inv_res.data
+    
+    # 计算状态（与列表接口保持一致）
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
+    start_time = interview.get('start_time')
+    end_time = interview.get('end_time')
+    
+    if not start_time or not end_time:
+        status = 'draft'
+    else:
+        try:
+            s = datetime.fromisoformat(start_time)
+            e = datetime.fromisoformat(end_time)
+            if now < s:
+                status = 'created'
+            elif now > e:
+                status = 'closed'
+            else:
+                status = 'active'
+        except:
+            status = 'draft'
+    
+    interview['status'] = status
+    
+    # 获取关联的考试标题
+    exam_title = ''
+    if interview.get('exam_id'):
+        exam_res = db.table("exams").select("title").eq("id", interview['exam_id']).maybe_single().execute()
+        if exam_res.data:
+            exam_title = exam_res.data['title']
+    
+    # 获取已分配的学员ID
+    user_ids_res = db.table("interview_results").select("user_id").eq("interview_id", interview_id).execute()
+    user_ids = list(set([r['user_id'] for r in (user_ids_res.data or [])]))
+    
+    return jsonify({
+        "success": True,
+        "data": {
+            **interview,
+            "exam_title": exam_title,
+            "user_ids": user_ids
+        }
+    })
+
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>', methods=['GET'])
 @login_required
 @admin_required

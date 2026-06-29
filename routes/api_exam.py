@@ -15,7 +15,7 @@ from routes.helpers import login_required, admin_required, robust_parse_json, ge
 from services.db import get_supabase, get_supabase_admin
 from services import auth, exam, export
 from utils.status import get_exam_status
-from utils.admin_messages import log_user_login
+from utils.manage_messages import log_user_login
 logger = logging.getLogger(__name__)
 
 # routes/api_exam.py

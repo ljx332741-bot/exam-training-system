@@ -118,6 +118,28 @@ def upload_signature(signature_base64, training_id, user_id):
         logger.error(f"上传签名失败: {e}")
         raise e
 
+def convert_time_for_export(time_str, timezone_param=None):
+    """将 UTC 时间字符串转换为本地时间，用于 Excel 或报表导出"""
+    if not time_str:
+        return ''
+    try:
+        # 方式1：如果传入了时区参数，直接使用
+        if timezone_param:
+            from utils.timezone_utils import utc_string_to_local
+            return utc_string_to_local(time_str, timezone_param, '%Y-%m-%d %H:%M:%S')
+        
+        # 方式2：使用默认的 format_datetime
+        return format_datetime(time_str)
+    except Exception as e:
+        # 方式3：降级方案 - 直接格式化 UTC 时间
+        try:
+            if 'T' in time_str:
+                return time_str.replace('T', ' ')[:19]
+            elif ' ' in time_str:
+                return time_str[:19]
+            return str(time_str)[:19] if time_str else ''
+        except:
+            return str(time_str)[:19] if time_str else ''
 
 def get_attendance_data(training_id, country=''):
     """获取培训签到数据"""

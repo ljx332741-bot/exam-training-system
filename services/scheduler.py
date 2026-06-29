@@ -64,7 +64,7 @@ def auto_submit_single_exam(db, user_id, exam_id, started_at_str, now):
             except Exception as e:
                 logger.warning(f"计算用时失败: {e}")
         
-        # ✅ 正确的链式调用
+        # 正确的链式调用
         draft_res = safe_table('user_exam_drafts') \
             .select('answers') \
             .eq('user_id', user_id) \
@@ -91,7 +91,7 @@ def auto_submit_single_exam(db, user_id, exam_id, started_at_str, now):
             time_used=time_used
         )
         
-        # ✅ 正确的链式调用
+        # 正确的链式调用
         existing = safe_table('user_exam_status') \
             .select('id') \
             .eq('user_id', user_id) \
@@ -135,8 +135,6 @@ def auto_submit_single_exam(db, user_id, exam_id, started_at_str, now):
 # ============================================================
 # 4. 自动提交超时考试（带超时保护和分批处理）
 # ============================================================
-# services/scheduler.py
-
 @retry_on_timeout(max_retries=2, delay=3)
 def auto_submit_timeout_exams(app):
     """自动提交超时考试（基于考试时长）- 带超时保护"""
@@ -147,14 +145,14 @@ def auto_submit_timeout_exams(app):
         logger.info("🔄 开始扫描超时考试...")
         
         try:
-            # ✅ 正确的链式调用方式
+            # 正确的链式调用方式
             status_res = safe_table('user_exam_status', timeout=120) \
                 .select('*') \
                 .eq('is_submitted', False) \
                 .not_.is_('started_at', 'null') \
                 .execute()
             
-            if not status_res.data:
+            if not status_res or not status_res.data:
                 logger.info("没有需要检查的进行中考试")
                 return
             

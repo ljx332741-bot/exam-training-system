@@ -9,6 +9,7 @@ from services.db import get_supabase
 from services import auth
 from services.auth import hash_password
 from routes.helpers import login_required
+from utils.manage_messages import log_user_login, log_user_logout
 
 logger = logging.getLogger(__name__)
 
@@ -295,45 +296,6 @@ def api_reset_password():
     }).eq("email", d['email']).execute()
     return jsonify({"success": True})
 
-'''
-@auth_bp.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email, pwd = request.form['email'], request.form['password']
-        db = get_supabase()
-        user = None
-        try:
-            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").maybe_single().execute()
-            if res and hasattr(res, 'data'): user = res.data
-            elif isinstance(res, dict): user = res
-        except: pass
-        
-        if user and auth.check_password(pwd, user.get('password_hash', '')):
-            admin_countries = user.get('admin_countries', '')
-            try:
-                if isinstance(admin_countries, str): json.loads(admin_countries)
-            except: admin_countries = json.dumps([])
-            session.update({
-                "user_id": user['id'], "user_email": email, "role": user.get('role', 'user'),
-                "admin_countries": admin_countries, "is_protected": user.get('is_protected', False),
-                "user_country": user.get('country')
-            })
-            
-            # ✅ 检查是否是 AJAX 请求
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
-            
-            flash({'msg': 'login_success', 'params': []}, 'success')
-            return redirect(url_for('exam.dashboard'))
-        else:
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({"success": False, "message": "invalid_email_or_password"}), 401
-            
-            flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
-            return render_template('auth/login.html')
-    
-    return render_template('auth/login.html')
-'''
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -369,7 +331,7 @@ def login():
                     ip=request.remote_addr,
                     user_agent=request.headers.get('User-Agent')
                 )
-                
+
             flash({'msg': 'login_success', 'params': []}, 'success')
             return redirect(url_for('exam.dashboard'))
         else:
@@ -377,13 +339,25 @@ def login():
                 return jsonify({"success": False, "message": "invalid_email_or_password"}), 401
             
             flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
-            return render_template('auth/login_standalone.html')  # ✅ 改为独立模板
-    
+            return render_template('auth/login_standalone.html')
+
     # GET 请求也使用独立模板
     return render_template('auth/login_standalone.html')
 
 @auth_bp.route('/logout')
 def logout():
+    user_id = session.get('user_id')
+    if user_id:
+        try:
+            user_res = db.table("users").select("name_en, email").eq("id", user_id).maybe_single().execute()
+            if user_res.data:
+                log_user_logout(
+                    user_id=user_id,
+                    user_name=user_res.data.get('name_en', ''),
+                    email=user_res.data.get('email', '')
+                )
+        except Exception as e:
+            logger.warning(f"记录登出消息失败: {e}")
     session.clear()
     flash({'msg': 'logout_success', 'params': []}, 'info')
     return redirect(url_for('auth.login'))

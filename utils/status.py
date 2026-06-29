@@ -39,7 +39,7 @@ def get_training_status(training):
     """根据培训对象计算状态"""
     if not training:
         return 'unknown'
-    
+
     now = datetime.now(timezone.utc)
     start_time = training.get('start_time')
     end_time = training.get('end_time')

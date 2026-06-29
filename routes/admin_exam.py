@@ -9,13 +9,13 @@ from flask import (
     Flask, request, jsonify, redirect, url_for, render_template, session, flash, send_file, make_response
 )
 from . import admin_exam_bp
-from services.db import get_supabase, get_supabase_admin
+from services.db import get_supabase, get_supabase_admin, safe_table
 from services import auth, exam, export
 from config import Config
 from utils.status import get_exam_status
 from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country, utc_to_local, format_datetime_local
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
-from utils.cache_manager import cache_get
+from utils.cache_manager import cache_get, clear_all_assignment_caches
 from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
 from utils.permissions import (
     is_developer, 
@@ -44,7 +44,7 @@ from routes.helpers import (
     is_user_resigned,
     get_default_exam_values
 )
-from utils.admin_messages import (
+from utils.manage_messages import (
     log_exam_delete,
     log_exam_restore,
     log_result_delete,
@@ -71,7 +71,7 @@ def api_admin_current_user_permissions():
 @admin_exam_bp.route('/api/admin/dashboard/stats')
 @login_required
 @admin_required
-@cache_get(ttl=300, prefix='dashboard_stats', include_user=True)  # ✅ 添加缓存
+@cache_get(ttl=300, prefix='dashboard_stats', include_user=True)
 def api_dashboard_stats():
     """获取仪表盘统计数据（带缓存）"""
     try:
@@ -451,7 +451,7 @@ def admin_import_save():
     
     allowed = None
     if current_role == 'developer':
-        # ✅ developer 无限制
+        # developer 无限制
         allowed = None
     elif current_role == 'super_admin':
         admin_countries = user_data.get('admin_countries')
@@ -480,7 +480,7 @@ def admin_import_save():
     is_draft = request.args.get('draft', 'false').lower() == 'true'
 
     # 权限检查：管理员创建的所有国家必须在允许范围内
-    # ✅ 权限检查：developer 和 super_admin（无权限范围）可以创建任何国家
+    # 权限检查：developer 和 super_admin（无权限范围）可以创建任何国家
     if allowed is not None:
         if not allowed:
             logger.warning(f"管理员没有任何国家权限，禁止创建考试")
@@ -503,7 +503,7 @@ def admin_import_save():
         logger.info(f"   start_time: {start_time}")
         logger.info(f"   end_time: {end_time}")
 
-        # ✅ 获取及格分数（默认85）
+        # 获取及格分数（默认85）
         pass_score = request.json.get('pass_score', 85)
     
         # 创建考试记录（包含完整信息）
@@ -595,22 +595,6 @@ def admin_result_detail(result_id):
         details=details
     )
 
-'''
-@admin_exam_bp.route('/admin/reset_exam/<int:exam_id>/<user_id>', methods=['POST'])
-@login_required
-@admin_required
-def admin_reset_exam(exam_id, user_id):
-    db = get_supabase()
-    reset_at = datetime.now(timezone.utc).isoformat()
-    existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
-    if existing.data: db.table("user_exam_status").update({"is_submitted": False, "reset_at": reset_at, "started_at": None, "submitted_at": None}).eq("id", existing.data['id']).execute()
-    else: db.table("user_exam_status").insert({"user_id": user_id, "exam_id": int(exam_id), "is_submitted": False, "reset_at": reset_at}).execute()
-    db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", int(exam_id)).execute()
-    return jsonify({"success": True, "reset_token": reset_at})
-'''
-
-# routes/admin_exam.py - admin_reset_exam 函数
-
 @admin_exam_bp.route('/admin/reset_exam/<int:exam_id>/<user_id>', methods=['POST'])
 @login_required
 @admin_required
@@ -618,7 +602,7 @@ def admin_reset_exam(exam_id, user_id):
     db = get_supabase()
     reset_at = datetime.now(timezone.utc).isoformat()
     
-    # ✅ 重置考试状态，但不删除草稿
+    # 重置考试状态，但不删除草稿
     existing = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
     if existing.data:
         db.table("user_exam_status").update({
@@ -682,7 +666,6 @@ def admin_delete_exam(exam_id):
         if permanent:
             logger.info(f"开始永久删除考试 {exam_id}")
             log_exam_delete(
-                db=db,
                 exam_id=exam_id,
                 exam_title=exam_title,
                 admin_id=session.get('user_id'),
@@ -1111,7 +1094,7 @@ def update_exam_duration(exam_id):
 @login_required
 @admin_required
 def admin_exam_status(exam_id):
-    db = get_supabase()
+    db = get_supabase_admin()
     current_role = session.get('role')
     is_dev = is_developer()
     allowed = get_allowed_countries()
@@ -1184,11 +1167,20 @@ def admin_exam_status(exam_id):
     users = users_res.data or []
 
     # ========== 3. 获取考试分配关系 ==========
-    assign_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
+    assign_res = db.table("exam_assignments")\
+        .select("user_id")\
+        .eq("exam_id", exam_id)\
+        .is_("deleted_at", "null")\
+        .execute()
     assigned_user_ids = {a['user_id'] for a in (assign_res.data or [])}
 
+
     # ========== 4. 获取考试状态 ==========
-    status_res = db.table("user_exam_status").select("user_id, started_at, is_submitted, submitted_at").eq("exam_id", exam_id).execute()
+    status_res = db.table("user_exam_status")\
+        .select("user_id, started_at, is_submitted, submitted_at")\
+        .eq("exam_id", exam_id)\
+        .is_("deleted_at", "null")\
+        .execute()
     status_dict = {}
     for s in (status_res.data or []):
         status_dict[s['user_id']] = s
@@ -1388,7 +1380,7 @@ def api_admin_exam_update(exam_id):
 def admin_push_exam_with_settings(exam_id):
     db = get_supabase()
     data = request.json
-    logger.info(f"接收到的推送数据: {data}")  # ✅ 查看前端是否传递了 reviewer
+    logger.info(f"接收到的推送数据: {data}")
     
     # 1. 首先检查考试权限
     exam_res = db.table("exams").select("countries, country, title, reviewer").eq("id", exam_id).maybe_single().execute()
@@ -2237,7 +2229,7 @@ def api_admin_delete_exam_result(result_id):
             "deleted_at": datetime.now(timezone.utc).isoformat(),
             "deleted_by": user_id
         }).eq("id", result_id).execute()
-        
+
         # 5. 同步更新 user_exam_status 表，允许重新考试
         db.table("user_exam_status").update({
             "is_submitted": False,
@@ -3016,4 +3008,300 @@ def reopen_exam_for_testing(exam_id):
         
     except Exception as e:
         logger.error(f"重新打开考试失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ============== 培训完成度报表内部接口，用于考生考试分配统一接口0628==============
+@admin_exam_bp.route('/api/admin/exam/assign', methods=['POST'])
+@login_required
+@admin_required
+def assign_exam_batch():
+    """统一考试分配接口"""
+    try:
+        data = request.json
+        exam_id = data.get('exam_id')
+        user_ids = data.get('user_ids', [])
+        
+        if not exam_id or not user_ids:
+            return jsonify({"success": False, "message": "参数不完整"}), 400
+        
+        if not isinstance(user_ids, list):
+            return jsonify({"success": False, "message": "user_ids 必须是数组"}), 400
+        
+        db = get_supabase_admin()
+        
+        # 1. 权限检查
+        exam_res = safe_table('exams')\
+            .select('countries, title')\
+            .eq('id', exam_id)\
+            .maybe_single()\
+            .execute()
+        
+        if exam_res is None or exam_res.data is None:
+            return jsonify({"success": False, "message": "考试不存在"}), 404
+        
+        if not can_access_exam(exam_res.data):
+            return jsonify({"success": False, "message": "无权限"}), 403
+        
+        # 2. 批量处理分配
+        now = datetime.now(timezone.utc).isoformat()
+        assignments = []
+        restored_count = 0
+        skipped_count = 0
+        all_affected_users = []  # ✅ 收集所有需要处理状态记录的用户
+        
+        for uid in user_ids:
+            try:
+                # 检查是否存在记录（包括已删除的）
+                existing_res = safe_table('exam_assignments')\
+                    .select('id, deleted_at')\
+                    .eq('exam_id', exam_id)\
+                    .eq('user_id', uid)\
+                    .maybe_single()\
+                    .execute()
+                
+                if existing_res and existing_res.data:
+                    if existing_res.data.get('deleted_at') is None:
+                        # 有有效的分配记录，跳过
+                        skipped_count += 1
+                        continue
+                    else:
+                        # ✅ 已删除的记录：恢复它
+                        safe_table('exam_assignments')\
+                            .update({
+                                "deleted_at": None,
+                                "deleted_by": None,
+                                "assigned_at": now,
+                                "created_by": session.get('user_id')
+                            })\
+                            .eq('id', existing_res.data['id'])\
+                            .execute()
+                        restored_count += 1
+                        all_affected_users.append(uid)  # ✅ 加入列表
+                        logger.info(f"✅ 恢复已删除的分配: user={uid}, exam={exam_id}")
+                        continue
+                
+                # 没有记录，创建新分配
+                assignments.append({
+                    "exam_id": exam_id,
+                    "user_id": uid,
+                    "assigned_at": now,
+                    "created_by": session.get('user_id')
+                })
+                all_affected_users.append(uid)  # ✅ 加入列表
+                
+            except Exception as e:
+                logger.warning(f"处理用户 {uid} 分配失败: {e}")
+                continue
+        
+        assigned_count = 0
+        if assignments:
+            try:
+                result = safe_table('exam_assignments').insert(assignments).execute()
+                if result and result.data:
+                    assigned_count = len(result.data)
+            except Exception as e:
+                logger.error(f"批量插入分配失败: {e}")
+                return jsonify({"success": False, "message": "分配失败"}), 500
+        
+        # ========== ✅ 为所有受影响的用户创建/重置考试状态记录 ==========
+        status_created = 0
+        status_reset = 0
+        status_failed = 0
+        
+        for uid in all_affected_users:
+            try:
+                # 检查是否已存在状态记录（包括已删除的）
+                status_res = safe_table('user_exam_status')\
+                    .select('id, deleted_at')\
+                    .eq('user_id', uid)\
+                    .eq('exam_id', exam_id)\
+                    .maybe_single()\
+                    .execute()
+                
+                if status_res and status_res.data:
+                    if status_res.data.get('deleted_at') is None:
+                        # 已存在且未删除，重置状态
+                        safe_table('user_exam_status')\
+                            .update({
+                                "is_submitted": False,
+                                "started_at": None,
+                                "submitted_at": None,
+                                "reset_at": now,
+                                "updated_at": now,
+                                "deleted_at": None,
+                                "deleted_by": None
+                            })\
+                            .eq('id', status_res.data['id'])\
+                            .execute()
+                        status_reset += 1
+                        logger.info(f"✅ 已重置用户 {uid} 的考试状态")
+                    else:
+                        # 已存在但被删除，恢复它
+                        safe_table('user_exam_status')\
+                            .update({
+                                "is_submitted": False,
+                                "started_at": None,
+                                "submitted_at": None,
+                                "reset_at": now,
+                                "updated_at": now,
+                                "deleted_at": None,
+                                "deleted_by": None
+                            })\
+                            .eq('id', status_res.data['id'])\
+                            .execute()
+                        status_reset += 1
+                        logger.info(f"✅ 已恢复用户 {uid} 的考试状态记录")
+                else:
+                    # 不存在，创建新记录（使用表结构中的所有字段）
+                    safe_table('user_exam_status')\
+                        .insert({
+                            "user_id": uid,
+                            "exam_id": exam_id,
+                            "is_submitted": False,
+                            "created_at": now,
+                            "updated_at": now
+                        })\
+                        .execute()
+                    status_created += 1
+                    logger.info(f"✅ 已为用户 {uid} 创建考试状态记录")
+            except Exception as e:
+                status_failed += 1
+                logger.warning(f"处理用户 {uid} 状态记录失败: {e}")
+        
+        # 3. 清除相关缓存
+        clear_all_assignment_caches(exam_id=exam_id)
+        
+        # 4. 构建返回消息
+        total_processed = assigned_count + restored_count
+        if total_processed > 0 and skipped_count > 0:
+            message = f"成功分配 {total_processed} 名学员（其中恢复 {restored_count} 名），{skipped_count} 名已存在"
+        elif total_processed > 0:
+            message = f"成功分配 {total_processed} 名学员（其中恢复 {restored_count} 名）"
+        else:
+            message = "所有学员已分配，无需重复操作"
+        
+        return jsonify({
+            "success": True,
+            "assigned_count": total_processed,
+            "restored_count": restored_count,
+            "skipped_count": skipped_count,
+            "status_created": status_created,
+            "status_reset": status_reset,
+            "status_failed": status_failed,
+            "message": message
+        })
+        
+    except Exception as e:
+        logger.error(f"分配考试失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exam/unassign', methods=['POST'])
+@login_required
+@admin_required
+def unassign_exam_batch():
+    """统一取消考试分配接口"""
+    try:
+        data = request.json
+        exam_id = data.get('exam_id')
+        user_ids = data.get('user_ids', [])
+        
+        if not exam_id or not user_ids:
+            return jsonify({"success": False, "message": "参数不完整"}), 400
+        
+        db = get_supabase_admin()
+        
+        # 1. 权限检查
+        exam_res = safe_table('exams')\
+            .select('countries')\
+            .eq('id', exam_id)\
+            .maybe_single()\
+            .execute()
+        
+        if exam_res is None or exam_res.data is None:
+            return jsonify({"success": False, "message": "考试不存在"}), 404
+        
+        if not can_access_exam(exam_res.data):
+            return jsonify({"success": False, "message": "无权限"}), 403
+        
+        # 2. 软删除分配 + 状态记录
+        now = datetime.now(timezone.utc).isoformat()
+        unassigned_count = 0
+        user_id = session.get('user_id')
+        
+        for uid in user_ids:
+            try:
+                # 检查是否存在有效的分配记录
+                existing_res = safe_table('exam_assignments')\
+                    .select('id')\
+                    .eq('exam_id', exam_id)\
+                    .eq('user_id', uid)\
+                    .is_('deleted_at', 'null')\
+                    .maybe_single()\
+                    .execute()
+                
+                if existing_res is None or existing_res.data is None:
+                    logger.warning(f"用户 {uid} 没有有效的分配记录，跳过")
+                    continue
+                
+                # 软删除分配记录
+                result = safe_table('exam_assignments')\
+                    .update({
+                        "deleted_at": now,
+                        "deleted_by": user_id
+                    })\
+                    .eq('exam_id', exam_id)\
+                    .eq('user_id', uid)\
+                    .is_('deleted_at', 'null')\
+                    .execute()
+                
+                if result and result.data:
+                    unassigned_count += 1
+                    
+                    # ✅ 同步软删除 user_exam_status
+                    status_res = safe_table('user_exam_status')\
+                        .select('id')\
+                        .eq('user_id', uid)\
+                        .eq('exam_id', exam_id)\
+                        .is_('deleted_at', 'null')\
+                        .maybe_single()\
+                        .execute()
+                    
+                    if status_res and status_res.data:
+                        safe_table('user_exam_status')\
+                            .update({
+                                "deleted_at": now,
+                                "deleted_by": user_id,
+                                "is_submitted": False,
+                                "started_at": None,
+                                "submitted_at": None,
+                                "reset_at": now,
+                                "updated_at": now
+                            })\
+                            .eq('id', status_res.data['id'])\
+                            .execute()
+                        logger.info(f"✅ 已软删除用户 {uid} 的考试状态记录")
+                    
+                    # ✅ 同步清除草稿
+                    safe_table('user_exam_drafts')\
+                        .delete()\
+                        .eq('user_id', uid)\
+                        .eq('exam_id', exam_id)\
+                        .execute()
+                    
+            except Exception as e:
+                logger.warning(f"取消用户 {uid} 分配失败: {e}")
+                continue
+        
+        # 3. 清除相关缓存
+        clear_all_assignment_caches(exam_id=exam_id)
+        
+        return jsonify({
+            "success": True,
+            "unassigned_count": unassigned_count,
+            "message": f"成功取消 {unassigned_count} 名学员的分配"
+        })
+        
+    except Exception as e:
+        logger.error(f"取消考试分配失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
