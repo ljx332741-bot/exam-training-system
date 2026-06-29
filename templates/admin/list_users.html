@@ -975,10 +975,10 @@
 
     // ==================== 权限判断函数 ====================
     function canEditUser(user) {
+        if (IS_DEVELOPER) return true;
+        
         // 如果是受保护账号且不是自己 → 不可编辑
         if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
-        
-        if (IS_DEVELOPER) return true;
         
         // 超管可以编辑所有用户（除开发者）
         if (CURRENT_USER_ROLE === 'super_admin') {
@@ -995,13 +995,13 @@
         return false;
     }
     function canDeleteUser(user) {
-        // 受保护账号不可删除
-        if (user.is_protected) return false;
-        
         // 开发者可以删除任何用户（但不能删除自己）
         if (IS_DEVELOPER) {
             return user.id !== CURRENT_USER_ID;
         }
+        
+        // 受保护账号不可删除
+        if (user.is_protected) return false;
         
         // 超管可以删除任何用户（除开发者）
         if (CURRENT_USER_ROLE === 'super_admin') {
@@ -1015,11 +1015,11 @@
         return user.id !== CURRENT_USER_ID;
     }
     function canResetPwd(user) {
-        // 受保护账号只有本人能重置
-        if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
-        
         // 开发者可以重置任何用户的密码
         if (IS_DEVELOPER) return true;
+        
+        // 受保护账号只有本人能重置
+        if (user.is_protected && user.id !== CURRENT_USER_ID) return false;
         
         // 超管可以重置任何用户密码（除开发者）
         if (CURRENT_USER_ROLE === 'super_admin') {
@@ -2535,7 +2535,7 @@
         });
         modal.show();
         
-        // ✅ 监听模态框完全关闭事件，确保遮罩层被移除
+        // 监听模态框完全关闭事件，确保遮罩层被移除
         document.getElementById('deletedUsersModal').addEventListener('hidden.bs.modal', function() {
             // 强制移除可能残留的遮罩层
             const backdrops = document.querySelectorAll('.modal-backdrop');
@@ -2837,7 +2837,7 @@
                     if (whNameEnInput) whNameEnInput.value = wh.wh_name_en || '';
                     if (whTypeInput) whTypeInput.value = wh.wh_type || '';
                     
-                    // ✅ 自动设置国家
+                    // 自动设置国家
                     await autoSetCountry(wh.wh_id);
                 } else {
                     // 新库房
@@ -2849,7 +2849,7 @@
                     }
                     if (whTypeInput) whTypeInput.value = '';
                     
-                    // ✅ 尝试从新库房ID提取国家
+                    // 尝试从新库房ID提取国家
                     await autoSetCountry(whId);
                 }
             } catch(e) {
@@ -2982,11 +2982,10 @@
     }
 
     // ==================== 批量导入功能（使用全局模态框） ====================
-    // ==================== 批量导入功能（使用全局模态框） ====================
     const importUserBtn = document.getElementById('importUserBtn');
     let importFileInput = document.getElementById('importFileInput');
 
-    // ✅ 1. 检查全局函数是否存在，提供降级方案
+    // 1. 检查全局函数是否存在，提供降级方案
     if (typeof showImportModal === 'undefined') {
         window.showImportModal = function(title, message, showProgress) {
             console.log('导入模态框:', title, message);
@@ -3001,7 +3000,7 @@
         };
     }
 
-    // ✅ 2. 移除旧事件，避免重复绑定
+    // 2. 移除旧事件，避免重复绑定
     if (importFileInput) {
         const newInput = importFileInput.cloneNode(true);
         importFileInput.parentNode.replaceChild(newInput, importFileInput);
@@ -3030,7 +3029,7 @@
                 return;
             }
             
-            // ✅ 4. 显示导入模态框（使用安全的值）
+            // 4. 显示导入模态框（使用安全的值）
             // const importingTitle = (typeof t === 'function' ? t('importing_title') : '正在导入数据...') || '正在导入数据...';
             // const importingFile = (typeof t === 'function' ? t('importing_file') : '正在导入文件') || '正在导入文件';
 
@@ -3109,7 +3108,7 @@
         });
     }
 
-    // ✅ 添加导出按钮事件
+    // 添加导出按钮事件
     document.getElementById('exportUsersBtn')?.addEventListener('click', function() {
         // 获取当前筛选条件
         const searchInput = document.getElementById('searchInput');
@@ -3191,7 +3190,7 @@
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await setupCountryAutocomplete('deletedCountryFilter', 'deletedCountryDatalist');
         
-        // ✅ 只需要这两个筛选绑定
+        // 只需要这两个筛选绑定
         bindFilterEvents();
         bindDeletedFilterEvents();
         initWarehouseSearch();

@@ -6,12 +6,11 @@ from flask import  (
     Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file, make_response, current_app as app
 )
-# ✅ 添加 openpyxl 样式导入
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from . import admin_user_bp
 from services import auth, exam, export
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 from services.auth import hash_password
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.permissions import (
@@ -22,7 +21,8 @@ from routes.helpers import login_required, admin_required, get_current_user
 from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, generate_import_template, format_import_result
 from utils.i18n_messages import I18nMessages
 from utils.employment_history import add_employment_event, get_latest_employment_status, get_employment_summary
-        
+from utils.manage_messages import log_user_rehire, log_user_resign
+
 logger = logging.getLogger(__name__)
 
 @admin_user_bp.route('/admin/users')
@@ -56,7 +56,7 @@ def api_admin_user_detail(user_id):
         
         return jsonify(user_data)
     except Exception as e:
-        # ✅ 捕获可能的 204 异常
+        # 捕获可能的 204 异常
         error_msg = str(e)
         if '204' in error_msg or 'Missing response' in error_msg:
             return jsonify({"error": "用户不存在"}), 404
@@ -85,6 +85,12 @@ def api_admin_users():
     current_role = session.get('role')
     is_dev = is_developer()
 
+    logger.info(f"=== 收到请求参数 ===")
+    logger.info(f"exam_id: {exam_id}")
+    logger.info(f"country: {country}")
+    logger.info(f"training_id: {training_id}")
+    logger.info(f"is_dev: {is_dev}")
+    logger.info(f"allowed_countries: {allowed_countries}")
     # ========== 1. 从考试/培训获取国家列表 ==========
     exam_countries = []
     if exam_id:
@@ -156,17 +162,19 @@ def api_admin_users():
     # ========== 3. 确定最终国家过滤列表 ==========
     final_countries = []
     
-    if matched_country_codes:
-        final_countries = matched_country_codes
-    elif exam_countries:
+    # exam_id 优先级最高
+    if exam_id and exam_countries:
         final_countries = exam_countries
-    elif training_countries:
+    elif training_id and training_countries:
         final_countries = training_countries
+    elif matched_country_codes:
+        final_countries = matched_country_codes
     
     if allowed_countries is not None and final_countries:
-        final_countries = [c for c in final_countries if c in allowed_countries]
+        if not is_dev:
+            final_countries = [c for c in final_countries if c in allowed_countries]
     
-    if not final_countries and allowed_countries is not None and allowed_countries:
+    if not final_countries and allowed_countries is not None and allowed_countries and not is_dev:
         final_countries = allowed_countries
     
     logger.info(f"用户列表请求 - 最终国家过滤: {final_countries}")
@@ -203,9 +211,7 @@ def api_admin_users():
             if search_lower not in name and search_lower not in email and search_lower not in emp_id:
                 continue
 
-        # 国家筛选
-
-        # ✅ 修复：国家筛选（支持已导入用户通过创建者国家过滤）
+        # 国家筛选（支持已导入用户通过创建者国家过滤）
         if final_countries:
             user_country = user.get('country') or ''
             user_status = user.get('user_status', '')
@@ -244,7 +250,7 @@ def api_admin_users():
         filtered = [u for u in filtered if not u.get('is_resign', False)]
         logger.info(f"排除离职人员后剩余 {len(filtered)} 人")
     
-    # ========== 6. ✅ 使用修改后的 filter_users_by_permission ==========
+    # ========== 6. 使用修改后的 filter_users_by_permission ==========
     logger.info(f"权限过滤前: {len(filtered)} 个用户")
     for u in filtered:
         logger.info(f"  用户: {u.get('name_en')}, role={u.get('role')}, country={u.get('country')}, admin_countries={u.get('admin_countries')}")
@@ -654,7 +660,7 @@ def api_admin_import_users():
             if existing.data:
                 existing_user = existing.data[0]
                 if existing_user.get('deleted_at') is None:
-                    # ✅ 使用 I18nMessages 格式化错误
+                    # 使用 I18nMessages 格式化错误
                     error_rows.append(I18nMessages.format_error(
                         row_idx, "user_already_exists", name=name_en
                     ))
@@ -672,13 +678,13 @@ def api_admin_import_users():
             success_count += 1
             
         except Exception as e:
-            # ✅ 使用 I18nMessages 格式化错误
+            # 使用 I18nMessages 格式化错误
             error_rows.append(I18nMessages.format_error(
                 row_idx, "insert_failed", error=str(e)
             ))
             logger.error(f"导入用户失败第{row_idx}行: {e}")
     
-    # ✅ 返回纯字符串格式的错误信息
+    # 返回纯字符串格式的错误信息
     result = {
         "success": True,
         "success_count": success_count,
@@ -854,6 +860,7 @@ def api_admin_delete_user(user_id):
     if user_id == session['user_id']:
         return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
     db = get_supabase()
+    is_dev = is_developer()
 
     # 获取目标用户信息（包括 is_protected）
     target_res = db.table("users").select("role, user_status, is_protected").eq("id", user_id).maybe_single().execute()
@@ -861,7 +868,20 @@ def api_admin_delete_user(user_id):
         return jsonify({"success": False, "message": "用户不存在"}), 404
     target = target_res.data
 
-    if target.get('is_protected') and user_id != session['user_id']:
+    target_role = target.get('role', 'user')
+    current_role = session.get('role')
+
+    # 开发者：拥有最高权限，可以删除任何用户（除了自己）
+    if is_dev:
+        # 开发者可以删除任何用户（包括超管、受保护账号）
+        # 只有自己不能删除自己
+        if user_id == session['user_id']:
+            return jsonify({"success": False, "message": "不能删除自己的账号"}), 400
+        
+        # 执行删除（跳过所有其他权限检查）
+        return _execute_delete_user(db, user_id, target)
+
+    if target.get('is_protected'):
         return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
 
     # 权限检查（开发者保护）
@@ -869,42 +889,40 @@ def api_admin_delete_user(user_id):
     if not can_modify_user(target, current_user, 'delete'):
         return jsonify({"success": False, "message": "该账号被保护，无法删除"}), 403
 
-    target_role = target.get('role', 'user')
-    current_role = session.get('role')
-
     # 权限控制：普通管理员不能删除管理员或超管
     if current_role != 'super_admin' and target_role in ('admin', 'super_admin'):
         return jsonify({"success": False, "message": "权限不足，无法删除管理员"}), 403
 
+    # 执行删除
+    return _execute_delete_user(db, user_id, target)
+
+
+def _execute_delete_user(db, user_id, target):
+    """执行实际的删除操作"""
     user_status = target.get('user_status', 'registered')
 
-    # ========= 已导入用户：硬删除 =========
     if user_status == 'imported':
         try:
-            # 清理可能存在的考试分配记录（防止外键冲突）
             db.table("exam_assignments").delete().eq("user_id", user_id).execute()
-            # 物理删除用户
             db.table("users").delete().eq("id", user_id).execute()
             logger.info(f"硬删除已导入用户 {user_id}")
             return jsonify({"success": True, "hard_delete": True})
         except Exception as e:
-            # 如果硬删除失败（例如仍有其他关联记录），回退为软删除
             logger.error(f"硬删除失败，尝试软删除: {e}")
             try:
                 db.table("users").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", user_id).execute()
-                return jsonify({"success": True, "hard_delete": False, "fallback": True, "message": "用户存在关联记录，已转为软删除"})
+                return jsonify({"success": True, "hard_delete": False, "fallback": True})
             except Exception as soft_err:
                 logger.error(f"软删除也失败: {soft_err}")
                 return jsonify({"success": False, "message": str(soft_err)}), 500
-
-    # ========= 已注册用户：软删除 =========
-    try:
-        db.table("users").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", user_id).execute()
-        logger.info(f"软删除用户 {user_id}")
-        return jsonify({"success": True, "hard_delete": False})
-    except Exception as e:
-        logger.error(f"软删除失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
+    else:
+        try:
+            db.table("users").update({"deleted_at": datetime.now(timezone.utc).isoformat()}).eq("id", user_id).execute()
+            logger.info(f"软删除用户 {user_id}")
+            return jsonify({"success": True, "hard_delete": False})
+        except Exception as e:
+            logger.error(f"软删除失败: {e}")
+            return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_user_bp.route('/api/admin/users/deleted')
 @login_required
@@ -943,7 +961,7 @@ def api_admin_deleted_users():
         for u in all_users:
             u['deleted_by_name'] = name_map.get(u.get('deleted_by'), u.get('deleted_by', ''))
     
-    # ✅ 前端内存过滤：返回所有数据，让前端进行搜索和分页
+    # 前端内存过滤：返回所有数据，让前端进行搜索和分页
     return jsonify({
         "data": all_users, 
         "total": len(all_users), 
@@ -1104,7 +1122,7 @@ def refresh_permissions():
         session['user_country'] = user.get('country')
         session['role'] = user.get('role')
         
-        # ✅ 解析 admin_countries 返回给前端
+        # 解析 admin_countries 返回给前端
         admin_countries = user.get('admin_countries')
         if admin_countries and isinstance(admin_countries, str):
             try:
@@ -1151,7 +1169,7 @@ def export_users_to_excel():
         all_res = query.execute()
         all_users = all_res.data or []
         
-        # ✅ 应用国家权限过滤（复用 filter_users_by_permission）
+        # 应用国家权限过滤（复用 filter_users_by_permission）
         filtered_users = filter_users_by_permission(all_users, allowed_countries, current_user_id)
         
         logger.info(f"导出用户: 原始 {len(all_users)} 人，权限过滤后 {len(filtered_users)} 人")
@@ -1177,7 +1195,7 @@ def export_users_to_excel():
         ws = wb.active
         ws.title = "用户清单"
         
-        # ✅ 表头（添加用户ID字段）
+        # 表头（添加用户ID字段）
         headers = ['序号', '用户ID', '姓名', '邮箱', '国家', '角色', '状态', '在职状态']
         
         # 写入表头
@@ -1187,7 +1205,7 @@ def export_users_to_excel():
         # 写入数据
         for row_idx, user in enumerate(filtered_users, 2):
             ws.cell(row=row_idx, column=1, value=row_idx - 1)                    # 序号
-            ws.cell(row=row_idx, column=2, value=user.get('id', ''))             # ✅ 用户ID
+            ws.cell(row=row_idx, column=2, value=user.get('id', ''))             # 用户ID
             ws.cell(row=row_idx, column=3, value=user.get('name_en', ''))        # 姓名
             ws.cell(row=row_idx, column=4, value=user.get('email', ''))          # 邮箱
             ws.cell(row=row_idx, column=5, value=user.get('country', ''))        # 国家
@@ -1273,7 +1291,7 @@ def api_admin_users_stats():
                 
                 # 有权限范围限制
                 if allowed_countries:
-                    # ✅ 已导入用户：根据创建者的国家判断
+                    # 已导入用户：根据创建者的国家判断
                     if user_status == 'imported':
                         creator_country = creator_info.get(created_by, '')
                         if creator_country and creator_country in allowed_countries:
@@ -1367,7 +1385,6 @@ def resigned_users_page():
         return redirect(url_for('admin_dashboard'))
     return render_template('admin/resigned_users.html')
 
-'''
 @admin_user_bp.route('/api/admin/users/<user_id>/resign', methods=['POST'])
 @login_required
 @admin_required
@@ -1385,66 +1402,7 @@ def api_admin_resign_user(user_id):
     
     target_user = target_user_res.data
 
-    # ✅ 修复：构建 current_user 对象
-    current_user = {
-        'id': operator_id,
-        'role': current_role,
-        'is_developer': is_dev
-    }
-    # 使用权限检查函数
-    if not can_resign_user(target_user, current_user):
-        return jsonify({"success": False, "message": "no_permission_to_resign", "params": []}), 403
-    
-    # 能标记自己离职
-    if user_id == operator_id:
-        return jsonify({"success": False, "message": "cannot_resign_self", "params": []}), 400
-    
-    # 检查用户是否存在
-    user_res = db.table("users").select("id, user_status, role, is_protected").eq("id", user_id).maybe_single().execute()
-    if not user_res.data:
-        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
-    
-    user = user_res.data
-
-    # 超管不能标记离职（除非是开发者）
-    if user.get('role') == 'super_admin' and not is_developer():
-        return jsonify({"success": False, "message": "cannot_resign_super_admin", "params": []}), 403
-  
-    # 只有已注册用户才能标记离职
-    if user.get('user_status') != 'registered':
-        return jsonify({"success": False, "message": "only_registered_users_can_resign", "params": []}), 400
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    db.table("users").update({
-        "is_resign": True,
-        "resigned_at": now,
-        "is_rehire": False,
-        "rehire_at": None
-    }).eq("id", user_id).execute()
-    
-    logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "user_resigned_success", "params": []})
-'''
-
-@admin_user_bp.route('/api/admin/users/<user_id>/resign', methods=['POST'])
-@login_required
-@admin_required
-def api_admin_resign_user(user_id):
-    """标记用户为离职"""
-    db = get_supabase()
-    operator_id = session['user_id']
-    current_role = session.get('role')
-    is_dev = is_developer()
-
-    # 获取目标用户信息
-    target_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
-    if not target_user_res.data:
-        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
-    
-    target_user = target_user_res.data
-
-    # ✅ 修复：构建 current_user 对象
+    # 修复：构建 current_user 对象
     current_user = {
         'id': operator_id,
         'role': current_role,
@@ -1482,58 +1440,22 @@ def api_admin_resign_user(user_id):
         "rehire_at": None
     }).eq("id", user_id).execute()
 
-    # ✅ 添加历史记录
+    # 添加历史记录
     add_employment_event(
         user_id=user_id,
         event_type='resign',
         created_by=operator_id,
         notes=f"由 {operator_id} 标记离职"
     )
-    
+
+    # 添加消息记录
+    log_user_resign(
+        user_id=user_id,
+        user_name=target_user.get('name_en', '未知用户'),
+        admin_id=operator_id
+    )
     logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "user_resigned_success", "params": []})
-
-'''
-@admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
-@login_required
-@admin_required
-def api_admin_rehire_user(user_id):
-    """恢复用户为在职状态（复职）"""
-    db = get_supabase()
-    operator_id = session['user_id']
-
-    # 不能给自己复职（虽然已离职的自己理论上无法操作，但增加检查）
-    if user_id == operator_id:
-        return jsonify({"success": False, "message": "cannot_rehire_self", "params": []}), 400
-  
-    # 检查用户是否存在
-    user_res = db.table("users").select("id, user_status, is_resign, role").eq("id", user_id).maybe_single().execute()
-    if not user_res.data:
-        return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
-    
-    user = user_res.data
-
-    # 只有已离职的用户才能复职
-    if not user.get('is_resign'):
-        return jsonify({"success": False, "message": "user_not_resigned", "params": []}), 400
-  
-    # 只有已注册用户才能复职
-    if user.get('user_status') != 'registered':
-        return jsonify({"success": False, "message": "only_registered_users_can_rehire", "params": []}), 400
-    
-    now = datetime.now(timezone.utc).isoformat()
-    
-    db.table("users").update({
-        "is_resign": False,
-        "is_rehire": True,
-        "rehire_at": now
-        # 保留 resigned_at 用于审计
-    }).eq("id", user_id).execute()
-    
-    logger.info(f"用户 {user_id} 已复职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "user_rehired_success", "params": []})
-'''
-
+    return jsonify({"success": True, "message": "user_resigned_success", "params": [user_id, operator_id]})
 
 @admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
 @login_required
@@ -1571,16 +1493,23 @@ def api_admin_rehire_user(user_id):
         # 保留 resigned_at 用于审计
     }).eq("id", user_id).execute()
 
-    # ✅ 添加历史记录
+    # 添加历史记录
     add_employment_event(
         user_id=user_id,
         event_type='rehire',
         created_by=operator_id,
         notes=f"由 {operator_id} 复职"
     )
-    
+
+    # 添加消息记录
+    log_user_rehire(
+        user_id=user_id,
+        user_name=user.get('name_en', '未知用户'),
+        admin_id=operator_id
+    )
+
     logger.info(f"用户 {user_id} 已复职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "user_rehired_success", "params": []})
+    return jsonify({"success": True, "message": "user_rehired_success", "params": [user_id, operator_id]})
 
 @admin_user_bp.route('/api/admin/users/<user_id>/employment_history')
 @login_required
@@ -1597,8 +1526,6 @@ def api_admin_user_employment_history(user_id):
         "history": history,
         "summary": summary
     })
-
-# routes/admin_user.py - 添加离职人员管理接口
 
 @admin_user_bp.route('/api/admin/users/resigned')
 @login_required
@@ -1689,7 +1616,7 @@ def api_admin_user_exam_history(user_id):
     
     db = get_supabase()
     
-    # ✅ 明确指定外键关系
+    # 明确指定外键关系
     results = db.table("exam_results")\
         .select("*, exams!fk_exam_results_exam_id(title)")\
         .eq("user_id", user_id)\
@@ -1700,7 +1627,7 @@ def api_admin_user_exam_history(user_id):
     for r in (results.data or []):
         exam_data = r.get('exams', {})
         data.append({
-            "result_id": r.get('id'),  # ✅ 添加 result_id
+            "result_id": r.get('id'),  # 添加 result_id
             "exam_title": exam_data.get('title', '未知考试'),
             "total_score": r.get('total_score', 0),
             "created_at": r.get('created_at'),
@@ -1719,7 +1646,7 @@ def api_admin_user_training_history(user_id):
     
     db = get_supabase()
     
-    # ✅ 修复：明确指定外键关系（使用 !fk_training_attendances_training_id）
+    # 明确指定外键关系（使用 !fk_training_attendances_training_id）
     attendances = db.table("training_attendances")\
         .select("*, trainings!fk_training_attendances_training_id(name)")\
         .eq("user_id", user_id)\
@@ -1737,8 +1664,6 @@ def api_admin_user_training_history(user_id):
         })
     
     return jsonify(data)
-
-# routes/admin_user.py - 修改 api_admin_user_interview_history
 
 @admin_user_bp.route('/api/admin/users/<user_id>/interview_history')
 @login_required
@@ -1765,7 +1690,7 @@ def api_admin_user_interview_history(user_id):
         
         if inv_id not in interview_map:
             interview_map[inv_id] = {
-                "interview_id": inv_id,  # ✅ 确保返回 interview_id
+                "interview_id": inv_id,
                 "interview_title": inv_title,
                 "total_questions": 0,
                 "correct_count": 0,

@@ -306,7 +306,7 @@ def _extract_score(line: str, default: int) -> int:
     return int(m.group(1)) if m else default
 
 def auto_grade(answers: dict, exam_id: int) -> dict:
-    """自动评分"""
+    """自动评分 - 兼容两种答案格式"""
     db = get_supabase()
     total, details = 0, {}
     q_res = db.table("questions").select("*").eq("exam_id", exam_id).execute()
@@ -324,10 +324,13 @@ def auto_grade(answers: dict, exam_id: int) -> dict:
         if q_type == "single":
             correct = (u_ans == correct_ans)
         elif q_type == "multi":
-            # 移除可能存在的空格，确保集合比较准确
-            u_set = set(u_ans.replace(" ", ""))
-            c_set = set(correct_ans.replace(" ", ""))
+            # 兼容两种格式：无分隔符 "ABCDE" 和逗号分隔 "A,B,C,D,E"
+            # 只提取字母字符进行比较，忽略逗号和空格
+            u_set = set(c for c in u_ans if c.isalpha())
+            c_set = set(c for c in correct_ans if c.isalpha())
             correct = (u_set == c_set)
+            
+            logger.debug(f"多选题 {uid}: 考生答案={u_ans} -> {u_set}, 标准答案={correct_ans} -> {c_set}, 结果={correct}")
         elif q_type == "judge":
             norm = u_ans
             if norm in ("A", "T", "√", "正确", "对"):

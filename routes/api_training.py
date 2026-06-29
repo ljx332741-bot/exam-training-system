@@ -7,7 +7,7 @@ from flask import request, jsonify, render_template, session, flash
 from . import training_bp
 from services.db import get_supabase, get_supabase_admin
 from routes.helpers import login_required, upload_signature
-from utils.admin_messages import log_exam_auto_extend, log_exam_assign_from_signin
+from utils.manage_messages import log_exam_auto_extend, log_exam_assign_from_signin
 
 logger = logging.getLogger(__name__)
 
@@ -376,7 +376,6 @@ def api_training_sign():
                             
                             # 记录消息
                             log_exam_auto_extend(
-                                db=admin_db,
                                 exam_id=exam_id,
                                 exam_title=exam_res.data.get('title', f'考试#{exam_id}'),
                                 new_end_time=new_end_time,

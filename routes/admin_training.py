@@ -19,17 +19,18 @@ from utils.training_helpers import get_training_country_templates_status, _save_
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, get_allowed_countries, is_developer
-from utils.cache_manager import cache_get, invalidate_cache_on_change, training_cache
+from utils.cache_manager import cache_get, invalidate_cache_on_change, training_cache, clear_all_assignment_caches
+
 from routes.helpers import (
     login_required, 
     admin_required, 
     get_attendance_data, 
-    get_training_status, 
+    convert_time_for_export,
     can_access_exam, 
     upload_signature, 
     parse_exam_countries
 )
-from utils.admin_messages import (
+from utils.manage_messages import (
     log_signature_reset,
     log_training_unassign,
     log_admin_push_training,
@@ -2093,12 +2094,26 @@ def get_completion_report():
         unique_users_signed = set()
         unique_users_completed = set()
         unique_users_passed = set()
+        unassigned_users = set()
+        pending_users = set()
         
         for d in all_data:
             user_id = d.get('user_id')
             if not user_id:
                 continue
             unique_users.add(user_id)
+            
+            training_status = d.get('training_status')
+            exam_status = d.get('exam_status')
+            
+            # 未分配：培训或考试任一未分配
+            if training_status == 'not_assigned' or exam_status == 'not_assigned':
+                unassigned_users.add(user_id)
+            
+            # 待处理：培训待签到 或 考试待考试
+            if training_status == 'pending' or exam_status == 'pending':
+                pending_users.add(user_id)
+            
             if d.get('is_signed'):
                 unique_users_signed.add(user_id)
             if d.get('is_completed'):
@@ -2110,6 +2125,8 @@ def get_completion_report():
         passed_users_count = len(unique_users_passed)
         signed_users_count = len(unique_users_signed)
         completed_users_count = len(unique_users_completed)
+        unassigned_count = len(unassigned_users)
+        pending_count = len(pending_users)
         
         pass_rate = round(passed_users_count / total_users_count * 100, 1) if total_users_count > 0 else 0
         sign_rate = round(signed_users_count / total_users_count * 100, 1) if total_users_count > 0 else 0
@@ -2122,7 +2139,9 @@ def get_completion_report():
             "total_passed": passed_users_count,
             "pass_rate": pass_rate,
             "sign_rate": sign_rate,
-            "completion_rate": completion_rate
+            "completion_rate": completion_rate,
+            "unassigned_count": unassigned_count,
+            "pending_count": pending_count 
         }
         
         return jsonify({
@@ -2145,7 +2164,18 @@ def export_completion_report():
     """导出完成度报表 Excel"""
     try:
         db = get_supabase_admin()
+
+        # 获取前端传递的时区
+        timezone_param = request.args.get('timezone', '')
         
+        # 如果传入了时区，设置到 session
+        if timezone_param:
+            try:
+                pytz.timezone(timezone_param)
+                session['user_timezone'] = timezone_param
+                g.user_timezone = timezone_param
+            except:
+                pass
         # 获取当前管理员的权限范围
         allowed_countries = get_admin_allowed_countries()
         is_dev = is_developer()
@@ -2155,19 +2185,39 @@ def export_completion_report():
         name = request.args.get('name', '').strip()
         country_filter = request.args.get('country', '').strip()
         training_name = request.args.get('training_name', '').strip()
+        training_id = request.args.get('training_id', '').strip()
         exam_name = request.args.get('exam_name', '').strip()
         status = request.args.get('status', '').strip()
+        training_status_filter = request.args.get('training_status', '').strip()
+        exam_status_filter = request.args.get('exam_status', '').strip()
         start_date = request.args.get('start_date', '')
         end_date = request.args.get('end_date', '')
         
-        # ========== 1. 批量获取所有绑定关系 ==========
-        bindings_result = db.table("training_exam_bindings").select("*")\
-            .is_("deleted_at", "null")\
-            .execute()
-        bindings = bindings_result.data if bindings_result else []
+        # ========== 1. 获取培训 ==========
+        trainings_query = db.table("trainings").select("*").is_("deleted_at", "null")
         
-        if not bindings:
-            # 没有绑定关系，返回空Excel
+        if training_id:
+            trainings_query = trainings_query.eq("id", int(training_id))
+        elif training_name:
+            trainings_query = trainings_query.ilike("name", f"%{training_name}%")
+        
+        if start_date:
+            trainings_query = trainings_query.gte("start_time", start_date)
+        if end_date:
+            trainings_query = trainings_query.lte("end_time", end_date)
+        
+        all_trainings = trainings_query.execute().data or []
+        
+        if not is_dev and allowed_countries:
+            filtered_trainings = []
+            for t in all_trainings:
+                training_country = t.get('country')
+                if training_country and training_country in allowed_countries:
+                    filtered_trainings.append(t)
+            all_trainings = filtered_trainings
+        
+        if not all_trainings:
+            # 没有培训，返回空Excel
             wb = openpyxl.Workbook()
             ws = wb.active
             ws.title = "培训完成度报表"
@@ -2178,42 +2228,94 @@ def export_completion_report():
             return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                            as_attachment=True, download_name=f'培训完成度报表_空.xlsx')
         
-        # ========== 2. 批量获取所有相关培训和考试信息 ==========
-        training_ids = list(set([b.get('training_id') for b in bindings]))
+        training_ids = [t['id'] for t in all_trainings]
+        trainings_dict = {t['id']: t for t in all_trainings}
+        
+        # ========== 2. 获取绑定关系 ==========
+        bindings_result = db.table("training_exam_bindings").select("*")\
+            .in_("training_id", training_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        bindings = bindings_result.data if bindings_result else []
+        
+        if not bindings:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "培训完成度报表"
+            ws.cell(row=1, column=1, value="暂无绑定数据")
+            buffer = BytesIO()
+            wb.save(buffer)
+            buffer.seek(0)
+            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           as_attachment=True, download_name=f'培训完成度报表_空.xlsx')
+        
+        # ========== 3. 获取考试信息 ==========
         exam_ids = list(set([b.get('exam_id') for b in bindings]))
-        
-        trainings_result = db.table("trainings").select("*").in_("id", training_ids).is_("deleted_at", "null").execute()
-        trainings_dict = {t['id']: t for t in (trainings_result.data or [])}
-        
         exams_result = db.table("exams").select("*").in_("id", exam_ids).is_("deleted_at", "null").execute()
         exams_dict = {e['id']: e for e in (exams_result.data or [])}
         
-        # ========== 3. 批量获取所有相关国家的用户 ==========
+        if exam_name:
+            filtered_bindings = []
+            for b in bindings:
+                exam = exams_dict.get(b['exam_id'])
+                if exam and exam_name.lower() in exam.get('title', '').lower():
+                    filtered_bindings.append(b)
+            bindings = filtered_bindings
+        
+        if not bindings:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "培训完成度报表"
+            ws.cell(row=1, column=1, value="未找到匹配的考试")
+            buffer = BytesIO()
+            wb.save(buffer)
+            buffer.seek(0)
+            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                           as_attachment=True, download_name=f'培训完成度报表_空.xlsx')
+        
+        # ========== 4. 获取用户 ==========
         all_countries = set()
-        for t in trainings_dict.values():
+        for t in all_trainings:
             country = t.get('country')
             if country:
                 all_countries.add(country)
         
-        users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
-            .in_("country", list(all_countries)) if all_countries else db.table("users").select("*")
-        users_query = users_query.eq("user_status", "registered").is_("deleted_at", "null")
+        if all_countries:
+            users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id, role")\
+                .in_("country", list(all_countries))\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)
+        else:
+            users_query = db.table("users").select("*")\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)
         
-        if name:
-            users_query = users_query.or_(f"name_en.ilike.%{name}%,name_cn.ilike.%{name}%,email.ilike.%{name}%")
         if country_filter:
             users_query = users_query.ilike("country", f"%{country_filter}%")
         
         users_result = users_query.execute()
         all_users = users_result.data if users_result else []
+        
+        if name:
+            name_lower = name.lower()
+            filtered_users = []
+            for u in all_users:
+                name_en = (u.get('name_en') or '').lower()
+                name_cn = (u.get('name_cn') or '').lower()
+                email = (u.get('email') or '').lower()
+                if name_lower in name_en or name_lower in name_cn or name_lower in email:
+                    filtered_users.append(u)
+            all_users = filtered_users
 
-        # ========== 使用 permissions.py 的过滤函数 ==========
+        # 权限过滤
         all_users = filter_users_by_permission(
-            all_users,
+            all_users, 
             allowed_countries=allowed_countries,
             current_user_id=session.get('user_id')
         )
-        
+
         users_by_country = {}
         for u in all_users:
             country = u.get('country')
@@ -2221,59 +2323,89 @@ def export_completion_report():
                 users_by_country[country] = []
             users_by_country[country].append(u)
         
-        # ========== 4. 批量获取所有完成度数据 ==========
-        summary_result = db.table("training_completion_summary").select("*")\
+        # ========== 5. 获取实时数据 ==========
+        # 5.1 培训分配
+        training_assign_res = db.table("training_assignments").select("training_id, user_id")\
             .in_("training_id", training_ids)\
-            .in_("exam_id", exam_ids)\
             .execute()
-        summary_list = summary_result.data if summary_result else []
+        training_assign_map = {}
+        for a in (training_assign_res.data or []):
+            key = f"{a['training_id']}_{a['user_id']}"
+            training_assign_map[key] = True
         
-        summary_index = {}
-        for s in summary_list:
-            key = (s.get('training_id'), s.get('exam_id'), s.get('user_id'))
-            summary_index[key] = s
+        # 5.2 考试分配
+        exam_assign_res = db.table("exam_assignments").select("exam_id, user_id")\
+            .in_("exam_id", exam_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        exam_assign_map = {}
+        for a in (exam_assign_res.data or []):
+            key = f"{a['exam_id']}_{a['user_id']}"
+            exam_assign_map[key] = True
         
-        # ========== 5. 组装数据 ==========
+        # 5.3 培训签到
+        attendances_res = db.table("training_attendances").select("training_id, user_id, sign_time, signature_url")\
+            .in_("training_id", training_ids)\
+            .execute()
+        attendance_map = {}
+        for a in (attendances_res.data or []):
+            key = f"{a['training_id']}_{a['user_id']}"
+            attendance_map[key] = {
+                'sign_time': a.get('sign_time'),
+                'signature_url': a.get('signature_url')
+            }
+        
+        # 5.4 考试成绩
+        exam_results_res = db.table("exam_results").select("exam_id, user_id, total_score, created_at")\
+            .in_("exam_id", exam_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        exam_results_map = {}
+        for r in (exam_results_res.data or []):
+            key = f"{r['exam_id']}_{r['user_id']}"
+            exam_results_map[key] = {
+                'score': r.get('total_score'),
+                'created_at': r.get('created_at')
+            }
+
+        # ========== 6. 预计算培训和考试状态（复用辅助函数） ==========
+        training_status_cache = {}
+        exam_status_cache = {}
+        
+        for training in all_trainings:
+            training_status_cache[training['id']] = get_training_status(training)
+        
+        for exam in exams_dict.values():
+            exam_status_cache[exam['id']] = get_exam_status(exam)
+  
+        # ========== 7. 组装数据 ==========
         all_data = []
         
         for binding in bindings:
-            training_id = binding.get('training_id')
+            training_id_val = binding.get('training_id')
             exam_id = binding.get('exam_id')
             pass_score = binding.get('pass_score', 85)
             
-            training = trainings_dict.get(training_id)
+            training = trainings_dict.get(training_id_val)
             exam = exams_dict.get(exam_id)
             
             if not training or not exam:
                 continue
             
             training_country = training.get('country', '')
-            
-            # 权限过滤
-            if not is_dev:
-                if allowed_countries and training_country not in allowed_countries:
-                    continue
-                elif current_role == 'admin' and not allowed_countries:
-                    user_country = session.get('user_country')
-                    if training_country != user_country:
-                        continue
-            
-            # 筛选条件
-            if training_name and training_name.lower() not in training.get('name', '').lower():
-                continue
-            if exam_name and exam_name.lower() not in exam.get('title', '').lower():
-                continue
-            
-            training_start = training.get('start_time', '')[:10] if training.get('start_time') else ''
-            training_end = training.get('end_time', '')[:10] if training.get('end_time') else ''
-            if start_date and training_start < start_date:
-                continue
-            if end_date and training_end > end_date:
-                continue
-            
             if not training_country:
                 continue
-            
+
+            # 使用预计算的状态
+            training_status_global = training_status_cache.get(training_id_val, 'unknown')
+            exam_status_global = exam_status_cache.get(exam_id, 'unknown')
+
+            # 状态筛选（新增培训和考试全局状态筛选）
+            if training_status_filter and training_status_global != training_status_filter:
+                continue
+            if exam_status_filter and exam_status_global != exam_status_filter:
+                continue
+  
             users = users_by_country.get(training_country, [])
             
             # 角色过滤
@@ -2287,23 +2419,50 @@ def export_completion_report():
                 if not user_id:
                     continue
                 
-                key = (training_id, exam_id, user_id)
-                summary_data = summary_index.get(key, {})
+                training_assign_key = f"{training_id_val}_{user_id}"
+                exam_assign_key = f"{exam_id}_{user_id}"
+                attendance_key = f"{training_id_val}_{user_id}"
+                exam_result_key = f"{exam_id}_{user_id}"
                 
-                is_signed = summary_data.get('is_signed', False)
-                signature_url = summary_data.get('signature_url')
-                is_completed = summary_data.get('is_completed', False)
-                is_passed = summary_data.get('is_passed', False)
-                score = summary_data.get('score')
+                has_training_assign = training_assign_key in training_assign_map
+                has_exam_assign = exam_assign_key in exam_assign_map
 
-                # 判断状态
-                if is_signed and signature_url:
-                    sign_status_display = '已签到'
-                elif is_signed and not signature_url:
-                    sign_status_display = '待重新签名'
+                attendance_data = attendance_map.get(attendance_key, {})
+                is_signed = attendance_key in attendance_map
+                sign_time = attendance_data.get('sign_time')
+                signature_url = attendance_data.get('signature_url')
+                
+                exam_result = exam_results_map.get(exam_result_key, {})
+                is_completed = exam_result_key in exam_results_map
+                score = exam_result.get('score')
+                is_passed = score is not None and score >= pass_score if is_completed else False
+
+                # 判断是否真正签到（有签名）
+                is_signed_completed = is_signed and signature_url
+
+                # 判断是否需要重新签名
+                is_resign_needed = is_signed and not signature_url
+
+                # 状态判断
+                if is_resign_needed:
+                    training_status_display = 'resign'
+                elif is_signed_completed:
+                    training_status_display = 'signed'
+                elif has_training_assign:
+                    training_status_display = 'pending'
                 else:
-                    sign_status_display = '未签到'
+                    training_status_display = 'not_assigned'
+                
+                if is_completed:
+                    exam_status_display = 'completed'
+                elif has_exam_assign:
+                    exam_status_display = 'pending'
+                elif is_signed:
+                    exam_status_display = 'pending'
+                else:
+                    exam_status_display = 'not_assigned'
 
+                # 状态筛选
                 if status:
                     if status == 'completed' and not is_passed:
                         continue
@@ -2321,29 +2480,35 @@ def export_completion_report():
                     "training_country": training_country,
                     "training_start": training.get('start_time'),
                     "training_end": training.get('end_time'),
+                    "training_status_global": training_status_global,
                     "exam_name": exam.get('title', ''),
+                    "exam_status_global": exam_status_global,
                     "pass_score": pass_score,
                     "user_name": user.get('name_cn') or user.get('name_en', ''),
                     "user_email": user.get('email', ''),
                     "user_country": user.get('country', ''),
                     "wh_id": user.get('wh_id', ''),
-                    "is_signed": is_signed,
+                    "is_signed": is_signed_completed,
                     "is_completed": is_completed,
                     "is_passed": is_passed,
                     "score": score if score is not None else '-',
-                    "signed_at": summary_data.get('signed_at'),
-                    "completed_at": summary_data.get('completed_at')
+                    "training_status_display": training_status_display,
+                    "exam_status_display": exam_status_display,
+                    "signed_at": sign_time,
+                    "completed_at": exam_result.get('submitted_at')
                 })
         
-        # ========== 6. 创建 Excel ==========
+        # ========== 8. 创建 Excel ==========
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "培训完成度报表"
         
-        headers = ['序号', '培训名称', '培训国家', '培训开始日期', '培训结束日期', '考试名称', '及格分数',
-                   '学员姓名', '学员邮箱', '学员国家', '库房编码', '签到状态', '考试状态', '得分', '是否及格', '签到时间', '完成时间']
+        headers = ['序号', '培训名称', '培训国家', '培训开始日期', '培训结束日期', '培训状态(全局)',
+                   '考试名称', '考试状态(全局)', '及格分数', '学员姓名', '学员邮箱', '学员国家', 
+                   '库房编码', '签到状态', '考试完成状态', '得分', '是否及格', '签到时间', '完成时间']
         
         # 表头样式
+        from openpyxl.styles import Font, PatternFill, Alignment
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=1, column=col, value=header)
             cell.font = Font(bold=True, color="FFFFFF")
@@ -2357,18 +2522,20 @@ def export_completion_report():
             ws.cell(row=row_idx, column=3, value=item.get('training_country', ''))
             ws.cell(row=row_idx, column=4, value=item.get('training_start', '')[:10] if item.get('training_start') else '')
             ws.cell(row=row_idx, column=5, value=item.get('training_end', '')[:10] if item.get('training_end') else '')
-            ws.cell(row=row_idx, column=6, value=item.get('exam_name', ''))
-            ws.cell(row=row_idx, column=7, value=item.get('pass_score', 85))
-            ws.cell(row=row_idx, column=8, value=item.get('user_name', ''))
-            ws.cell(row=row_idx, column=9, value=item.get('user_email', ''))
-            ws.cell(row=row_idx, column=10, value=item.get('user_country', ''))
-            ws.cell(row=row_idx, column=11, value=item.get('wh_id', ''))
-            ws.cell(row=row_idx, column=12, value='已签到' if item.get('is_signed') else '未签到')
-            ws.cell(row=row_idx, column=13, value='已完成' if item.get('is_completed') else '未完成')
-            ws.cell(row=row_idx, column=14, value=item.get('score', '-'))
-            ws.cell(row=row_idx, column=15, value='及格' if item.get('is_passed') else ('不及格' if item.get('is_completed') else '-'))
-            ws.cell(row=row_idx, column=16, value=item.get('signed_at', '')[:19] if item.get('signed_at') else '')
-            ws.cell(row=row_idx, column=17, value=item.get('completed_at', '')[:19] if item.get('completed_at') else '')
+            ws.cell(row=row_idx, column=6, value=item.get('training_status_global', 'draft'))
+            ws.cell(row=row_idx, column=7, value=item.get('exam_name', ''))
+            ws.cell(row=row_idx, column=8, value=item.get('exam_status_global', 'draft'))
+            ws.cell(row=row_idx, column=9, value=item.get('pass_score', 85))
+            ws.cell(row=row_idx, column=10, value=item.get('user_name', ''))
+            ws.cell(row=row_idx, column=11, value=item.get('user_email', ''))
+            ws.cell(row=row_idx, column=12, value=item.get('user_country', ''))
+            ws.cell(row=row_idx, column=13, value=item.get('wh_id', ''))
+            ws.cell(row=row_idx, column=14, value='已签到' if item.get('is_signed') else '未签到')
+            ws.cell(row=row_idx, column=15, value='已完成' if item.get('is_completed') else '未完成')
+            ws.cell(row=row_idx, column=16, value=item.get('score', '-'))
+            ws.cell(row=row_idx, column=17, value='及格' if item.get('is_passed') else ('不及格' if item.get('is_completed') else '-'))
+            ws.cell(row=row_idx, column=18, value=convert_time_for_export(item.get('signed_at'), timezone_param))
+            ws.cell(row=row_idx, column=19, value=convert_time_for_export(item.get('completed_at'), timezone_param))
         
         # 调整列宽
         for col in range(1, len(headers) + 1):
@@ -3297,3 +3464,141 @@ def _sync_training_binding_data(db, training_id, created_by=None):
         sync_results["errors"].append(str(e))
     
     return sync_results
+
+# routes/admin_training.py
+
+@admin_training_bp.route('/api/admin/training/assign', methods=['POST'])
+@login_required
+@admin_required
+def assign_training_batch():
+    """
+    统一培训分配接口（支持单个和批量）
+    与培训管理页面的分配逻辑保持一致
+    """
+    try:
+        data = request.json
+        training_id = data.get('training_id')
+        user_ids = data.get('user_ids', [])
+        
+        if not training_id or not user_ids:
+            return jsonify({"success": False, "message": "参数不完整"}), 400
+        
+        db = get_supabase_admin()
+        
+        # 1. 权限检查
+        training_res = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
+        if not training_res.data:
+            return jsonify({"success": False, "message": "培训不存在"}), 404
+        
+        if not can_access_training(training_res.data):
+            return jsonify({"success": False, "message": "无权限"}), 403
+        
+        # 2. 批量插入分配（使用 upsert 避免重复）
+        assignments = []
+        now = datetime.now(timezone.utc).isoformat()
+        
+        for uid in user_ids:
+            # 检查是否已存在
+            existing = db.table("training_assignments")\
+                .select("id")\
+                .eq("training_id", training_id)\
+                .eq("user_id", uid)\
+                .is_("deleted_at", "null")\
+                .maybe_single()\
+                .execute()
+            
+            if existing.data:
+                # 已存在，跳过
+                continue
+            
+            assignments.append({
+                "training_id": training_id,
+                "user_id": uid,
+                "assigned_at": now,
+                "assigned_by": session.get('user_id')
+            })
+        
+        if assignments:
+            result = db.table("training_assignments").insert(assignments).execute()
+            assigned_count = len(result.data) if result.data else 0
+        else:
+            assigned_count = 0
+        
+        # 3. 清除相关缓存
+        clear_all_assignment_caches(
+            training_id=training_id,
+            user_ids=user_ids  # 可选，传入用户ID列表
+        )
+        return jsonify({
+            "success": True,
+            "assigned_count": assigned_count,
+            "total_requested": len(user_ids),
+            "message": f"成功分配 {assigned_count} 名学员"
+        })
+        
+    except Exception as e:
+        logger.error(f"分配培训失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+# ============== 培训完成度报表内部接口，用于考生培训分配统一接口0628==============
+@admin_training_bp.route('/api/admin/training/unassign', methods=['POST'])
+@login_required
+@admin_required
+def unassign_training_batch():
+    """
+    统一取消培训分配接口
+    """
+    try:
+        data = request.json
+        training_id = data.get('training_id')
+        user_ids = data.get('user_ids', [])
+        
+        if not training_id or not user_ids:
+            return jsonify({"success": False, "message": "参数不完整"}), 400
+        
+        db = get_supabase_admin()
+        
+        # 1. 权限检查
+        training_res = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
+        if not training_res.data:
+            return jsonify({"success": False, "message": "培训不存在"}), 404
+        
+        if not can_access_training(training_res.data):
+            return jsonify({"success": False, "message": "无权限"}), 403
+        
+        # 2. 软删除分配
+        now = datetime.now(timezone.utc).isoformat()
+        unassigned_count = 0
+        
+        for uid in user_ids:
+            result = db.table("training_assignments")\
+                .update({
+                    "deleted_at": now,
+                    "deleted_by": session.get('user_id')
+                })\
+                .eq("training_id", training_id)\
+                .eq("user_id", uid)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            if result.data:
+                unassigned_count += 1
+        
+        # 3. 清除相关缓存
+        clear_all_assignment_caches(
+            training_id=training_id,
+            user_ids=user_ids
+        )
+        
+        return jsonify({
+            "success": True,
+            "unassigned_count": unassigned_count,
+            "message": f"成功取消 {unassigned_count} 名学员的分配"
+        })
+        
+    except Exception as e:
+        logger.error(f"取消培训分配失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+

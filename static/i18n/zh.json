@@ -418,7 +418,6 @@
   "prev": "上一题",
   "flag": "标记疑难题",
   "submit_exam": "确认交卷",
-  "time_remaining": "剩余",
   "minutes": "分钟",
   "total_score": "总分:",
   "no_ongoing_sign_ins": "暂无进行中的培训签到",
@@ -750,7 +749,7 @@
 "country_auto_hint": "国家由库房编码自动识别，不可手动修改",
 "other": "其它",
     "confirm_remove_selected": "确定要移除选中的 {0} 名考生的考试分配吗？",
-    "confirm_remove_single": "确定要移除该考生的考试分配吗？",
+    "confirm_remove_single": "确定要移除 {0} 的考试分配吗？",
     "unassign": "移除",
     "assigning": "分配中...",
 "removing": "正在移除",
@@ -1059,5 +1058,14 @@
 "opened_from_binding": "从培训绑定打开",
 "reassign_exam_to_checked_in_trainees": "为已签到学员补分配此考试",
 "confirm_reassign": "确定要为考试「{0}」补分配所有已签到学员吗？",
-"confirm_assign_single": "确定要为「{0}」分配考试吗？"
+"confirm_assign_single": "确定要为「{0}」分配考试吗？",
+"assign": "分配",
+"binded_training_with_names": "已绑定培训: {names}",
+"all_training_status": "全部培训状态",
+"all_exam_status": "全部考试状态",
+"loading_failed": "加载失败",
+"user_resigned_success": "用户 {0} 已标记为离职，操作人: {1}",
+"user_rehired_success": "用户 {0} 已复职，操作人: {0}",
+"only_registered_users_can_rehire": "只有已注册用户才能复职",
+"user_not_resigned": "只有已离职的用户才能复职"
 }

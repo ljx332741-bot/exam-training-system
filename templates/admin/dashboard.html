@@ -829,13 +829,15 @@
 										<td class="fw-medium" style="display: flex; flex-direction: column;">
 											{# 进行中的考试名称显示为可点击链接 #}
 											{% if ex.status == 'active' %}
-												<a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" 
+												<a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}"  target="_blank"
 													class="text-decoration-none fw-semibold">
 													{{ ex.title }}
                                                     {% if ex.has_binding %}
                                                     <span class="badge bg-success ms-1" 
                                                         style="font-size: 0.6rem; cursor: help;"
-                                                        title="已绑定培训: {% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}">
+                                                        data-i18n-title="binded_training_with_names"
+                                                        data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
+                                                        title="">
                                                         <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
                                                     </span>
                                                     {% endif %}
@@ -846,7 +848,9 @@
                                                     {% if ex.has_binding %}
                                                     <span class="badge bg-success ms-1" 
                                                         style="font-size: 0.6rem; cursor: help;"
-                                                        title="已绑定培训: {% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}">
+                                                        data-i18n-title="binded_training_with_names"
+                                                        data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
+                                                        title="">
                                                         <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
                                                     </span>
                                                     {% endif %}
@@ -1434,6 +1438,10 @@
 
 {% block extra_js %}
 <script>
+    // 在前端添加缓存，不要每次都请求
+    let unreadCountCache = 0;
+    let lastFetchTime = 0;
+
     // ========== 仪表盘数据缓存 ==========
     const DASHBOARD_CACHE_KEY = 'dashboard_data';
     const DASHBOARD_CACHE_TIME_KEY = 'dashboard_data_time';
@@ -1585,9 +1593,43 @@
         }
     }
 
-    // ==================== 导出模态框统一状态管理器 ====================
-    // 此模块管理导出筛选模态框的所有状态和逻辑
+    // 使用缓存减少查询频率
+    async function updateUnreadBadge() {
+        const now = Date.now();
+        // 如果缓存未过期，直接使用缓存
+        if (now - lastFetchTime < CACHE_DURATION) {
+            updateBadgeDisplay(unreadCountCache);
+            return;
+        }
+        
+        try {
+            const res = await fetch('/api/admin/messages/unread_count');
+            const data = await res.json();
+            if (data.success) {
+                unreadCountCache = data.count;
+                lastFetchTime = now;
+                updateBadgeDisplay(data.count);
+            }
+        } catch (err) {
+            console.warn('获取未读数量失败:', err);
+            // 失败时使用缓存值
+            updateBadgeDisplay(unreadCountCache);
+        }
+    }
 
+    function updateBadgeDisplay(count) {
+        const badge = document.getElementById('unreadBadge');
+        if (badge) {
+            if (count > 0) {
+                badge.style.display = 'inline';
+                badge.textContent = count > 99 ? '99+' : count;
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+    }
+
+    // ==================== 导出模态框统一状态管理器 ====================
     // 防抖函数
     function debounce(fn, delay) {
         let timer;
@@ -1785,7 +1827,7 @@
             if (radioPrevious) radioPrevious.checked = (this.state.dateRangeOption === 'previous');
             if (radioAll) radioAll.checked = (this.state.dateRangeOption === 'all');
 			
-			// ✅ 同步完成后，重新应用锁定状态
+			// 同步完成后，重新应用锁定状态
 			if (this.state.locked) {
 				this._applyLockState(true);
 			}
@@ -1950,7 +1992,7 @@
             const params = new URLSearchParams();
             if (searchTerm) params.append('name', searchTerm);
             params.append('per_page', '20');
-			// ✅ 确保使用正确的国家代码
+			// 确保使用正确的国家代码
 			if (this.state.country.code) {
 				params.append('country', this.state.country.code);
 				console.log('考试搜索 - 国家过滤:', this.state.country.code);
@@ -2029,7 +2071,7 @@
                 
                 let trainings = Array.isArray(data) ? data : (data.data || []);
                 
-				// ✅ 如果后端没有返回 is_bound，前端查询绑定关系
+				// 如果后端没有返回 is_bound，前端查询绑定关系
 				if (this.state.exam.id && trainings.length > 0) {
 					try {
 						const examId = this.state.exam.id;
@@ -2041,7 +2083,7 @@
 							return trainings;
 						}
 						const bindData = await bindRes.json();
-						// ✅ 检查 bindData 的结构
+						// 检查 bindData 的结构
 						const boundTrainingIds = new Set(bindData.training_ids || bindData.bindings?.map(b => b.training_id) || []);
 						
 						trainings = trainings.map(t => ({
@@ -2063,7 +2105,7 @@
             return this.cache.trainings;
         },
         
-        // ✅ 修复：刷新考试列表（使用轻量级API + 正确的状态）
+        // 修复：刷新考试列表（使用轻量级API + 正确的状态）
         async refreshExamListWithFilters(searchTerm = '') {
             const params = this._buildExamParams(searchTerm);
             
@@ -2072,7 +2114,7 @@
                 const data = await res.json();
                 let exams = data.data || [];
                 
-                // ✅ 如果后端没有返回 is_bound，前端查询绑定关系
+                // 如果后端没有返回 is_bound，前端查询绑定关系
                 if (this.state.training.id && exams.length > 0) {
                     try {
                         const trainingId = this.state.training.id;
@@ -2117,7 +2159,7 @@
             }
         },
 
-		// ✅ 新增：刷新库房列表
+		// 新增：刷新库房列表
 		async refreshWarehouseList() {
 			try {
 				const res = await fetch('/api/admin/export/recent_warehouses');
@@ -2137,12 +2179,12 @@
             if (!container) return;
             
             let trainings = this.cache.trainings;
-			// ✅ 国家过滤
+			// 国家过滤
 			if (this.state.country.code && trainings.length > 0) {
 				trainings = trainings.filter(t => t.country === this.state.country.code);
 				console.log(`培训国家过滤后: ${trainings.length} 条`);
 			}
-			// ✅ 过滤掉草稿和未激活的培训
+			// 过滤掉草稿和未激活的培训
 			trainings = trainings.filter(t => {
 				// 检查 dynamic_status 是否为 draft
 				if (t.dynamic_status === 'draft') return false;
@@ -2163,7 +2205,7 @@
             trainings.forEach(t => {
                 const createdDate = DateUtils.formatDateOnly(t.created_at);
                 const quarter = DateUtils.getQuarterFromDate(t.created_at);
-				// ✅ 绑定徽章（如果先选了考试）
+				// 绑定徽章（如果先选了考试）
 				const bindingBadge = t.is_bound 
 					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> ${safeT('binded')}</span>` 
 					: '';
@@ -2203,7 +2245,7 @@
             if (!container) return;
             
             let exams = this.cache.exams;
-			// ✅ 国家过滤（二次保证）
+			// 国家过滤（二次保证）
 			if (this.state.country.code && exams.length > 0) {
 				exams = exams.filter(e => {
 					const countries = e.countries || [];
@@ -2212,7 +2254,7 @@
 				console.log(`国家过滤后: ${exams.length} 条`);
 			}
 			
-			// ✅ 过滤掉草稿和未激活的考试
+			// 过滤掉草稿和未激活的考试
 			exams = exams.filter(e => {
 				if (e.status === 'draft') return false;
 				if (!e.start_time || !e.end_time) return false;
@@ -2231,7 +2273,7 @@
                 const quarter = DateUtils.getQuarterFromDate(exam.created_at);
                 const countriesDisplay = exam.countries_display || exam.country || '-';
 
-				// ✅ 已绑定的考试添加特殊标记
+				// 已绑定的考试添加特殊标记
 				const bindingBadge = exam.is_bound 
 					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;">${safeT('binded')}</span>` 
 					: '';
@@ -2304,7 +2346,7 @@
 					const input = document.getElementById('filterQuarter');
 					if (input) {
 						input.value = quarter;
-						// ✅ 触发 input 事件，让删除按钮显示
+						// 触发 input 事件，让删除按钮显示
 						input.dispatchEvent(new Event('input'));
 						input.dispatchEvent(new Event('change'));
 					}
@@ -2318,7 +2360,7 @@
 
         // 渲染所有下拉面板
         _renderAll(showDropdown = false) {
-            // ✅ 只有明确指定 showDropdown 才显示
+            // 只有明确指定 showDropdown 才显示
             this._renderTrainingDropdown('', showDropdown);
             this._renderExamDropdown('', showDropdown);
             this._renderQuarterDropdown('', showDropdown);
@@ -2404,7 +2446,7 @@
 
         // 选择培训
         selectTraining(id, name, startTime, endTime) {
-			// ✅ 如果已锁定，不允许修改
+			// 如果已锁定，不允许修改
 			if (this.state.locked) {
 				if (typeof showToast === 'function') {
 					showToast(saft('click_unlock_clear_all'), 'warning');
@@ -2439,7 +2481,7 @@
             // 关闭下拉面板
             this._closeDropdown('trainingDropdown');
 
-			// ✅ 检查是否需要锁定
+			// 检查是否需要锁定
 			this._checkAndSetLock();
 
             // 刷新考试列表（根据培训绑定过滤）
@@ -2450,7 +2492,7 @@
         
         // 选择考试
         selectExam(id, name, startTime, endTime) {
-			// ✅ 如果已锁定，不允许修改
+			// 如果已锁定，不允许修改
 			if (this.state.locked) {
 				if (typeof showToast === 'function') {
 					showToast(t('click_unlock_clear_all'), 'warning');
@@ -2480,7 +2522,7 @@
                 this.state.dateRangeOption = '';
             } */
 
-            // ✅ 新逻辑：只清空日期（用户自定义）
+            // 新逻辑：只清空日期（用户自定义）
             if (id) {
                 // 选择了考试，清空日期让用户自定义
                 this.state.startDate = '';
@@ -2507,12 +2549,12 @@
             
             this._closeDropdown('countryDropdown');
             
-			// ✅ 清空培训和考试选择（因为国家变了，之前的可能无效）
+			// 清空培训和考试选择（因为国家变了，之前的可能无效）
 			this.state.training = { id: '', name: '', start: '', end: '' };
 			this.state.exam = { id: '', name: '', start: '', end: '' };
 			this._syncToDOM();
 			
-            // ✅ 刷新培训和考试
+            // 刷新培训和考试
             this.refreshAll();
 			// 刷新完成后，确保下拉面板保持关闭状态
 			setTimeout(() => {
@@ -2529,7 +2571,7 @@
 			const dropdown = document.getElementById('warehouseDropdown');
 			if (dropdown) dropdown.style.display = 'none';
 			
-			// ✅ 刷新数据但不渲染
+			// 刷新数据但不渲染
 			this.refreshAll(true);  // 传入参数 skipRender
 		},
         
@@ -2619,7 +2661,7 @@
             } */
             
             this._applyLockState(false);
-            this._lockDateRangeRadios(false);  // ✅ 解锁日期范围按钮
+            this._lockDateRangeRadios(false);  // 解锁日期范围按钮
             
             this._syncToDOMWithoutTrigger();
             
@@ -2627,7 +2669,7 @@
                 btn.style.display = 'none';
             });
 
-            // ✅ 同步清空日期输入框
+            // 同步清空日期输入框
             document.getElementById('filterStartDate').value = '';
             document.getElementById('filterEndDate').value = '';
             
@@ -2645,7 +2687,7 @@
             // 加载权限范围内的国家
             await this.loadAllCountries();
 
-			// ✅ 加载季度列表并存储到全局
+			// 加载季度列表并存储到全局
 			try {
 				const res = await fetch('/api/admin/export/quarters');
 				window.allQuartersList = await res.json();
@@ -2668,11 +2710,11 @@
                 this.state.endDate = currentDates.end;
             } */
 
-            // ✅ 初始状态：日期为空
+            // 初始状态：日期为空
             this.state.startDate = '';
             this.state.endDate = '';
 
-			this.state.locked = false;  // ✅ 初始解锁
+			this.state.locked = false;  // 初始解锁
 			this._applyLockState(false);
 
             this.state.isInitialized = true;
@@ -2778,7 +2820,7 @@
                         }
                     }, 300);
                 });
-                // ✅ 改为 focus
+                // 改为 focus
                 quarterInput.addEventListener('focus', async () => {
                     if (window.allQuartersList && window.allQuartersList.length > 0) {
                         this._renderQuarterDropdown('', !this.state.quarter);
@@ -2792,7 +2834,7 @@
                         }
                     }
                 });
-                // ✅ 添加 blur 延迟关闭
+                // 添加 blur 延迟关闭
                 quarterInput.addEventListener('blur', () => {
                     setTimeout(() => {
                         const dropdown = document.getElementById('quarterDropdown');
@@ -2823,7 +2865,7 @@
                     // 同步到 DOM（不触发 input 事件）
                     this._syncToDOMWithoutTrigger();
 
-                    // ✅ 确保日期输入框也被清空
+                    // 确保日期输入框也被清空
                     document.getElementById('filterStartDate').value = '';
                     document.getElementById('filterEndDate').value = '';
                     
@@ -2976,7 +3018,7 @@
         searchTimeout: null,
         isInitialized: false,
 
-        // ✅ 绑定关系缓存
+        // 绑定关系缓存
         _bindingCache: {
             trainingBindings: {},  // { trainingId: [examIds] }
             examBindings: {},      // { examId: [trainingIds] }
@@ -3126,7 +3168,7 @@
                 const checkbox = item.querySelector('.training-checkbox');
                 if (checkbox) {
                     checkbox.checked = !checkbox.checked;
-                    // ✅ 修复：使用 bubbles: true 确保事件冒泡到容器
+                    // 修复：使用 bubbles: true 确保事件冒泡到容器
                     checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
@@ -3138,7 +3180,7 @@
                 const checkbox = item.querySelector('.exam-checkbox');
                 if (checkbox) {
                     checkbox.checked = !checkbox.checked;
-                    // ✅ 修复：使用 bubbles: true
+                    // 修复：使用 bubbles: true
                     checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                 }
             });
@@ -3152,7 +3194,7 @@
             const country = document.getElementById('multiCountry')?.value.trim() || '';
             const warehouse = document.getElementById('multiWarehouse')?.value.trim() || '';
             
-            // ✅ 先获取当前已选中的 ID（确保在搜索时使用最新的选中状态）
+            // 先获取当前已选中的 ID（确保在搜索时使用最新的选中状态）
             const selectedTrainingIds = Array.from(this.selectedTrainings.keys());
             const selectedExamIds = Array.from(this.selectedExams.keys());
             
@@ -3163,7 +3205,7 @@
             if (examList) examList.innerHTML = `<div class="list-group-item text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span> ${t('searching')}</div>`;
             
             try {
-                // ✅ 将选中的 ID 传递给 fetch 方法
+                // 将选中的 ID 传递给 fetch 方法
                 const [trainings, exams] = await Promise.all([
                     this.fetchTrainings(trainingName, country, warehouse, selectedExamIds),
                     this.fetchExams(examName, country, warehouse, selectedTrainingIds)
@@ -3172,7 +3214,7 @@
                 this.trainingData = trainings;
                 this.examData = exams;
                 
-                // ✅ 预热缓存：预先加载所有绑定关系
+                // 预热缓存：预先加载所有绑定关系
                 await this._preloadBindings(trainings, exams);
 
                 this.renderTrainingList(this.trainingData);
@@ -3223,7 +3265,7 @@
             const data = await res.json();
             let trainings = Array.isArray(data) ? data : (data.data || []);
 
-            // ✅ 过滤草稿和未激活的培训
+            // 过滤草稿和未激活的培训
             trainings = trainings.filter(t => {
                 // 检查 dynamic_status 是否为 draft
                 if (t.dynamic_status === 'draft') return false;
@@ -3330,10 +3372,10 @@
                 const createdDate = t.created_at ? t.created_at.slice(0, 10) : '-';
                 const quarter = this.getQuarterFromDate(t.created_at);
                         
-                // ✅ ID 标记（小标签）
+                // ID 标记（小标签）
                 const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${t.id}</span>`;
                 
-                // ✅ 绑定标记 - 增强提示（包含绑定的考试ID）
+                // 绑定标记 - 增强提示（包含绑定的考试ID）
                 let bindingBadge = '';
                 if (t.is_bound && this.selectedExams.size > 0) {
                     // 获取绑定的考试ID列表
@@ -3378,7 +3420,7 @@
             
             container.innerHTML = html;
             
-            // ✅ 绑定 checkbox change 事件（直接绑定，不使用委托）
+            // 绑定 checkbox change 事件（直接绑定，不使用委托）
             container.querySelectorAll('.training-checkbox').forEach(cb => {
                 cb.removeEventListener('change', this._trainingCheckboxHandler);
                 this._trainingCheckboxHandler = (e) => {
@@ -3387,7 +3429,7 @@
                 cb.addEventListener('change', this._trainingCheckboxHandler);
             });
             
-            // ✅ 绑定行点击事件（直接绑定）
+            // 绑定行点击事件（直接绑定）
             container.querySelectorAll('.list-group-item').forEach(item => {
                 item.removeEventListener('click', this._trainingItemClickHandler);
                 this._trainingItemClickHandler = (e) => {
@@ -3395,7 +3437,7 @@
                     const checkbox = item.querySelector('.training-checkbox');
                     if (checkbox) {
                         checkbox.checked = !checkbox.checked;
-                        // ✅ 使用 bubbles: true 触发 change 事件
+                        // 使用 bubbles: true 触发 change 事件
                         checkbox.dispatchEvent(new Event('change', { bubbles: true }));
                     }
                 };
@@ -3456,7 +3498,7 @@
             
             this.updateSelectedCounts();
             
-            // ✅ 使用防抖版本，而不是直接调用
+            // 使用防抖版本，而不是直接调用
             this._updateBindingBadgesDebounced();
         },
 
@@ -3474,7 +3516,7 @@
                 const trainingIds = Array.from(this.selectedTrainings.keys());
                 try {
                     const boundExamIds = new Set();
-                    // ✅ 使用缓存方法
+                    // 使用缓存方法
                     for (const trainingId of trainingIds) {
                         const examIds = await this._getTrainingBindings(trainingId);
                         examIds.forEach(id => boundExamIds.add(id));
@@ -3493,7 +3535,7 @@
                 const examIds = Array.from(this.selectedExams.keys());
                 try {
                     const boundTrainingIds = new Set();
-                    // ✅ 使用缓存方法
+                    // 使用缓存方法
                     for (const examId of examIds) {
                         const trainingIds = await this._getExamBindings(examId);
                         trainingIds.forEach(id => boundTrainingIds.add(id));
@@ -3523,7 +3565,7 @@
                 const isBound = boundExamIds.has(examId);
                 
                 if (isBound && !existingBadge) {
-                    // ✅ 获取绑定的培训ID
+                    // 获取绑定的培训ID
                     const boundTrainingIds = this._getBoundTrainingIdsForExam(examId);
                     const titleText = boundTrainingIds.length > 0 
                         ? `${t('binded_training')} ID: ${boundTrainingIds.join(', ')}` 
@@ -3565,7 +3607,7 @@
                 const isBound = boundTrainingIds.has(trainingId);
                 
                 if (isBound && !existingBadge) {
-                    // ✅ 获取绑定的考试ID
+                    // 获取绑定的考试ID
                     const boundExamIds = this._getBoundExamIdsForTraining(trainingId);
                     const titleText = boundExamIds.length > 0 
                         ? `${t('binded_exam')}ID: ${boundExamIds.join(', ')}` 
@@ -3610,10 +3652,10 @@
                 const quarter = this.getQuarterFromDate(e.created_at);
                 const countriesDisplay = e.countries_display || e.country || '-';
                 
-                // ✅ ID 标记（小标签）
+                // ID 标记（小标签）
                 const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${e.id}</span>`;
                 
-                // ✅ 绑定标记 - 增强提示（包含绑定的培训ID）
+                // 绑定标记 - 增强提示（包含绑定的培训ID）
                 let bindingBadge = '';
                 if (e.is_bound && this.selectedTrainings.size > 0) {
                     // 获取绑定的培训ID列表
@@ -3657,7 +3699,7 @@
             
             container.innerHTML = html;
             
-            // ✅ 绑定 checkbox change 事件
+            // 绑定 checkbox change 事件
             container.querySelectorAll('.exam-checkbox').forEach(cb => {
                 cb.removeEventListener('change', this._examCheckboxHandler);
                 this._examCheckboxHandler = (e) => {
@@ -3666,7 +3708,7 @@
                 cb.addEventListener('change', this._examCheckboxHandler);
             });
             
-            // ✅ 绑定行点击事件
+            // 绑定行点击事件
             container.querySelectorAll('.list-group-item').forEach(item => {
                 item.removeEventListener('click', this._examItemClickHandler);
                 this._examItemClickHandler = (e) => {
@@ -3729,7 +3771,7 @@
             
             this.updateSelectedCounts();
             
-            // ✅ 使用防抖版本，而不是直接调用
+            // 使用防抖版本，而不是直接调用
             this._updateBindingBadgesDebounced();
         },
         
@@ -3797,7 +3839,7 @@
                 }
             }
             
-            // ✅ 绑定删除标签事件（使用事件委托，避免重复绑定）
+            // 绑定删除标签事件（使用事件委托，避免重复绑定）
             document.querySelectorAll('.remove-selection').forEach(el => {
                 // 移除旧监听器避免重复
                 el.removeEventListener('click', this._removeSelectionHandler);
@@ -3844,7 +3886,7 @@
             
             this.updateSelectedCounts();
             
-            // ✅ 清除所有绑定标记
+            // 清除所有绑定标记
             this._clearTrainingBindingBadges();
             this._clearExamBindingBadges();
         },
@@ -3958,7 +4000,7 @@
             // 初始搜索一次（加载数据）
             setTimeout(() => this.search(), 300);
             
-            // ✅ 初始搜索后，如果有选中的项，更新绑定标记
+            // 初始搜索后，如果有选中的项，更新绑定标记
             setTimeout(() => {
                 if (this.selectedTrainings.size > 0 || this.selectedExams.size > 0) {
                     this.updateBindingBadges();
@@ -4101,14 +4143,14 @@
         const dropdown = document.getElementById('countryDropdown');
         if (!container) return;
         
-        // ✅ 收集培训中出现的国家
+        // 收集培训中出现的国家
         const trainingCountries = new Set();
         const trainings = ExportFilterStore.cache.trainings || [];
         trainings.forEach(t => {
             if (t.country) trainingCountries.add(t.country);
         });
         
-        // ✅ 收集考试中出现的国家
+        // 收集考试中出现的国家
         const examCountries = new Set();
         const exams = ExportFilterStore.cache.exams || [];
         exams.forEach(e => {
@@ -4118,10 +4160,10 @@
             }
         });
         
-        // ✅ 合并所有出现的国家
+        // 合并所有出现的国家
         const availableCountryCodes = new Set([...trainingCountries, ...examCountries]);
         
-        // ✅ 从所有权限范围内的国家中，只保留有数据的
+        // 从所有权限范围内的国家中，只保留有数据的
         const allCountries = ExportFilterStore.getCountries();
         let filtered = allCountries.filter(c => availableCountryCodes.has(c.code));
         
@@ -4135,7 +4177,7 @@
             );
         }
         
-        // ✅ 按国家代码字母排序（A-Z）
+        // 按国家代码字母排序（A-Z）
         filtered.sort((a, b) => a.code.localeCompare(b.code));
         
         if (!filtered.length) {
@@ -4146,7 +4188,7 @@
         
         let html = '';
         filtered.forEach(country => {
-            // ✅ 显示格式：代码, 中文名称, 英文名称
+            // 显示格式：代码, 中文名称, 英文名称
             const displayText = `${country.code}, ${country.name_zh}, ${country.name_en}`;
             html += `
                 <div class="export-dropdown-item" 
@@ -4391,7 +4433,7 @@
             }
         });
         
-        // ✅ 延迟检查所有输入框，显示已有值的删除按钮
+        // 延迟检查所有输入框，显示已有值的删除按钮
         setTimeout(() => {
             document.querySelectorAll('.input-clear-btn').forEach(btn => {
                 const targetId = btn.dataset.target;
@@ -4459,7 +4501,7 @@
 					countries = [examData.country];
 				}
 
-				// ✅ 获取当前管理员的权限范围，过滤国家
+				// 获取当前管理员的权限范围，过滤国家
 				let allowedCountries = [];
 				try {
 					const permRes = await fetch('/api/admin/refresh_permissions');
@@ -4475,7 +4517,7 @@
 					console.error('获取权限范围失败:', e);
 				}
 				
-				// ✅ 根据权限过滤国家
+				// 根据权限过滤国家
 				let filteredCountries = countries;
 				if (allowedCountries && allowedCountries.length > 0) {
 					filteredCountries = countries.filter(c => allowedCountries.includes(c));
@@ -4525,7 +4567,6 @@
 					start_time: formatToLocalDatetime(now),
 					end_time: formatToLocalDatetime(sevenDaysLater)
 				};
-				console.log('📋 存储复制配置:', examConfig);  // ✅ 调试
 				sessionStorage.setItem('copy_exam_config', JSON.stringify(examConfig));
 				
 				// 6. 跳转到复制预览页面
@@ -4565,7 +4606,7 @@
 	async function openSettingModal(examId) {
 		currentExamIdForSetting = examId;
 
-		// ✅ 显示加载状态
+		// 显示加载状态
 		const saveBtn = document.getElementById('saveSettingBtn');
 		const pushBtn = document.getElementById('confirmSettingBtn');
 		const originalSaveText = saveBtn ? saveBtn.innerHTML : '';
@@ -4637,14 +4678,14 @@
             }
         }
 
-        // ✅ 构建URL参数（使用 exam_id 参数，让后端处理考试国家过滤）
+        // 构建URL参数（使用 exam_id 参数，让后端处理考试国家过滤）
         const url = new URL('/api/admin/users', window.location.origin);
         url.searchParams.append('search', search);
         url.searchParams.append('status', 'registered');
         url.searchParams.append('page', '1');
         url.searchParams.append('per_page', '100');
         
-        // ✅ 传递考试ID，让后端根据考试国家过滤
+        // 传递考试ID，让后端根据考试国家过滤
         if (examId) {
             url.searchParams.append('exam_id', examId);
         }
@@ -4659,7 +4700,7 @@
             url.searchParams.append('country', countryParam);
         }
         
-        // ✅ 添加 exclude_resigned 参数
+        // 添加 exclude_resigned 参数
         url.searchParams.append('exclude_resigned', 'true');
         
         console.log('考试推送请求URL:', url.toString());
@@ -4744,7 +4785,7 @@
 		const startTime = localDateTimeToUTC(document.getElementById('settingStartTime').value);
 		const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
 		const duration = parseInt(document.getElementById('settingDuration').value);
-		const reviewer = document.getElementById('settingReviewer').value;  // ✅ 新增
+		const reviewer = document.getElementById('settingReviewer').value;  // 新增
 		if (!duration || duration <= 0) {
 			if (typeof showToast === 'function') {
 				showToast(t('t_enter_valid_duration'), 'warning');
@@ -4754,7 +4795,7 @@
 			return;
 		}
 
-		// ✅ 显示加载状态
+		// 显示加载状态
 		const saveBtn = document.getElementById('saveSettingBtn');
 		const originalText = saveBtn.innerHTML;
 		saveBtn.disabled = true;
@@ -4769,7 +4810,7 @@
 				start_time: startTime || null, 
 				end_time: endTime || null, 
 				duration: duration,
-				reviewer: reviewer  // ✅ 新增
+				reviewer: reviewer
 			})
 		});
 		if (updateRes.ok) {
@@ -4796,7 +4837,7 @@
 				alert(t('t_network_error') + err.message);
 			}
 		} finally {
-			// ✅ 恢复按钮状态
+			// 恢复按钮状态
 			saveBtn.disabled = false;
 			saveBtn.innerHTML = originalText;
 		}
@@ -4809,7 +4850,7 @@
 		const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
 		const duration = parseInt(document.getElementById('settingDuration').value);
 		const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
-		const reviewer = document.getElementById('settingReviewer').value;  // ✅ 新增
+		const reviewer = document.getElementById('settingReviewer').value;  // 新增
 
 		if (!duration || duration <= 0) {
 			if (typeof showToast === 'function') {
@@ -4829,7 +4870,7 @@
 			return;
 		}
 
-		// ✅ 显示加载状态
+		// 显示加载状态
 		const pushBtn = document.getElementById('confirmSettingBtn');
 		const originalText = pushBtn.innerHTML;
 		pushBtn.disabled = true;
@@ -4876,7 +4917,7 @@
 				alert(t('t_network_error') + err.message);
 			}
 		} finally {
-			// ✅ 恢复按钮状态
+			// 恢复按钮状态
 			pushBtn.disabled = false;
 			pushBtn.innerHTML = originalText;
 		}
@@ -4996,7 +5037,7 @@
 	function renderExamStatusTable() {
 		const container = document.getElementById('status-table-container');
 
-        // ✅ 如果有进度条，先隐藏
+        // 如果有进度条，先隐藏
         window.hideTableProgress('status-table-container');
         
 		if (!currentExamId || !currentExamUsers.length) {
@@ -5079,7 +5120,7 @@
 			}
 			const partnerText = u.is_partner ? t('t_yes') : t('t_no');
 			const detailLink = u.result_id
-				? `<a href="/admin/result/${u.result_id}" class="btn btn-sm btn-outline-info">📋 ${t('details')}</a>`
+				? `<a href="/admin/result/${u.result_id}" target='_blank' class="btn btn-sm btn-outline-info">📋 ${t('details')}</a>`
 				: '';
 			const pdfLink = (submitted && u.result_id)
 				? `<a href="/admin/export_pdf_by_result/${u.result_id}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a>`
@@ -5156,7 +5197,102 @@
             btn.addEventListener('click', handleRemove);
         });
 
+        // 渲染完成后更新 data-i18n-title
+        refreshI18nTitles();
 	}
+
+    // ==================== 更新下拉框显示文本（不刷新数据） ====================
+    function updateExamSelectorDisplay() {
+        const selector = document.getElementById('exam-selector');
+        if (!selector) return;
+        
+        // 保存当前选中的值
+        const currentValue = selector.value;
+        
+        // 获取所有 option
+        const options = selector.querySelectorAll('option');
+        options.forEach(option => {
+            // 如果是默认选项，直接更新文本
+            if (option.value === '') {
+                option.textContent = t('select_exam') || '-- 选择考试 --';
+                return;
+            }
+            
+            // 其他选项：从 data-original-title 恢复或使用现有文本
+            // 如果选项有 data-original-title，使用它
+            if (option.dataset.originalTitle) {
+                // 这里不需要操作，因为 title 是考试名称，不需要翻译
+                // 但如果有绑定标记，需要刷新
+                const hasBinding = option.dataset.hasBinding === 'true';
+                if (hasBinding) {
+                    const text = option.dataset.originalTitle || option.textContent.replace('🔗', '').trim();
+                    option.textContent = text + ' 🔗';
+                }
+            }
+        });
+        
+        // 恢复选中状态
+        selector.value = currentValue;
+    }
+
+    // ==================== 刷新所有 data-i18n-title 属性 ====================
+    function refreshI18nTitles() {
+        if (!window.i18n || !window.i18n.t) return;
+        
+        document.querySelectorAll('[data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            if (key) {
+                const translated = window.i18n.t(key);
+                // 检查是否有参数
+                const paramsAttr = el.getAttribute('data-i18n-title-params');
+                if (paramsAttr) {
+                    try {
+                        const params = JSON.parse(paramsAttr);
+                        const translatedWithParams = window.i18n.t(key, params);
+                        if (translatedWithParams && translatedWithParams !== key) {
+                            el.setAttribute('title', translatedWithParams);
+                            return;
+                        }
+                    } catch (e) {
+                        // 解析失败，使用普通翻译
+                    }
+                }
+                if (translated && translated !== key) {
+                    el.setAttribute('title', translated);
+                }
+            }
+        });
+    }
+
+    // ==================== 刷新仪表盘统计卡片标签（不刷新数据） ====================
+    function refreshDashboardLabels() {
+        if (!window.i18n || !window.i18n.t) return;
+        
+        // 更新统计卡片中的静态标签
+        document.querySelectorAll('.crystal-card .card-title [data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (key) {
+                const translated = window.i18n.t(key);
+                if (translated && translated !== key) {
+                    el.textContent = translated;
+                }
+            }
+        });
+        
+        // 更新卡片中所有带 data-i18n 的元素
+        document.querySelectorAll('[data-i18n]').forEach(el => {
+            // 跳过已经由 applyTranslations 处理的元素
+            if (el.closest('.crystal-card') || el.closest('.card-header') || el.closest('.modal')) {
+                const key = el.getAttribute('data-i18n');
+                if (key && !el.dataset.i18nHandled) {
+                    const translated = window.i18n.t(key);
+                    if (translated && translated !== key) {
+                        el.textContent = translated;
+                    }
+                }
+            }
+        });
+    }
 
     // 加载数据（仅首次从后端获取）
     async function loadExamStatusData(examId) {
@@ -5169,14 +5305,14 @@
         if (!examId) {
             currentExamId = null;
             currentExamUsers = [];
-            // ✅ 清空容器，显示提示信息
+            // 清空容器，显示提示信息
             container.innerHTML = `<div class="text-center py-3">${t('t_select_exam_first')}</div>`;
             // 如果有进度条，隐藏
             window.hideTableProgress('status-table-container');
             return;
         }
         
-        // ✅ 在加载考试状态时显示进度条
+        // 在加载考试状态时显示进度条
         window.showTableProgress('status-table-container', {
             title: 'loading_exam_status',
             desc: 'please_wait_loading_status',
@@ -5314,8 +5450,8 @@
         
         // 确认弹窗
         const confirmMsg = userName 
-            ? `确认分配考试给 "${userName}" 吗？`
-            : t('confirm_assign_single');
+            ? t('confirm_assign_single', userName)
+            : `确认分配考试给 "${userName}" 吗？`;
         if (!confirm(confirmMsg)) return;
         
         showLoading(t('assigning') + '...');
@@ -5331,7 +5467,7 @@
             hideLoading();
             
             if (result.success) {
-                // ✅ 局部更新：修改缓存中该用户的状态
+                // 局部更新：修改缓存中该用户的状态
                 const userIndex = currentExamUsers.findIndex(u => u.user_id == userId);
                 if (userIndex !== -1) {
                     currentExamUsers[userIndex].exam_status = 'pending';
@@ -5342,11 +5478,20 @@
                 }
                 // 重新渲染表格
                 renderExamStatusTable();
-                if (typeof showToast === 'function') {
-                    showToast(result.message || t('operation_success'), 'success');
+                // 使用 apiToast 替代 showToast
+                if (typeof apiToast === 'function') {
+                    apiToast(result, 'operation_success');
+                } else if (typeof showToast === 'function') {
+                    // 降级方案：如果没有 apiToast，使用 showToast
+                    showToast(t('operation_success'), 'success');
                 }
             } else {
-                showToast(result.message || t('operation_failed'), 'error');
+                // 错误时也使用 apiToast
+                if (typeof apiToast === 'function') {
+                    apiToast(result, 'operation_failed');
+                } else {
+                    showToast(result.message || t('operation_failed'), 'error');
+                }
             }
         } catch (err) {
             hideLoading();
@@ -5365,8 +5510,8 @@
         const userName = btn.dataset.userName || '';
         
         const confirmMsg = userName 
-            ? `确认移除 "${userName}" 的考试分配吗？`
-            : t('confirm_remove_single');
+            ? t('confirm_remove_single', userName)
+            : `确认移除 "${userName}" 的考试分配吗？`;
         if (!confirm(confirmMsg)) return;
         
         showLoading(t('removing') + '...');
@@ -5382,7 +5527,7 @@
             hideLoading();
             
             if (result.success) {
-                // ✅ 局部更新：修改缓存中该用户的状态
+                // 局部更新：修改缓存中该用户的状态
                 const userIndex = currentExamUsers.findIndex(u => u.user_id == userId);
                 if (userIndex !== -1) {
                     currentExamUsers[userIndex].exam_status = 'not_assigned';
@@ -5392,11 +5537,21 @@
                     currentExamUsers[userIndex].result_id = null;
                 }
                 renderExamStatusTable();
-                if (typeof showToast === 'function') {
-                    showToast(result.message || t('operation_success'), 'success');
+                
+                // 使用 apiToast 替代 showToast
+                if (typeof apiToast === 'function') {
+                    apiToast(result, 'operation_success');
+                } else if (typeof showToast === 'function') {
+                    // 降级方案：如果没有 apiToast，使用 showToast
+                    showToast(t('operation_success'), 'success');
                 }
             } else {
-                showToast(result.message || t('operation_failed'), 'error');
+                // 错误时也使用 apiToast
+                if (typeof apiToast === 'function') {
+                    apiToast(result, 'operation_failed');
+                } else {
+                    showToast(result.message || t('operation_failed'), 'error');
+                }
             }
         } catch (err) {
             hideLoading();
@@ -5579,14 +5734,15 @@
 		// 等待 i18n 就绪
 		await waitForI18n();
 		if (window.i18n) window.i18n.applyTranslations();
-		
+        refreshI18nTitles();
+
 		// 初始化导出模态框状态管理器
 		await ExportFilterStore.init();
 
-		// ✅ 初始化综合筛选管理器
+		// 初始化综合筛选管理器
 		MultiSelectManager.init();
         initTabActions();
-        // ✅ 监听综合筛选 Tab 显示事件（备用）
+        // 监听综合筛选 Tab 显示事件（备用）
         document.getElementById('multi-tab')?.addEventListener('shown.bs.tab', function() {
             // 刷新选中计数
             if (typeof MultiSelectManager !== 'undefined') {
@@ -5664,7 +5820,7 @@
             examSelector.addEventListener('change', (e) => {
                 const examId = e.target.value;
                 if (examId) {
-                    // ✅ 选择考试后加载数据（进度条在 loadExamStatusData 中显示）
+                    // 选择考试后加载数据（进度条在 loadExamStatusData 中显示）
                     loadExamStatusData(examId);
                 } else {
                     // 清空显示
@@ -5706,21 +5862,44 @@
 				renderExamStatusTable();
 			});
 		}
+        if (window.i18n) {
+            // 首次加载时应用翻译
+            window.i18n.applyTranslations();
+            refreshI18nTitles();
+            
+            // 语言切换时订阅
+            let isFirstCall = true;
+            window.i18n.subscribe(() => {
+                if (isFirstCall) {
+                    isFirstCall = false;
+                    return;
+                }
+                // 更新下拉框显示
+                updateExamSelectorDisplay();
+                // 更新统计卡片的标签
+                refreshDashboardLabels();
+                // 更新所有 data-i18n-title 属性
+                refreshI18nTitles();
+                // 只刷新当前可见的表格数据，不重新加载整个仪表盘
+                if (currentExamId && currentExamUsers.length) {
+                    renderExamStatusTable();
+                }
+            });
+        }
 
-		// 语言切换时，只重新渲染表格（不重新请求数据）
-		if (window.i18n) {
-			window.i18n.subscribe(() => {
-				if (currentExamId && currentExamUsers.length) {
-					renderExamStatusTable(); // 直接基于缓存数据重绘
-				}
-				// 同时确保下拉框的 placeholder 也被刷新（已有 data-i18n 自动处理）
-                loadDashboardData(true);
-			});
-		}
+        // 监听 app:languageChanged 事件（备用）
+        window.addEventListener('app:languageChanged', function() {
+            refreshI18nTitles();
+            updateExamSelectorDisplay();
+            refreshDashboardLabels();
+            if (currentExamId && currentExamUsers.length) {
+                renderExamStatusTable();
+            }
+        });
 		convertAllTimesToLocal();
 	});
 
-	// ✅ 新增：带权限过滤的国家自动完成函数
+	// 带权限过滤的国家自动完成函数
 	async function setupCountryAutocompleteWithPermission(inputId, datalistId, hiddenId = null) {
 		const input = document.getElementById(inputId);
 		const datalist = document.getElementById(datalistId);

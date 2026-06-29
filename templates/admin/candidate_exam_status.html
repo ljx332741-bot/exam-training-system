@@ -109,7 +109,7 @@
         country: ''
     };
 
-    // ✅ 新增：缓存原始数据
+    // 缓存原始数据
     let cachedExamUsers = [];  // 缓存从服务器获取的原始数据
     let isLoadingData = false;  // 防止重复加载
 
@@ -120,7 +120,7 @@
         const toastTitle = document.getElementById('toastTitle');
         const toastMessage = document.getElementById('toastMessage');
         
-        // ✅ 检查元素是否存在，如果不存在则使用 alert 作为降级方案
+        // 检查元素是否存在，如果不存在则使用 alert 作为降级方案
         if (!toastEl || !toastIcon || !toastTitle || !toastMessage) {
             console.warn('Toast 元素不存在，使用 alert 代替');
             alert(message);
@@ -157,7 +157,7 @@
         const loadingEl = document.getElementById('globalLoading');
         const loadingText = document.getElementById('loadingText');
         
-        // ✅ 检查元素是否存在
+        // 检查元素是否存在
         if (!loadingEl) {
             console.warn('Loading 元素不存在');
             return;

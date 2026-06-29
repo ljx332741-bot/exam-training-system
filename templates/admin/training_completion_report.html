@@ -4,6 +4,130 @@
 
 {% block extra_css %}
 <style>
+    /* 确保父容器有定位上下文 */
+    .card-left {
+        position: relative;
+    }
+
+    /* 针对特定的图标进行定位 */
+    .card-title .bi-info-circle {
+        position: absolute;
+        /* 需要根据实际设计稿微调 top 和 left 值 */
+        top: 25px; /* 假设标题高度约为20px，向下偏移 */
+        left: 0;   /* 靠左对齐，或者根据数字位置计算 */
+        z-index: 10;
+    }
+
+    /* 为了给绝对定位的图标腾出空间，可能需要给 h3 添加 padding-left */
+    .card-value {
+        padding-left: 20px; /* 预留图标位置 */
+    }
+
+    /* 卡片悬浮提示样式 */
+    .stat-card .card-title .filter-hint {
+        font-size: 0.5rem;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+        display: block;
+        color: rgba(0,0,0,0.4);
+        margin-top: 1px;
+    }
+
+    .stat-card:hover .card-title .filter-hint {
+        opacity: 1;
+    }
+    /*------------ 渲染培训考试分配取消分配悬浮按钮 样式开始 ------------*/
+    /* 状态单元格 - 悬浮交互 */
+    .status-cell {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        position: relative;
+        padding: 2px 4px;
+        border-radius: 4px;
+        transition: background-color 0.2s ease;
+        min-height: 28px;
+    }
+
+    .status-cell:hover {
+        background-color: rgba(13, 110, 253, 0.06);
+    }
+
+    /* 状态徽章 */
+    .status-badge {
+        transition: all 0.2s ease;
+    }
+
+    /* 操作按钮容器 - 默认隐藏 */
+    .status-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        opacity: 0;
+        transition: opacity 0.2s ease, transform 0.2s ease;
+        transform: scale(0.8);
+    }
+
+    .status-cell:hover .status-actions {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    /* 操作按钮样式 */
+    .action-btn {
+        width: 22px;
+        height: 22px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 0.7rem;
+        transition: all 0.2s ease;
+        cursor: pointer;
+    }
+
+    .action-btn:hover {
+        transform: scale(1.15);
+    }
+
+    .assign-btn {
+        color: #198754;
+        border-color: #198754;
+    }
+
+    .assign-btn:hover {
+        background-color: #198754;
+        color: #fff;
+    }
+
+    .unassign-btn {
+        color: #dc3545;
+        border-color: #dc3545;
+    }
+
+    .unassign-btn:hover {
+        background-color: #dc3545;
+        color: #fff;
+    }
+
+    /* 按钮悬浮提示 */
+    .action-btn[title]:hover::after {
+        content: attr(title);
+        position: absolute;
+        bottom: calc(100% + 4px);
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0,0,0,0.8);
+        color: #fff;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 0.6rem;
+        white-space: nowrap;
+        z-index: 100;
+    }
+    /*------------ 渲染培训考试分配取消分配悬浮按钮 样式结束 ------------*/
+
     .user-id-cell {
         cursor: pointer;
         position: relative;
@@ -275,42 +399,124 @@
         color: #9c27b0;
         background: rgba(156, 39, 176, 0.15);
     }
+    /* ==================== 新增卡片颜色 ==================== */
+    .crystal-card.red {
+        background: linear-gradient(135deg, #fce8e8 0%, #fdd4d4 100%);
+        border: 1px solid rgba(220, 53, 69, 0.2);
+    }
+    .crystal-card.red::after {
+        background: linear-gradient(90deg, #dc3545, #f08080);
+    }
+    .crystal-card.red .card-icon {
+        color: #dc3545;
+        background: rgba(220, 53, 69, 0.15);
+    }
 
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        .crystal-card {
-            padding: 10px 14px;
-            min-height: 50px;
-            border-radius: 12px;
-        }
-        .crystal-card .card-value {
+    .crystal-card.yellow {
+        background: linear-gradient(135deg, #fef9e8 0%, #fdf2d0 100%);
+        border: 1px solid rgba(255, 193, 7, 0.2);
+    }
+    .crystal-card.yellow::after {
+        background: linear-gradient(90deg, #ffc107, #ffdb7d);
+    }
+    .crystal-card.yellow .card-icon {
+        color: #ffc107;
+        background: rgba(255, 193, 7, 0.15);
+    }
+
+    /* ==================== 卡片高亮选中状态 ==================== */
+    .crystal-card.stat-card.active {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 32px rgba(13, 110, 253, 0.25);
+        border: 2px solid #0d6efd;
+    }
+
+    .crystal-card.stat-card.active .card-icon {
+        transform: scale(1.05);
+        background: rgba(13, 110, 253, 0.2);
+    }
+
+    .crystal-card.stat-card.active.red {
+        border-color: #dc3545;
+        box-shadow: 0 8px 32px rgba(220, 53, 69, 0.25);
+    }
+    .crystal-card.stat-card.active.red .card-icon {
+        background: rgba(220, 53, 69, 0.2);
+    }
+
+    .crystal-card.stat-card.active.yellow {
+        border-color: #ffc107;
+        box-shadow: 0 8px 32px rgba(255, 193, 7, 0.25);
+    }
+    .crystal-card.stat-card.active.yellow .card-icon {
+        background: rgba(255, 193, 7, 0.2);
+    }
+
+    .crystal-card.stat-card.active.green {
+        border-color: #34a853;
+        box-shadow: 0 8px 32px rgba(52, 168, 83, 0.25);
+    }
+    .crystal-card.stat-card.active.green .card-icon {
+        background: rgba(52, 168, 83, 0.2);
+    }
+
+    .crystal-card.stat-card.active.orange {
+        border-color: #fb8c00;
+        box-shadow: 0 8px 32px rgba(251, 140, 0, 0.25);
+    }
+    .crystal-card.stat-card.active.orange .card-icon {
+        background: rgba(251, 140, 0, 0.2);
+    }
+
+    .crystal-card.stat-card.active.purple {
+        border-color: #9c27b0;
+        box-shadow: 0 8px 32px rgba(156, 39, 176, 0.25);
+    }
+    .crystal-card.stat-card.active.purple .card-icon {
+        background: rgba(156, 39, 176, 0.2);
+    }
+
+    /* ==================== 卡片点击光标 ==================== */
+    .stat-card[data-stat="unassigned"],
+    .stat-card[data-stat="pending"] {
+        cursor: pointer;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .stat-card[data-stat="unassigned"]:hover,
+    .stat-card[data-stat="pending"]:hover {
+        transform: translateY(-4px);
+    }
+    /* ==================== 响应式调整 ==================== */
+    @media (max-width: 992px) {
+        .stat-card .card-value {
             font-size: 1.3rem;
         }
-        .crystal-card .card-icon {
+        .stat-card .card-title {
+            font-size: 0.55rem;
+        }
+        .stat-card .card-icon {
             width: 32px;
             height: 32px;
             font-size: 0.9rem;
         }
-        .crystal-card .card-title {
-            font-size: 0.55rem;
-        }
     }
 
-    @media (max-width: 480px) {
-        .crystal-card {
-            padding: 8px 10px;
+    @media (max-width: 576px) {
+        .stat-card {
+            padding: 10px 12px;
             min-height: 50px;
             border-radius: 10px;
         }
-        .crystal-card .card-value {
+        .stat-card .card-value {
             font-size: 1.1rem;
         }
-        .crystal-card .card-icon {
-            width: 26px;
-            height: 26px;
+        .stat-card .card-icon {
+            width: 28px;
+            height: 28px;
             font-size: 0.75rem;
         }
-        .crystal-card .card-title {
+        .stat-card .card-title {
             font-size: 0.5rem;
         }
     }
@@ -401,19 +607,19 @@
                 <div class="col-md-2">
                     <select id="filterTrainingStatus" class="form-select">
                         <option value="" data-i18n="all_training_status">全部培训状态</option>
-                        <option value="draft" data-i18n="t_draft">草稿</option>
-                        <option value="pending" data-i18n="t_not_started">未开始</option>
+                        <option value="draft" data-i18n="draft">草稿</option>
+                        <option value="pending" data-i18n="not_started">未开始</option>
                         <option value="active" data-i18n="t_on_going">进行中</option>
-                        <option value="closed" data-i18n="t_closed">已关闭</option>
+                        <option value="closed" data-i18n="closed">已关闭</option>
                     </select>
                 </div>
                 <div class="col-md-2">
                     <select id="filterExamStatus" class="form-select">
                         <option value="" data-i18n="all_exam_status">全部考试状态</option>
-                        <option value="draft" data-i18n="t_draft">草稿</option>
-                        <option value="created" data-i18n="t_not_started">未开始</option>
+                        <option value="draft" data-i18n="draft">草稿</option>
+                        <option value="created" data-i18n="not_started">未开始</option>
                         <option value="active" data-i18n="t_on_going">进行中</option>
-                        <option value="closed" data-i18n="t_closed">已关闭</option>
+                        <option value="closed" data-i18n="closed">已关闭</option>
                     </select>
                 </div>
                 <!--
@@ -458,11 +664,14 @@
 
     <!-- 统计汇总卡片 - 水晶样式（紧凑版） -->
     <div class="row g-2 mb-3" id="summaryCards">
-        <div class="col-md-3">
-            <div class="crystal-card blue stat-card" data-stat="total">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="crystal-card blue stat-card" data-stat="total" style="cursor: pointer;">
                 <div class="card-content">
                     <div class="card-left">
-                        <p class="card-title"><span data-i18n="total_users">总学员数</span></p>
+                        <p class="card-title">
+                            <span data-i18n="total_users">总学员数</span>
+                            <span class="filter-hint" data-i18n="click_to_filter">点击筛选</span>
+                        </p>
                         <h3 class="card-value" id="totalUsers">0</h3>
                     </div>
                     <div class="card-icon">
@@ -471,11 +680,14 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="crystal-card green stat-card" data-stat="signed">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="crystal-card green stat-card" data-stat="signed" style="cursor: pointer;">
                 <div class="card-content">
                     <div class="card-left">
-                        <p class="card-title"><span data-i18n="signed_count">已签到人数</span></p>
+                        <p class="card-title">
+                            <span data-i18n="signed_count">已签到人数</span>
+                            <span class="filter-hint" data-i18n="click_to_filter">点击筛选</span>
+                        </p>
                         <h3 class="card-value" id="totalSigned">0</h3>
                     </div>
                     <div class="card-icon">
@@ -484,11 +696,14 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="crystal-card orange stat-card" data-stat="completed">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="crystal-card orange stat-card" data-stat="completed" style="cursor: pointer;">
                 <div class="card-content">
                     <div class="card-left">
-                        <p class="card-title"><span data-i18n="completed_count">已完成考试人数</span></p>
+                        <p class="card-title">
+                            <span data-i18n="completed_count">已完成考试</span>
+                            <span class="filter-hint" data-i18n="click_to_filter">点击筛选</span>
+                        </p>
                         <h3 class="card-value" id="totalCompleted">0</h3>
                     </div>
                     <div class="card-icon">
@@ -497,11 +712,56 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="crystal-card purple stat-card" data-stat="passrate">
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="crystal-card red stat-card" data-stat="unassigned" style="cursor: pointer;">
                 <div class="card-content">
                     <div class="card-left">
-                        <p class="card-title"><span data-i18n="pass_rate">及格率</span></p>
+                        <p class="card-title">
+                            <span data-i18n="unassigned_count">未分配人次</span>
+                            <span class="filter-hint" data-i18n="click_to_filter">点击筛选</span>
+                            <i class="bi bi-info-circle text-muted" 
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top"
+                            title="培训或考试未分配的学员数（去重）"
+                            style="font-size: 0.6rem; cursor: help;"></i>
+                        </p>
+                        <h3 class="card-value" id="totalUnassigned">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-person-x-fill"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="crystal-card yellow stat-card" data-stat="pending" style="cursor: pointer;">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title">
+                            <span data-i18n="pending_count">待处理人次</span>
+                            <span class="filter-hint" data-i18n="click_to_filter">点击筛选</span>
+                            <i class="bi bi-info-circle text-muted" 
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top"
+                            title="培训待签到或考试待考试的学员数（去重）"
+                            style="font-size: 0.6rem; cursor: help;"></i>
+                        </p>
+                        <h3 class="card-value" id="totalPending">0</h3>
+                    </div>
+                    <div class="card-icon">
+                        <i class="bi bi-clock-fill"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-md-4 col-lg-2">
+            <div class="crystal-card purple stat-card" data-stat="passrate" style="cursor: pointer;">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title">
+                            <span data-i18n="pass_rate">及格率</span>
+                            <span class="filter-hint" data-i18n="click_to_filter">点击筛选</span>
+                        </p>
                         <h3 class="card-value" id="passRate">0%</h3>
                     </div>
                     <div class="card-icon">
@@ -562,6 +822,8 @@
     // ==================== 高级搜索功能 ====================
     let trainingSearchTimeout = null;
     let selectedTrainingId = '';
+    // 当前激活的卡片状态
+    let activeCardStat = null;
 
     // ==================== 变量声明 ====================
     let currentPage = 1;
@@ -608,7 +870,12 @@
         }
         searchTimer = setTimeout(() => {
             currentPage = 1;
-            applyFilters();
+            // 如果有缓存数据，使用内存过滤
+            if (allReportData && allReportData.length > 0) {
+                applyFilters();
+            } else {
+                loadReportData();
+            }
             searchTimer = null;
         }, 500);
     }
@@ -616,32 +883,39 @@
     // ==================== 重置所有筛选条件 ====================
     function resetAllFilters() {
         // 1. 重置所有输入框
-        document.getElementById('filterName').value = '';
-        document.getElementById('filterCountry').value = '';
-        document.getElementById('filterTrainingName').value = '';
-        document.getElementById('filterExamName').value = '';
-        document.getElementById('filterStartDate').value = '';
-        document.getElementById('filterEndDate').value = '';
-        document.getElementById('filterStatus').value = '';
-        document.getElementById('filterTrainingStatus').value = '';
-        document.getElementById('filterExamStatus').value = '';
+        const inputIds = [
+            'filterName', 
+            'filterCountry', 
+            'filterTrainingName', 
+            'filterExamName', 
+            'filterStatus', 
+            'filterTrainingStatus', 
+            'filterExamStatus',
+            'filterStartDate',
+            'filterEndDate'
+        ];
         
+        inputIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
         // 2. 重置隐藏字段
-        document.getElementById('selectedTrainingId').value = '';
-        document.getElementById('selectedExamId').value = '';
-        document.getElementById('filterCountryCode').value = '';
+        const hiddenIds = ['selectedTrainingId', 'selectedExamId', 'filterCountryCode'];
+        hiddenIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
         
         // 3. 重置全局变量
         selectedTrainingId = '';
         selectedExamId = '';
+        dropdownData = [];
         
         // 4. 隐藏所有清空按钮
         document.querySelectorAll('.input-clear-btn').forEach(btn => btn.style.display = 'none');
         
-        // 5. 重置下拉框缓存数据
-        dropdownData = [];
-        
-        // 6. 重置 filters 对象
+        // 5. 重置 filters 对象
         filters = { 
             name: '', 
             country: '', 
@@ -651,17 +925,173 @@
             start_date: '', 
             end_date: '',
             training_status: '',
-            exam_status: ''
+            exam_status: '',
+            card_filter: null
         };
+
+        // 6. 重置卡片高亮到总学员卡片
+        clearAllFiltersAndHighlight();
         
         // 7. 重置分页
         currentPage = 1;
         
-        // 8. 不清空缓存，直接应用筛选（静默更新）
+        // 8. 重新加载数据
         if (allReportData && allReportData.length > 0) {
             applyFilters();
         } else {
+            allReportData = [];
             loadReportData();
+        }
+    }
+
+    // ==================== 卡片筛选映射 ====================
+    const CARD_FILTER_MAP = {
+        'total': {
+            type: 'clear',
+            label: '全部数据',
+            icon: 'bi-people-fill'
+        },
+        'signed': {
+            type: 'training_status',
+            value: 'signed',
+            label: '已签到',
+            icon: 'bi-check-circle-fill'
+        },
+        'completed': {
+            type: 'exam_status',
+            value: 'completed',
+            label: '已完成考试',
+            icon: 'bi-clipboard-check-fill'
+        },
+        'unassigned': {
+            type: 'composite',
+            values: ['not_assigned'],
+            fields: ['training_status', 'exam_status'],
+            label: '未分配',
+            icon: 'bi-person-x-fill'
+        },
+        'pending': {
+            type: 'composite',
+            values: ['pending'],
+            fields: ['training_status', 'exam_status'],
+            label: '待处理',
+            icon: 'bi-clock-fill'
+        },
+        'passrate': {
+            type: 'is_passed',
+            value: true,
+            label: '已及格',
+            icon: 'bi-percent'
+        }
+    };
+
+    // ==================== 初始化卡片点击事件 ====================
+    function initCardClickFilters() {
+        const cards = document.querySelectorAll('.stat-card');
+        
+        cards.forEach(card => {
+            // 移除旧监听器避免重复绑定
+            card.removeEventListener('click', handleCardClick);
+            card.addEventListener('click', handleCardClick);
+        });
+    }
+
+    // 卡片点击处理
+    function handleCardClick(e) {
+        const card = e.currentTarget;
+        const stat = card.dataset.stat;
+        
+        // 如果点击的是已激活的卡片，取消筛选（相当于重置）
+        if (activeCardStat === stat) {
+            clearCardFilter();
+            return;
+        }
+        
+        // 应用筛选
+        applyCardFilter(stat);
+    }
+
+    // 应用卡片筛选
+    function applyCardFilter(stat) {
+        // 清除所有卡片高亮
+        document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+        
+        // 高亮当前卡片
+        const card = document.querySelector(`.stat-card[data-stat="${stat}"]`);
+        if (card) card.classList.add('active');
+        
+        const filterConfig = CARD_FILTER_MAP[stat];
+        if (!filterConfig) {
+            console.warn('未知的卡片统计类型:', stat);
+            return;
+        }
+        
+        // 根据配置类型设置筛选条件
+        if (filterConfig.type === 'clear') {
+            // 总学员数：清除所有筛选
+            clearAllFiltersAndHighlight();
+            return;
+        }
+        
+        // 存储当前卡片筛选状态
+        activeCardStat = stat;
+        
+        // 设置筛选条件到 filters 对象
+        // 使用一个专门的字段来存储卡片筛选，避免与现有 status 冲突
+        filters.card_filter = {
+            type: filterConfig.type,
+            config: filterConfig
+        };
+        
+        currentPage = 1;
+        applyFilters();
+    }
+
+    // 清除卡片筛选
+    function clearCardFilter() {
+        // 清除所有卡片高亮
+        document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+        
+        // 清除卡片筛选条件
+        filters.card_filter = null;
+        activeCardStat = null;
+        currentPage = 1;
+        applyFilters();
+    }
+
+    // 清除所有筛选并高亮总学员卡片
+    function clearAllFiltersAndHighlight() {
+        // 清除所有卡片高亮
+        document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+        
+        // 高亮总学员卡片
+        const totalCard = document.querySelector('.stat-card[data-stat="total"]');
+        if (totalCard) totalCard.classList.add('active');
+        
+        // 清除所有筛选条件
+        filters = { 
+            name: '', 
+            country: '', 
+            training_name: '', 
+            exam_name: '', 
+            status: '', 
+            start_date: '', 
+            end_date: '',
+            training_status: '',
+            exam_status: '',
+            card_filter: null
+        };
+        
+        activeCardStat = 'total';
+        currentPage = 1;
+        applyFilters();
+    }
+
+    // 恢复卡片高亮
+    function restoreCardHighlight() {
+        if (activeCardStat) {
+            const card = document.querySelector(`.stat-card[data-stat="${activeCardStat}"]`);
+            if (card) card.classList.add('active');
         }
     }
 
@@ -749,6 +1179,15 @@
                     document.getElementById('totalSigned').innerText = data.summary.total_signed || 0;
                     document.getElementById('totalCompleted').innerText = data.summary.total_completed || 0;
                     document.getElementById('passRate').innerText = (data.summary.pass_rate || 0) + '%';
+                    // 必须有这两行
+                    document.getElementById('totalUnassigned').innerText = data.summary.unassigned_count || 0;
+                    document.getElementById('totalPending').innerText = data.summary.pending_count || 0;
+                    // 如果没有任何卡片高亮，默认高亮总学员卡片
+                    if (!activeCardStat) {
+                        const totalCard = document.querySelector('.stat-card[data-stat="total"]');
+                        if (totalCard) totalCard.classList.add('active');
+                        activeCardStat = 'total';
+                    }
                 }
                 
                 updateProgress(100, t('report_data_loaded'));
@@ -840,8 +1279,72 @@
                 return true;
             });
         }
-        
-        // 6. 日期范围筛选
+
+        // 6. 培训状态筛选
+        if (filters.training_status) {
+            filtered = filtered.filter(item => {
+                // 使用 training_status_global 或 training_status 字段
+                const status = (item.training_status_global || item.training_status || '').toLowerCase();
+                return status === filters.training_status.toLowerCase();
+            });
+        }
+
+        // 7. 考试状态筛选
+        if (filters.exam_status) {
+            filtered = filtered.filter(item => {
+                // 使用 exam_status_global 或 exam_status 字段
+                const status = (item.exam_status_global || item.exam_status || '').toLowerCase();
+                return status === filters.exam_status.toLowerCase();
+            });
+        }
+
+        // 8. ========== 卡片筛选（新增） ==========
+        if (filters.card_filter) {
+            const config = filters.card_filter.config;
+            
+            switch (config.type) {
+                case 'training_status':
+                    // 培训状态筛选（如：已签到）
+                    filtered = filtered.filter(item => 
+                        (item.training_status || '') === config.value
+                    );
+                    break;
+                    
+                case 'exam_status':
+                    // 考试状态筛选（如：已完成）
+                    filtered = filtered.filter(item => 
+                        (item.exam_status || '') === config.value
+                    );
+                    break;
+                    
+                case 'composite':
+                    // 复合筛选（如：未分配 = training_status OR exam_status）
+                    const values = config.values || [];
+                    const fields = config.fields || [];
+                    filtered = filtered.filter(item => {
+                        for (const field of fields) {
+                            const fieldValue = item[field] || '';
+                            if (values.includes(fieldValue)) {
+                                return true;
+                            }
+                        }
+                        return false;
+                    });
+                    break;
+                    
+                case 'is_passed':
+                    // 及格筛选
+                    filtered = filtered.filter(item => 
+                        item.is_passed === config.value
+                    );
+                    break;
+                    
+                default:
+                    break;
+            }
+        }
+
+        // 9. 日期范围筛选(可选)
         if (filters.start_date) {
             filtered = filtered.filter(item => {
                 if (!item.training_start) return false;
@@ -1157,15 +1660,43 @@
                     <td>${escapeHtml(r.exam_name)}</td>
                     <td>${escapeHtml(r.exam_id)}</td>
                     <td>${escapeHtml(r.exam_status_global || '-')}</td>
+                    <!-- 培训状态列 - 支持悬浮操作 -->
                     <td>
-                        <span class="badge ${getTrainingStatusBadge(r.training_status)}">
-                            ${getTrainingStatusText(r.training_status)}
-                        </span>
+                        <div class="status-cell" 
+                            data-training-id="${r.training_id}" 
+                            data-user-id="${r.user_id}"
+                            data-status="${r.training_status}"
+                            data-type="training">
+                            
+                            <!-- 当前状态徽章 -->
+                            <span class="badge ${getTrainingStatusBadge(r.training_status)} status-badge">
+                                ${getTrainingStatusText(r.training_status)}
+                            </span>
+                            
+                            <!-- 悬浮操作按钮（默认隐藏） -->
+                            <span class="status-actions">
+                                ${renderTrainingActionButtons(r)}
+                            </span>
+                        </div>
                     </td>
+                    <!-- 考试状态列 - 支持悬浮操作 -->
                     <td>
-                        <span class="badge ${getExamStatusBadge(r.exam_status)}">
-                            ${getExamStatusText(r.exam_status)}
-                        </span>
+                        <div class="status-cell" 
+                            data-exam-id="${r.exam_id}" 
+                            data-user-id="${r.user_id}"
+                            data-status="${r.exam_status}"
+                            data-type="exam">
+                            
+                            <!-- 当前状态徽章 -->
+                            <span class="badge ${getExamStatusBadge(r.exam_status)} status-badge">
+                                ${getExamStatusText(r.exam_status)}
+                            </span>
+                            
+                            <!-- 悬浮操作按钮（默认隐藏） -->
+                            <span class="status-actions">
+                                ${renderExamActionButtons(r)}
+                            </span>
+                        </div>
                     </td>
                     <td class="fw-bold ${r.score >= r.pass_score ? 'text-success' : 'text-danger'}">${r.score || '-'}</td>
                     <td>${passedBadge}</td>
@@ -1175,6 +1706,615 @@
         setTimeout(initUserIdCopy, 100);
     }
 
+    // 渲染培训分配取消分配操作按钮
+    function renderTrainingActionButtons(r) {
+        const status = r.training_status;
+        const trainingId = r.training_id;
+        const userId = r.user_id;
+        
+        if (status === 'not_assigned') {
+            return `<button class="btn btn-sm btn-outline-success action-btn assign-btn" 
+                            data-training-id="${trainingId}" 
+                            data-user-id="${userId}"
+                            onclick="assignTraining(event, ${trainingId}, '${userId}')"
+                            title="分配培训">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>`;
+        }
+        
+        if (status === 'pending') {
+            return `<button class="btn btn-sm btn-outline-danger action-btn unassign-btn" 
+                            data-training-id="${trainingId}" 
+                            data-user-id="${userId}"
+                            onclick="unassignTraining(event, ${trainingId}, '${userId}')"
+                            title="取消分配培训">
+                        <i class="bi bi-dash-circle"></i>
+                    </button>`;
+        }
+        
+        return ''; // 其他状态不显示
+    }
+
+    // 渲染考试分配取消分配操作按钮
+    function renderExamActionButtons(r) {
+        const status = r.exam_status;
+        const examId = r.exam_id;
+        const userId = r.user_id;
+        
+        if (status === 'not_assigned') {
+            return `<button class="btn btn-sm btn-outline-success action-btn assign-btn" 
+                            data-exam-id="${examId}" 
+                            data-user-id="${userId}"
+                            onclick="assignExam(event, ${examId}, '${userId}')"
+                            title="分配考试">
+                        <i class="bi bi-plus-circle"></i>
+                    </button>`;
+        }
+        
+        if (status === 'pending') {
+            return `<button class="btn btn-sm btn-outline-danger action-btn unassign-btn" 
+                            data-exam-id="${examId}" 
+                            data-user-id="${userId}"
+                            onclick="unassignExam(event, ${examId}, '${userId}')"
+                            title="取消分配考试">
+                        <i class="bi bi-dash-circle"></i>
+                    </button>`;
+        }
+        
+        return '';
+    }
+
+    // ==================== 培训分配/取消分配（优化版） ====================
+
+    /**
+     * 分配培训 - 优化版（立即更新UI）
+     */
+    async function assignTraining(event, trainingId, userId) {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        // 查找用户信息用于确认消息
+        const user = allReportData.find(d => d.user_id === userId);
+        const userName = user ? user.user_name : '';
+        const confirmMsg = userName 
+            ? `确认分配培训给学员「${userName}」吗？` 
+            : '确认分配此培训给该学员吗？';
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading('正在分配培训...');
+        try {
+            const res = await fetch(`/api/admin/training/${trainingId}/assign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            const result = await res.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message || '分配成功', 'success');
+                
+                // ✅ 直接更新本地数据，不刷新页面
+                updateLocalTrainingStatus(trainingId, userId, 'assign');
+                
+                // ✅ 重新渲染表格
+                applyFilters();
+            } else {
+                showToast(result.message || '分配失败', 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('分配培训失败:', err);
+            showToast('网络错误，请重试', 'error');
+        }
+    }
+
+    /**
+     * 取消分配培训 - 优化版（立即更新UI）
+     */
+    async function unassignTraining(event, trainingId, userId) {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        const user = allReportData.find(d => d.user_id === userId);
+        const userName = user ? user.user_name : '';
+        const confirmMsg = userName 
+            ? `确认取消学员「${userName}」的培训分配吗？` 
+            : '确认取消分配此培训吗？';
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading('正在取消分配培训...');
+        try {
+            const res = await fetch(`/api/admin/training/${trainingId}/unassign`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_ids: [userId] })
+            });
+            const result = await res.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message || '取消分配成功', 'success');
+                
+                // ✅ 直接更新本地数据，不刷新页面
+                updateLocalTrainingStatus(trainingId, userId, 'unassign');
+                
+                // ✅ 重新渲染表格
+                applyFilters();
+            } else {
+                showToast(result.message || '取消分配失败', 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('取消分配培训失败:', err);
+            showToast('网络错误，请重试', 'error');
+        }
+    }
+
+    // ==================== 考试分配/取消分配（优化版） ====================
+
+    /**
+     * 分配考试给学员 - 优化版（立即更新UI）
+     */
+    async function assignExam(event, examId, userId, examName = '', userName = '') {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        // 如果未传入用户名，从数据中查找
+        if (!userName) {
+            const user = allReportData.find(d => d.user_id === userId);
+            if (user) userName = user.user_name || '';
+        }
+        
+        let confirmMsg = '确认分配此考试给该学员吗？';
+        if (examName && userName) {
+            confirmMsg = `确认将考试「${examName}」分配给学员「${userName}」吗？`;
+        } else if (examName) {
+            confirmMsg = `确认分配考试「${examName}」给该学员吗？`;
+        } else if (userName) {
+            confirmMsg = `确认分配考试给学员「${userName}」吗？`;
+        }
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading('正在分配考试...');
+        
+        try {
+            const response = await fetch('/api/admin/exam/assign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    exam_id: examId,
+                    user_ids: [userId]
+                })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message || '分配成功', 'success');
+                
+                // ✅ 直接更新本地数据，不刷新页面
+                updateLocalExamStatus(examId, userId, 'assign');
+                
+                // ✅ 重新渲染表格
+                applyFilters();
+                
+                // ✅ 如果考生状态表格存在，也更新它
+                if (typeof renderExamStatusTable === 'function') {
+                    renderExamStatusTable();
+                }
+            } else {
+                showToast(result.message || '分配失败，请重试', 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('分配考试失败:', err);
+            showToast('网络错误，请检查网络连接后重试', 'error');
+        }
+    }
+
+    /**
+     * 取消分配考试 - 优化版（立即更新UI）
+     */
+    async function unassignExam(event, examId, userId, examName = '', userName = '') {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        if (!userName) {
+            const user = allReportData.find(d => d.user_id === userId);
+            if (user) userName = user.user_name || '';
+        }
+        
+        let confirmMsg = '确认取消分配此考试吗？';
+        if (examName && userName) {
+            confirmMsg = `确认取消学员「${userName}」的考试「${examName}」分配吗？`;
+        } else if (examName) {
+            confirmMsg = `确认取消考试「${examName}」的分配吗？`;
+        } else if (userName) {
+            confirmMsg = `确认取消学员「${userName}」的考试分配吗？`;
+        }
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading('正在取消分配...');
+        
+        try {
+            const response = await fetch('/api/admin/exam/unassign', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    exam_id: examId,
+                    user_ids: [userId]
+                })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(result.message || '取消分配成功', 'success');
+                
+                // ✅ 直接更新本地数据，不刷新页面
+                updateLocalExamStatus(examId, userId, 'unassign');
+                
+                // ✅ 重新渲染表格
+                applyFilters();
+                
+                // ✅ 如果考生状态表格存在，也更新它
+                if (typeof renderExamStatusTable === 'function') {
+                    renderExamStatusTable();
+                }
+            } else {
+                showToast(result.message || '取消分配失败，请重试', 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('取消分配考试失败:', err);
+            showToast('网络错误，请检查网络连接后重试', 'error');
+        }
+    }
+
+    // ==================== 本地数据更新函数 ====================
+
+    /**
+     * 更新本地培训状态（不重新请求服务器）
+     */
+    function updateLocalTrainingStatus(trainingId, userId, action) {
+        const newStatus = action === 'assign' ? 'pending' : 'not_assigned';
+        let updatedCount = 0;
+        
+        // 更新 allReportData
+        allReportData.forEach(item => {
+            if (item.training_id === trainingId && item.user_id === userId) {
+                item.training_status = newStatus;
+                if (action === 'unassign') {
+                    item.is_signed = false;
+                    item.signed_at = null;
+                    // 如果培训未分配，考试状态也应该重置？
+                    // 根据业务逻辑决定是否重置考试状态
+                }
+                updatedCount++;
+            }
+        });
+        
+        // 更新 filteredReportData（如果存在）
+        if (filteredReportData && filteredReportData.length > 0) {
+            filteredReportData.forEach(item => {
+                if (item.training_id === trainingId && item.user_id === userId) {
+                    item.training_status = newStatus;
+                    if (action === 'unassign') {
+                        item.is_signed = false;
+                        item.signed_at = null;
+                    }
+                }
+            });
+        }
+        
+        console.log(`✅ 培训状态已更新: ${updatedCount} 条记录, training_status -> ${newStatus}`);
+    }
+
+    /**
+     * 更新本地考试状态（不重新请求服务器）
+     */
+    function updateLocalExamStatus(examId, userId, action) {
+        const newStatus = action === 'assign' ? 'pending' : 'not_assigned';
+        let updatedCount = 0;
+        
+        // 更新 allReportData
+        allReportData.forEach(item => {
+            if (item.exam_id === examId && item.user_id === userId) {
+                item.exam_status = newStatus;
+                if (action === 'unassign') {
+                    // 取消分配时清空考试相关字段
+                    item.is_completed = false;
+                    item.is_passed = false;
+                    item.score = null;
+                    item.completed_at = null;
+                } else {
+                    // 分配时重置为待考试状态
+                    item.is_completed = false;
+                    item.is_passed = false;
+                    item.score = null;
+                    item.completed_at = null;
+                }
+                updatedCount++;
+            }
+        });
+        
+        // 更新 filteredReportData（如果存在）
+        if (filteredReportData && filteredReportData.length > 0) {
+            filteredReportData.forEach(item => {
+                if (item.exam_id === examId && item.user_id === userId) {
+                    item.exam_status = newStatus;
+                    if (action === 'unassign') {
+                        item.is_completed = false;
+                        item.is_passed = false;
+                        item.score = null;
+                        item.completed_at = null;
+                    }
+                }
+            });
+        }
+        
+        console.log(`✅ 考试状态已更新: ${updatedCount} 条记录, exam_status -> ${newStatus}`);
+    }
+
+    /**
+     * 统一刷新所有数据（保留用于需要完全刷新的场景）
+     * 但现在推荐使用本地更新 + applyFilters()
+     */
+    async function refreshAllData() {
+        // 1. 清除本地缓存（如果有）
+        if (typeof clearLocalCache === 'function') {
+            clearLocalCache();
+        }
+        
+        // 2. 重新加载报表数据（如果在报表页面）
+        if (typeof loadReportData === 'function' && typeof currentPage !== 'undefined') {
+            try {
+                await loadReportData(currentPage || 1);
+            } catch (err) {
+                console.warn('刷新报表数据失败:', err);
+            }
+        }
+        
+        // 3. 重新加载考试状态表格（如果在考生状态页面）
+        if (typeof loadExamStatusData === 'function' && typeof currentExamId !== 'undefined' && currentExamId) {
+            try {
+                await loadExamStatusData(currentExamId);
+            } catch (err) {
+                console.warn('刷新考试状态失败:', err);
+            }
+        }
+        
+        // 4. 触发自定义事件
+        window.dispatchEvent(new CustomEvent('app:dataRefreshed', {
+            detail: { source: 'assignment_operation' }
+        }));
+        
+        console.log('🔄 所有数据已刷新');
+    }
+
+    /**
+     * 批量分配考试
+     * @param {Event} event - 点击事件
+     * @param {number} examId - 考试ID
+     * @param {string[]} userIds - 用户ID列表
+     * @param {string} examName - 考试名称（可选）
+     */
+    async function batchAssignExam(event, examId, userIds, examName = '') {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        if (!userIds || userIds.length === 0) {
+            showToast('请至少选择一位学员', 'warning');
+            return;
+        }
+        
+        const confirmMsg = examName 
+            ? `确认将考试「${examName}」分配给 ${userIds.length} 名学员吗？`
+            : `确认将考试分配给 ${userIds.length} 名学员吗？`;
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading(`正在分配考试给 ${userIds.length} 名学员...`);
+        
+        try {
+            const response = await fetch('/api/admin/exam/assign', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    exam_id: examId,
+                    user_ids: userIds
+                })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                const successMsg = result.message || `成功分配考试给 ${result.assigned_count || userIds.length} 名学员`;
+                showToast(successMsg, 'success');
+                await refreshAllData();
+            } else {
+                showToast(result.message || '批量分配失败', 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('批量分配考试失败:', err);
+            showToast('网络错误，请重试', 'error');
+        }
+    }
+
+    /**
+     * 批量取消分配考试
+     * @param {Event} event - 点击事件
+     * @param {number} examId - 考试ID
+     * @param {string[]} userIds - 用户ID列表
+     * @param {string} examName - 考试名称（可选）
+     */
+    async function batchUnassignExam(event, examId, userIds, examName = '') {
+        if (event) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+        
+        if (!userIds || userIds.length === 0) {
+            showToast('请至少选择一位学员', 'warning');
+            return;
+        }
+        
+        const confirmMsg = examName 
+            ? `确认取消 ${userIds.length} 名学员的考试「${examName}」分配吗？`
+            : `确认取消 ${userIds.length} 名学员的考试分配吗？`;
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading(`正在取消 ${userIds.length} 名学员的考试分配...`);
+        
+        try {
+            const response = await fetch('/api/admin/exam/unassign', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    exam_id: examId,
+                    user_ids: userIds
+                })
+            });
+            
+            const result = await response.json();
+            hideLoading();
+            
+            if (result.success) {
+                const successMsg = result.message || `成功取消 ${result.unassigned_count || userIds.length} 名学员的考试分配`;
+                showToast(successMsg, 'success');
+                await refreshAllData();
+            } else {
+                showToast(result.message || '批量取消分配失败', 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('批量取消分配考试失败:', err);
+            showToast('网络错误，请重试', 'error');
+        }
+    }
+
+    /**
+     * 简化的分配考试（带UI反馈）
+     * 用于报表页面快速分配
+     */
+    async function quickAssignExam(examId, userId, buttonElement) {
+        if (!buttonElement) {
+            await assignExam(null, examId, userId);
+            return;
+        }
+        
+        // 保存按钮原始状态
+        const originalHtml = buttonElement.innerHTML;
+        const originalDisabled = buttonElement.disabled;
+        
+        // 显示加载状态
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        
+        try {
+            const response = await fetch('/api/admin/exam/assign', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    exam_id: examId,
+                    user_ids: [userId]
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast('分配成功', 'success');
+                // 刷新当前页面
+                if (typeof loadReportData === 'function') {
+                    loadReportData(currentPage || 1);
+                }
+            } else {
+                showToast(result.message || '分配失败', 'error');
+                // 恢复按钮
+                buttonElement.disabled = originalDisabled;
+                buttonElement.innerHTML = originalHtml;
+            }
+        } catch (err) {
+            console.error('分配失败:', err);
+            showToast('网络错误，请重试', 'error');
+            buttonElement.disabled = originalDisabled;
+            buttonElement.innerHTML = originalHtml;
+        }
+    }
+
+    /**
+     * 简化的取消分配考试（带UI反馈）
+     */
+    async function quickUnassignExam(examId, userId, buttonElement) {
+        if (!buttonElement) {
+            await unassignExam(null, examId, userId);
+            return;
+        }
+        
+        const originalHtml = buttonElement.innerHTML;
+        const originalDisabled = buttonElement.disabled;
+        
+        buttonElement.disabled = true;
+        buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        
+        try {
+            const response = await fetch('/api/admin/exam/unassign', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    exam_id: examId,
+                    user_ids: [userId]
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                showToast('取消分配成功', 'success');
+                if (typeof loadReportData === 'function') {
+                    loadReportData(currentPage || 1);
+                }
+            } else {
+                showToast(result.message || '取消分配失败', 'error');
+                buttonElement.disabled = originalDisabled;
+                buttonElement.innerHTML = originalHtml;
+            }
+        } catch (err) {
+            console.error('取消分配失败:', err);
+            showToast('网络错误，请重试', 'error');
+            buttonElement.disabled = originalDisabled;
+            buttonElement.innerHTML = originalHtml;
+        }
+    }
     // ==================== 用户ID双击复制功能 ====================
     function initUserIdCopy() {
         document.querySelectorAll('.user-id-cell').forEach(cell => {
@@ -1527,10 +2667,12 @@
                 if (window.i18n.applyTranslations) {
                     window.i18n.applyTranslations();
                 }
+                // 恢复卡片高亮状态
+                restoreCardHighlight();
             });
         }
         
-        window.addEventListener('app:languageChanged', () => {
+        window.addEventListener('app:languageChanged', function() {
             if (filteredReportData.length > 0) {
                 const start = (currentPage - 1) * 20;
                 const end = start + 20;
@@ -1539,9 +2681,13 @@
             if (window.i18n.applyTranslations) {
                 window.i18n.applyTranslations();
             }
+            restoreCardHighlight();
         });
         
         setTimeout(initUserIdCopy, 500);
+        // 初始化卡片点击筛选
+        initCardClickFilters();
+
         // 初始化Tooltip
         const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
         const tooltipList = [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl, {
