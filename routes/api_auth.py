@@ -42,7 +42,7 @@ def profile():
     db = get_supabase()
     user_id = session['user_id']
     
-    # ✅ 判断是否为 AJAX 请求
+    # 判断是否为 AJAX 请求
     is_ajax = request.headers.get('X-Requested-With') == 'XMLHttpRequest'
     
     if request.method == 'POST':
@@ -217,7 +217,7 @@ def api_register():
         .eq("name_en", name_en) \
         .eq("user_status", "imported") \
         .is_("email", "null") \
-        .is_("deleted_at", "null")   # ✅ 防止匹配到已删除用户
+        .is_("deleted_at", "null")
 
     pool = base_query.execute()
     users = pool.data or []
@@ -275,7 +275,7 @@ def api_register():
         "user_id": target['id'],
         "user_email": email,
         "role": target.get('role', 'user'),
-        "admin_countries": target.get('admin_countries', '')  # ✅ 新增
+        "admin_countries": target.get('admin_countries', '')
     })
     return jsonify({
         "success": True, 
@@ -314,23 +314,28 @@ def login():
                 if isinstance(admin_countries, str): json.loads(admin_countries)
             except: admin_countries = json.dumps([])
             session.update({
-                "user_id": user['id'], "user_email": email, "role": user.get('role', 'user'),
-                "admin_countries": admin_countries, "is_protected": user.get('is_protected', False),
+                "user_id": user['id'], 
+                "user_email": email, 
+                "role": user.get('role', 'user'),
+                "admin_countries": admin_countries, 
+                "is_protected": user.get('is_protected', False),
                 "user_country": user.get('country')
             })
             
-            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
-
-            if login_success:
+            # 记录登录消息
+            try:
                 log_user_login(
-                    db=db,
-                    user_id=user_data['id'],
-                    user_name=user_data.get('name_en') or user_data.get('name_cn', ''),
-                    email=user_data.get('email', ''),
+                    user_id=user['id'],
+                    user_name=user.get('name_en') or user.get('name_cn', ''),
+                    email=user.get('email', ''),
                     ip=request.remote_addr,
                     user_agent=request.headers.get('User-Agent')
                 )
+            except Exception as e:
+                logger.warning(f"记录登录消息失败: {e}")
+
+            if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
 
             flash({'msg': 'login_success', 'params': []}, 'success')
             return redirect(url_for('exam.dashboard'))
@@ -347,6 +352,7 @@ def login():
 @auth_bp.route('/logout')
 def logout():
     user_id = session.get('user_id')
+    db = get_supabase()
     if user_id:
         try:
             user_res = db.table("users").select("name_en, email").eq("id", user_id).maybe_single().execute()

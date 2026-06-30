@@ -50,7 +50,9 @@ from utils.manage_messages import (
     log_result_delete,
     log_admin_push_exam,
     log_import_exam,
-    log_exam_reset
+    log_exam_reset,
+    log_force_reset_exam,
+    log_cancel_force_reset_exam
 )
 
 logger = logging.getLogger(__name__)
@@ -1135,7 +1137,7 @@ def admin_exam_status(exam_id):
     # ========== 2. 获取用户列表（带权限过滤）==========
     query = db.table("users").select("id, email, name_en, country").is_("deleted_at", "null")
 
-    # ✅ 添加考试国家过滤：只显示国家在 exam_countries 中的用户
+    # 添加考试国家过滤：只显示国家在 exam_countries 中的用户
     if exam_countries:
         query = query.in_("country", exam_countries)
     
@@ -1195,7 +1197,7 @@ def admin_exam_status(exam_id):
         uid = u['id']
         user_country = u.get('country', '')
 
-        # ✅ 额外检查：用户国家必须在考试国家列表中
+        # 额外检查：用户国家必须在考试国家列表中
         if user_country not in exam_countries:
             continue
         
@@ -2804,24 +2806,59 @@ def force_reset_exam_for_user(exam_id, user_id):
         return jsonify({"success": False, "message": "权限不足"}), 403
     
     # 2. 获取考试信息
-    exam_res = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
+    exam_res = db.table("exams").select("*, title").eq("id", exam_id).maybe_single().execute()
     if not exam_res.data:
         return jsonify({"success": False, "message": "考试不存在"}), 404
     exam = exam_res.data
+    exam_title = exam.get('title', f'考试 #{exam_id}')
     
     # 3. 检查用户是否存在
-    user_res = db.table("users").select("id, name_en").eq("id", user_id).maybe_single().execute()
+    user_res = db.table("users").select("id, name_en, name_cn").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify({"success": False, "message": "用户不存在"}), 404
+    user_name = user_res.data.get('name_cn') or user_res.data.get('name_en') or user_id
+
+    # ========== 4. 确保用户有 exam_assignments 分配记录 ==========
+    assign_res = db.table("exam_assignments")\
+        .select("id, deleted_at")\
+        .eq("exam_id", exam_id)\
+        .eq("user_id", user_id)\
+        .maybe_single()\
+        .execute()
     
-    # ========== 4. 清理旧的强制重推记录（硬删除，不留痕迹）==========
+    if assign_res and assign_res.data:
+        if assign_res.data.get('deleted_at') is not None:
+            # 有已删除的分配记录，恢复它
+            db.table("exam_assignments")\
+                .update({
+                    "deleted_at": None,
+                    "deleted_by": None,
+                    "assigned_at": now.isoformat()
+                })\
+                .eq('id', assign_res.data['id'])\
+                .execute()
+            logger.info(f"已恢复用户 {user_id} 的考试分配记录")
+        else:
+            logger.info(f"用户 {user_id} 已有有效的分配记录")
+    else:
+        # 没有分配记录，创建新的
+        db.table("exam_assignments")\
+            .insert({
+                "exam_id": exam_id,
+                "user_id": user_id,
+                "assigned_at": now.isoformat()
+            })\
+            .execute()
+        logger.info(f"已为用户 {user_id} 创建考试分配记录")
+    
+    # ========== 5. 清理旧的强制重推记录（硬删除，不留痕迹）==========
     # 删除旧的强制重推记录（硬删除，不保留历史）
     db.table("user_exam_force_records").delete()\
         .eq("user_id", user_id)\
         .eq("original_exam_id", exam_id)\
         .execute()
     
-    # ========== 5. 创建新的强制重推记录（有效期2小时）==========
+    # ========== 6. 创建新的强制重推记录（有效期2小时）==========
     force_start_time = now.isoformat()
     force_end_time = (now + timedelta(hours=2)).isoformat()
     
@@ -2831,14 +2868,14 @@ def force_reset_exam_for_user(exam_id, user_id):
         "exam_id": exam_id,
         "start_time": force_start_time,
         "end_time": force_end_time,
-        "duration": exam.get('duration', 60),  # ✅ 保存原考试时长
+        "duration": exam.get('duration', 60),
         "created_at": now.isoformat(),
         "created_by": operator_id
     }
     
     insert_res = db.table("user_exam_force_records").insert(force_record_data).execute()
     
-    # ========== 6. 重置该用户在此考试下的状态 ==========
+    # ========== 7. 重置该用户在此考试下的状态 ==========
     status_res = db.table("user_exam_status").select("id").eq("user_id", user_id).eq("exam_id", exam_id).maybe_single().execute()
     
     if status_res and status_res.data:
@@ -2856,9 +2893,17 @@ def force_reset_exam_for_user(exam_id, user_id):
             "reset_at": now.isoformat()
         }).execute()
     
-    # 7. 清除草稿
+    # 8. 清除草稿
     db.table("user_exam_drafts").delete().eq("user_id", user_id).eq("exam_id", exam_id).execute()
-    
+
+    # ========== 记录消息 ==========
+    log_force_reset_exam(
+        exam_id=exam_id,
+        exam_title=exam_title,
+        user_id=user_id,
+        user_name=user_name,
+        admin_id=operator_id
+    )
     logger.info(f"强制重推考试成功: exam_id={exam_id}, user_id={user_id}, 有效期至 {force_end_time}")
     
     return jsonify({
@@ -2881,25 +2926,155 @@ def cancel_force_reset_for_user(exam_id, user_id):
     # 权限检查
     if not is_developer() and session.get('role') != 'super_admin':
         return jsonify({"success": False, "message": "权限不足"}), 403
+
+    # 获取考试信息用于消息记录
+    exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+    exam_title = exam_res.data.get('title', f'考试 #{exam_id}') if exam_res.data else f'考试 #{exam_id}'
     
-    # 硬删除强制记录
-    result = db.table("user_exam_force_records").delete()\
+    user_res = db.table("users").select("name_en, name_cn").eq("id", user_id).maybe_single().execute()
+    user_name = user_res.data.get('name_cn') or user_res.data.get('name_en') or user_id if user_res.data else user_id
+
+    # 先检查记录是否存在
+    check_res = db.table("user_exam_force_records").select("id")\
         .eq("user_id", user_id)\
         .eq("original_exam_id", exam_id)\
         .execute()
+    if not check_res.data:
+        logger.info(f"用户 {user_id} 在考试 {exam_id} 下没有强制重推记录")
+        return jsonify({
+            "success": True, 
+            "message": "该用户没有有效的强制重推记录"
+        })
+
+    # 硬删除强制记录
+    try:
+        result = db.table("user_exam_force_records").delete()\
+            .eq("user_id", user_id)\
+            .eq("original_exam_id", exam_id)\
+            .execute()
+        
+        # 即使 result.data 为空，只要记录存在且没有抛出异常，视为成功
+        logger.info(f"已删除用户 {user_id} 的强制重推记录")
+        
+    except Exception as e:
+        # 如果硬删除失败，尝试软删除
+        logger.warning(f"硬删除失败，尝试软删除: {e}")
+        db.table("user_exam_force_records").update({
+            "deleted_at": now.isoformat(),
+            "deleted_by": operator_id
+        }).eq("user_id", user_id).eq("original_exam_id", exam_id).execute()
+        logger.info(f"已软删除用户 {user_id} 的强制重推记录")
     
-    if not result.data:
-        return jsonify({"success": False, "message": "未找到有效的重推记录"}), 404
-    
-    # 可选：恢复用户考试状态到原始状态（不清除成绩）
-    # 这里不做额外处理，让用户保持原有成绩
-    
+    # 记录消息
+    log_cancel_force_reset_exam(
+        exam_id=exam_id,
+        exam_title=exam_title,
+        user_id=user_id,
+        user_name=user_name,
+        admin_id=operator_id
+    )
     logger.info(f"撤销强制重推: exam_id={exam_id}, user_id={user_id}")
     
     return jsonify({
         "success": True,
         "message": "已撤销强制重推"
     })
+
+@admin_exam_bp.route('/api/admin/exam/<int:exam_id>/eligible_users')
+@login_required
+@admin_required
+def get_eligible_users_for_exam(exam_id):
+    """
+    获取考试可推送的人员列表（未完成该考试 + 国家匹配）
+    用于重新打开考试时的强制推送功能
+    """
+    try:
+        db = get_supabase()
+        
+        # 1. 获取考试信息
+        exam_res = db.table("exams").select("countries, country, title, status").eq("id", exam_id).maybe_single().execute()
+        if not exam_res.data:
+            return jsonify({"error": "考试不存在"}), 404
+        
+        exam = exam_res.data
+        exam_countries = parse_exam_countries(exam)
+        if not exam_countries and exam.get('country'):
+            exam_countries = [exam.get('country')]
+        
+        # 2. 获取管理员权限范围
+        allowed = get_admin_allowed_countries()
+        is_dev = is_developer()
+        
+        # 3. 确定最终国家列表
+        final_countries = exam_countries
+        if allowed is not None and not is_dev:
+            final_countries = [c for c in exam_countries if c in allowed]
+        
+        if not final_countries:
+            return jsonify({"data": [], "total": 0})
+        
+        # 4. 获取该国家的所有活跃用户
+        users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id")\
+            .in_("country", final_countries)\
+            .eq("user_status", "registered")\
+            .is_("deleted_at", "null")\
+            .eq("is_resign", False)
+        
+        users_res = users_query.execute()
+        all_users = users_res.data or []
+        
+        # 5. 获取已完成该考试的用户ID
+        completed_res = db.table("exam_results").select("user_id").eq("exam_id", exam_id).execute()
+        completed_user_ids = {r['user_id'] for r in (completed_res.data or [])}
+        
+        # 6. 获取已分配该考试的用户ID
+        assigned_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).is_("deleted_at", "null").execute()
+        assigned_user_ids = {a['user_id'] for a in (assigned_res.data or [])}
+        
+        # 7. 过滤：只显示未完成考试的用户
+        eligible_users = []
+        for user in all_users:
+            if user['id'] in completed_user_ids:
+                continue
+            eligible_users.append({
+                "id": user['id'],
+                "name": user.get('name_cn') or user.get('name_en') or '',
+                "email": user.get('email', ''),
+                "country": user.get('country', ''),
+                "wh_id": user.get('wh_id', ''),
+                "is_assigned": user['id'] in assigned_user_ids
+            })
+        
+        # 8. 搜索过滤
+        search = request.args.get('search', '').strip()
+        if search:
+            search_lower = search.lower()
+            eligible_users = [u for u in eligible_users if 
+                search_lower in u['name'].lower() or 
+                search_lower in u['email'].lower() or
+                search_lower in u['wh_id'].lower()
+            ]
+        
+        # 9. 分页
+        page = request.args.get('page', 1, type=int)
+        per_page = request.args.get('per_page', 20, type=int)
+        total = len(eligible_users)
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated = eligible_users[start:end]
+        
+        return jsonify({
+            "data": paginated,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "exam_title": exam.get('title', ''),
+            "exam_countries": final_countries
+        })
+        
+    except Exception as e:
+        logger.error(f"获取可推送人员列表失败: {e}")
+        return jsonify({"error": str(e), "data": []}), 500
 
 @admin_exam_bp.route('/api/admin/exam/reopen_mode', methods=['GET', 'POST'])
 @login_required

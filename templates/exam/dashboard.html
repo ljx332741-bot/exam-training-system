@@ -639,8 +639,6 @@
             const interviews = await res.json();
             const container = document.getElementById('interviewCards');
             
-            console.log('访谈列表:', interviews);
-            
             if (!interviews.length) {
                 container.innerHTML = '<div class="col-12 text-center text-muted">' + safeT('t_no_active_interview_now') + '</div>';
                 return;

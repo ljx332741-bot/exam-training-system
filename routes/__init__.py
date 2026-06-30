@@ -15,7 +15,7 @@ from .admin_stats import (
 admin_bp = Blueprint('admin', __name__)
 
 # 然后导入 admin_message 模块（它会在内部使用 admin_bp）
-from .admin_message import admin_bp as admin_message_bp
+from .admin_message import message_bp
 
 # ========== 1. 定义所有蓝图 ==========
 auth_bp = Blueprint('auth', __name__)
@@ -164,8 +164,8 @@ def register_blueprints(app):
     from . import admin_wh
 
     # 注册 admin_bp 和 admin_message_bp
+    app.register_blueprint(message_bp)
     app.register_blueprint(admin_bp)
-    app.register_blueprint(admin_message_bp)
 
     # 注册 API 蓝图
     app.register_blueprint(api_auth.auth_bp)
@@ -208,3 +208,11 @@ def register_blueprints(app):
                 # 4. 仍失败则抛出原始错误
                 raise
         return {'url_for': compat_url_for}
+
+
+# ========== 调试：打印已注册的路由 ==========
+print("=" * 60)
+print("🔍 admin_message 模块已加载")
+print(f"   message_bp 名称: {message_bp.name}")
+print(f"   message_bp url_prefix: {message_bp.url_prefix}")
+print("=" * 60)

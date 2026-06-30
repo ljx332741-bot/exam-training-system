@@ -161,7 +161,7 @@
                 <img id="signatureImage" src="" alt="签名" style="max-width: 100%; border: 1px solid #ddd;">
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">关闭</button>
             </div>
         </div>
     </div>
@@ -172,14 +172,14 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">访谈答题详情 - <span id="interviewAnswersUserName"></span></h5>
+                <h5 class="modal-title"><span data-i18n="interview_answer_details">访谈答题详情</span> - <span id="interviewAnswersUserName"></span></h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="interviewAnswersContent">
                 <!-- 动态填充 -->
             </div>
             <div class="modal-footer">
-                <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                <button class="btn btn-secondary" data-bs-dismiss="modal" data-i18n="close">关闭</button>
             </div>
         </div>
     </div>
@@ -215,7 +215,7 @@
     function renderTable(users) {
         const tbody = document.getElementById('resignedTableBody');
         if (!users.length) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center">${t('t_no_data')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="8" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
         
@@ -235,7 +235,7 @@
                     <td>${statusBadge}<\/td>
                     <td>
                         <button class="btn btn-sm btn-outline-info view-detail-btn" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name_en)}">${t('details')}</button>
-                        ${!u.is_rehire ? `<button class="btn btn-sm btn-outline-success rehire-from-resigned-btn" data-user-id="${u.id}">${t('rehire')}</button>` : ''}
+                        ${!u.is_rehire ? `<button class="btn btn-sm btn-outline-success rehire-from-resigned-btn" data-user-id="${u.id}" data-user-name="${escapeHtml(u.name_en)}">${t('rehire')}</button>` : ''}
                     <\/td>
                 </tr>
             `;
@@ -248,7 +248,11 @@
         
         // 绑定复职事件
         document.querySelectorAll('.rehire-from-resigned-btn').forEach(btn => {
-            btn.addEventListener('click', () => rehireUser(btn.dataset.userId));
+            btn.addEventListener('click', () => {
+                const userId = btn.dataset.userId;
+                const userName = btn.dataset.userName || '';
+                rehireUser(userId, userName);
+            });
         });
     }
     
@@ -275,7 +279,7 @@
         container.innerHTML = `
             <div class="col-md-6">
                 <table class="table table-bordered">
-                    <tr><th width="120">用户ID</th><td><code>${data.id}</code></td></tr>
+                    <tr><th width="120">uuid</th><td><code>${data.id}</code></td></tr>
                     <tr><th>${t('name_en')}</th><td>${data.name_en || '-'}</td></tr>
                     <tr><th>${t('email')}</th><td>${data.email || '-'}</td></tr>
                     <tr><th>${t('country')}</th><td>${data.country || '-'}</td></tr>
@@ -345,13 +349,13 @@
         // 显示加载状态
         const originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> 加载中...';
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${t('loading')}`;
         
         try {
             await showExamDetailInModal(resultId, examTitle);
         } catch (error) {
             console.error('加载失败:', error);
-            showToast('加载考试详情失败', 'error');
+            showToast(t('loading_exam_details_failed'), 'error');
         } finally {
             // 恢复按钮状态
             btn.disabled = false;
@@ -414,7 +418,7 @@
             
             const data = await response.json();
             if (!data.success) {
-                throw new Error(data.message || '获取详情失败');
+                throw new Error(data.message || t('get_details_failed'));
             }
             
             // 渲染详情内容
@@ -427,20 +431,18 @@
                 contentDiv.innerHTML = `
                     <div class="alert alert-danger m-3">
                         <i class="bi bi-exclamation-triangle"></i> 
-                        加载考试详情失败: ${escapeHtml(error.message)}
+                        ${t('loading_exam_details_failed')}: ${escapeHtml(error.message)}
                         <hr class="my-2">
                         <button class="btn btn-outline-danger btn-sm" onclick="location.reload()">
-                            <i class="bi bi-arrow-repeat"></i> 重试
+                            <i class="bi bi-arrow-repeat"></i> ${t('retry')}
                         </button>
                     </div>
                 `;
             }
-            showToast('加载考试详情失败: ' + error.message, 'error');
+            showToast(t('loading_exam_details_failed') + error.message, 'error');
         }
 
         const data = await response.json();
-        console.log('考试详情数据:', data);  // 查看返回的完整数据
-        console.log('题目详情:', data.questions);  // 查看每道题的得分
     }
 
     // 渲染考试详情内容
@@ -733,7 +735,7 @@
             const data = await res.json();
             
             if (!data.answers || data.answers.length === 0) {
-                showToast('暂无答题记录', 'warning');
+                showToast(t('t_no_answer_record_available'), 'warning');
                 return;
             }
             
@@ -746,9 +748,9 @@
                 const statusColor = item.is_correct ? 'text-success' : 'text-danger';
                 
                 let optionsHtml = '';
-                const typeBadge = item.question_type === 'multi' ? '<span class="badge bg-warning ms-2">多选</span>' :
-                                item.question_type === 'judge' ? '<span class="badge bg-info ms-2">判断</span>' :
-                                '<span class="badge bg-primary ms-2">单选</span>';
+                const typeBadge = item.question_type === 'multi' ? `<span class="badge bg-warning ms-2">${t('multi')}</span>` :
+                                item.question_type === 'judge' ? `<span class="badge bg-info ms-2">${t('judge')}</span>` :
+                                `<span class="badge bg-primary ms-2">${t('single')}</span>`;
                 
                 if (item.question_type !== 'judge' && item.options && typeof item.options === 'object') {
                     const opts = item.options;
@@ -767,8 +769,8 @@
                                 <strong>${questionNum}. ${item.question_content} ${typeBadge}</strong>
                                 ${optionsHtml}
                                 <div class="mt-2">
-                                    <span class="text-muted">考生答案：</span>
-                                    <strong>${item.user_answer || '未作答'}</strong>
+                                    <span class="text-muted">${t('candidate_answer')}：</span>
+                                    <strong>${item.user_answer || t('t_no_answer')}</strong>
                                     <span class="ms-3 ${statusColor}">${statusIcon}</span>
                                 </div>
                             </div>
@@ -786,18 +788,37 @@
             showToast('加载失败', 'error');
         }
     }
+
     // 复职操作
-    async function rehireUser(userId) {
-        if (!confirm('确定要将该用户恢复为在职状态吗？')) return;
-        
-        const res = await fetch(`/api/admin/users/${userId}/rehire`, { method: 'POST' });
-        const result = await res.json();
-        
-        if (result.success) {
-            showToast('复职成功', 'success');
-            loadResignedUsers();
+    async function rehireUser(userId, userName = '') {
+        // 构建确认消息（支持用户名参数）
+        let confirmMsg;
+        if (userName) {
+            // 使用数组参数 {0}
+            confirmMsg = t('confirm_to_rehire', userName);
         } else {
-            showToast(result.message || '复职失败', 'error');
+            confirmMsg = t('confirm_to_rehire', '');
+        }
+        
+        if (!confirm(confirmMsg)) return;
+        
+        showLoading(t('processing') + '...');
+        
+        try {
+            const res = await fetch(`/api/admin/users/${userId}/rehire`, { method: 'POST' });
+            const result = await res.json();
+            hideLoading();
+            
+            if (result.success) {
+                showToast(t('rehire_success'), 'success');
+                loadResignedUsers();
+            } else {
+                showToast(result.message || t('rehire_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('复职失败:', err);
+            showToast(t('network_error'), 'error');
         }
     }
     
@@ -855,7 +876,7 @@
         window.i18n.applyTranslations();  // 处理静态文本
         loadResignedUsers();
         
-        // ✅ 语言切换时重新加载列表
+        // 语言切换时重新加载列表
         if (window.i18n && window.i18n.subscribe) {
             window.i18n.subscribe(() => {
             loadResignedUsers();  // 重新加载列表，会触发使用新的翻译

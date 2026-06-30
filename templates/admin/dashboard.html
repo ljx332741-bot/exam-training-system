@@ -3,7 +3,7 @@
 {% block title %}管理员控制台{% endblock %}
 
 {% block extra_head %}
-<!-- ✅ 预加载仪表盘数据 -->
+<!-- 预加载仪表盘数据 -->
 <link rel="prefetch" href="/api/admin/dashboard/stats" as="fetch" crossorigin="use-credentials">
 {{ super() }}
 {% endblock %}
@@ -560,7 +560,7 @@
     }
 
     /* ==================== 悬浮触发容器 ==================== */
-    /* ✅ 卡片标题悬浮时触发齿轮旋转 */
+    /* 卡片标题悬浮时触发齿轮旋转 */
     .card-header-trigger:hover .spin-icon {
         animation: spin 5s linear infinite;
     }
@@ -578,17 +578,21 @@
             <button class="btn btn-outline-primary position-relative" type="button" data-bs-toggle="dropdown" 
                     id="messageBellBtn" title="消息中心" data-i18n-title="message_center">
                 <i class="bi bi-bell-fill"></i>
-                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" 
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
                       id="unreadBadge" style="font-size: 0.6rem; display: none;">
                     0
                 </span>
             </button>
             <ul class="dropdown-menu dropdown-menu-end" style="min-width: 400px; max-height: 500px; overflow-y: auto;" id="messageDropdownMenu">
-                <li class="dropdown-header d-flex justify-content-between align-items-center">
+                <li class="dropdown-header d-flex justify-content-between align-items-center" style="position: sticky; top: 0; background: white; z-index: 2; border-bottom: 1px solid #eee;">
                     <span><i class="bi bi-inbox"></i> <span data-i18n="message_center">消息中心</span></span>
                     <div>
                         <button class="btn btn-sm btn-outline-secondary me-1" id="markAllReadBtn" style="font-size: 0.7rem;">
                             <i class="bi bi-check2-all"></i> <span data-i18n="mark_all_read">全部已读</span>
+                        </button>
+                        <!-- 批量删除按钮 -->
+                        <button class="btn btn-sm btn-outline-danger me-1" id="batchDeleteMessagesBtn" style="font-size: 0.7rem; display: none;">
+                            <i class="bi bi-trash"></i> <span data-i18n="delete_selected">删除选中</span>
                         </button>
                         <button class="btn btn-sm btn-outline-danger" id="refreshMessagesBtn" style="font-size: 0.7rem;">
                             <i class="bi bi-arrow-clockwise"></i>
@@ -5712,6 +5716,7 @@
                     }
                 }, 1000);
             }, 500);
+            updateUnreadBadge();
         });
         // 立即加载数据（优先使用缓存）
         loadDashboardData();
@@ -5897,6 +5902,11 @@
             }
         });
 		convertAllTimesToLocal();
+        // 批量删除按钮
+        const batchDeleteBtn = document.getElementById('batchDeleteMessagesBtn');
+        if (batchDeleteBtn) {
+            batchDeleteBtn.addEventListener('click', batchDeleteMessages);
+        }
 	});
 
 	// 带权限过滤的国家自动完成函数
@@ -6154,6 +6164,9 @@
     function renderMessages(messages) {
         const container = document.getElementById('messageList');
         if (!container) return;
+
+        // 更新批量删除按钮状态
+        updateBatchDeleteButton();
         
         if (!messages || messages.length === 0) {
             container.innerHTML = `
@@ -6192,11 +6205,26 @@
                     style="padding: 10px 16px; border-bottom: 1px solid #f0f0f0; ${isUnread ? 'background-color: #f0f7ff;' : ''}"
                     data-id="${m.id}" data-read="${m.is_read}">
                     <div class="d-flex align-items-start gap-2">
+                        <!-- 复选框 -->
+                        <div class="form-check mt-1" style="flex-shrink: 0;">
+                            <input type="checkbox" class="form-check-input message-checkbox" 
+                                data-message-id="${m.id}" 
+                                style="width: 0.9rem; height: 0.9rem; cursor: pointer;">
+                        </div>
                         <i class="${levelIcon} mt-1" style="font-size: 1.1rem;"></i>
                         <div style="flex: 1; min-width: 0;">
                             <div class="d-flex justify-content-between align-items-start">
                                 <span style="font-size: 0.85rem;">${escapeHtml(m.title)}</span>
-                                ${isUnread ? `<span class="badge bg-primary" style="font-size: 0.5rem; flex-shrink: 0;">${(t('new'))}</span>` : ''}
+                                <div class="d-flex align-items-center gap-2" style="flex-shrink: 0;">
+                                    ${isUnread ? `<span class="badge bg-primary" style="font-size: 0.5rem;">${(t('new'))}</span>` : ''}
+                                    <!-- 悬浮删除按钮 -->
+                                    <button class="btn btn-sm btn-link text-danger delete-single-message-btn" 
+                                            data-message-id="${m.id}" 
+                                            style="padding: 0px 4px; font-size: 0.7rem; display: none; text-decoration: none;"
+                                            title="${t('delete')}">
+                                        <i class="bi bi-x-circle-fill"></i>
+                                    </button>
+                                </div>
                             </div>
                             ${m.content ? `<div class="text-muted small" style="font-size: 0.75rem; margin-top: 2px;">${escapeHtml(m.content)}</div>` : ''}
                             <div class="text-muted" style="font-size: 0.6rem; margin-top: 4px;">
@@ -6211,7 +6239,7 @@
             `;
         }).join('');
         
-        // 绑定点击事件 - 点击消息标记为已读
+        // 1. 绑定点击事件 - 点击消息标记为已读
         container.querySelectorAll('.message-item').forEach(item => {
             item.addEventListener('click', async function(e) {
                 // 防止点击内部按钮时触发
@@ -6237,7 +6265,33 @@
                 }
             });
         });
+
+        // 2. 复选框事件
+        container.querySelectorAll('.message-checkbox').forEach(cb => {
+            cb.addEventListener('change', updateBatchDeleteButton);
+        });
         
+        // 3. 鼠标悬浮显示删除按钮
+        container.querySelectorAll('.message-item').forEach(item => {
+            item.addEventListener('mouseenter', function() {
+                const deleteBtn = this.querySelector('.delete-single-message-btn');
+                if (deleteBtn) deleteBtn.style.display = 'inline-block';
+            });
+            item.addEventListener('mouseleave', function() {
+                const deleteBtn = this.querySelector('.delete-single-message-btn');
+                if (deleteBtn) deleteBtn.style.display = 'none';
+            });
+        });
+        
+        // 4. 单个删除按钮事件
+        container.querySelectorAll('.delete-single-message-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const messageId = this.dataset.messageId;
+                deleteSingleMessage(messageId);
+            });
+        });
+
         // 添加"加载更多"按钮
         if (hasMoreMessages && messages.length > 0) {
             const loadMore = document.createElement('div');
@@ -6253,6 +6307,92 @@
                 messagePage++;
                 loadMessages(true);
             });
+        }
+    }
+
+    // ==================== 消息删除功能 ====================
+
+    // 更新批量删除按钮状态
+    function updateBatchDeleteButton() {
+        const checkboxes = document.querySelectorAll('.message-checkbox:checked');
+        const count = checkboxes.length;
+        const batchDeleteBtn = document.getElementById('batchDeleteMessagesBtn');
+        
+        if (batchDeleteBtn) {
+            if (count > 0) {
+                batchDeleteBtn.style.display = 'inline-block';
+                batchDeleteBtn.innerHTML = `<i class="bi bi-trash"></i> ${t('delete_selected')} (${count})`;
+            } else {
+                batchDeleteBtn.style.display = 'none';
+            }
+        }
+    }
+
+    // 删除单条消息
+    async function deleteSingleMessage(messageId) {
+        if (!confirm(t('confirm_delete_message') || '确定要删除这条消息吗？')) return;
+        
+        try {
+            const res = await fetch(`/api/admin/messages/${messageId}`, {
+                method: 'DELETE'
+            });
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast(t('message_deleted') || '消息已删除', 'success');
+                // 刷新消息列表
+                messageCache = [];
+                loadMessages();
+                updateUnreadBadge();
+            } else {
+                showToast(data.message || t('delete_failed'), 'error');
+            }
+        } catch (err) {
+            console.error('删除消息失败:', err);
+            showToast(t('network_error'), 'error');
+        }
+    }
+
+    // 批量删除消息（优化版）
+    async function batchDeleteMessages() {
+        const selectedIds = Array.from(document.querySelectorAll('.message-checkbox:checked'))
+            .map(cb => cb.dataset.messageId);
+        
+        if (selectedIds.length === 0) {
+            showToast(t('select_at_least_one'), 'warning');
+            return;
+        }
+        
+        if (!confirm(t('cofirm_batch_delete_msg', selectedIds.length) || `确定要删除选中的 ${selectedIds.length} 条消息吗？`)) return;
+        
+        showLoading(t('deleting') + '...');
+        
+        try {
+            // 一次请求批量删除
+            const response = await fetch('/api/admin/messages/batch_delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: selectedIds })
+            });
+            
+            const data = await response.json();
+            hideLoading();
+            
+            if (data.success) {
+                const msg = t('batch_delete_msg_success', data.deleted_count);
+                showToast(msg, 'success');
+                
+                // 刷新消息列表
+                messageCache = [];
+                loadMessages();
+                updateUnreadBadge();
+            } else {
+                showToast(data.message || t('delete_failed'), 'error');
+            }
+        } catch (err) {
+            hideLoading();
+            console.error('批量删除失败:', err);
+            showToast(t('network_error'), 'error');
         }
     }
 
@@ -6321,9 +6461,5 @@
     // 定时刷新未读数量（每30秒）
     setInterval(updateUnreadBadge, 30000);
 
-    // 初始化
-    document.addEventListener('DOMContentLoaded', function() {
-        updateUnreadBadge();
-    });
 </script>
 {% endblock %}

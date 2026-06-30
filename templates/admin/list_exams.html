@@ -160,6 +160,7 @@
                 <h5 class="modal-title">
                     <i class="bi bi-exclamation-triangle-fill"></i> 
                     <span data-i18n="reopen_exam_for_test">重新打开考试（调试模式）</span>
+                    - <span id="reopenExamTitle"></span>
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -197,12 +198,82 @@
                         <small class="text-muted" id="reopenCurrentReviewer"></small>
                     </div>
                 </div>
+
+                <!-- ⭐ 新增：强制推送区域 -->
+                <hr>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <span class="badge bg-info me-2" id="eligibleCount">0</span>
+                        <span data-i18n="eligible_users">可推送人员</span>
+                        <span class="text-muted ms-2" data-i18n="eligible_users_hint">（仅显示未完成考试且国家匹配的学员）</span>
+                    </div>
+                    <div>
+                        <button class="btn btn-warning me-2" id="forcePushSelectedBtn"
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top"
+                            title="强制推送给选中学员（不改变考试有效期，学员可立即参加考试）">
+                            <i class="bi bi-lightning-charge"></i> 
+                            <span data-i18n="force_push_selected">强制推送选中</span>
+                        </button>
+                        <button class="btn btn-danger" id="forcePushAllBtn"
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top"
+                            title="强制推送给全部学员（不改变考试有效期，学员可立即参加考试）">
+                            <i class="bi bi-lightning-charge"></i> 
+                            <span data-i18n="force_push_all">强制推送全部</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 筛选栏 -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-5">
+                        <input type="text" id="reopenSearchInput" class="form-control form-control-sm" 
+                            data-i18n-placeholder="placeholder_mail_name" 
+                            placeholder="姓名/邮箱/库房" autocomplete="off">
+                    </div>
+                    <div class="col-md-4">
+                        <input type="text" id="reopenCountryFilter" class="form-control form-control-sm" 
+                            placeholder="国家" data-i18n-placeholder="placeholder_country" readonly disabled>
+                    </div>
+                    <div class="col-md-3">
+                        <button id="reopenResetBtn" class="btn btn-sm btn-outline-secondary w-100">
+                            <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 人员列表 -->
+                <div class="table-responsive" style="max-height: 350px; overflow-y: auto;">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox" id="reopenSelectAll"></th>
+                                <th style="width: 50px;"><span data-i18n="sequence">序号</span></th>
+                                <th><span data-i18n="name_en">姓名</span></th>
+                                <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="wh_id">库房编码</span></th>
+                                <th><span data-i18n="status">状态</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="reopenUserListBody">
+                            <tr><td colspan="7" class="text-center text-muted">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <span><span data-i18n="total">共</span> <span id="reopenTotalCount">0</span> <span data-i18n="record">条记录</span></span>
+                    <nav><ul class="pagination pagination-sm mb-0" id="reopenPagination"></ul></nav>
+                </div>
+
                 <!-- 操作提示 -->
                 <div class="text-muted small mt-2">
                     <i class="bi bi-info-circle me-1"></i>
                     <span data-i18n="reopen_exam_hint">
-                        「仅保存设置」只更新考试信息，不重置考生状态。
-                        「保存并重新打开」将重置所有考生的考试状态，考生可重新参加考试。
+                    「仅保存设置」只更新考试信息，不重置考生状态。
+                    「保存并重新打开」将重置所有考生的考试状态，考生可重新参加考试。
+                    「强制推送」仅推送给选中的未完成考试学员，有效期2小时。
                     </span>
                 </div>
             </div>
@@ -453,6 +524,13 @@
     let isSearching = false;
     let allData = [];  // 存储所有数据（用于内存过滤）
     let filteredData = [];  // 存储过滤后的数据
+    // --------- 重新打开考试增强功能初始化 ---------
+    let reopenExamId = null;
+    let reopenCurrentPage = 1;
+    let reopenAllUsers = [];
+    let reopenFilteredUsers = [];
+    let reopenSearchTimer = null;
+    // --------- 重新打开考试增强功能初始化 ---------
 
     // ========== 使用防抖 + 内存过滤 ==========
     function loadExamsWithDebounce() {
@@ -876,10 +954,11 @@
     function handleReopenPush(e) {
         const btn = e.currentTarget;
         const examId = btn.dataset.id;
-        currentReopenExamId = examId;
+        const examTitle = btn.dataset.title || `考试 #${examId}`;
+        reopenExamId = examId;
         
-        // 获取当前考试信息，回显到模态框
-        fetchAndPopulateExamInfo(examId);
+        // 显示考试标题
+        document.getElementById('reopenExamTitle').textContent = examTitle;
         
         // 设置默认时间
         const now = new Date();
@@ -888,9 +967,201 @@
         document.getElementById('reopenEndTime').value = formatDateTimeLocal(sevenDaysLater);
         document.getElementById('reopenDuration').value = 60;
         
+        // 回显阅卷人
+        fetchAndPopulateExamInfo(examId);
+        
+        // 加载可推送人员列表
+        loadEligibleUsers();
+        
         const modal = new bootstrap.Modal(document.getElementById('reopenExamModal'));
         modal.show();
     }
+
+    // ========== 加载可推送人员列表 ==========
+    async function loadEligibleUsers() {
+        const search = document.getElementById('reopenSearchInput').value;
+        const examId = reopenExamId;
+        
+        if (!examId) return;
+        
+        const params = new URLSearchParams({
+            page: reopenCurrentPage,
+            per_page: 20,
+            search: search
+        });
+        
+        try {
+            const response = await fetch(`/api/admin/exam/${examId}/eligible_users?${params}`);
+            const data = await response.json();
+            
+            if (data.data) {
+                reopenAllUsers = data.data;
+                reopenFilteredUsers = data.data;
+                document.getElementById('reopenTotalCount').textContent = data.total;
+                document.getElementById('eligibleCount').textContent = data.total;
+                
+                // 显示考试国家
+                if (data.exam_countries) {
+                    document.getElementById('reopenCountryFilter').value = data.exam_countries.join(', ');
+                }
+                
+                renderReopenUserTable(reopenFilteredUsers);
+                renderReopenPagination(data.page, Math.ceil(data.total / data.per_page));
+            }
+        } catch (err) {
+            console.error('加载人员列表失败:', err);
+            document.getElementById('reopenUserListBody').innerHTML = 
+                `<tr><td colspan="7" class="text-center text-danger">${t('load_failed')}</td></tr>`;
+        }
+    }
+
+    // ========== 渲染人员列表 ==========
+    function renderReopenUserTable(users) {
+        const tbody = document.getElementById('reopenUserListBody');
+        if (!users || users.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted">${t('t_no_data')}</td></tr>`;
+            return;
+        }
+        
+        tbody.innerHTML = users.map((u, idx) => {
+            const statusBadge = u.is_assigned 
+                ? `<span class="badge bg-warning text-dark">${t('assigned')}</span>`
+                : `<span class="badge bg-success">${t('eligible')}</span>`;
+            
+            return `
+                <tr>
+                    <td><input type="checkbox" class="reopen-user-checkbox" data-user-id="${u.id}"></td>
+                    <td>${(reopenCurrentPage-1)*20 + idx + 1}</td>
+                    <td>${escapeHtml(u.name)}</td>
+                    <td>${escapeHtml(u.email)}</td>
+                    <td>${escapeHtml(u.country)}</td>
+                    <td>${escapeHtml(u.wh_id || '-')}</td>
+                    <td>${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+        
+        // 全选
+        const selectAll = document.getElementById('reopenSelectAll');
+        if (selectAll) {
+            selectAll.onchange = (e) => {
+                document.querySelectorAll('.reopen-user-checkbox').forEach(cb => cb.checked = e.target.checked);
+            };
+        }
+    }
+
+    // ========== 渲染人员分页 ==========
+    function renderReopenPagination(current, totalPages) {
+        const pagination = document.getElementById('reopenPagination');
+        if (totalPages <= 1) { pagination.innerHTML = ''; return; }
+        let html = '';
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
+        }
+        pagination.innerHTML = html;
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                reopenCurrentPage = parseInt(link.dataset.page);
+                loadEligibleUsers();
+            });
+        });
+    }
+
+    // ========== 强制推送选中的用户 ==========
+    async function forcePushSelectedUsers() {
+        const selectedCheckboxes = document.querySelectorAll('.reopen-user-checkbox:checked');
+        if (selectedCheckboxes.length === 0) {
+            showToast(t('select_at_least_one'), 'warning');
+            return;
+        }
+        
+        const userIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.userId);
+        await executeForcePush(userIds);
+    }
+
+    // ========== 强制推送全部用户 ==========
+    async function forcePushAllUsers() {
+        if (reopenFilteredUsers.length === 0) {
+            showToast(t('t_no_data'), 'warning');
+            return;
+        }
+        
+        const userIds = reopenFilteredUsers.map(u => u.id);
+        await executeForcePush(userIds);
+    }
+
+    // ========== 执行强制推送 ==========
+    async function executeForcePush(userIds) {
+        if (!confirm(`确定要对 ${userIds.length} 名学员执行强制推送吗？\n\n操作说明：\n• 学员将收到新的考试通知\n• 有效期2小时\n• 保留原考试成绩，不改变考试原有有效期`)) return;
+        
+        showLoading(`正在强制推送 ${userIds.length} 名学员...`);
+        
+        try {
+            let successCount = 0;
+            let failCount = 0;
+            
+            for (const userId of userIds) {
+                try {
+                    const forceRes = await fetch(`/api/admin/exam/${reopenExamId}/force_reset/${userId}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const result = await forceRes.json();
+                    if (result.success) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                    }
+                } catch (err) {
+                    failCount++;
+                    console.error(`推送用户 ${userId} 失败:`, err);
+                }
+            }
+            
+            hideLoading();
+            showToast(`强制推送完成: 成功 ${successCount} 人，失败 ${failCount} 人`, 'success');
+            
+            // 关闭模态框
+            bootstrap.Modal.getInstance(document.getElementById('reopenExamModal')).hide();
+            
+            // 刷新列表
+            allData = [];
+            loadExams();
+            
+        } catch (err) {
+            hideLoading();
+            showToast('操作失败: ' + err.message, 'error');
+        }
+    }
+
+    // ========== 绑定重新打开模态框事件 ==========
+    document.addEventListener('DOMContentLoaded', function() {
+        // 搜索防抖
+        const searchInput = document.getElementById('reopenSearchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                clearTimeout(reopenSearchTimer);
+                reopenSearchTimer = setTimeout(() => {
+                    reopenCurrentPage = 1;
+                    loadEligibleUsers();
+                }, 300);
+            });
+        }
+        
+        // 重置筛选
+        document.getElementById('reopenResetBtn')?.addEventListener('click', function() {
+            document.getElementById('reopenSearchInput').value = '';
+            reopenCurrentPage = 1;
+            loadEligibleUsers();
+        });
+        
+        // 强制推送选中
+        document.getElementById('forcePushSelectedBtn')?.addEventListener('click', forcePushSelectedUsers);
+        
+        // 强制推送全部
+        document.getElementById('forcePushAllBtn')?.addEventListener('click', forcePushAllUsers);
+    });
 
     // ========== 获取考试信息并回显 ==========
     async function fetchAndPopulateExamInfo(examId) {
@@ -1811,7 +2082,7 @@
             });
         }
 
-        // ✅ 初始化国家自动补全（用于输入提示）
+        // 初始化国家自动补全（用于输入提示）
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
 

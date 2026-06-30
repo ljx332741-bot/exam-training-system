@@ -220,7 +220,7 @@
             btn.addEventListener('click', async () => {
                 const userId = btn.dataset.userId;
                 if (confirm(t('t_regenerate_interview_question_tip'))) {
-                    await resampleInterview(userId);
+                    await resampleInterview(interviewId, userId);
                 }
             });
         });
@@ -246,22 +246,28 @@
     }
 
     // 重新访谈函数
-    async function resampleInterview(userId) {
+    async function resampleInterview(interviewId, userId) {
+        console.log('🔍 resampleInterview 被调用:', { interviewId, userId });
         try {
             const response = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/resample`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
             });
             const data = await response.json();
+            
             if (data.success) {
-                alert(data.message || '重新抽题成功');
+                apiToast(data, 'resample_success');
                 loadDetails();
             } else {
-                alert('操作失败: ' + (data.message || ''));
+                apiToast(data, 'operation_failed');
             }
         } catch (error) {
             console.error('重新访谈失败:', error);
-            alert('操作失败');
+            if (typeof showToast === 'function') {
+                showToast(t('network_error_retry'), t('t_error'), 'error');
+            } else {
+                alert(t('network_error_retry'));
+            }
         }
     }
 

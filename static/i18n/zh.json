@@ -1067,5 +1067,19 @@
 "user_resigned_success": "用户 {0} 已标记为离职，操作人: {1}",
 "user_rehired_success": "用户 {0} 已复职，操作人: {0}",
 "only_registered_users_can_rehire": "只有已注册用户才能复职",
-"user_not_resigned": "只有已离职的用户才能复职"
+"user_not_resigned": "只有已离职的用户才能复职",
+"confirm_to_resign": "确定要将用户 {0} 标记为离职吗？",
+"confirm_to_rehire_hint": "确定要将用户 {0} 恢复为在职状态吗？\n复职后用户可正常登录系统。",
+"confirm_to_rehire": "确定要将用户 {0} 恢复为在职状态吗？",
+"rehire_success": "复职成功",
+"rehire_failed": "复职失败",
+"cofirm_batch_delete_msg": "确定要删除选中的 {0} 条消息吗？",
+"batch_delete_msg_success": "成功删除 {count} 条消息",
+"batch_delete_all_failed": "删除失败，共 {count} 条消息未能删除",
+"batch_delete_partial": "成功删除 {0} 条消息，{1} 条删除失败",
+"get_details_failed": "获取详情失败",
+"loading_exam_details_failed": "加载考试详情失败",
+"retry": "重试",
+"confirm_delete_message": "确定要删除这条消息吗？",
+"message_deleted": "消息已删除"
 }

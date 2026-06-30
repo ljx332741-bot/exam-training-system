@@ -1071,5 +1071,19 @@
 "user_resigned_success": "User {0} is marked resign，operator: {1}",
 "user_rehired_success": "User {0} is rehired，operator: {1}",
 "only_registered_users_can_rehire": "Only registered users can rehire",
-"user_not_resigned": "User is not resigned"
+"user_not_resigned": "User is not resigned",
+"confirm_to_resign": "Confirm to set {0} as resigned?",
+"confirm_to_rehire_hint": "Confirm to rehire  {0}  to active status? \n Can loggin system after rehired.",
+"confirm_to_rehire": "Confirm to rehire  {0}  to active status?",
+"rehire_success": "Rehire success",
+"rehire_failed": "Rehire failed",
+"cofirm_batch_delete_msg": "Confirm to delete selected {0} message(s)？",
+"batch_delete_msg_success": "Successfully deleted {count} message(s)",
+"batch_delete_all_failed": "Failed to delete {count} message(s)",
+"batch_delete_partial": "Successfully deleted {0} message(s), {1} failed",
+"get_details_failed": "Get details failed",
+"loading_exam_details_failed": "Loading exam details failed",
+"retry": "Retry",
+"confirm_delete_message": "Confirm to delete this message?",
+"message_deleted": "Msg deleted success"
 }
