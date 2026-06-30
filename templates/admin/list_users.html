@@ -3079,7 +3079,7 @@
                     
                     if (result.errors && result.errors.length > 0) {
                         message += `${t('import_error_details')}:<br>`;
-                        // ✅ 关键修复：使用 formatImportError 函数
+                        // 使用 formatImportError 函数
                         const errorMessages = result.errors.map(err => formatImportError(err));
                         
                         errorMessages.slice(0, 10).forEach((err, idx) => {
@@ -3134,8 +3134,8 @@
         
         const userId = btn.dataset.id;
         const userName = btn.dataset.name;
-        
-        if (confirm(`确定要将用户 "${userName}" 标记为离职吗？`)) {
+        console.log(`确定要将用户 "${userName}" 标记为离职吗？`);
+        if (confirm(t('confirm_to_resign', userName))) {
             try {
                 const response = await fetch(`/api/admin/users/${userId}/resign`, {
                     method: 'POST',
@@ -3144,10 +3144,10 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showToast(result.message, 'success');
+                    apiToast(result, 'operation_success');
                     loadUsers();
                 } else {
-                    showToast(result.message || '操作失败', 'error');
+                    showToast(result.message || t('operation_failed'), 'error');
                 }
             } catch (err) {
                 console.error('离职操作失败:', err);
@@ -3163,8 +3163,8 @@
         
         const userId = btn.dataset.id;
         const userName = btn.dataset.name;
-        
-        if (confirm(`确定要将用户 "${userName}" 恢复为在职状态吗？\n复职后用户可正常登录系统。`)) {
+        console.log(`确定要将用户 "${userName}" 恢复为在职状态吗？`);
+        if (confirm(t('confirm_to_rehire', userName))) {
             try {
                 const response = await fetch(`/api/admin/users/${userId}/rehire`, {
                     method: 'POST',
@@ -3173,10 +3173,10 @@
                 const result = await response.json();
                 
                 if (result.success) {
-                    showToast(result.message, 'success');
+                    apiToast(result, 'operation_success');
                     loadUsers(); // 刷新列表
                 } else {
-                    showToast(result.message || '操作失败', 'error');
+                    showToast(result.message || t('operation_failed'), 'error');
                 }
             } catch (err) {
                 console.error('复职操作失败:', err);

@@ -18,8 +18,6 @@ from utils.status import get_exam_status
 from utils.manage_messages import log_user_login
 logger = logging.getLogger(__name__)
 
-# routes/api_exam.py
-
 @exam_bp.route('/dashboard')
 @login_required
 def dashboard():
@@ -28,7 +26,7 @@ def dashboard():
     
     user_id = session['user_id']
     now = datetime.now(timezone.utc)
-    
+
     # 获取当前用户的国家
     user_info = db.table("users").select("country").eq("id", user_id).single().execute()
     user_country = user_info.data.get('country') if user_info.data else None
@@ -93,18 +91,18 @@ def dashboard():
         # 获取所有考试
         exams_res = db.table("exams").select("*").execute()
         exams = []
-        
+
         for ex in exams_res.data or []:
             exam_id = ex['id']
-            
+
             # 检查是否有任何分配记录
             any_assign = db.table("exam_assignments").select("id").eq("exam_id", exam_id).limit(1).execute()
             if any_assign.data and exam_id not in assigned_exam_ids:
                 continue
 
-            # ✅ 关键修复：绑定模式的考试处理
+            # 关键修复：绑定模式的考试处理
             is_binding_exam = ex.get('is_binding_exam', False)
-            
+
             if is_binding_exam:
                 # 绑定模式的考试：只有被分配到 exam_assignments 的学员才能看到
                 # 如果用户没有被分配，即使考试是 active 状态，也不显示
@@ -122,10 +120,10 @@ def dashboard():
             # 已提交的考试直接跳过
             if user_status.get('is_submitted', False):
                 continue
-            
+
             # ========== 关键：强制重推考试强制显示 ==========
             is_force_exam = exam_id in force_exam_ids
-            
+
             # 国家过滤（强制重推考试跳过国家过滤）
             if not is_force_exam:
                 exam_countries = []
@@ -155,7 +153,7 @@ def dashboard():
             else:
                 logger.info(f"用户 {user_id} 有强制重推考试 {exam_id}，强制显示")
                 status = 'active'
-            
+                
             # 获取题目数量
             q_count = db.table("questions").select("*", count="exact").eq("exam_id", exam_id).execute()
             ex['questions_count'] = q_count.count if hasattr(q_count, 'count') else len(q_count.data or [])
@@ -217,7 +215,7 @@ def dashboard():
                 ex['total_score'] = 100
             
             exams.append(ex)
-        
+            
         # 获取最近5条成绩记录
         results_res = db.table("exam_results").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(5).execute()
         results = []

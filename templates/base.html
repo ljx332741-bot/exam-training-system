@@ -1337,14 +1337,14 @@
             const toastTitle = document.getElementById('toastTitle');
             const toastMessage = document.getElementById('toastMessage');
             
-            // ✅ 检查元素是否存在，如果不存在则使用 alert 作为降级方案
+            // 检查元素是否存在，如果不存在则使用 alert 作为降级方案
             if (!toastEl || !toastTitle || !toastMessage) {
                 console.warn('Toast 元素不存在，使用 alert 代替');
                 alert(message);
                 return;
             }
             
-            // ✅ 对消息进行翻译（如果传入的是翻译键名）
+            // 对消息进行翻译（如果传入的是翻译键名）
             let displayMessage = message;
             let displayTitle = title;
             
@@ -1386,11 +1386,27 @@
             
             toastTitle.innerHTML = `<i class="bi ${icon} me-1 ${headerClass}"></i> ${displayTitle}`;
             toastMessage.innerText = displayMessage;
+
+            // 销毁旧实例，避免事件冲突
+            if (toastEl._bsToast) {
+                try {
+                    toastEl._bsToast.dispose();
+                } catch(e) {}
+                toastEl._bsToast = null;
+            }
             
             const toast = new bootstrap.Toast(toastEl, {
                 autohide: true,
                 delay: 3000
             });
+            // 保存实例引用
+            toastEl._bsToast = toast;
+            
+            // 确保关闭按钮事件正常
+            const closeBtn = toastEl.querySelector('.btn-close');
+            if (closeBtn) {
+                closeBtn.removeEventListener('click', function() {});
+            }
             toast.show();
         }
 
@@ -2288,7 +2304,7 @@
             <div class="toast-header">
                 <i class="me-2" id="toastIcon"></i>
                 <strong class="me-auto" id="toastTitle">提示</strong>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
             </div>
             <div class="toast-body" id="toastMessage">
                 操作成功

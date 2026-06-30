@@ -1401,8 +1401,9 @@ def api_admin_resign_user(user_id):
         return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
     
     target_user = target_user_res.data
+    user_name = target_user.get('name_en', '未知用户')
 
-    # 修复：构建 current_user 对象
+    # 构建 current_user 对象
     current_user = {
         'id': operator_id,
         'role': current_role,
@@ -1412,7 +1413,7 @@ def api_admin_resign_user(user_id):
     if not can_resign_user(target_user, current_user):
         return jsonify({"success": False, "message": "no_permission_to_resign", "params": []}), 403
     
-    # 能标记自己离职
+    # 不能标记自己离职
     if user_id == operator_id:
         return jsonify({"success": False, "message": "cannot_resign_self", "params": []}), 400
     
@@ -1454,8 +1455,8 @@ def api_admin_resign_user(user_id):
         user_name=target_user.get('name_en', '未知用户'),
         admin_id=operator_id
     )
-    logger.info(f"用户 {user_id} 已标记为离职，操作人: {operator_id}")
-    return jsonify({"success": True, "message": "user_resigned_success", "params": [user_id, operator_id]})
+    logger.info(f"用户 {user_name} 已标记为离职，操作人: {operator_id}")
+    return jsonify({"success": True, "message": "user_resigned_success", "params": [user_name, operator_id]})
 
 @admin_user_bp.route('/api/admin/users/<user_id>/rehire', methods=['POST'])
 @login_required
@@ -1470,11 +1471,12 @@ def api_admin_rehire_user(user_id):
         return jsonify({"success": False, "message": "cannot_rehire_self", "params": []}), 400
   
     # 检查用户是否存在
-    user_res = db.table("users").select("id, user_status, is_resign, role").eq("id", user_id).maybe_single().execute()
+    user_res = db.table("users").select("id, user_status, is_resign, role, name_en").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify({"success": False, "message": "user_not_found", "params": []}), 404
     
     user = user_res.data
+    user_name = user.get('name_en', '未知用户')
 
     # 只有已离职的用户才能复职
     if not user.get('is_resign'):
@@ -1504,7 +1506,7 @@ def api_admin_rehire_user(user_id):
     # 添加消息记录
     log_user_rehire(
         user_id=user_id,
-        user_name=user.get('name_en', '未知用户'),
+        user_name=user_name,
         admin_id=operator_id
     )
 

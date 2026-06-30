@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
 from routes.helpers import login_required, admin_required
 from services.db import get_supabase, get_supabase_admin
+from utils.permissions import is_developer
 from utils.manage_messages import (
     get_unread_message_count,
     get_recent_messages,
@@ -17,12 +18,19 @@ from utils.manage_messages import (
     log_admin_message
 )
 
-admin_bp = Blueprint('admin_message', __name__)
+message_bp = Blueprint('admin_message', __name__, url_prefix='/api/admin')
 
 logger = logging.getLogger(__name__)
 
+# 简单缓存
+_unread_count_cache = {
+    'count': 0,
+    'timestamp': None,
+    'ttl_seconds': 30
+}
 
-@admin_bp.route('/api/admin/messages')
+
+@message_bp.route('/messages')
 @login_required
 @admin_required
 def get_admin_messages():
@@ -99,14 +107,7 @@ def get_admin_messages():
         logger.error(f"获取消息列表失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
-# 简单缓存
-_unread_count_cache = {
-    'count': 0,
-    'timestamp': None,
-    'ttl_seconds': 30  # 30秒缓存
-}
-
-@admin_bp.route('/api/admin/messages/unread_count')
+@message_bp.route('/messages/unread_count')
 @login_required
 @admin_required
 def get_unread_count():
@@ -143,7 +144,7 @@ def get_unread_count():
             logger.error(f"获取未读数量失败: {e}")
             return jsonify({"success": True, "count": 0})
 
-@admin_bp.route('/api/admin/messages/<int:message_id>/read', methods=['POST'])
+@message_bp.route('/messages/<int:message_id>/read', methods=['POST'])
 @login_required
 @admin_required
 def mark_read(message_id):
@@ -159,7 +160,7 @@ def mark_read(message_id):
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-@admin_bp.route('/api/admin/messages/read_all', methods=['POST'])
+@message_bp.route('/messages/read_all', methods=['POST'])
 @login_required
 @admin_required
 def mark_all_read():
@@ -172,23 +173,73 @@ def mark_all_read():
         return jsonify({"success": False, "message": str(e)}), 500
 
 
-@admin_bp.route('/api/admin/messages/<int:message_id>', methods=['DELETE'])
+@message_bp.route('/messages/<int:message_id>', methods=['DELETE'])
 @login_required
 @admin_required
 def delete_message(message_id):
     """删除单条消息（仅超管/开发者可用）"""
-    from utils.permissions import is_developer
-    
+    # 添加调试日志
+    print(f"🔍🔍🔍 DELETE 路由被调用了！message_id={message_id}")
+    logger.info(f"🔍 DELETE 路由被调用了！message_id={message_id}")
+
     if not is_developer() and session.get('role') != 'super_admin':
         return jsonify({"success": False, "message": "权限不足"}), 403
     
-    db = get_supabase()
+    db = get_supabase_admin()
     try:
+        # 添加调试日志
+        logger.info(f"🔍 尝试删除消息 ID: {message_id}")
+
+        # 先检查消息是否存在
+        check_res = db.table("admin_messages").select("id").eq("id", message_id).execute()
+        # 打印查询结果
+        logger.info(f"🔍 check_res.data: {check_res.data}")
+        logger.info(f"🔍 check_res 完整: {check_res}")
+        
+        if not check_res.data:
+            logger.warning(f"❌ 消息 ID {message_id} 不存在")
+            return jsonify({"success": False, "message": "消息不存在"}), 404
+        
         result = db.table("admin_messages").delete().eq("id", message_id).execute()
         if result.data:
+            logger.info(f"消息 {message_id} 已删除，操作人: {session.get('user_id')}")
             return jsonify({"success": True, "message": "消息已删除"})
         else:
             return jsonify({"success": False, "message": "消息不存在"}), 404
     except Exception as e:
         logger.error(f"删除消息失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+@message_bp.route('/messages/batch_delete', methods=['POST'])
+@login_required
+@admin_required
+def batch_delete_messages():
+    """批量删除消息（仅超管/开发者可用）"""
+    if not is_developer() and session.get('role') != 'super_admin':
+        return jsonify({"success": False, "message": "权限不足"}), 403
+    
+    data = request.json
+    message_ids = data.get('ids', [])
+    
+    if not message_ids:
+        return jsonify({"success": False, "message": "请选择要删除的消息"}), 400
+    
+    db = get_supabase_admin()
+    
+    try:
+        # 批量删除（一条 SQL 语句）
+        result = db.table("admin_messages").delete().in_("id", message_ids).execute()
+        
+        deleted_count = len(result.data) if result.data else 0
+        
+        logger.info(f"批量删除消息: {deleted_count} 条，操作人: {session.get('user_id')}")
+        
+        return jsonify({
+            "success": True,
+            "deleted_count": deleted_count,
+            "message": "batch_delete_success",
+            "params": [deleted_count]
+        })
+    except Exception as e:
+        logger.error(f"批量删除消息失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500

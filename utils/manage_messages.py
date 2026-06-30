@@ -298,6 +298,46 @@ def log_import_users(user_count: int, admin_id: str, file_name: str = None):
         metadata={"user_count": user_count, "file_name": file_name}
     )
 
+def log_force_reset_exam(exam_id: int, exam_title: str, user_id: str, user_name: str, admin_id: str):
+    """
+    记录强制重推考试消息
+    """
+    return log_admin_message(
+        level="warning",
+        category="admin_force_reset",
+        title=f"⚡ 学员 {user_name} 的考试「{exam_title}」已被强制重推",
+        content=f"管理员强制重推了该学员的考试，有效期2小时",
+        related_id=exam_id,
+        related_type="exam",
+        created_by=admin_id,
+        metadata={
+            "user_id": user_id, 
+            "user_name": user_name,
+            "exam_title": exam_title,
+            "action": "force_reset"
+        }
+    )
+
+
+def log_cancel_force_reset_exam(exam_id: int, exam_title: str, user_id: str, user_name: str, admin_id: str):
+    """
+    记录取消强制重推考试消息
+    """
+    return log_admin_message(
+        level="info",
+        category="admin_force_reset",
+        title=f"⚡ 学员 {user_name} 的考试「{exam_title}」已取消强制重推",
+        content=f"管理员取消了该学员的强制重推资格",
+        related_id=exam_id,
+        related_type="exam",
+        created_by=admin_id,
+        metadata={
+            "user_id": user_id, 
+            "user_name": user_name,
+            "exam_title": exam_title,
+            "action": "cancel_force_reset"
+        }
+    )
 
 # ==================== 培训相关 ====================
 
