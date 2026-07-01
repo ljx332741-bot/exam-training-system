@@ -42,6 +42,14 @@ class Config:
     OTP_EXPIRE_MIN = int(os.environ.get("OTP_EXPIRE_MIN", 5))
     DEFAULT_EXAM_DURATION = int(os.environ.get("DEFAULT_EXAM_DURATION", 60))
     
+    # Cloudflare R2 配置
+    CLOUDFLARE_R2_ACCESS_KEY_ID = os.environ.get('CLOUDFLARE_R2_ACCESS_KEY_ID')
+    CLOUDFLARE_R2_SECRET_ACCESS_KEY = os.environ.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY')
+    CLOUDFLARE_R2_ENDPOINT = os.environ.get('CLOUDFLARE_R2_ENDPOINT')
+    CLOUDFLARE_R2_BUCKET = os.environ.get('CLOUDFLARE_R2_BUCKET')
+    CLOUDFLARE_R2_PUBLIC_URL = os.environ.get('CLOUDFLARE_R2_PUBLIC_URL')
+    CLOUDFLARE_R2_REGION = os.environ.get('CLOUDFLARE_R2_REGION', 'auto')
+
     @classmethod
     def update_env(cls, key, value):
         set_key(str(ENV_FILE), key, str(value))

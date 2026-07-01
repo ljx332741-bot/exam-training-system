@@ -15,7 +15,13 @@ exam-system/
 │   │
 │   ├── js/                          
 │   │   │                             
+│   │   ├── training_photos.js              # 前端交互逻辑
 │   │   └── timezone.js                     # 前端时区检测增强
+│   │
+│   ├── css/                          
+│   │   │          
+│   │   └── training_photos.css             # 照片墙样式
+│   │
 │   └── images/
 │
 ├── utils/
@@ -37,6 +43,7 @@ exam-system/
 │   ├── auth.py                             # 邮箱验证码/密码哈希
 │   ├── db.py                               # get_supabase
 │   ├── exam.py                             # Word解析/自动判分/答题逻辑
+│   ├── cloudflare_r2.py                    # 创建 R2 cloudflare服务模块
 │   ├── scheduler.py                        # 定时任务
 │   └── export.py                           # PDF导出/Excel双Sheet动态导出
 │
@@ -58,6 +65,7 @@ exam-system/
 │   │   ├── take.html                       # 考试界面utils
 │   │   ├── take_interview.html             # 访谈界面utils
 │   │   ├── result_detail.html              # 学员端考试结果详情查看
+│   │   ├── training_photos.html            # 学员端照片上传/查看页面
 │   │   └── dashboard.html                  # 学员面板
 │   │
 │   └── admin/
@@ -77,14 +85,16 @@ exam-system/
 │        ├── list_inspection_details.html   # 访谈结果答题详情二级菜单
 │        ├── candidate_exam_status.html     # 考生考试状态查询独立页面
 │        ├── wh_info.html                   # 库房信息管理页面
+│        ├── admin_training_photos.html     # 管理员照片管理页面
 │        └── dashboard.html                 # 管理员面板
 │   
 ├── routes/
 │   ├── __init__.py                         # 蓝图注册中心
 │   ├── helpers.py                          # 公共辅助函数 & 装饰器
 │   ├── api_auth.py                         # 认证模块
-│   ├── api_exam.py                         # 学员考试模块
-│   ├── api_training.py                     # 学员培训模块 
+│   ├── api_exam.py                         # 学员考试模块admin_training_photos.py
+│   ├── api_training.py                     # 学员培训模块
+│   ├── admin_training_photos.py            # 照片管理 API（管理员端 + 学员端）
 │   ├── admin_message.py                    # 消息 API 路由
 │   ├── admin_stats.py                      # 统计专用函数
 │   ├── admin_wh.py                         # 库房管理API模块

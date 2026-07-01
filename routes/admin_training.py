@@ -89,30 +89,30 @@ def api_admin_trainings():
     db = get_supabase_admin()
     
     if request.method == 'GET':
-        # ✅ 这里调用的是被缓存装饰的函数
+        # 这里调用的是被缓存装饰的函数
         result = _get_trainings_list(db)
         print(f"📤 API 返回结果: {type(result)}, keys: {result.keys() if isinstance(result, dict) else 'not dict'}", flush=True)
         return jsonify(result)
     
     elif request.method == 'POST':
         result = _create_training(db)
-        # ✅ 创建成功后清除缓存
+        # 创建成功后清除缓存
         training_cache.clear('training_list')
         return result
     
     elif request.method == 'PUT':
         result = _update_training(db)
-        # ✅ 更新成功后清除缓存
+        # 更新成功后清除缓存
         training_cache.clear('training_list')
         return result
     
     elif request.method == 'DELETE':
         result = _delete_training(db)
-        # ✅ 删除成功后清除缓存
+        # 删除成功后清除缓存
         training_cache.clear('training_list')
         return result
 
-# ✅ 将 GET 逻辑抽取为独立函数，使用缓存装饰器
+# 将 GET 逻辑抽取为独立函数，使用缓存装饰器
 @cache_get(ttl=300, prefix='training_list', include_user=True)
 def _get_trainings_list(db):
     """获取培训列表（带缓存）"""
@@ -253,6 +253,20 @@ def _get_trainings_list(db):
                 templates_by_training[tid] = []
             templates_by_training[tid].append(tpl)
 
+    # 7.4 批量获取照片数量
+    photo_counts = {}
+    if training_ids:
+        photo_res = db.table("training_photos") \
+            .select("training_id", count="exact") \
+            .in_("training_id", training_ids) \
+            .eq("is_deleted", False) \
+            .execute()
+        
+        # 按 training_id 分组计数
+        for p in (photo_res.data or []):
+            tid = p['training_id']
+            photo_counts[tid] = photo_counts.get(tid, 0) + 1
+
     # 8. 组装返回数据
     for t in paginated:
         tid = t['id']
@@ -265,6 +279,9 @@ def _get_trainings_list(db):
         # 绑定数量
         t['binding_count'] = binding_counts.get(tid, 0)
         
+        # 照片数量
+        t['photo_count'] = photo_counts.get(tid, 0)
+
         # 动态状态
         start_time = t.get('start_time')
         end_time = t.get('end_time')
@@ -447,13 +464,13 @@ def _update_training(db):
             allowed = get_admin_allowed_countries()
             if allowed is not None and country_code not in allowed:
                 return jsonify({"success": False, "message": "jsonify_no_authorith_set_up_header_template", "params": []}), 403
-            # ✅ 调用辅助函数保存模板
+            # 调用辅助函数保存模板
             _save_country_template(db, tid, country_code, header_template)
         else:
             db.table("trainings").update({"header_template": header_template}).eq("id", tid).execute()
         #return jsonify({"success": True})
 
-    # ✅ 记录是否推送（用于发送邮件）
+    # 记录是否推送（用于发送邮件）
     is_push = data.get('is_active', False)
     start_time = data.get('start_time')
     end_time = data.get('end_time')
@@ -484,7 +501,7 @@ def _update_training(db):
         db.table("trainings").update(update_data).eq("id", tid).execute()
         logger.info(f"更新培训成功: id={tid}, 更新字段={list(update_data.keys())}")
 
-    # ✅ 新增：处理培训-学员分配关系（定点推送）
+    # 处理培训-学员分配关系（定点推送）
     user_ids = data.get('user_ids')
     if user_ids is not None:  # 注意：空数组表示清空所有分配
         # 先删除该培训的所有现有分配
@@ -610,10 +627,10 @@ def api_training_attendance(training_id):
 
     att_list = att_res.data or []
 
-    # ✅ 过滤掉离职人员的签到记录
+    # 过滤掉离职人员的签到记录
     att_list = [rec for rec in att_list if not rec.get('users', {}).get('is_resign', False)]
     
-    # ✅ 按国家权限过滤签到记录（基于用户的国家）
+    # 按国家权限过滤签到记录（基于用户的国家）
     if allowed_countries is not None:
         if not allowed_countries:
             att_list = []
@@ -638,7 +655,7 @@ def api_training_attendance(training_id):
             user = {}
 
         attendance_list.append({
-            "id": rec['id'],  # ✅ 新增签到记录ID
+            "id": rec['id'],
             "user_id": rec['user_id'],
             "department": user.get('department', ''),
             "name_cn": user.get('name_cn', ''),
@@ -880,7 +897,7 @@ def download_training_attendance_pdf(training_id):
         return redirect(url_for('admin_dashboard'))
 
     html_content = render_template('admin/attendance_pdf.html',
-                                    training=data['training'],        # ✅ 新增
+                                    training=data['training'],
                                     header=data['header_template'],
                                     attendances=data['attendances'])
 
@@ -3601,4 +3618,32 @@ def unassign_training_batch():
         logger.error(f"取消培训分配失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
-
+@admin_training_bp.route('/api/admin/test_r2')
+@login_required
+@admin_required
+def test_r2_connection():
+    """测试 R2 连接"""
+    from services.cloudflare_r2 import get_r2_client
+    
+    try:
+        client = get_r2_client()
+        # 列出存储桶中的文件（最多5个）
+        response = client.list_objects_v2(
+            Bucket=current_app.config['CLOUDFLARE_R2_BUCKET'],
+            MaxKeys=5
+        )
+        
+        files = []
+        for obj in response.get('Contents', []):
+            files.append(obj['Key'])
+        
+        return jsonify({
+            "success": True,
+            "message": "R2 连接成功",
+            "files": files[:5]
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "message": f"R2 连接失败: {str(e)}"
+        }), 500
