@@ -615,14 +615,10 @@ def api_training_get_photos():
     # 获取用户信息
     user_res = db.table("users").select("country, role").eq("id", current_user_id).maybe_single().execute()
     if not user_res.data:
-        print("❌ 用户不存在")
         return jsonify({"success": False, "message": "用户不存在"}), 404
     
     user_country = user_res.data.get('country')
     user_role = user_res.data.get('role')
-    
-    print(f"用户国家: {user_country}")
-    print(f"用户角色: {user_role}")
     
     # 获取参数
     training_id = request.args.get('training_id')
@@ -630,40 +626,21 @@ def api_training_get_photos():
     per_page = request.args.get('per_page', 20, type=int)
     only_mine = request.args.get('only_mine', 'false').lower() == 'true'
     
-    print(f"请求参数: training_id={training_id}, page={page}, only_mine={only_mine}")
-    
     # 判断是否管理员及以上
     is_admin = user_role in ['admin', 'super_admin', 'developer']
-    print(f"是否管理员: {is_admin}")
-    
-    # ============================================================
-    # 🔍 调试步骤1: 查询所有照片（使用 admin 客户端）
-    # ============================================================
-    print("\n🔍 调试步骤1: 查询所有未删除的照片（使用 admin 客户端）")
     all_photos_res = db.table("training_photos").select("*").eq("is_deleted", False).execute()
     all_photos = all_photos_res.data or []
-    print(f"数据库中总共有 {len(all_photos)} 张未删除的照片")
     
     for p in all_photos[:5]:
         print(f"  - id={p.get('id')}, training_id={p.get('training_id')}, "
               f"training_country={p.get('training_country')}, file={p.get('file_name')}")
     
-    # ============================================================
-    # 🔍 调试步骤2: 检查用户是否有照片
-    # ============================================================
-    print(f"\n🔍 调试步骤2: 查询用户 {current_user_id} 上传的照片")
     user_photos_res = db.table("training_photos").select("*").eq("is_deleted", False).eq("uploaded_by", current_user_id).execute()
     user_photos = user_photos_res.data or []
-    print(f"用户上传了 {len(user_photos)} 张照片")
     
     for p in user_photos[:5]:
         print(f"  - id={p.get('id')}, training_id={p.get('training_id')}, "
               f"training_country={p.get('training_country')}, file={p.get('file_name')}")
-    
-    # ============================================================
-    # 🔍 调试步骤3: 应用国家过滤
-    # ============================================================
-    print(f"\n🔍 调试步骤3: 应用国家过滤 training_country = '{user_country}'")
     
     # 基础查询
     query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
@@ -675,25 +652,19 @@ def api_training_get_photos():
         if allowed_countries is not None:
             if allowed_countries:
                 query = query.in_("training_country", allowed_countries)
-                print(f"管理员国家过滤: in_({allowed_countries})")
             else:
-                print("管理员没有权限范围，返回空")
                 return jsonify({"success": True, "data": [], "total": 0, "page": page, "per_page": per_page})
     else:
         if not user_country:
-            print("❌ 用户没有国家，返回空")
             return jsonify({"success": True, "data": [], "total": 0, "page": page, "per_page": per_page})
         
         query = query.eq("training_country", user_country)
-        print(f"✅ 普通学员国家过滤: training_country = '{user_country}'")
     
     if only_mine:
         query = query.eq("uploaded_by", current_user_id)
-        print(f"仅看自己上传: uploaded_by = {current_user_id}")
     
     if training_id:
         query = query.eq("training_id", training_id)
-        print(f"培训筛选: training_id = {training_id}")
     
     query = query.order("uploaded_at", desc=True)
     start = (page - 1) * per_page
@@ -704,8 +675,6 @@ def api_training_get_photos():
         result = query.execute()
         photos = result.data or []
         total = result.count or 0
-        
-        print(f"\n✅ 最终查询结果: {len(photos)} 张照片, 总数 {total}")
         
         for i, p in enumerate(photos[:5]):
             print(f"  结果 {i+1}: id={p.get('id')}, training_id={p.get('training_id')}, "
@@ -736,7 +705,6 @@ def api_training_get_photos():
             "is_admin": is_admin
         })
     except Exception as e:
-        print(f"❌ 获取照片列表失败: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "message": str(e)}), 500
@@ -968,7 +936,7 @@ def api_training_upload_photos():
 
 @admin_training_photos_bp.route('/api/training/photos/<int:photo_id>', methods=['DELETE'])
 @login_required
-def api_training_delete_photo():
+def api_training_delete_photo(photo_id):
     """
     删除照片（学员端）
     - 普通用户：仅能删除自己上传的

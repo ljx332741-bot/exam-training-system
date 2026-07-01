@@ -6,24 +6,51 @@ Cloudflare R2 存储服务（兼容 AWS S3 API）
 import boto3
 import uuid
 from datetime import datetime
-from botocore.config import Config
+from botocore.config import Config as BotoConfig  # ✅ 起别名
 from botocore.exceptions import ClientError
 from flask import current_app
 import logging
+
+# ✅ 导入 Config
+from config import Config
 
 logger = logging.getLogger(__name__)
 
 
 def get_r2_client():
     """获取 R2 客户端"""
+    # ✅ 使用 Config 类方法获取配置
+    endpoint = Config.CLOUDFLARE_R2_ENDPOINT or current_app.config.get('CLOUDFLARE_R2_ENDPOINT')
+    access_key = Config.CLOUDFLARE_R2_ACCESS_KEY_ID or current_app.config.get('CLOUDFLARE_R2_ACCESS_KEY_ID')
+    secret_key = Config.CLOUDFLARE_R2_SECRET_ACCESS_KEY or current_app.config.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY')
+    region = Config.CLOUDFLARE_R2_REGION or current_app.config.get('CLOUDFLARE_R2_REGION', 'auto')
+    
     return boto3.client(
         's3',
-        endpoint_url=current_app.config['CLOUDFLARE_R2_ENDPOINT'],
-        aws_access_key_id=current_app.config['CLOUDFLARE_R2_ACCESS_KEY_ID'],
-        aws_secret_access_key=current_app.config['CLOUDFLARE_R2_SECRET_ACCESS_KEY'],
-        region_name=current_app.config.get('CLOUDFLARE_R2_REGION', 'auto'),
-        config=Config(signature_version='s3v4')
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
+        region_name=region,
+        config=BotoConfig(signature_version='s3v4')
     )
+
+
+def get_r2_bucket():
+    """获取 R2 存储桶名称"""
+    # ✅ 使用 Config.get_r2_bucket() 方法
+    bucket = Config.get_r2_bucket()
+    if not bucket:
+        bucket = current_app.config.get('CLOUDFLARE_R2_BUCKET')
+    return bucket
+
+
+def get_r2_public_url():
+    """获取 R2 公共 URL"""
+    # ✅ 使用 Config.get_r2_public_url() 方法
+    public_url = Config.get_r2_public_url()
+    if not public_url:
+        public_url = current_app.config.get('CLOUDFLARE_R2_PUBLIC_URL')
+    return public_url
 
 
 def upload_to_r2(file_obj, training_id, filename=None, content_type=None):
@@ -41,8 +68,13 @@ def upload_to_r2(file_obj, training_id, filename=None, content_type=None):
     """
     try:
         client = get_r2_client()
-        bucket = current_app.config['CLOUDFLARE_R2_BUCKET']
-        public_url_base = current_app.config['CLOUDFLARE_R2_PUBLIC_URL']
+        bucket = get_r2_bucket()
+        public_url_base = get_r2_public_url()
+        
+        if not bucket:
+            raise ValueError("CLOUDFLARE_R2_BUCKET 未配置")
+        if not public_url_base:
+            raise ValueError("CLOUDFLARE_R2_PUBLIC_URL 未配置")
         
         # 生成唯一文件名
         if filename:
@@ -96,7 +128,10 @@ def delete_from_r2(file_key):
     """
     try:
         client = get_r2_client()
-        bucket = current_app.config['CLOUDFLARE_R2_BUCKET']
+        bucket = get_r2_bucket()
+        
+        if not bucket:
+            raise ValueError("CLOUDFLARE_R2_BUCKET 未配置")
         
         client.delete_object(Bucket=bucket, Key=file_key)
         logger.info(f"✅ 文件删除成功: {file_key}")
@@ -122,7 +157,10 @@ def delete_multiple_from_r2(file_keys):
     
     try:
         client = get_r2_client()
-        bucket = current_app.config['CLOUDFLARE_R2_BUCKET']
+        bucket = get_r2_bucket()
+        
+        if not bucket:
+            raise ValueError("CLOUDFLARE_R2_BUCKET 未配置")
         
         objects = [{'Key': key} for key in file_keys]
         client.delete_objects(
@@ -145,7 +183,10 @@ def get_file_info(file_key):
     """获取文件信息"""
     try:
         client = get_r2_client()
-        bucket = current_app.config['CLOUDFLARE_R2_BUCKET']
+        bucket = get_r2_bucket()
+        
+        if not bucket:
+            return None
         
         response = client.head_object(Bucket=bucket, Key=file_key)
         return {
