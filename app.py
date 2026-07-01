@@ -26,7 +26,7 @@ from utils.logger import setup_logging, clean_old_logs, init_default_logging
 
 # ========== 1. 日志配置 ==========
 # 方法一：使用默认初始化（兼容旧方式）
-IS_PRODUCTION = init_default_logging()
+IS_PRODUCTION = Config.is_production()
 logger = logging.getLogger(__name__)
 
 
