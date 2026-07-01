@@ -1,0 +1,1406 @@
+<!-- templates/exam/training_photos.html -->
+{% extends "base.html" %}
+{% block title %}培训照片{% endblock %}
+
+{% block extra_css %}
+<style>
+    .photo-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+        margin-top: 16px;
+    }
+    .photo-card {
+        border-radius: 10px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        transition: transform 0.2s, box-shadow 0.2s;
+        background: #fff;
+        border: 1px solid #eee;
+        position: relative;
+    }
+    .photo-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+    }
+    .photo-card img {
+        width: 100%;
+        height: 160px;
+        object-fit: cover;
+        display: block;
+        cursor: pointer;
+    }
+    .photo-card .info {
+        padding: 8px 10px;
+        font-size: 0.8rem;
+    }
+    .photo-card .info .name {
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .photo-card .info .meta {
+        color: #6c757d;
+        font-size: 0.65rem;
+    }
+    .photo-card .cover-badge {
+        position: absolute;
+        top: 6px;
+        left: 6px;
+        background: #198754;
+        color: white;
+        padding: 1px 8px;
+        border-radius: 10px;
+        font-size: 0.6rem;
+        font-weight: 500;
+    }
+    .photo-card .actions {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        display: flex;
+        gap: 4px;
+        opacity: 0;
+        transition: opacity 0.2s;
+    }
+    .photo-card:hover .actions {
+        opacity: 1;
+    }
+    .photo-card .actions .btn {
+        padding: 2px 6px;
+        font-size: 0.7rem;
+        border-radius: 6px;
+        background: rgba(255,255,255,0.9);
+        border: 1px solid #ddd;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+    }
+    .photo-card .actions .btn:hover {
+        background: #fff;
+    }
+    .upload-zone {
+        border: 2px dashed #ced4da;
+        border-radius: 12px;
+        padding: 30px;
+        text-align: center;
+        transition: all 0.2s;
+        cursor: pointer;
+        background: #fafafa;
+    }
+    .upload-zone:hover {
+        border-color: #0d6efd;
+        background: #f0f7ff;
+    }
+    .upload-zone.dragover {
+        border-color: #0d6efd;
+        background: #e7f3ff;
+    }
+    .upload-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+    }
+    .upload-preview .preview-item {
+        position: relative;
+        width: 90px;
+        height: 90px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid #ddd;
+        flex-shrink: 0;
+    }
+    .upload-preview .preview-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .upload-preview .preview-item .remove-btn {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #dc3545;
+        color: white;
+        border: none;
+        font-size: 10px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    }
+    .upload-preview .preview-item .watermark-badge {
+        position: absolute;
+        bottom: 2px;
+        left: 2px;
+        background: rgba(0,0,0,0.6);
+        color: #fff;
+        font-size: 0.5rem;
+        padding: 1px 6px;
+        border-radius: 4px;
+    }
+    .training-selector {
+        max-width: 100%;
+    }
+    .watermark-options {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 10px;
+    }
+    .watermark-options .form-check {
+        margin-bottom: 4px;
+    }
+    .watermark-options .form-check:last-child {
+        margin-bottom: 0;
+    }
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: #adb5bd;
+    }
+    .empty-state i {
+        font-size: 3rem;
+        display: block;
+        margin-bottom: 12px;
+    }
+    .loading-spinner {
+        text-align: center;
+        padding: 40px;
+        color: #6c757d;
+    }
+    .photo-view-modal .modal-body {
+        text-align: center;
+    }
+    .photo-view-modal .modal-body img {
+        max-width: 100%;
+        max-height: 70vh;
+        border-radius: 8px;
+    }
+    .photo-view-modal .modal-footer .info-text {
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
+    /* 摄像头按钮样式 */
+    .btn-camera {
+        background: #f8f9fa;
+        border: 1px solid #ced4da;
+        transition: all 0.2s;
+    }
+    .btn-camera:hover {
+        background: #e9ecef;
+        border-color: #0d6efd;
+    }
+    .btn-camera.active {
+        background: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
+    }
+    .btn-gallery {
+        background: #f8f9fa;
+        border: 1px solid #ced4da;
+        transition: all 0.2s;
+    }
+    .btn-gallery:hover {
+        background: #e9ecef;
+        border-color: #0d6efd;
+    }
+    .btn-gallery.active {
+        background: #0d6efd;
+        color: white;
+        border-color: #0d6efd;
+    }
+    /* 上传进度 */
+    .upload-progress {
+        display: none;
+        margin-top: 12px;
+    }
+    .upload-progress .progress {
+        height: 6px;
+    }
+    .upload-progress .progress-bar {
+        transition: width 0.3s ease;
+    }
+
+    /* ===== 高级培训选择器 ===== */
+    .training-selector-wrapper {
+        position: relative;
+    }
+    .training-selector-wrapper .form-control {
+        cursor: pointer;
+        background-color: #fff;
+    }
+    .training-selector-wrapper .form-control:focus {
+        border-color: #86b7fe;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+    
+    .training-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1060;
+        background: #fff;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        max-height: 320px;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        display: none;
+        margin-top: 4px;
+    }
+    .training-dropdown .dropdown-header {
+        position: sticky;
+        top: 0;
+        background: #f8f9fa;
+        padding: 8px 14px;
+        font-weight: 600;
+        font-size: 0.8rem;
+        border-bottom: 1px solid #eee;
+        color: #495057;
+        z-index: 1;
+    }
+    .training-dropdown .dropdown-item {
+        padding: 10px 14px;
+        cursor: pointer;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.15s ease;
+    }
+    .training-dropdown .dropdown-item:hover {
+        background-color: #e7f3ff;
+    }
+    .training-dropdown .dropdown-item:last-child {
+        border-bottom: none;
+    }
+    .training-dropdown .dropdown-item .item-title {
+        font-weight: 500;
+        font-size: 0.9rem;
+        color: #212529;
+    }
+    .training-dropdown .dropdown-item .item-meta {
+        font-size: 0.7rem;
+        color: #6c757d;
+        margin-top: 4px;
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+    .training-dropdown .dropdown-item .item-meta span {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    .training-dropdown .dropdown-item .item-meta .badge {
+        font-size: 0.6rem;
+    }
+    .training-dropdown .dropdown-item .selected-mark {
+        float: right;
+        color: #198754;
+        font-weight: 600;
+    }
+    .training-dropdown .empty-state {
+        padding: 20px;
+        text-align: center;
+        color: #adb5bd;
+    }
+    .training-dropdown .empty-state i {
+        font-size: 1.5rem;
+        display: block;
+        margin-bottom: 8px;
+    }
+    .training-dropdown .loading-state {
+        padding: 16px;
+        text-align: center;
+        color: #6c757d;
+    }
+    .training-dropdown .loading-state .spinner-border {
+        width: 1.2rem;
+        height: 1.2rem;
+    }
+    
+    /* 清除按钮 */
+    .input-clear-btn {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+        color: #999;
+        z-index: 10;
+        background: white;
+        padding-left: 5px;
+        display: none;
+        font-size: 0.9rem;
+    }
+    .input-clear-btn:hover {
+        color: #dc3545;
+    }
+    
+    /* 已选培训显示 */
+    .selected-training-display {
+        margin-top: 8px;
+        padding: 8px 12px;
+        background: #e7f3ff;
+        border-radius: 6px;
+        border-left: 3px solid #0d6efd;
+        display: none;
+        font-size: 0.85rem;
+    }
+    .selected-training-display .training-name {
+        font-weight: 600;
+        color: #0d6efd;
+    }
+    .selected-training-display .training-meta {
+        color: #6c757d;
+        font-size: 0.75rem;
+        margin-top: 2px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-camera me-2"></i><span data-i18n="training_photos">培训照片</span></h2>
+        <button class="btn btn-secondary" onclick="history.back()">
+            <i class="bi bi-arrow-left"></i> <span data-i18n="back">返回</span>
+        </button>
+    </div>
+
+    <!-- 上传区域 -->
+    <div class="card mb-4" id="uploadCard">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-upload me-2"></i><span data-i18n="upload_photos">上传照片</span></span>
+            <span class="badge bg-secondary" id="photoLimitBadge">0 / 50</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">
+                        <span data-i18n="select_training">选择培训</span> 
+                        <span class="text-danger">*</span>
+                    </label>
+                    
+                    <!-- ===== 高级培训选择器 ===== -->
+                    <div class="training-selector-wrapper">
+                        <div class="position-relative">
+                            <input type="text" 
+                                   id="trainingSearchInput" 
+                                   class="form-control" 
+                                   placeholder="搜索并选择培训..."
+                                   data-i18n-placeholder="placeholder_search_training"
+                                   autocomplete="off"
+                                   style="padding-right: 35px;">
+                            <span class="input-clear-btn" id="trainingClearBtn" style="display: none;">
+                                <i class="bi bi-x-circle-fill"></i>
+                            </span>
+                        </div>
+                        
+                        <!-- 下拉面板 -->
+                        <div class="training-dropdown" id="trainingDropdown">
+                            <div class="dropdown-header">
+                                <i class="bi bi-clock-history me-1"></i> 
+                                <span data-i18n="recent_training">最近创建的培训</span>
+                            </div>
+                            <div id="trainingListContainer">
+                                <!-- 动态加载 -->
+                                <div class="loading-state">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                    <span data-i18n="loading">加载中...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 隐藏字段存储选中的培训信息 -->
+                    <input type="hidden" id="selectedTrainingId" value="">
+                    <input type="hidden" id="selectedTrainingName" value="">
+                    <input type="hidden" id="selectedTrainingCountry" value="">
+                    <input type="hidden" id="selectedTrainingStart" value="">
+                    <input type="hidden" id="selectedTrainingEnd" value="">
+                    
+                    <!-- 已选培训显示 -->
+                    <div class="selected-training-display" id="selectedTrainingDisplay">
+                        <div>
+                            <i class="bi bi-check-circle-fill text-success me-1"></i>
+                            <span data-i18n="selected">已选</span>： 
+                            <span class="training-name" id="displayTrainingName">-</span>
+                        </div>
+                        <div class="training-meta" id="displayTrainingMeta">
+                            <span id="displayTrainingCountry">-</span>
+                            <span class="mx-1">|</span>
+                            <span id="displayTrainingDate">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="form-text text-muted mt-1">
+                        <span data-i18n="select_training_hint">请选择您要上传照片的培训（仅显示您所在国家的培训）</span>
+                    </div>
+                </div>
+                
+                <div class="col-md-6">
+                    <label class="form-label fw-bold"><span data-i18n="photos">照片</span> <span class="text-danger">*</span></label>
+                    <div class="d-flex gap-2 mb-2">
+                        <button class="btn btn-outline-primary flex-fill btn-gallery" id="galleryBtn">
+                            <i class="bi bi-images me-1"></i> <span data-i18n="choose_from_gallery">从相册选择</span>
+                        </button>
+                        <button class="btn btn-outline-primary flex-fill btn-camera" id="cameraBtn">
+                            <i class="bi bi-camera me-1"></i> <span data-i18n="take_photo">拍摄照片</span>
+                        </button>
+                    </div>
+                    <input type="file" id="fileInput" multiple accept="image/*" style="display: none;">
+                    
+                    <!-- 水印选项 -->
+                    <div class="watermark-options">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="addWatermark" checked>
+                            <label class="form-check-label fw-small" for="addWatermark">
+                                <i class="bi bi-water"></i> <span data-i18n="auto_add_watermark">自动添加日期水印</span>
+                            </label>
+                        </div>
+                        <div class="form-check form-switch ms-4">
+                            <input class="form-check-input" type="checkbox" id="includeTrainingName" checked>
+                            <label class="form-check-label fw-small" for="includeTrainingName">
+                                <span data-i18n="include_training_name">包含培训名称</span>
+                            </label>
+                        </div>
+                        <div class="form-text text-muted small mt-1">
+                            <span data-i18n="watermark_hint">水印将显示在图片左下角，格式：培训名称 | 日期时间</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 预览 -->
+                    <div class="upload-preview" id="uploadPreview"></div>
+                    
+                    <!-- 上传进度 -->
+                    <div class="upload-progress" id="uploadProgress">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%;" id="progressBar">0%</div>
+                        </div>
+                        <div class="text-muted small mt-1" id="progressText"><span data-i18n="uploading">上传中...</span></div>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <button class="btn btn-primary" id="uploadBtn" disabled>
+                            <i class="bi bi-cloud-upload"></i> <span data-i18n="upload">上传</span>
+                            <span class="badge bg-light text-dark ms-1" id="selectedCount">0</span>
+                        </button>
+                        <button class="btn btn-outline-secondary ms-2" id="clearFilesBtn">
+                            <i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 照片列表 -->
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-grid me-2"></i><span data-i18n="photo_gallery">照片墙</span></span>
+            <div class="d-flex align-items-center gap-3">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="showOnlyMine">
+                    <label class="form-check-label small" for="showOnlyMine">
+                        <span data-i18n="only_my_photos">仅看我的</span>
+                    </label>
+                </div>
+                <span id="photoCount" class="badge bg-secondary">0</span>
+                <button class="btn btn-sm btn-outline-secondary" id="refreshPhotosBtn">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            <div id="photoGridContainer">
+                <div class="loading-spinner">
+                    <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                    <span data-i18n="loading">加载中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分页 -->
+    <nav class="mt-4">
+        <ul class="pagination justify-content-center" id="pagination"></ul>
+    </nav>
+</div>
+
+<!-- 照片查看模态框 -->
+<div class="modal fade photo-view-modal" id="photoViewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="photoViewTitle"><span data-i18n="photo_preview">照片预览</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <img id="photoViewImage" src="" alt="照片预览" style="max-width: 100%; max-height: 70vh;">
+                <div class="mt-3 text-start">
+                    <p class="mb-1"><strong><span data-i18n="file_name">文件名</span>：</strong><span id="photoViewName"></span></p>
+                    <p class="mb-1"><strong><span data-i18n="uploaded_by">上传人</span>：</strong><span id="photoViewUploader"></span></p>
+                    <p class="mb-0"><strong><span data-i18n="upload_time">上传时间</span>：</strong><span id="photoViewTime"></span></p>
+                    <p class="mb-0" id="photoViewDescriptionWrap" style="display: none;">
+                        <strong><span data-i18n="description">描述</span>：</strong><span id="photoViewDescription"></span>
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer d-flex justify-content-between">
+                <span class="info-text" id="photoViewWatermark"></span>
+                <div>
+                    <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title text-danger"><i class="bi bi-exclamation-triangle-fill me-2"></i><span data-i18n="confirm_delete">确认删除</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="deleteConfirmMsg"><span data-i18n="delete_photo_confirm">确定要删除这张照片吗？此操作不可恢复。</span></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button class="btn btn-danger" id="deleteConfirmBtn"><span data-i18n="delete">删除</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ==================== 学员端照片管理 ====================
+    if (typeof window.showToast !== 'function') {
+        console.warn('全局 showToast 不存在，使用降级方案');
+        // 直接挂载到 window 上，避免变量声明冲突
+        window.showToast = function(message, title = '提示', type = 'info') {
+            alert(message);
+        };
+    }
+
+    let currentPage = 1;
+    let perPage = 20;
+    let selectedFiles = [];
+    let currentPhotoData = [];
+    let totalPhotos = 0;
+    let pendingDeleteId = null;
+    let isUploading = false;
+    let allTrainings = [];
+    let trainingSearchTimeout = null;
+
+    // ==================== 获取用户权限 ====================
+    let userRole = 'user';
+    let userCountry = '';
+    let isAdmin = false;
+
+    async function getUserInfo() {
+        try {
+            const res = await fetch('/api/user/role');
+            const data = await res.json();
+            if (data.success) {
+                userRole = data.role || 'user';
+                userCountry = data.country || '';
+                isAdmin = data.is_admin || false;
+            }
+        } catch (err) {
+            console.error('获取用户信息失败:', err);
+        }
+    }
+
+    // ==================== 高级培训选择器 ====================
+
+    // 加载培训列表（用于下拉选择）
+    async function loadTrainingsForSelector() {
+        try {
+            const res = await fetch('/api/trainings/for_photos');
+            const trainings = await res.json();
+            
+            console.log('照片上传培训列表:', trainings);
+            console.log('用户角色:', userRole, '是否管理员:', isAdmin);
+            
+            if (!Array.isArray(trainings)) {
+                console.warn('培训列表不是数组:', trainings);
+                allTrainings = [];
+                return [];
+            }
+            
+            // 存储所有培训
+            allTrainings = trainings;
+            
+            // 按创建时间倒序排列（最新的在前）
+            allTrainings.sort((a, b) => {
+                const dateA = new Date(a.created_at || a.start_time || 0);
+                const dateB = new Date(b.created_at || b.start_time || 0);
+                return dateB - dateA;
+            });
+            
+            console.log('排序后的培训列表:', allTrainings);
+            
+            // 如果有培训ID参数，自动选中
+            const urlParams = new URLSearchParams(window.location.search);
+            const trainingIdParam = urlParams.get('training_id');
+            if (trainingIdParam && allTrainings.length > 0) {
+                const matched = allTrainings.find(t => t.id == trainingIdParam);
+                if (matched) {
+                    selectTraining(matched);
+                }
+            }
+            
+            // 更新下拉列表
+            if (allTrainings.length === 0) {
+                const input = document.getElementById('trainingSearchInput');
+                if (input) {
+                    input.placeholder = isAdmin ? '暂无培训数据' : '您所在国家暂无可用培训';
+                    input.disabled = true;
+                }
+                const container = document.getElementById('trainingListContainer');
+                if (container) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-inbox"></i>
+                            <span>${isAdmin ? '暂无培训数据' : '您所在国家暂无可用培训'}</span>
+                        </div>
+                    `;
+                    document.getElementById('trainingDropdown').style.display = 'block';
+                }
+            } else {
+                const input = document.getElementById('trainingSearchInput');
+                if (input) {
+                    input.disabled = false;
+                    input.placeholder = safeT('placeholder_search_training') || '搜索并选择培训...';
+                }
+                // 显示最近8个
+                renderTrainingDropdown(allTrainings.slice(0, 8));
+            }
+            
+            return allTrainings;
+        } catch (err) {
+            console.error('加载培训列表失败:', err);
+            allTrainings = [];
+            return [];
+        }
+    }
+
+    // 渲染培训下拉列表
+    function renderTrainingDropdown(trainings, searchTerm = '') {
+        const container = document.getElementById('trainingListContainer');
+        const dropdown = document.getElementById('trainingDropdown');
+        
+        if (!container) return;
+        
+        let filtered = trainings;
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase().trim();
+            filtered = trainings.filter(t => 
+                t.name.toLowerCase().includes(term) ||
+                (t.country && t.country.toLowerCase().includes(term))
+            );
+        }
+        
+        // 限制显示数量
+        const displayLimit = 20;
+        filtered = filtered.slice(0, displayLimit);
+        
+        if (!filtered || filtered.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <span>${searchTerm ? safeT('no_matching_training_was_found') : safeT('no_training_data_available')}</span>
+                </div>
+            `;
+            dropdown.style.display = 'block';
+            return;
+        }
+        
+        const selectedId = document.getElementById('selectedTrainingId').value;
+        
+        let html = '';
+        filtered.forEach(t => {
+            const createdDate = t.created_at ? new Date(t.created_at).toLocaleDateString() : '-';
+            const isSelected = selectedId == t.id;
+            const statusText = t.is_active ? safeT('active') : safeT('draft');
+            const statusClass = t.is_active ? 'bg-success' : 'bg-secondary';
+            
+            html += `
+                <div class="dropdown-item ${isSelected ? 'active' : ''}" 
+                    data-id="${t.id}"
+                    data-name="${escapeHtml(t.name)}"
+                    data-country="${escapeHtml(t.country || '')}"
+                    data-start="${t.start_time || ''}"
+                    data-end="${t.end_time || ''}"
+                    onclick="selectTrainingFromDropdown(this)"
+                    style="${isSelected ? 'background-color: #e7f3ff;' : ''}">
+                    <div>
+                        <span class="item-title">${escapeHtml(t.name)}</span>
+                        ${isSelected ? '<span class="selected-mark"><i class="bi bi-check-circle-fill"></i></span>' : ''}
+                    </div>
+                    <div class="item-meta">
+                        <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '通用')}</span>
+                        <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
+                        <span><span class="badge ${statusClass}">${statusText}</span></span>
+                        ${t.photo_count ? `<span><i class="bi bi-images"></i> ${t.photo_count}张</span>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        dropdown.style.display = 'block';
+    }
+
+    // 从下拉列表选择培训
+    function selectTrainingFromDropdown(element) {
+        const id = element.dataset.id;
+        const name = element.dataset.name;
+        const country = element.dataset.country;
+        const start = element.dataset.start;
+        const end = element.dataset.end;
+        
+        const training = allTrainings.find(t => t.id == id);
+        if (training) {
+            selectTraining(training);
+        }
+    }
+
+    // 选择培训
+    function selectTraining(training) {
+        document.getElementById('selectedTrainingId').value = training.id;
+        document.getElementById('selectedTrainingName').value = training.name;
+        document.getElementById('selectedTrainingCountry').value = training.country || '';
+        document.getElementById('selectedTrainingStart').value = training.start_time || '';
+        document.getElementById('selectedTrainingEnd').value = training.end_time || '';
+        
+        // 更新输入框显示
+        const input = document.getElementById('trainingSearchInput');
+        input.value = training.name;
+        
+        // 显示清除按钮
+        document.getElementById('trainingClearBtn').style.display = 'block';
+        
+        // 更新已选显示
+        const display = document.getElementById('selectedTrainingDisplay');
+        display.style.display = 'block';
+        document.getElementById('displayTrainingName').textContent = training.name;
+        document.getElementById('displayTrainingCountry').textContent = training.country || '通用';
+        
+        const startDate = training.start_time ? new Date(training.start_time).toLocaleDateString() : '-';
+        const endDate = training.end_time ? new Date(training.end_time).toLocaleDateString() : '-';
+        document.getElementById('displayTrainingDate').textContent = `${startDate} → ${endDate}`;
+        
+        // 更新照片数量限制
+        updatePhotoLimit();
+        
+        // 关闭下拉
+        document.getElementById('trainingDropdown').style.display = 'none';
+        
+        // 更新上传按钮状态
+        updateUploadBtn();
+        
+        // 重新加载照片
+        const onlyMine = document.getElementById('showOnlyMine').checked;
+        loadPhotos(1, onlyMine);
+        
+        // 触发变化事件
+        input.dispatchEvent(new Event('change'));
+    }
+
+    // 清除培训选择
+    function clearTrainingSelection() {
+        document.getElementById('selectedTrainingId').value = '';
+        document.getElementById('selectedTrainingName').value = '';
+        document.getElementById('selectedTrainingCountry').value = '';
+        document.getElementById('selectedTrainingStart').value = '';
+        document.getElementById('selectedTrainingEnd').value = '';
+        
+        document.getElementById('trainingSearchInput').value = '';
+        document.getElementById('trainingClearBtn').style.display = 'none';
+        document.getElementById('selectedTrainingDisplay').style.display = 'none';
+        document.getElementById('photoLimitBadge').textContent = '0 / 50';
+        document.getElementById('photoLimitBadge').className = 'badge bg-secondary';
+        
+        updateUploadBtn();
+        
+        // 刷新照片列表
+        const onlyMine = document.getElementById('showOnlyMine').checked;
+        loadPhotos(1, onlyMine);
+    }
+
+    // 培训搜索输入事件
+    function setupTrainingSearch() {
+        const input = document.getElementById('trainingSearchInput');
+        const dropdown = document.getElementById('trainingDropdown');
+        const clearBtn = document.getElementById('trainingClearBtn');
+        
+        // 输入搜索
+        input.addEventListener('input', function() {
+            clearTimeout(trainingSearchTimeout);
+            const q = this.value.trim();
+            
+            if (q.length === 0) {
+                // 显示最近培训
+                renderTrainingDropdown(allTrainings);
+                clearBtn.style.display = document.getElementById('selectedTrainingId').value ? 'block' : 'none';
+                return;
+            }
+            
+            clearBtn.style.display = 'block';
+            
+            trainingSearchTimeout = setTimeout(() => {
+                renderTrainingDropdown(allTrainings, q);
+            }, 250);
+        });
+        
+        // 聚焦时显示下拉
+        input.addEventListener('focus', function() {
+            // 如果有选中值，显示全部
+            const q = this.value.trim();
+            renderTrainingDropdown(allTrainings, q);
+        });
+        
+        // 失焦时延迟关闭
+        input.addEventListener('blur', function() {
+            setTimeout(() => {
+                dropdown.style.display = 'none';
+            }, 200);
+        });
+        
+        // 清除按钮
+        clearBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            clearTrainingSelection();
+            input.focus();
+        });
+        
+        // 键盘事件：回车确认
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const firstItem = dropdown.querySelector('.dropdown-item:not(.empty-state)');
+                if (firstItem) {
+                    selectTrainingFromDropdown(firstItem);
+                }
+                dropdown.style.display = 'none';
+            }
+            if (e.key === 'Escape') {
+                dropdown.style.display = 'none';
+                this.blur();
+            }
+        });
+    }
+
+    // 点击外部关闭下拉
+    document.addEventListener('click', function(e) {
+        const wrapper = document.querySelector('.training-selector-wrapper');
+        if (wrapper && !wrapper.contains(e.target)) {
+            document.getElementById('trainingDropdown').style.display = 'none';
+        }
+    });
+
+    // ==================== 加载照片 ====================
+    async function loadPhotos(page = 1, onlyMine = false) {
+        currentPage = page;
+        const container = document.getElementById('photoGridContainer');
+        container.innerHTML = `
+            <div class="loading-spinner">
+                <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+                <span>${t('loading')}</span>
+            </div>
+        `;
+        
+        const params = new URLSearchParams({
+            page: page,
+            per_page: perPage,
+            only_mine: onlyMine ? 'true' : 'false'
+        });
+        
+        const trainingId = document.getElementById('selectedTrainingId').value;
+        if (trainingId) params.append('training_id', trainingId);
+        
+        try {
+            const res = await fetch(`/api/training/photos?${params}`);
+            const data = await res.json();
+            
+            if (data.success) {
+                currentPhotoData = data.data || [];
+                totalPhotos = data.total || 0;
+                document.getElementById('photoCount').textContent = totalPhotos;
+                renderPhotos(currentPhotoData);
+                renderPagination(totalPhotos, data.page, data.per_page);
+                
+                // 更新培训照片数量
+                updatePhotoLimit();
+            } else {
+                container.innerHTML = `<div class="alert alert-danger">${data.message || t('load_failed')}</div>`;
+            }
+        } catch (err) {
+            console.error('加载照片失败:', err);
+            container.innerHTML = `<div class="alert alert-danger">${t('load_failed')}</div>`;
+        }
+    }
+
+    // ==================== 更新照片数量限制 ====================
+    async function updatePhotoLimit() {
+        const trainingId = document.getElementById('selectedTrainingId').value;
+        if (!trainingId) {
+            document.getElementById('photoLimitBadge').textContent = '0 / 50';
+            document.getElementById('photoLimitBadge').className = 'badge bg-secondary';
+            return;
+        }
+        
+        try {
+            const res = await fetch(`/api/training/photos?training_id=${trainingId}&page=1&per_page=1`);
+            const data = await res.json();
+            const count = data.total || 0;
+            const badge = document.getElementById('photoLimitBadge');
+            badge.textContent = `${count} / 50`;
+            badge.className = `badge ${count >= 50 ? 'bg-danger' : 'bg-secondary'}`;
+        } catch (err) {
+            console.error('获取照片数量失败:', err);
+        }
+    }
+
+    // ==================== 渲染照片 ====================
+    function renderPhotos(photos) {
+        const container = document.getElementById('photoGridContainer');
+        
+        if (!photos || photos.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-images"></i>
+                    <p>${t('no_photos_uploaded')}</p>
+                    <p class="small text-muted">${t('upload_first_photo_hint')}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '<div class="photo-grid">';
+        photos.forEach(photo => {
+            const uploadedAt = photo.uploaded_at ? new Date(photo.uploaded_at).toLocaleString() : '';
+            const isCover = photo.is_cover || false;
+            const canDelete = photo.can_delete !== undefined ? photo.can_delete : true;
+            const uploadedByName = photo.uploaded_by_name || '系统';
+            
+            // 水印标记
+            const hasWatermark = photo.metadata?.has_watermark;
+            const watermarkLabel = hasWatermark ? '💧' : '';
+            
+            html += `
+                <div class="photo-card" data-id="${photo.id}">
+                    ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
+                    <img src="${photo.photo_url}" alt="${photo.file_name}" loading="lazy"
+                        onclick="viewPhoto(${photo.id})"
+                        onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22180%22 height=%22160%22%3E%3Crect fill=%22%23f0f0f0%22 width=%22180%22 height=%22160%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2212%22%3E加载失败%3C/text%3E%3C/svg%3E'">
+                    <div class="info">
+                        <div class="name" title="${photo.file_name}">${photo.file_name} ${watermarkLabel}</div>
+                        <div class="meta">${uploadedAt}</div>
+                        <div class="meta">👤 ${uploadedByName}</div>
+                        ${photo.photo_description ? `<div class="meta text-truncate">💬 ${photo.photo_description}</div>` : ''}
+                    </div>
+                    ${canDelete ? `
+                    <div class="actions">
+                        <button class="btn btn-sm btn-outline-info" onclick="viewPhoto(${photo.id})" title="${t('view')}">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger" onclick="confirmDeletePhoto(${photo.id})" title="${t('delete')}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+    }
+
+    // ==================== 查看照片 ====================
+    function viewPhoto(photoId) {
+        const photo = currentPhotoData.find(p => p.id === photoId);
+        if (!photo) return;
+        
+        document.getElementById('photoViewImage').src = photo.photo_url;
+        document.getElementById('photoViewName').textContent = photo.file_name;
+        document.getElementById('photoViewUploader').textContent = photo.uploaded_by_name || '系统';
+        document.getElementById('photoViewTime').textContent = photo.uploaded_at ? new Date(photo.uploaded_at).toLocaleString() : '-';
+        
+        const descWrap = document.getElementById('photoViewDescriptionWrap');
+        if (photo.photo_description) {
+            descWrap.style.display = 'block';
+            document.getElementById('photoViewDescription').textContent = photo.photo_description;
+        } else {
+            descWrap.style.display = 'none';
+        }
+        
+        const hasWatermark = photo.metadata?.has_watermark;
+        const watermarkText = photo.metadata?.watermark_text;
+        const wmInfo = hasWatermark ? `💧 已添加水印${watermarkText ? ': ' + watermarkText : ''}` : '未添加水印';
+        document.getElementById('photoViewWatermark').textContent = wmInfo;
+        
+        new bootstrap.Modal(document.getElementById('photoViewModal')).show();
+    }
+
+    // ==================== 确认删除 ====================
+    function confirmDeletePhoto(photoId) {
+        pendingDeleteId = photoId;
+        const photo = currentPhotoData.find(p => p.id === photoId);
+        const msg = photo ? `确定要删除 "${photo.file_name}" 吗？此操作不可恢复。` : t('delete_photo_confirm');
+        document.getElementById('deleteConfirmMsg').textContent = msg;
+        new bootstrap.Modal(document.getElementById('deleteConfirmModal')).show();
+    }
+
+    // ==================== 执行删除 ====================
+    document.getElementById('deleteConfirmBtn')?.addEventListener('click', async function() {
+        if (!pendingDeleteId) return;
+        
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + t('deleting');
+        
+        try {
+            const res = await fetch(`/api/training/photos/${pendingDeleteId}`, { method: 'DELETE' });
+            const data = await res.json();
+            
+            if (data.success) {
+                showToast(t('photo_deleted'), 'success');
+                const card = document.querySelector(`.photo-card[data-id="${pendingDeleteId}"]`);
+                if (card) card.remove();
+                totalPhotos--;
+                document.getElementById('photoCount').textContent = totalPhotos;
+                updatePhotoLimit();
+                currentPhotoData = currentPhotoData.filter(p => p.id !== pendingDeleteId);
+            } else {
+                showToast(data.message || t('delete_failed'), 'error');
+            }
+        } catch (err) {
+            console.error('删除失败:', err);
+            showToast(t('delete_failed'), 'error');
+        } finally {
+            this.disabled = false;
+            this.innerHTML = t('delete');
+            pendingDeleteId = null;
+            bootstrap.Modal.getInstance(document.getElementById('deleteConfirmModal'))?.hide();
+        }
+    });
+
+    // ==================== 分页 ====================
+    function renderPagination(total, page, perPage) {
+        const totalPages = Math.ceil(total / perPage);
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+        
+        let html = '';
+        if (page > 1) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${page - 1}">«</a></li>`;
+        }
+        
+        let startPage = Math.max(1, page - 3);
+        let endPage = Math.min(totalPages, page + 3);
+        if (endPage - startPage < 6) {
+            if (startPage === 1) endPage = Math.min(totalPages, startPage + 6);
+            else startPage = Math.max(1, endPage - 6);
+        }
+        
+        if (startPage > 1) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>`;
+            if (startPage > 2) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+        }
+        
+        for (let i = startPage; i <= endPage; i++) {
+            html += `<li class="page-item ${i === page ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>`;
+        }
+        
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) html += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}">${totalPages}</a></li>`;
+        }
+        
+        if (page < totalPages) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${page + 1}">»</a></li>`;
+        }
+        pagination.innerHTML = html;
+        
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const pageNum = parseInt(link.dataset.page);
+                if (!isNaN(pageNum)) {
+                    const onlyMine = document.getElementById('showOnlyMine').checked;
+                    loadPhotos(pageNum, onlyMine);
+                }
+            });
+        });
+    }
+
+    // ==================== 上传功能 ====================
+    // ... (保持原有上传功能不变，但更新 uploadBtn 使用 selectedTrainingId)
+
+    function updateUploadBtn() {
+        const btn = document.getElementById('uploadBtn');
+        const trainingId = document.getElementById('selectedTrainingId').value;
+        const hasFiles = selectedFiles.length > 0;
+        
+        let canUpload = hasFiles && trainingId;
+        if (canUpload) {
+            const badge = document.getElementById('photoLimitBadge');
+            const match = badge.textContent.match(/(\d+)\s*\/\s*50/);
+            if (match) {
+                const current = parseInt(match[1]);
+                if (current + selectedFiles.length > 50) {
+                    canUpload = false;
+                    btn.title = t('exceeds_training_limit');
+                } else {
+                    btn.title = '';
+                }
+            }
+        }
+        
+        btn.disabled = !canUpload;
+    }
+
+    // 更新上传按钮 - 使用 selectedTrainingId
+    document.getElementById('uploadBtn')?.addEventListener('click', async function() {
+        if (isUploading) return;
+        
+        const trainingId = document.getElementById('selectedTrainingId').value;
+        const trainingName = document.getElementById('selectedTrainingName').value;
+        
+        if (!trainingId || !trainingName) {
+            showToast(t('please_select_training'), 'warning');
+            return;
+        }
+        
+        if (selectedFiles.length === 0) {
+            showToast(t('please_select_photos'), 'warning');
+            return;
+        }
+        
+        const badge = document.getElementById('photoLimitBadge');
+        const match = badge.textContent.match(/(\d+)\s*\/\s*50/);
+        if (match) {
+            const current = parseInt(match[1]);
+            if (current + selectedFiles.length > 50) {
+                showToast(t('exceeds_training_limit'), 'warning');
+                return;
+            }
+        }
+        
+        const addWatermark = document.getElementById('addWatermark').checked;
+        const includeTrainingName = document.getElementById('includeTrainingName').checked;
+        
+        const formData = new FormData();
+        formData.append('training_id', trainingId);
+        formData.append('training_name', trainingName);
+        formData.append('add_watermark', addWatermark ? 'true' : 'false');
+        formData.append('include_training_name', includeTrainingName ? 'true' : 'false');
+        
+        selectedFiles.forEach((file, index) => {
+            formData.append('photos', file);
+            formData.append(`descriptions[${index}]`, '');
+        });
+        
+        isUploading = true;
+        this.disabled = true;
+        const progressDiv = document.getElementById('uploadProgress');
+        const progressBar = document.getElementById('progressBar');
+        const progressText = document.getElementById('progressText');
+        progressDiv.style.display = 'block';
+        progressBar.style.width = '10%';
+        progressBar.textContent = '10%';
+        progressText.textContent = t('preparing_upload');
+        
+        try {
+            const res = await fetch('/api/training/photos', {
+                method: 'POST',
+                body: formData
+            });
+            
+            progressBar.style.width = '90%';
+            progressBar.textContent = '90%';
+            progressText.textContent = t('processing_response');
+            
+            const data = await res.json();
+            
+            if (data.success) {
+                progressBar.style.width = '100%';
+                progressBar.textContent = '100%';
+                progressText.textContent = t('upload_complete');
+                
+                showToast(t('upload_success', data.uploaded_count), 'success');
+                if (data.errors && data.errors.length > 0) {
+                    console.warn('上传警告:', data.errors);
+                }
+                
+                selectedFiles = [];
+                renderPreview();
+                updateUploadBtn();
+                document.getElementById('selectedCount').textContent = '0';
+                
+                const onlyMine = document.getElementById('showOnlyMine').checked;
+                loadPhotos(1, onlyMine);
+            } else {
+                showToast(data.message || t('upload_failed'), 'error');
+            }
+        } catch (err) {
+            console.error('上传失败:', err);
+            showToast(t('upload_failed') + ': ' + err.message, 'error');
+        } finally {
+            isUploading = false;
+            this.disabled = false;
+            setTimeout(() => {
+                progressDiv.style.display = 'none';
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+            }, 2000);
+        }
+    });
+
+    // ==================== 工具函数 ====================
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    // ==================== 初始化 ====================
+    document.addEventListener('DOMContentLoaded', async () => {
+        await waitForI18n();
+        if (window.i18n) {
+            window.i18n.applyTranslations();
+            if (!window._photoPageI18nSubscribed) {
+                window._photoPageI18nSubscribed = true;
+                window.i18n.subscribe(() => {
+                    if (currentPhotoData.length > 0) renderPhotos(currentPhotoData);
+                });
+            }
+        }
+        
+        await getUserInfo();
+        await loadTrainingsForSelector();
+        setupTrainingSearch();
+        
+        const onlyMine = document.getElementById('showOnlyMine').checked;
+        loadPhotos(1, onlyMine);
+    });
+
+    // ==================== 事件绑定 ====================
+
+    // 从相册选择
+    document.getElementById('galleryBtn')?.addEventListener('click', () => {
+        const input = document.getElementById('fileInput');
+        input.removeAttribute('capture');
+        input.click();
+    });
+
+    // 摄像头拍摄
+    document.getElementById('cameraBtn')?.addEventListener('click', () => {
+        const input = document.getElementById('fileInput');
+        input.setAttribute('capture', 'environment');
+        input.click();
+    });
+
+    // 文件选择
+    document.getElementById('fileInput')?.addEventListener('change', function() {
+        if (this.files) {
+            handleFiles(this.files);
+        }
+        this.value = '';
+    });
+
+    // 处理文件（需要保留原有实现）
+    function handleFiles(files) {
+        const maxFiles = 10;
+        const remaining = maxFiles - selectedFiles.length;
+        
+        for (let i = 0; i < Math.min(files.length, remaining); i++) {
+            const file = files[i];
+            if (file.type.startsWith('image/')) {
+                if (file.size > 10 * 1024 * 1024) {
+                    showToast(`${file.name}: ${t('file_too_large')} (10MB)`, 'warning');
+                    continue;
+                }
+                selectedFiles.push(file);
+            }
+        }
+        
+        renderPreview();
+        updateUploadBtn();
+    }
+
+    // 渲染预览（需要保留原有实现）
+    function renderPreview() {
+        const container = document.getElementById('uploadPreview');
+        container.innerHTML = '';
+        
+        if (selectedFiles.length === 0) return;
+        
+        selectedFiles.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const div = document.createElement('div');
+                div.className = 'preview-item';
+                const hasWatermark = document.getElementById('addWatermark').checked;
+                div.innerHTML = `
+                    <img src="${e.target.result}" alt="${file.name}">
+                    <button class="remove-btn" data-index="${index}">×</button>
+                    ${hasWatermark ? '<span class="watermark-badge">💧</span>' : ''}
+                `;
+                div.querySelector('.remove-btn').addEventListener('click', () => {
+                    selectedFiles.splice(index, 1);
+                    renderPreview();
+                    updateUploadBtn();
+                });
+                container.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        document.getElementById('selectedCount').textContent = selectedFiles.length;
+    }
+
+    // 清空文件
+    document.getElementById('clearFilesBtn')?.addEventListener('click', () => {
+        selectedFiles = [];
+        renderPreview();
+        updateUploadBtn();
+        document.getElementById('selectedCount').textContent = '0';
+    });
+
+    // 水印选项变化
+    document.getElementById('addWatermark')?.addEventListener('change', () => {
+        renderPreview();
+    });
+
+    // "仅看我的"切换
+    document.getElementById('showOnlyMine')?.addEventListener('change', function() {
+        loadPhotos(1, this.checked);
+    });
+
+    // 刷新按钮
+    document.getElementById('refreshPhotosBtn')?.addEventListener('click', () => {
+        const onlyMine = document.getElementById('showOnlyMine').checked;
+        loadPhotos(currentPage, onlyMine);
+    });
+</script>
+{% endblock %}

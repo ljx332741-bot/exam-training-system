@@ -287,6 +287,167 @@ def api_available_trainings():
     logger.info(f"最终返回培训数量: {len(result)}")
     return jsonify(result)
 
+@training_bp.route('/api/trainings/for_photos')
+@login_required
+def api_trainings_for_photos():
+    """
+    获取照片上传可选择的培训列表
+    - 管理员及以上：无时间限制，按权限范围过滤
+    - 普通学员：近一个月有签到记录或待签到的培训
+    """
+    db = get_supabase()
+    admin_db = get_supabase_admin()
+    user_id = session['user_id']
+    current_role = session.get('role')
+    
+    # 获取用户信息
+    user_res = db.table("users").select("country").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify([])
+    user_country = user_res.data.get('country')
+    
+    # 判断是否管理员及以上
+    is_admin = current_role in ['admin', 'super_admin', 'developer']
+    
+    logger.info(f"========== 照片上传培训列表请求 ==========")
+    logger.info(f"用户ID: {user_id}, 角色: {current_role}, 国家: {user_country}")
+    
+    # ============================================================
+    # 1. 获取用户相关的培训（复用原逻辑）
+    # ============================================================
+    
+    # 1.1 获取用户被分配的培训ID
+    assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
+    assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
+    
+    # 1.2 获取用户的所有签到记录（用于判断是否有签到）
+    att_res = admin_db.table("training_attendances") \
+        .select("training_id, sign_time") \
+        .eq("user_id", user_id) \
+        .execute()
+    signed_training_ids = {a['training_id'] for a in (att_res.data or [])}
+    
+    # 1.3 获取用户已完成考试的培训（用于补签判断）
+    completed_exams_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).execute()
+    completed_exam_ids = [r['exam_id'] for r in (completed_exams_res.data or [])]
+    
+    pending_sign_training_ids = set()
+    if completed_exam_ids:
+        bindings_res = admin_db.table("training_exam_bindings").select("training_id").in_("exam_id", completed_exam_ids).execute()
+        for b in (bindings_res.data or []):
+            training_id = b['training_id']
+            if training_id not in signed_training_ids:
+                pending_sign_training_ids.add(training_id)
+    
+    # ============================================================
+    # 2. 管理员及以上：按原有逻辑返回所有权限范围内的培训
+    # ============================================================
+    
+    if is_admin:
+        # 获取所有培训
+        trainings_res = db.table("trainings").select("*").execute()
+        all_trainings = trainings_res.data or []
+        
+        # 按权限范围过滤
+        allowed_countries = get_admin_allowed_countries()
+        filtered_trainings = []
+        for t in all_trainings:
+            training_country = t.get('country')
+            if not training_country:
+                continue
+            
+            # 解析国家列表
+            country_list = _parse_country_list(training_country)
+            
+            # 权限过滤
+            if allowed_countries is not None:
+                if any(c in allowed_countries for c in country_list):
+                    filtered_trainings.append(t)
+            else:
+                filtered_trainings.append(t)
+        
+        # 构建返回数据
+        result = _build_photo_training_response(db, filtered_trainings)
+        result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+        
+        logger.info(f"管理员返回培训数量: {len(result)}")
+        return jsonify(result)
+    
+    # ============================================================
+    # 3. 普通学员：近一个月有签到记录或待签到的培训
+    # ============================================================
+    
+    from datetime import datetime, timedelta
+    now = datetime.now(timezone.utc)
+    one_month_ago = now - timedelta(days=30)
+    one_month_ago_str = one_month_ago.isoformat()
+    
+    # 3.1 获取所有培训
+    trainings_res = db.table("trainings").select("*").execute()
+    all_trainings = trainings_res.data or []
+    
+    # 3.2 筛选：普通用户只显示自己国家的培训
+    filtered_trainings = []
+    for t in all_trainings:
+        training_country = t.get('country')
+        if not training_country:
+            continue
+        
+        # 解析国家列表
+        country_list = _parse_country_list(training_country)
+        
+        # 必须匹配用户国家
+        if user_country not in country_list:
+            continue
+        
+        training_id = t['id']
+        
+        # ========== 核心过滤条件 ==========
+        should_include = False
+        
+        # 条件1：近一个月内有签到记录
+        if training_id in signed_training_ids:
+            # 检查签到时间是否在近一个月内
+            for att in (att_res.data or []):
+                if att['training_id'] == training_id:
+                    sign_time = att.get('sign_time')
+                    if sign_time and sign_time >= one_month_ago_str:
+                        should_include = True
+                        logger.info(f"培训 {training_id} 近一个月有签到记录")
+                        break
+        
+        # 条件2：待签到（已分配但未签到）
+        if not should_include and training_id in assigned_training_ids:
+            # 检查分配时间是否在近一个月内
+            # 或者培训的开始时间在近一个月内
+            start_time = t.get('start_time')
+            if start_time and start_time >= one_month_ago_str:
+                should_include = True
+                logger.info(f"培训 {training_id} 待签到（近一个月分配）")
+        
+        # 条件3：待补签（已完成绑定考试但未签到）
+        if not should_include and training_id in pending_sign_training_ids:
+            # 检查考试完成时间是否在近一个月内
+            for exam_id in completed_exam_ids:
+                exam_res = db.table("exam_results").select("created_at").eq("exam_id", exam_id).eq("user_id", user_id).maybe_single().execute()
+                if exam_res.data:
+                    completed_at = exam_res.data.get('created_at')
+                    if completed_at and completed_at >= one_month_ago_str:
+                        should_include = True
+                        logger.info(f"培训 {training_id} 待补签（近一个月完成考试）")
+                        break
+        
+        if should_include:
+            filtered_trainings.append(t)
+    
+    logger.info(f"普通学员过滤后培训数量: {len(filtered_trainings)}")
+    
+    # 构建返回数据
+    result = _build_photo_training_response(db, filtered_trainings)
+    result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    
+    return jsonify(result)
+
 @training_bp.route('/api/training/sign', methods=['POST'])
 @login_required
 def api_training_sign():
@@ -452,3 +613,55 @@ def api_resign_training():
 
     admin_db.table("training_attendances").update({"signature_url": url, "signed_name": name}).eq("id", exist.data['id']).execute()
     return jsonify({"success": True})
+
+
+# ============================================================
+# 辅助函数（放在文件顶部或末尾）
+# ============================================================
+
+def _parse_country_list(training_country):
+    """解析培训国家列表（复用原逻辑）"""
+    country_list = []
+    if isinstance(training_country, str):
+        try:
+            parsed = json.loads(training_country)
+            if isinstance(parsed, list):
+                country_list = parsed
+            else:
+                country_list = [training_country]
+        except json.JSONDecodeError:
+            country_list = [training_country]
+    elif isinstance(training_country, list):
+        country_list = training_country
+    else:
+        country_list = [str(training_country)]
+    return country_list
+
+
+def _build_photo_training_response(db, trainings):
+    """构建照片上传培训响应数据"""
+    result = []
+    for t in trainings:
+        # 获取该培训的照片数量
+        photo_count = 0
+        try:
+            photo_res = db.table("training_photos") \
+                .select("id", count="exact") \
+                .eq("training_id", t['id']) \
+                .eq("is_deleted", False) \
+                .execute()
+            photo_count = photo_res.count or 0
+        except:
+            pass
+        
+        result.append({
+            "id": t['id'],
+            "name": t['name'],
+            "country": t.get('country'),
+            "start_time": t.get('start_time'),
+            "end_time": t.get('end_time'),
+            "created_at": t.get('created_at'),
+            "is_active": t.get('is_active', False),
+            "photo_count": photo_count
+        })
+    return result

@@ -12,9 +12,21 @@
                     <i class="bi bi-calendar-check me-2"></i>
                     <span data-i18n="training_signin">培训签到</span>
                 </div>
-                <div style="flex-shrink: 0;">
-                    <button class="btn btn-sm btn-outline-primary glow-icon-wrapper" id="viewMyAttendancesBtn" data-bs-toggle="modal" data-bs-target="#myAttendancesModal">
-                        <i class="bi bi-list-columns-reverse glow-icon" id="gearIcon"></i> <span data-i18n="my_sign_in_records">我的签到记录</span>
+                <div class="d-flex align-items-center" style="gap: 6px; flex-shrink: 0;">
+                    <!-- 培训照片入口（仅管理员及以上可见，通过 JS 控制显示） -->
+                    <button class="btn btn-sm btn-outline-success glow-icon-wrapper" 
+                            id="viewTrainingPhotosBtn" 
+                            onclick="window.location.href='/training/photos'"
+                            style="display: none;">
+                        <i class="bi bi-images glow-icon"></i> 
+                        <span data-i18n="training_photos">培训照片</span>
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary glow-icon-wrapper" 
+                            id="viewMyAttendancesBtn" 
+                            data-bs-toggle="modal" 
+                            data-bs-target="#myAttendancesModal">
+                        <i class="bi bi-list-columns-reverse glow-icon"></i> 
+                        <span data-i18n="my_sign_in_records">我的签到记录</span>
                     </button>
                 </div>
             </div>
@@ -1294,16 +1306,26 @@
         });
     }
 
+    // 权限检查，决定是否显示查看培训照片按钮
+    async function checkPhotoPermission() {
+        try {
+            const res = await fetch('/api/user/role');
+            const data = await res.json();
+            if (data.success && data.is_admin) {
+                document.getElementById('viewTrainingPhotosBtn').style.display = 'inline-flex';
+            }
+        } catch (err) {
+            console.error('获取用户权限失败:', err);
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', async () => {
-        // ✅ 等待 i18n 就绪
         await waitForI18n();
         
-        // ✅ 应用翻译
         if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
             window.i18n.applyTranslations();
         }
         
-        // ✅ 处理时间显示
         document.querySelectorAll('.local-time').forEach(el => {
             const utc = el.dataset.utc;
             if (utc && utc !== '-') {
@@ -1311,11 +1333,10 @@
             }
         });
         
-        // ✅ 加载数据
         await loadTrainings();
         await loadMyInterviews();
+        await checkPhotoPermission();
         
-        // ✅ 订阅语言切换
         if (window.i18n && typeof window.i18n.subscribe === 'function') {
             window.i18n.subscribe(() => {
                 loadTrainings();

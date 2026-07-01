@@ -3,13 +3,83 @@
 {% block title %}培训管理{% endblock %}
 
 {% block extra_head %}
-<!-- ✅ 预加载仪表盘数据，提升返回速度 -->
+<!-- 预加载仪表盘数据，提升返回速度 -->
 <link rel="prefetch" href="/api/admin/dashboard/stats" as="fetch" crossorigin="use-credentials">
 {{ super() }}
 {% endblock %}
 
 {% block content %}
-<style>
+    <style>
+    /* 照片管理按钮样式 - 轻量化悬浮 */
+    .photo-manage-btn {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: rgba(13, 110, 253, 0.08);
+        color: #0d6efd;
+        text-decoration: none;
+        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+        flex-shrink: 0;
+        border: none;
+        cursor: pointer;
+    }
+
+    .photo-manage-btn:hover {
+        background: rgba(13, 110, 253, 0.18);
+        transform: scale(1.12);
+        color: #0a58ca;
+        box-shadow: 0 2px 12px rgba(13, 110, 253, 0.2);
+    }
+
+    .photo-manage-btn .photo-count-badge {
+        position: absolute;
+        top: -5px;
+        right: -5px;
+        background: #dc3545;
+        color: white;
+        border-radius: 50%;
+        font-size: 8px;
+        padding: 1px 5px;
+        min-width: 16px;
+        text-align: center;
+        font-weight: 700;
+        border: 1.5px solid white;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+        line-height: 1.3;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    /* 无照片时只显示一个更淡的图标 */
+    .photo-manage-btn.no-photos {
+        background: rgba(108, 117, 125, 0.08);
+        color: #adb5bd;
+    }
+
+    .photo-manage-btn.no-photos:hover {
+        background: rgba(13, 110, 253, 0.12);
+        color: #0d6efd;
+    }
+
+    /* 表格名称列布局 */
+    .name-cell .d-flex {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    /* 培训名称文字溢出处理 */
+    .name-cell .training-name-link {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
     /* 可展开行样式 */
     .expand-icon {
         cursor: pointer;
@@ -407,6 +477,46 @@
         </div>
     </div>
 </div>
+<!-- 修改 nameHtml 部分 -->
+{% set photoCount = t.photo_count | default(0) %}
+{% set photoBadge = '' %}
+{% if photoCount > 0 %}
+    {% set photoBadge = '<span class="photo-count-badge">' + photoCount + '</span>' %}
+{% endif %}
+
+<!-- 培训名称列 -->
+<td class="name-cell">
+    <div style="display: flex; align-items: center; gap: 8px;">
+        <!-- 照片管理入口（悬浮按钮） -->
+        <a href="/admin/training/photos?training_id={{ t.id }}" 
+           class="photo-manage-btn" 
+           title="管理培训照片 ({{ photoCount }}张)"
+           style="position: relative; display: inline-flex; align-items: center; justify-content: center; 
+                  width: 28px; height: 28px; border-radius: 50%; 
+                  background: rgba(13, 110, 253, 0.1); 
+                  color: #0d6efd; text-decoration: none; 
+                  transition: all 0.2s ease; flex-shrink: 0;"
+           onmouseover="this.style.background='rgba(13, 110, 253, 0.2)'; this.style.transform='scale(1.1)';"
+           onmouseout="this.style.background='rgba(13, 110, 253, 0.1)'; this.style.transform='scale(1)';">
+            <i class="bi bi-images" style="font-size: 14px;"></i>
+            {% if photoCount > 0 %}
+            <span class="photo-count-badge" style="position: absolute; top: -6px; right: -6px; 
+                  background: #dc3545; color: white; border-radius: 50%; 
+                  font-size: 9px; padding: 1px 5px; min-width: 16px; text-align: center; 
+                  font-weight: bold; border: 1.5px solid white; box-shadow: 0 1px 4px rgba(0,0,0,0.15);">
+                {{ photoCount }}
+            </span>
+            {% endif %}
+        </a>
+        <!-- 原有培训名称 -->
+        <span style="flex: 1; min-width: 0;">
+            {{ expandIcon | safe }}
+            <a href="/admin/training/{{ t.id }}/attendance" class="text-decoration-none fw-bold" title="{{ t.name }}">
+                {{ t.name }}
+            </a>
+        </span>
+    </div>
+</td>
 {% endblock %}
 
 {% block extra_js %}
@@ -459,7 +569,7 @@
         const cached = getCachedTrainingData();
         const fromDetail = sessionStorage.getItem('from_training_detail');
         
-        // ✅ 从子页面返回时，直接使用缓存，不触发后台刷新
+        // 从子页面返回时，直接使用缓存，不触发后台刷新
         if (fromDetail === 'true') {
             sessionStorage.removeItem('from_training_detail');
             if (cached && cached.data && cached.data.length > 0) {
@@ -467,7 +577,7 @@
                 renderTrainingsTable(cached.data);
                 document.getElementById('totalCount').innerText = cached.total || cached.data.length;
                 renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-                return; // ✅ 不执行后台刷新
+                return;
             }
         }
         
@@ -477,7 +587,7 @@
             document.getElementById('totalCount').innerText = cached.total || cached.data.length;
             renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
             
-            // ✅ 检查缓存是否过期（超过TTL的一半就后台刷新）
+            // 检查缓存是否过期（超过TTL的一半就后台刷新）
             const cacheTime = sessionStorage.getItem(TRAINING_CACHE_TIME_KEY);
             if (cacheTime) {
                 const age = Date.now() - parseInt(cacheTime);
@@ -497,7 +607,7 @@
     }
 
     async function doLoadTrainings() {    
-        // ✅ 使用表格内嵌进度条
+        // 使用表格内嵌进度条
         await window.loadTableWithProgress('trainingsTbody', async (updateProgress, updateDesc) => {
             try {
                 updateProgress(10, t('preparing_load_training_data'));
@@ -524,7 +634,7 @@
                     per_page: data.per_page
                 });
 
-                // ✅ 缓存数据
+                // 缓存数据
                 cachedData = data.data;
                 cachedTotal = data.total;
                 
@@ -664,11 +774,45 @@
                     </span>
                 </span>
             `;
+
+            // 照片管理按钮
+            const photoCount = t.photo_count || 0;
+            const photoBtnHtml = `
+                <a href="/admin/training/photos?training_id=${t.id}" 
+                    class="photo-manage-btn ${photoCount === 0 ? 'no-photos' : ''}" 
+                    title="${safeT('manage_training_photos')} (${photoCount}张)"
+                    target="_blank">
+                    <i class="bi bi-images" style="font-size: 14px;"></i>
+                    ${photoCount > 0 ? `<span class="photo-count-badge">${photoCount}</span>` : ''}
+                </a>
+            `;
+
+            // 培训名称列
             let nameHtml = '';
             if (t.country) {
-                nameHtml = `${expandIcon}<a href="/admin/training/${t.id}/attendance" class="text-decoration-none fw-bold" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
+                nameHtml = `
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        ${photoBtnHtml}
+                        <span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px;">
+                            ${expandIcon}
+                            <a href="/admin/training/${t.id}/attendance" class="text-decoration-none fw-bold training-name-link" title="${escapeHtml(t.name)}">
+                                ${escapeHtml(t.name)}
+                            </a>
+                        </span>
+                    </div>
+                `;
             } else {
-                nameHtml = `${expandIcon}<a href="#" class="text-decoration-none fw-bold group-detail-link" data-id="${t.id}" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</a>`;
+                nameHtml = `
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                        ${photoBtnHtml}
+                        <span style="flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px;">
+                            ${expandIcon}
+                            <a href="#" class="text-decoration-none fw-bold group-detail-link training-name-link" data-id="${t.id}" title="${escapeHtml(t.name)}">
+                                ${escapeHtml(t.name)}
+                            </a>
+                        </span>
+                    </div>
+                `;
             }
 
             // 构建行内容...
