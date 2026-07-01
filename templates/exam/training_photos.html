@@ -706,7 +706,7 @@
         if (searchTerm) {
             const term = searchTerm.toLowerCase().trim();
             filtered = trainings.filter(t => 
-                t.name.toLowerCase().includes(term) ||
+                t.name && t.name.toLowerCase().includes(term) ||
                 (t.country && t.country.toLowerCase().includes(term))
             );
         }
@@ -732,8 +732,17 @@
         filtered.forEach(t => {
             const createdDate = t.created_at ? new Date(t.created_at).toLocaleDateString() : '-';
             const isSelected = selectedId == t.id;
-            const statusText = t.is_active ? safeT('active') : safeT('draft');
-            const statusClass = t.is_active ? 'bg-success' : 'bg-secondary';
+            
+            // ✅ 使用后端返回的动态状态
+            const statusText = t.status_text || (t.is_active ? safeT('active') : safeT('draft'));
+            const dynamicStatus = t.dynamic_status || (t.is_active ? 'active' : 'draft');
+            
+            // 根据动态状态设置颜色
+            let statusColor = 'secondary';
+            if (dynamicStatus === 'active') statusColor = 'success';
+            else if (dynamicStatus === 'pending') statusColor = 'info';
+            else if (dynamicStatus === 'closed') statusColor = 'danger';
+            // draft 保持 secondary
             
             html += `
                 <div class="dropdown-item ${isSelected ? 'active' : ''}" 
@@ -751,7 +760,7 @@
                     <div class="item-meta">
                         <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '通用')}</span>
                         <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
-                        <span><span class="badge ${statusClass}">${statusText}</span></span>
+                        <span><span class="badge bg-${statusColor}">${statusText}</span></span>
                         ${t.photo_count ? `<span><i class="bi bi-images"></i> ${t.photo_count}张</span>` : ''}
                     </div>
                 </div>
