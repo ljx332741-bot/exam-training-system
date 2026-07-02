@@ -602,12 +602,7 @@ def api_training_get_photos():
     - 普通用户：仅自己国家的培训照片
     - 管理员：权限范围内的所有照片
     """
-    print("=" * 60)
-    print("📷 开始处理照片列表请求")
-    print(f"当前用户ID: {session.get('user_id')}")
-    print(f"当前用户角色: {session.get('role')}")
-    
-    # ✅ 关键修复：使用管理员客户端绕过 RLS
+    # 关键修复：使用管理员客户端绕过 RLS
     db = get_supabase_admin()  # 改为 admin 客户端
     current_user_id = session.get('user_id')
     current_role = session.get('role')
@@ -631,23 +626,14 @@ def api_training_get_photos():
     all_photos_res = db.table("training_photos").select("*").eq("is_deleted", False).execute()
     all_photos = all_photos_res.data or []
     
-    for p in all_photos[:5]:
-        print(f"  - id={p.get('id')}, training_id={p.get('training_id')}, "
-              f"training_country={p.get('training_country')}, file={p.get('file_name')}")
-    
     user_photos_res = db.table("training_photos").select("*").eq("is_deleted", False).eq("uploaded_by", current_user_id).execute()
     user_photos = user_photos_res.data or []
-    
-    for p in user_photos[:5]:
-        print(f"  - id={p.get('id')}, training_id={p.get('training_id')}, "
-              f"training_country={p.get('training_country')}, file={p.get('file_name')}")
     
     # 基础查询
     query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
     
     if is_admin:
         allowed_countries = get_admin_allowed_countries()
-        print(f"管理员权限范围: {allowed_countries}")
         
         if allowed_countries is not None:
             if allowed_countries:
@@ -676,10 +662,6 @@ def api_training_get_photos():
         photos = result.data or []
         total = result.count or 0
         
-        for i, p in enumerate(photos[:5]):
-            print(f"  结果 {i+1}: id={p.get('id')}, training_id={p.get('training_id')}, "
-                  f"training_country={p.get('training_country')}, file={p.get('file_name')}")
-        
         # 获取上传人信息
         uploader_ids = [p.get('uploaded_by') for p in photos if p.get('uploaded_by')]
         if uploader_ids:
@@ -693,7 +675,6 @@ def api_training_get_photos():
                 p['can_edit'] = can_edit
                 p['can_delete'] = can_delete
         
-        print("=" * 60)
         return jsonify({
             "success": True,
             "data": photos,
@@ -721,10 +702,6 @@ def api_training_upload_photos():
     current_user_id = session.get('user_id')
     current_role = session.get('role')
 
-    print("=" * 60)
-    print("📸 开始处理照片上传请求")
-    print(f"用户ID: {current_user_id}, 角色: {current_role}")
-    
     # 获取用户信息
     user_res = db.table("users").select("country, name_en, name_cn").eq("id", current_user_id).maybe_single().execute()
     if not user_res.data:
@@ -733,7 +710,6 @@ def api_training_upload_photos():
     
     user_country = user_res.data.get('country')
     user_name = user_res.data.get('name_en') or user_res.data.get('name_cn', '')
-    print(f"用户国家: {user_country}, 用户名: {user_name}")
     
     # 获取表单参数
     training_id = request.form.get('training_id')
@@ -741,9 +717,6 @@ def api_training_upload_photos():
     add_watermark = request.form.get('add_watermark', 'true').lower() == 'true'
     include_training_name = request.form.get('include_training_name', 'true').lower() == 'true'
 
-    print(f"表单参数: training_id={training_id}, training_name={training_name}")
-    print(f"水印: add_watermark={add_watermark}, include_training_name={include_training_name}")
-    
     # 参数验证
     if not training_id:
         logger.warning("培训ID为空")
@@ -759,7 +732,6 @@ def api_training_upload_photos():
         return jsonify({"success": False, "message": "培训不存在"}), 404
     
     training_country = training_res.data.get('country')
-    print(f"培训国家: {training_country}")
     
     # 权限检查：普通用户只能上传自己国家的培训
     is_admin = current_role in ['admin', 'super_admin', 'developer']
@@ -775,7 +747,6 @@ def api_training_upload_photos():
     count_res = db.table("training_photos").select("id", count="exact").eq("training_id", int(training_id)).eq("is_deleted", False).execute()
     current_count = count_res.count or 0
     MAX_PHOTOS_PER_TRAINING = 50
-    print(f"培训当前照片数: {current_count}, 上限: {MAX_PHOTOS_PER_TRAINING}")
     if current_count >= MAX_PHOTOS_PER_TRAINING:
         logger.warning(f"培训照片已满: {current_count}")
         return jsonify({
@@ -785,7 +756,6 @@ def api_training_upload_photos():
     
     # 检查文件
     files = request.files.getlist('photos')
-    print(f"接收到 {len(files)} 个文件")
     if not files or len(files) == 0:
         logger.warning("没有选择照片")
         return jsonify({"success": False, "message": "请选择要上传的照片"}), 400
@@ -808,15 +778,12 @@ def api_training_upload_photos():
     errors = []
     now = datetime.now(timezone.utc).isoformat()
 
-    # ✅ 确定最终使用的国家（用于数据库存储）
+    # 确定最终使用的国家（用于数据库存储）
     final_country = training_country or user_country
-    print(f"最终存储的国家: {final_country}")
     
     for idx, file in enumerate(files):
         if file.filename == '':
             continue
-        print(f"处理文件 {idx+1}/{len(files)}: {file.filename}")
-        
         
         # 检查文件大小（最大 10MB）
         file.seek(0, 2)
@@ -859,7 +826,6 @@ def api_training_upload_photos():
                     training_name, 
                     include_training_name
                 )
-                print(f"已添加水印: {file.filename}")
             
             # 生成唯一文件名
             ext = file.filename.rsplit('.', 1)[-1] if '.' in file.filename else 'jpg'
@@ -903,7 +869,6 @@ def api_training_upload_photos():
                     "uploaded_by_name": user_name
                 }
             }
-            print(f"插入数据库: training_id={training_id}, training_country={final_country}, file_name={file.filename}")
             
             result = db.table("training_photos").insert(insert_data).execute()
             if result.data:
@@ -912,7 +877,6 @@ def api_training_upload_photos():
                 photo_data['can_edit'] = True
                 photo_data['can_delete'] = True
                 uploaded_photos.append(photo_data)
-                print(f"✅ 照片记录创建成功: id={photo_data['id']}")
             else:
                 errors.append(f"{file.filename}: 保存记录失败")
                 logger.error(f"数据库插入失败: {file.filename}")
@@ -921,9 +885,6 @@ def api_training_upload_photos():
             logger.error(f"上传照片失败 {file.filename}: {e}")
             errors.append(f"{file.filename}: {str(e)}")
 
-    print(f"上传完成: 成功 {len(uploaded_photos)} 张, 失败 {len(errors)} 张")
-    print("=" * 60)
-    
     return jsonify({
         "success": True,
         "uploaded_count": len(uploaded_photos),
@@ -946,10 +907,6 @@ def api_training_delete_photo(photo_id):
     current_user_id = session.get('user_id')
     current_role = session.get('role')
 
-    print("=" * 60)
-    print(f"🗑️ 删除照片请求: photo_id={photo_id}")
-    print(f"用户ID: {current_user_id}, 角色: {current_role}")
-    
     # 获取照片信息
     photo_res = db.table("training_photos").select("*").eq("id", photo_id).eq("is_deleted", False).maybe_single().execute()
     if not photo_res.data:
@@ -957,12 +914,8 @@ def api_training_delete_photo(photo_id):
         return jsonify({"success": False, "message": "照片不存在或已删除"}), 404
     
     photo = photo_res.data
-    print(f"照片信息: training_id={photo.get('training_id')}, training_country={photo.get('training_country')}, "
-                f"uploaded_by={photo.get('uploaded_by')}, file={photo.get('file_name')}")
-    
     # 权限检查
     can_edit, can_delete, _ = validate_photo_permission(photo, current_user_id, current_role)
-    print(f"权限检查: can_edit={can_edit}, can_delete={can_delete}")
     
     if not can_delete:
         logger.warning(f"无权限删除: user_id={current_user_id}, uploaded_by={photo.get('uploaded_by')}")
@@ -972,7 +925,6 @@ def api_training_delete_photo(photo_id):
         # 1. 从 R2 删除文件
         photo_path = photo.get('photo_path')
         if photo_path:
-            print(f"从 R2 删除: {photo_path}")
             delete_from_r2(photo_path)
         
         # 2. 软删除数据库记录
@@ -983,9 +935,6 @@ def api_training_delete_photo(photo_id):
             "deleted_by": current_user_id
         }).eq("id", photo_id).execute()
 
-        print(f"✅ 照片删除成功: photo_id={photo_id}")
-        print("=" * 60)
-        
         return jsonify({"success": True, "message": "照片已删除"})
     except Exception as e:
         logger.error(f"删除照片失败: {e}")
@@ -1300,7 +1249,11 @@ def api_admin_batch_delete_photos():
 @admin_required
 def admin_training_photos_page():
     """管理员照片管理页面"""
-    return render_template('admin/admin_training_photos.html')
+    training_id = request.args.get('training_id')
+    training_name = request.args.get('training_name')
+    return render_template('admin/admin_training_photos.html', 
+                          training_id=training_id,
+                          training_name=training_name)
 
 
 @admin_training_photos_bp.route('/training/photos')

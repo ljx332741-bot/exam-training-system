@@ -6,12 +6,11 @@ Cloudflare R2 存储服务（兼容 AWS S3 API）
 import boto3
 import uuid
 from datetime import datetime
-from botocore.config import Config as BotoConfig  # ✅ 起别名
+from botocore.config import Config as BotoConfig
 from botocore.exceptions import ClientError
 from flask import current_app
 import logging
 
-# ✅ 导入 Config
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -19,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 def get_r2_client():
     """获取 R2 客户端"""
-    # ✅ 使用 Config 类方法获取配置
     endpoint = Config.CLOUDFLARE_R2_ENDPOINT or current_app.config.get('CLOUDFLARE_R2_ENDPOINT')
     access_key = Config.CLOUDFLARE_R2_ACCESS_KEY_ID or current_app.config.get('CLOUDFLARE_R2_ACCESS_KEY_ID')
     secret_key = Config.CLOUDFLARE_R2_SECRET_ACCESS_KEY or current_app.config.get('CLOUDFLARE_R2_SECRET_ACCESS_KEY')
@@ -37,7 +35,6 @@ def get_r2_client():
 
 def get_r2_bucket():
     """获取 R2 存储桶名称"""
-    # ✅ 使用 Config.get_r2_bucket() 方法
     bucket = Config.get_r2_bucket()
     if not bucket:
         bucket = current_app.config.get('CLOUDFLARE_R2_BUCKET')
@@ -46,7 +43,6 @@ def get_r2_bucket():
 
 def get_r2_public_url():
     """获取 R2 公共 URL"""
-    # ✅ 使用 Config.get_r2_public_url() 方法
     public_url = Config.get_r2_public_url()
     if not public_url:
         public_url = current_app.config.get('CLOUDFLARE_R2_PUBLIC_URL')

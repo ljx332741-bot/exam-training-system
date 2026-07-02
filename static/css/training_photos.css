@@ -1,0 +1,650 @@
+/* static/css/training_photos.css */
+/* ============================================================
+   培训照片管理页面 - 培训列表 + 照片网格
+   ============================================================ */
+
+/* ---------- 筛选区域 ---------- */
+.filter-bar {
+    background: #f8f9fa;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    border: 1px solid #e9ecef;
+}
+.filter-bar .form-control,
+.filter-bar .form-select {
+    font-size: 0.85rem;
+}
+.filter-bar .btn {
+    font-size: 0.8rem;
+}
+.quick-btn-group .btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+}
+.quick-btn-group .btn.active {
+    background-color: #0d6efd;
+    color: #fff;
+    border-color: #0d6efd;
+}
+
+/* ---------- 培训卡片 ---------- */
+.training-card {
+    border: 1px solid #e9ecef;
+    border-radius: 10px;
+    margin-bottom: 12px;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+    transition: box-shadow 0.2s ease;
+    overflow: hidden;
+}
+.training-card:hover {
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+.training-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 18px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.15s ease;
+    flex-wrap: wrap;
+}
+.training-card-header:hover {
+    background: #f8f9fa;
+}
+.training-card-header .expand-icon {
+    font-size: 0.7rem;
+    color: #6c757d;
+    transition: transform 0.25s ease;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.training-card-header .expand-icon.expanded {
+    transform: rotate(90deg);
+}
+.training-card-header .country-tag {
+    font-size: 0.7rem;
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #495057;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.training-card-header .training-name {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: #212529;
+    flex: 1;
+    min-width: 120px;
+}
+.training-card-header .quarter-tag {
+    font-size: 0.7rem;
+    color: #6c757d;
+    background: #f1f3f5;
+    padding: 2px 10px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+.training-card-header .photo-badge {
+    font-size: 0.75rem;
+    color: #0d6efd;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.training-card-header .status-badge {
+    font-size: 0.6rem;
+    padding: 2px 10px;
+    border-radius: 20px;
+    flex-shrink: 0;
+}
+.training-card-header .status-badge.active {
+    background: #d4edda;
+    color: #155724;
+}
+.training-card-header .status-badge.pending {
+    background: #cce5ff;
+    color: #004085;
+}
+.training-card-header .status-badge.closed {
+    background: #f8d7da;
+    color: #721c24;
+}
+.training-card-header .status-badge.draft {
+    background: #e9ecef;
+    color: #6c757d;
+}
+.training-card-header .training-meta {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-bottom: 12px;
+    padding: 6px 0;
+    border-top: 1px solid #f1f3f5;
+}
+.training-card-body {
+    padding: 0 18px 18px 18px;
+    display: none;
+}
+.training-card-body.expanded {
+    display: block;
+}
+.training-card-body .upload-section {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 8px 0;
+}
+.training-card-body .upload-section .btn-upload-photo {
+    font-size: 0.8rem;
+    padding: 4px 16px;
+    border-radius: 20px;
+}
+.training-card-body .upload-section .hint-text {
+    font-size: 0.7rem;
+    color: #adb5bd;
+}
+
+/* ---------- 照片网格 ---------- */
+.photo-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+}
+/* 缩略图小尺寸 */
+.photo-grid .photo-thumb {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.photo-grid .photo-thumb:hover {
+    transform: scale(1.03);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 2;
+}
+.photo-grid .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.photo-grid .photo-thumb .thumb-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.photo-grid .photo-thumb:hover .thumb-actions {
+    opacity: 1;
+}
+.photo-grid .photo-thumb .thumb-actions .btn {
+    padding: 0px 4px;
+    font-size: 0.6rem;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+}
+.photo-grid .photo-thumb .thumb-actions .btn:hover {
+    background: rgba(220, 53, 69, 0.85);
+}
+.photo-grid .photo-thumb .cover-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    font-size: 0.5rem;
+    background: rgba(25, 135, 84, 0.85);
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+/* 上传占位格 */
+.photo-grid .photo-thumb.upload-placeholder {
+    border: 2px dashed #ced4da;
+    background: #fafafa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    transition: all 0.2s ease;
+}
+.photo-grid .photo-thumb.upload-placeholder:hover {
+    border-color: #0d6efd;
+    background: #f0f7ff;
+}
+.photo-grid .photo-thumb.upload-placeholder .upload-icon {
+    font-size: 1.6rem;
+    color: #adb5bd;
+    transition: color 0.2s ease;
+}
+.photo-grid .photo-thumb.upload-placeholder:hover .upload-icon {
+    color: #0d6efd;
+}
+.photo-grid .photo-thumb.upload-placeholder .upload-label {
+    font-size: 0.6rem;
+    color: #6c757d;
+    margin-top: 4px;
+}
+.photo-grid .photo-thumb .loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* ---------- 空状态 ---------- */
+.empty-state-container {
+    text-align: center;
+    padding: 60px 20px;
+    color: #adb5bd;
+}
+.empty-state-container i {
+    font-size: 3.5rem;
+    display: block;
+    margin-bottom: 16px;
+    color: #dee2e6;
+}
+.empty-state-container h5 {
+    color: #6c757d;
+    margin-bottom: 8px;
+}
+.empty-state-container p {
+    font-size: 0.9rem;
+}
+
+/* ---------- 加载状态 ---------- */
+.loading-spinner-container {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+
+/* ========== 新增：下拉框完整样式（从升级前复制） ========== */
+.training-selector-wrapper {
+    position: relative;
+}
+.training-selector-wrapper .form-control {
+    cursor: pointer;
+    background-color: #fff;
+}
+.training-selector-wrapper .form-control:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.training-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1060;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    max-height: 320px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    display: none;
+    margin-top: 4px;
+}
+.training-dropdown .dropdown-header {
+    position: sticky;
+    top: 0;
+    background: #f8f9fa;
+    padding: 8px 14px;
+    font-weight: 600;
+    font-size: 0.8rem;
+    border-bottom: 1px solid #eee;
+    color: #495057;
+    z-index: 1;
+}
+.training-dropdown .dropdown-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.15s ease;
+}
+.training-dropdown .dropdown-item:hover {
+    background-color: #e7f3ff;
+}
+.training-dropdown .dropdown-item:last-child {
+    border-bottom: none;
+}
+.training-dropdown .dropdown-item .item-title {
+    font-weight: 500;
+    font-size: 0.9rem;
+    color: #212529;
+}
+.training-dropdown .dropdown-item .item-meta {
+    font-size: 0.7rem;
+    color: #6c757d;
+    margin-top: 4px;
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.training-dropdown .dropdown-item .item-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.training-dropdown .dropdown-item .item-meta .badge {
+    font-size: 0.6rem;
+}
+.training-dropdown .dropdown-item .selected-mark {
+    float: right;
+    color: #198754;
+    font-weight: 600;
+}
+.training-dropdown .empty-state {
+    padding: 20px;
+    text-align: center;
+    color: #adb5bd;
+}
+.training-dropdown .empty-state i {
+    font-size: 1.5rem;
+    display: block;
+    margin-bottom: 8px;
+}
+.training-dropdown .loading-state {
+    padding: 16px;
+    text-align: center;
+    color: #6c757d;
+}
+.training-dropdown .loading-state .spinner-border {
+    width: 1.2rem;
+    height: 1.2rem;
+}
+
+/* 清除按钮 */
+.input-clear-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    color: #999;
+    z-index: 10;
+    background: white;
+    padding-left: 5px;
+    display: none;
+    font-size: 0.9rem;
+}
+.input-clear-btn:hover {
+    color: #dc3545;
+}
+
+/* 已选培训显示 */
+.selected-training-display {
+    margin-top: 8px;
+    padding: 8px 12px;
+    background: #e7f3ff;
+    border-radius: 6px;
+    border-left: 3px solid #0d6efd;
+    display: none;
+    font-size: 0.85rem;
+}
+.selected-training-display .training-name {
+    font-weight: 600;
+    color: #0d6efd;
+}
+.selected-training-display .training-meta {
+    color: #6c757d;
+    font-size: 0.75rem;
+    margin-top: 2px;
+}
+
+/* 上传预览 - 与照片墙缩略图保持一致 */
+.upload-preview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 12px;
+}
+
+/* ✅ 修改：与 photo-thumb 尺寸一致 */
+.upload-preview .preview-item {
+    position: relative;
+    width: 130px;           /* 与 photo-grid 的 minmax(130px, 1fr) 一致 */
+    aspect-ratio: 1 / 1;    /* 与 photo-thumb 一致 */
+    border-radius: 8px;     /* 与 photo-thumb 一致 */
+    overflow: hidden;
+    border: 1px solid #e9ecef;
+    flex-shrink: 0;
+    background: #f8f9fa;
+}
+
+.upload-preview .preview-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;      /* 与 photo-thumb 一致 */
+    display: block;
+}
+
+.upload-preview .preview-item .remove-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: rgba(220, 53, 69, 0.9);
+    color: #fff;
+    border: none;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: transform 0.15s ease;
+}
+.upload-preview .preview-item .remove-btn:hover {
+    transform: scale(1.15);
+}
+
+.upload-preview .preview-item .watermark-badge {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    font-size: 0.5rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    pointer-events: none;
+}
+/* 额外内联样式（覆盖或补充） */
+.training-card-header .expand-icon {
+    font-size: 0.7rem;
+    color: #6c757d;
+    transition: transform 0.25s ease;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.training-card-header .expand-icon.expanded {
+    transform: rotate(90deg);
+}
+.training-card-header .country-tag {
+    font-size: 0.7rem;
+    background: #e9ecef;
+    padding: 2px 8px;
+    border-radius: 10px;
+    color: #495057;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.training-card-header .training-name {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: #212529;
+    flex: 1;
+    min-width: 120px;
+}
+.training-card-header .quarter-tag {
+    font-size: 0.7rem;
+    color: #6c757d;
+    background: #f1f3f5;
+    padding: 2px 10px;
+    border-radius: 10px;
+    flex-shrink: 0;
+}
+.training-card-header .photo-badge {
+    font-size: 0.75rem;
+    color: #0d6efd;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+.training-card-header .status-badge {
+    font-size: 0.6rem;
+    padding: 2px 10px;
+    border-radius: 20px;
+    flex-shrink: 0;
+}
+.training-card-header .status-badge.active {
+    background: #d4edda;
+    color: #155724;
+}
+.training-card-header .status-badge.pending {
+    background: #cce5ff;
+    color: #004085;
+}
+.training-card-header .status-badge.closed {
+    background: #f8d7da;
+    color: #721c24;
+}
+.training-card-header .status-badge.draft {
+    background: #e9ecef;
+    color: #6c757d;
+}
+.photo-grid .photo-thumb {
+    position: relative;
+    aspect-ratio: 1 / 1;
+    border-radius: 8px;
+    overflow: hidden;
+    background: #f8f9fa;
+    border: 1px solid #e9ecef;
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.photo-grid .photo-thumb:hover {
+    transform: scale(1.03);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+    z-index: 2;
+}
+.photo-grid .photo-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.photo-grid .photo-thumb .thumb-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+.photo-grid .photo-thumb:hover .thumb-actions {
+    opacity: 1;
+}
+.photo-grid .photo-thumb .thumb-actions .btn {
+    padding: 0px 4px;
+    font-size: 0.6rem;
+    border-radius: 4px;
+    background: rgba(0,0,0,0.6);
+    color: #fff;
+    border: none;
+}
+.photo-grid .photo-thumb .thumb-actions .btn:hover {
+    background: rgba(220, 53, 69, 0.85);
+}
+.photo-grid .photo-thumb .cover-badge {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    font-size: 0.5rem;
+    background: rgba(25, 135, 84, 0.85);
+    color: #fff;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+.photo-grid .photo-thumb.upload-placeholder {
+    border: 2px dashed #ced4da;
+    background: #fafafa;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    transition: all 0.2s ease;
+}
+.photo-grid .photo-thumb.upload-placeholder:hover {
+    border-color: #0d6efd;
+    background: #f0f7ff;
+}
+.photo-grid .photo-thumb.upload-placeholder .upload-icon {
+    font-size: 1.6rem;
+    color: #adb5bd;
+    transition: color 0.2s ease;
+}
+.photo-grid .photo-thumb.upload-placeholder:hover .upload-icon {
+    color: #0d6efd;
+}
+.photo-grid .photo-thumb.upload-placeholder .upload-label {
+    font-size: 0.6rem;
+    color: #6c757d;
+    margin-top: 4px;
+}
+/* ---------- 响应式 ---------- */
+@media (max-width: 768px) {
+    .training-card-header {
+        padding: 10px 14px;
+        gap: 6px;
+    }
+    .training-card-header .training-name {
+        font-size: 0.85rem;
+        min-width: 80px;
+    }
+    .training-card-body {
+        padding: 0 14px 14px 14px;
+    }
+    .photo-grid {
+        grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        gap: 8px;
+    }
+    .filter-bar {
+        padding: 12px 14px;
+    }
+    .filter-bar .row > div {
+        margin-bottom: 8px;
+    }
+}
+@media (max-width: 576px) {
+    .photo-grid {
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        gap: 6px;
+    }
+    .training-card-header .quarter-tag,
+    .training-card-header .status-badge {
+        font-size: 0.55rem;
+        padding: 1px 6px;
+    }
+}
