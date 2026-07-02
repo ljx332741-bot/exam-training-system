@@ -299,112 +299,79 @@ def api_trainings_for_photos():
     user_id = session['user_id']
     current_role = session.get('role')
     
-    print("=" * 80)
-    print("🔍 [api_trainings_for_photos] 开始调试")
-    print(f"  用户ID: {user_id}")
-    print(f"  当前角色: {current_role}")
-    
     # 获取用户信息
     user_res = db.table("users").select("country, role").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
-        print("❌ 用户不存在")
         return jsonify([])
     
     user_country = user_res.data.get('country')
     user_role = user_res.data.get('role')
-    print(f"  用户国家: {user_country}")
-    print(f"  用户角色(DB): {user_role}")
     
     # 判断是否开发者
     is_dev = is_developer()
-    print(f"  is_developer(): {is_dev}")
     
     # ============================================================
     # 1. 获取所有培训
     # ============================================================
     trainings_res = db.table("trainings").select("*").execute()
     all_trainings = trainings_res.data or []
-    print(f"\n📊 数据库中总共有 {len(all_trainings)} 个培训")
-    
-    for t in all_trainings:
-        print(f"  - id={t.get('id')}, name={t.get('name')}, country={t.get('country')}, is_active={t.get('is_active')}")
     
     # ============================================================
     # 2. 获取管理员权限范围
     # ============================================================
     allowed_countries = get_admin_allowed_countries()
-    print(f"\n📋 管理员权限范围: {allowed_countries}")
     
     # ============================================================
     # 3. 根据角色过滤
     # ============================================================
     filtered_trainings = []
     
-    # ✅ 情况1：开发者 - 看到所有培训
+    # 情况1：开发者 - 看到所有培训
     if is_dev:
-        print("\n✅ 开发者模式：显示所有培训")
         filtered_trainings = all_trainings
         result = _build_photo_training_response(db, filtered_trainings)
         result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        print(f"✅ 返回 {len(result)} 个培训")
-        print("=" * 80)
         return jsonify(result)
     
-    # ✅ 情况2：管理员或超管
+    # 情况2：管理员或超管
     if current_role in ['admin', 'super_admin']:
-        print(f"\n✅ 管理员/超管模式：权限范围 {allowed_countries}")
-        
         for t in all_trainings:
             training_country = t.get('country')
-            print(f"  检查培训 {t.get('id')}: country={training_country}")
-            
             if not training_country:
-                print(f"    ❌ 跳过：没有国家")
                 continue
             
             country_list = _parse_country_list(training_country)
-            print(f"    解析后国家列表: {country_list}")
             
             # 如果没有权限限制，显示所有
             if allowed_countries is None:
-                print(f"    ✅ 添加：无权限限制")
                 filtered_trainings.append(t)
                 continue
             
             # 如果有权限限制，检查交集
             if allowed_countries:
                 matched = any(c in allowed_countries for c in country_list)
-                print(f"    匹配结果: {matched}")
                 if matched:
                     filtered_trainings.append(t)
-                    print(f"    ✅ 添加：国家匹配")
                 else:
                     print(f"    ❌ 跳过：国家不匹配")
         
-        print(f"\n✅ 过滤后 {len(filtered_trainings)} 个培训")
         result = _build_photo_training_response(db, filtered_trainings)
         result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-        print("=" * 80)
         return jsonify(result)
     
-    # ✅ 情况3：普通学员
-    print("\n✅ 普通学员模式")
-    
+    # 情况3：普通学员
     # 获取用户相关的培训
     assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
     assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
-    print(f"  用户被分配的培训ID: {assigned_training_ids}")
     
     att_res = admin_db.table("training_attendances") \
         .select("training_id, sign_time") \
         .eq("user_id", user_id) \
         .execute()
     signed_training_ids = {a['training_id'] for a in (att_res.data or [])}
-    print(f"  用户已签到的培训ID: {signed_training_ids}")
     
     completed_exams_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).execute()
     completed_exam_ids = [r['exam_id'] for r in (completed_exams_res.data or [])]
-    print(f"  用户已完成考试的ID: {completed_exam_ids}")
     
     pending_sign_training_ids = set()
     if completed_exam_ids:
@@ -413,27 +380,22 @@ def api_trainings_for_photos():
             training_id = b['training_id']
             if training_id not in signed_training_ids:
                 pending_sign_training_ids.add(training_id)
-    print(f"  待补签培训ID: {pending_sign_training_ids}")
     
     # 时间过滤
     from datetime import datetime, timedelta
     now = datetime.now(timezone.utc)
     one_month_ago = now - timedelta(days=30)
     one_month_ago_str = one_month_ago.isoformat()
-    print(f"  一个月前: {one_month_ago_str}")
     
     for t in all_trainings:
         training_country = t.get('country')
         if not training_country:
-            print(f"  培训 {t.get('id')}: ❌ 跳过 - 无国家")
             continue
         
         country_list = _parse_country_list(training_country)
-        print(f"  培训 {t.get('id')}: country={training_country}, 解析后={country_list}")
         
         # 必须匹配用户国家
         if user_country not in country_list:
-            print(f"    ❌ 用户国家 {user_country} 不在列表中")
             continue
         
         training_id = t['id']
@@ -446,7 +408,6 @@ def api_trainings_for_photos():
                     sign_time = att.get('sign_time')
                     if sign_time and sign_time >= one_month_ago_str:
                         should_include = True
-                        print(f"    ✅ 条件1满足：近一个月有签到记录")
                         break
         
         # 条件2：待签到（已分配）
@@ -454,25 +415,20 @@ def api_trainings_for_photos():
             start_time = t.get('start_time')
             if start_time and start_time >= one_month_ago_str:
                 should_include = True
-                print(f"    ✅ 条件2满足：待签到（近一个月分配）")
             else:
                 print(f"    ⏳ 待签到但开始时间不在近一个月内: {start_time}")
         
         # 条件3：待补签
         if not should_include and training_id in pending_sign_training_ids:
             should_include = True
-            print(f"    ✅ 条件3满足：待补签")
         
         if should_include:
             filtered_trainings.append(t)
-            print(f"    ✅ 添加到结果")
         else:
             print(f"    ❌ 不满足任何条件")
     
-    print(f"\n✅ 过滤后 {len(filtered_trainings)} 个培训")
     result = _build_photo_training_response(db, filtered_trainings)
     result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
-    print("=" * 80)
     return jsonify(result)
 
 @training_bp.route('/api/training/sign', methods=['POST'])

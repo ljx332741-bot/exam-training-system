@@ -16,7 +16,7 @@
                     <!-- 培训照片入口（仅管理员及以上可见，通过 JS 控制显示） -->
                     <button class="btn btn-sm btn-outline-success glow-icon-wrapper" 
                             id="viewTrainingPhotosBtn" 
-                            onclick="window.location.href='/training/photos'"
+                            onclick="window.open('/training/photos', '_blank')"
                             style="display: none;">
                         <i class="bi bi-images glow-icon"></i> 
                         <span data-i18n="training_photos">培训照片</span>
@@ -912,7 +912,7 @@
             <tr>
                 <td colspan="5" class="text-center">
                     <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                    <span>${t('loading') || '加载中...'}</span>
+                    <span>${safeT('loading') || '加载中...'}</span>
                 </td>
             </tr>
         `;
@@ -1109,7 +1109,7 @@
             <tr>
                 <td colspan="7" class="text-center">
                     <div class="spinner-border spinner-border-sm me-2" role="status"></div>
-                    <span>${t('loading') || '加载中...'}</span>
+                    <span>${safeT('loading') || '加载中...'}</span>
                 </td>
             </tr>
         `;
