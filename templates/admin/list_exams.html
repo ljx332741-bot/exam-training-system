@@ -191,11 +191,11 @@
                     </div>
                     <div class="col-md-6 mb-3">
                         <label class="form-label" for="reopenReviewer">
-                            <span data-i18n="reviewer">阅卷人</span>
+                            <span data-i18n="reviewer">阅卷人</span>  <small class="text-muted" id="reopenCurrentReviewer"></small>
                         </label>
-                        <input type="text" id="reopenReviewer" class="form-control" 
-                               placeholder="姓名（工号）" data-i18n-placeholder="placeholder_reviewer">
-                        <small class="text-muted" id="reopenCurrentReviewer"></small>
+                        <input type="text" id="reopenReviewer" class="form-control"
+                            data-i18n-placeholder="placeholder_reviewer"
+                            placeholder="姓名（工号）" >
                     </div>
                 </div>
 
@@ -206,22 +206,6 @@
                         <span class="badge bg-info me-2" id="eligibleCount">0</span>
                         <span data-i18n="eligible_users">可推送人员</span>
                         <span class="text-muted ms-2" data-i18n="eligible_users_hint">（仅显示未完成考试且国家匹配的学员）</span>
-                    </div>
-                    <div>
-                        <button class="btn btn-warning me-2" id="forcePushSelectedBtn"
-                            data-bs-toggle="tooltip" 
-                            data-bs-placement="top"
-                            title="强制推送给选中学员（不改变考试有效期，学员可立即参加考试）">
-                            <i class="bi bi-lightning-charge"></i> 
-                            <span data-i18n="force_push_selected">强制推送选中</span>
-                        </button>
-                        <button class="btn btn-danger" id="forcePushAllBtn"
-                            data-bs-toggle="tooltip" 
-                            data-bs-placement="top"
-                            title="强制推送给全部学员（不改变考试有效期，学员可立即参加考试）">
-                            <i class="bi bi-lightning-charge"></i> 
-                            <span data-i18n="force_push_all">强制推送全部</span>
-                        </button>
                     </div>
                 </div>
 
@@ -278,6 +262,22 @@
                 </div>
             </div>
             <div class="modal-footer">
+                <button class="btn btn-warning me-2" id="forcePushSelectedBtn"
+                    data-bs-toggle="tooltip" 
+                    data-bs-placement="top"
+                    data-i18n-title="title_force_push_selected"
+                    title="强制推送给选中学员（不改变考试有效期，学员可立即参加考试）">
+                    <i class="bi bi-lightning-charge"></i> 
+                    <span data-i18n="force_push_selected">强制推送选中</span>
+                </button>
+                <button class="btn btn-danger" id="forcePushAllBtn"
+                    data-bs-toggle="tooltip" 
+                    data-bs-placement="top"
+                    data-i18n-title="title_force_push_all"
+                    title="强制推送给全部学员（不改变考试有效期，学员可立即参加考试）">
+                    <i class="bi bi-lightning-charge"></i> 
+                    <span data-i18n="force_push_all">强制推送全部</span>
+                </button>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <span data-i18n="cancel">取消</span>
                 </button>

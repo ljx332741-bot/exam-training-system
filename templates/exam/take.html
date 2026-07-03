@@ -382,7 +382,7 @@
 		if (timeLeft <= 300) timerEl.classList.add('timer-warning');
 		if (timeLeft <= 0) {
 			clearInterval(tick);
-			alert(safeT('t_time_is_up_auto_submit'));
+			alert(safeT('time_is_up_auto_submit'));
 			document.getElementById('exam-form').submit();
 		}
 		}, 1000);
@@ -403,7 +403,7 @@
 		document.getElementById('prev-btn').disabled = current === 0;
 		document.getElementById('next-btn').disabled = current === TOTAL - 1;
 		document.getElementById('answered-count').textContent = answered.size;
-		document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('t_unflag') : safeT('t_flag');
+		document.getElementById('flag-btn').innerHTML = flagged.has(current) ? safeT('unflag') : safeT('t_flag');
 		}
 
 		// 刷新题型文本（根据当前语言）
