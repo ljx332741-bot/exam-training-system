@@ -585,7 +585,13 @@
             </button>
             <ul class="dropdown-menu dropdown-menu-end" style="min-width: 400px; max-height: 500px; overflow-y: auto;" id="messageDropdownMenu">
                 <li class="dropdown-header d-flex justify-content-between align-items-center" style="position: sticky; top: 0; background: white; z-index: 2; border-bottom: 1px solid #eee;">
-                    <span><i class="bi bi-inbox"></i> <span data-i18n="message_center">消息中心</span></span>
+                    <div class="d-flex align-items-center gap-2">
+                        <!-- 全选复选框 -->
+                        <input type="checkbox" class="form-check-input" id="selectAllMessages" 
+                            style="width: 0.9rem; height: 0.9rem; cursor: pointer; margin: 0;">
+                        <span><i class="bi bi-inbox"></i> <span data-i18n="message_center">消息中心</span></span>
+                        <span class="badge bg-secondary" id="selectedMessageCount" style="font-size: 0.6rem;">0</span>
+                    </div>
                     <div>
                         <button class="btn btn-sm btn-outline-secondary me-1" id="markAllReadBtn" style="font-size: 0.7rem;">
                             <i class="bi bi-check2-all"></i> <span data-i18n="mark_all_read">全部已读</span>
@@ -1598,10 +1604,11 @@
     }
 
     // 使用缓存减少查询频率
-    async function updateUnreadBadge() {
+    async function updateUnreadBadge(forceRefresh = false) {
         const now = Date.now();
-        // 如果缓存未过期，直接使用缓存
-        if (now - lastFetchTime < CACHE_DURATION) {
+        
+        // 如果是强制刷新，跳过缓存
+        if (!forceRefresh && now - lastFetchTime < CACHE_DURATION) {
             updateBadgeDisplay(unreadCountCache);
             return;
         }
@@ -1616,7 +1623,6 @@
             }
         } catch (err) {
             console.warn('获取未读数量失败:', err);
-            // 失败时使用缓存值
             updateBadgeDisplay(unreadCountCache);
         }
     }
@@ -5691,36 +5697,98 @@
 
 	});
      
+    // 更新选中消息计数
+    function updateSelectedMessageCount() {
+        const checkedCount = document.querySelectorAll('#messageList .message-checkbox:checked').length;
+        const countBadge = document.getElementById('selectedMessageCount');
+        if (countBadge) {
+            countBadge.textContent = checkedCount;
+            countBadge.style.display = checkedCount > 0 ? 'inline' : 'none';
+        }
+    }
+
+    function initSelectAllMessages() {
+        const selectAllCheckbox = document.getElementById('selectAllMessages');
+        if (!selectAllCheckbox) return;
+        
+        // 移除旧监听器避免重复绑定
+        const newCheckbox = selectAllCheckbox.cloneNode(true);
+        selectAllCheckbox.parentNode.replaceChild(newCheckbox, selectAllCheckbox);
+        
+        newCheckbox.addEventListener('change', function() {
+            const isChecked = this.checked;
+            const checkboxes = document.querySelectorAll('#messageList .message-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = isChecked;
+            });
+            updateBatchDeleteButton();
+            updateSelectedMessageCount();
+        });
+    }
+
+    function updateSelectAllState() {
+        const allCheckboxes = document.querySelectorAll('#messageList .message-checkbox');
+        const checkedCheckboxes = document.querySelectorAll('#messageList .message-checkbox:checked');
+        const selectAll = document.getElementById('selectAllMessages');
+        if (selectAll) {
+            selectAll.checked = allCheckboxes.length > 0 && allCheckboxes.length === checkedCheckboxes.length;
+        }
+    }
+
 	// 初始化事件监听
 	document.addEventListener('DOMContentLoaded', async () => {
-        document.addEventListener('DOMContentLoaded', function() {
-            const gearIcon = document.getElementById('gearIcon');
-            if (gearIcon) {
-                gearIcon.classList.add('spinning');
-            }
-            console.log('🔍 [DEBUG] DOMContentLoaded 触发');
-            
-            // 等待 Bootstrap 初始化完成
-            setTimeout(function() {
-                console.log('🔍 [DEBUG] 延迟执行 initTabActions');
-                initTabActions();
-                
-                // 额外检查：在 1 秒后再次检查状态
-                setTimeout(function() {
-                    console.log('🔍 [DEBUG] 1秒后状态检查:');
-                    const exactActions = document.getElementById('exactActions');
-                    const multiActions = document.getElementById('multiActions');
-                    if (exactActions && multiActions) {
-                        console.log('  - exactActions display:', window.getComputedStyle(exactActions).display);
-                        console.log('  - multiActions display:', window.getComputedStyle(multiActions).display);
-                    }
-                }, 1000);
-            }, 500);
-            updateUnreadBadge();
-        });
-        // 立即加载数据（优先使用缓存）
-        loadDashboardData();
+        // 1. 齿轮动画
+        const gearIcon = document.getElementById('gearIcon');
+        if (gearIcon) {
+            gearIcon.classList.add('spinning');
+        }
         
+        // 2. 初始化 Tab 切换
+        setTimeout(function() {
+            initTabActions();
+            setTimeout(function() {
+                const exactActions = document.getElementById('exactActions');
+                const multiActions = document.getElementById('multiActions');
+                if (exactActions && multiActions) {
+                    console.log('  - exactActions display:', window.getComputedStyle(exactActions).display);
+                    console.log('  - multiActions display:', window.getComputedStyle(multiActions).display);
+                }
+            }, 1000);
+        }, 500);
+        
+        // 3. 立即加载未读数量（强制刷新）
+        await updateUnreadBadge(true);
+        
+        // 4. 全选复选框事件（直接绑定）
+        const selectAllCheckbox = document.getElementById('selectAllMessages');
+        if (selectAllCheckbox) {
+            selectAllCheckbox.addEventListener('change', function() {
+                const isChecked = this.checked;
+                const checkboxes = document.querySelectorAll('#messageList .message-checkbox');
+                checkboxes.forEach(cb => {
+                    cb.checked = isChecked;
+                });
+                updateBatchDeleteButton();
+                updateSelectedMessageCount();
+            });
+        }
+        // 5. 立即加载数据（优先使用缓存）
+        loadDashboardData();
+
+		// 6. 等待 i18n 就绪
+		await waitForI18n();
+		if (window.i18n) window.i18n.applyTranslations();
+        refreshI18nTitles();
+
+		// 7. 初始化导出模态框状态管理器
+		await ExportFilterStore.init();
+		MultiSelectManager.init();
+        initTabActions();
+
+		// 8. 绑定额外的UI事件
+		bindExportModalEvents();
+		initClearButtons();
+		
         // 监听页面显示事件（从 bfcache 恢复）
         window.addEventListener('pageshow', function(event) {
             if (event.persisted) {
@@ -5736,17 +5804,6 @@
             }
         });
 
-		// 等待 i18n 就绪
-		await waitForI18n();
-		if (window.i18n) window.i18n.applyTranslations();
-        refreshI18nTitles();
-
-		// 初始化导出模态框状态管理器
-		await ExportFilterStore.init();
-
-		// 初始化综合筛选管理器
-		MultiSelectManager.init();
-        initTabActions();
         // 监听综合筛选 Tab 显示事件（备用）
         document.getElementById('multi-tab')?.addEventListener('shown.bs.tab', function() {
             // 刷新选中计数
@@ -5755,10 +5812,6 @@
             }
         });
 
-		// 绑定额外的UI事件
-		bindExportModalEvents();
-		initClearButtons();
-		
 		// 点击其他地方关闭下拉面板
 		document.addEventListener('click', (e) => {
 			const dropdowns = [
@@ -6268,7 +6321,17 @@
 
         // 2. 复选框事件
         container.querySelectorAll('.message-checkbox').forEach(cb => {
-            cb.addEventListener('change', updateBatchDeleteButton);
+            cb.addEventListener('change', function() {
+                updateBatchDeleteButton();
+                // 更新全选状态
+                const allCheckboxes = document.querySelectorAll('#messageList .message-checkbox');
+                const checkedCheckboxes = document.querySelectorAll('#messageList .message-checkbox:checked');
+                const selectAll = document.getElementById('selectAllMessages');
+                if (selectAll) {
+                    selectAll.checked = allCheckboxes.length > 0 && allCheckboxes.length === checkedCheckboxes.length;
+                }
+                updateSelectedMessageCount();
+            });
         });
         
         // 3. 鼠标悬浮显示删除按钮
@@ -6308,16 +6371,23 @@
                 loadMessages(true);
             });
         }
+        // 重新初始化全选功能
+        initSelectAllMessages();
+        // 更新全选状态
+        updateSelectAllState();
     }
 
     // ==================== 消息删除功能 ====================
 
     // 更新批量删除按钮状态
     function updateBatchDeleteButton() {
-        const checkboxes = document.querySelectorAll('.message-checkbox:checked');
+        const checkboxes = document.querySelectorAll('#messageList .message-checkbox:checked');
         const count = checkboxes.length;
         const batchDeleteBtn = document.getElementById('batchDeleteMessagesBtn');
-        
+
+        // 更新选中计数
+        updateSelectedMessageCount();
+
         if (batchDeleteBtn) {
             if (count > 0) {
                 batchDeleteBtn.style.display = 'inline-block';
@@ -6342,8 +6412,8 @@
                 showToast(t('message_deleted') || '消息已删除', 'success');
                 // 刷新消息列表
                 messageCache = [];
-                loadMessages();
-                updateUnreadBadge();
+                await loadMessages();
+                await updateUnreadBadge(true);
             } else {
                 showToast(data.message || t('delete_failed'), 'error');
             }
@@ -6384,8 +6454,8 @@
                 
                 // 刷新消息列表
                 messageCache = [];
-                loadMessages();
-                updateUnreadBadge();
+                await loadMessages();
+                await updateUnreadBadge(true);
             } else {
                 showToast(data.message || t('delete_failed'), 'error');
             }
@@ -6393,26 +6463,6 @@
             hideLoading();
             console.error('批量删除失败:', err);
             showToast(t('network_error'), 'error');
-        }
-    }
-
-    async function updateUnreadBadge() {
-        try {
-            const res = await fetch('/api/admin/messages/unread_count');
-            const data = await res.json();
-            if (data.success) {
-                const badge = document.getElementById('unreadBadge');
-                if (badge) {
-                    if (data.count > 0) {
-                        badge.style.display = 'inline';
-                        badge.textContent = data.count > 99 ? '99+' : data.count;
-                    } else {
-                        badge.style.display = 'none';
-                    }
-                }
-            }
-        } catch (err) {
-            console.error('获取未读数量失败:', err);
         }
     }
 
@@ -6425,8 +6475,8 @@
                 showToast(data.message || '全部已标记为已读', 'success');
                 // 刷新消息列表
                 messageCache = [];
-                loadMessages();
-                updateUnreadBadge();
+                await loadMessages();
+                await updateUnreadBadge(true);
             }
         } catch (err) {
             console.error('标记全部已读失败:', err);
@@ -6451,11 +6501,16 @@
     });
 
     // 下拉菜单打开时加载消息
-    document.getElementById('messageDropdown')?.addEventListener('show.bs.dropdown', function() {
+    document.getElementById('messageDropdown')?.addEventListener('show.bs.dropdown', async function() {
+        await updateUnreadBadge(true);
         if (messageCache.length === 0) {
-            loadMessages();
+            await loadMessages();
         }
-        updateUnreadBadge();
+        // 确保全选功能已初始化
+        setTimeout(function() {
+            initSelectAllMessages();
+            updateSelectAllState();
+        }, 100);
     });
 
     // 定时刷新未读数量（每30秒）
