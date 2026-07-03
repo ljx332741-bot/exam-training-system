@@ -148,10 +148,31 @@
                     <input type="text" id="filterTrainingName" class="form-control form-control-sm"
                         placeholder="搜索培训..." data-i18n-placeholder="placeholder_training_name">
                 </div>
-                <div class="col-md-2">
-                    <select id="filterQuarter" class="form-select form-select-sm">
-                        <option value=""><span data-i18n="all_quarters">全部季度</span></option>
-                    </select>
+                <!-- ========== 季度筛选（改为输入即搜索） ========== -->
+                <div class="col-md-3">
+                    <div class="position-relative">
+                        <input type="text" 
+                            id="filterQuarterInput" 
+                            class="form-control form-control-sm" 
+                            placeholder="搜索季度..." 
+                            data-i18n-placeholder="placeholder_search_quarter"
+                            autocomplete="off"
+                            style="padding-right: 30px;">
+                        <span class="input-clear-btn" id="quarterClearBtn" style="display: none; position: absolute; right: 8px; top: 50%; transform: translateY(-50%); cursor: pointer; color: #999; z-index: 10; background: transparent; padding-left: 5px; font-size: 0.8rem;">
+                            <i class="bi bi-x-circle-fill"></i>
+                        </span>
+                        <!-- 季度下拉面板 -->
+                        <div class="quarter-dropdown" id="quarterDropdown" style="display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 1060; background: #fff; border: 1px solid #ddd; border-radius: 8px; max-height: 200px; overflow-y: auto; box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin-top: 2px;">
+                            <div class="dropdown-header" style="position: sticky; top: 0; background: #f8f9fa; padding: 6px 12px; font-weight: 600; font-size: 0.75rem; border-bottom: 1px solid #eee; color: #495057; z-index: 1;">
+                                <i class="bi bi-calendar3 me-1"></i> <span data-i18n="select_quarter">选择季度</span>
+                            </div>
+                            <div id="quarterListContainer">
+                                <div class="loading-state" style="padding: 12px; text-align: center; color: #6c757d; font-size: 0.8rem;">
+                                    <span data-i18n="loading">加载中...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="col-md-3">
                     <div class="d-flex gap-1">
@@ -294,43 +315,76 @@
         } catch { return ''; }
     }
 
-    async function loadQuarterOptions() {
-        try {
-            const res = await fetch('/api/common/quarters');
-            const quarters = await res.json();
-            const select = document.getElementById('filterQuarter');
-            if (select) {
-                select.innerHTML = '<option value="">全部季度</option>';
-                quarters.forEach(q => {
-                    const opt = document.createElement('option');
-                    opt.value = q;
-                    opt.textContent = q;
-                    select.appendChild(opt);
-                });
+    // ---------- 安全翻译函数（确保存在） ----------
+    function safeT(key, ...args) {
+        // 优先使用 window.i18n.t
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            const result = window.i18n.t(key, ...args);
+            // 如果返回了翻译（且不等于键名），使用它
+            if (result && result !== key) {
+                return result;
             }
-            return quarters;
-        } catch (err) {
-            console.error('加载季度选项失败:', err);
-            return [];
         }
+        // 尝试使用 base.html 的 t 函数
+        if (typeof window.t === 'function') {
+            const result = window.t(key, ...args);
+            if (result && result !== key) {
+                return result;
+            }
+        }
+        // 🔥 关键修改：使用英文 fallback，而不是中文
+        const fallback = {
+            'ongoing': 'Ongoing',
+            'not_started': 'Not started',
+            'closed': 'Closed',
+            'draft': 'Draft',
+            'active': 'Ongoing',
+            'pending': 'Not started'
+        };
+        return fallback[key] || key;
     }
 
+    // 状态文本（用于显示）- 使用 safeT 翻译
     function getStatusText(dynamicStatus) {
         const map = {
-            'active': safeT('ongoing'),
-            'pending': safeT('not_started'),
-            'closed': safeT('closed'),
-            'draft': safeT('draft')
+            'active': 'ongoing',
+            'pending': 'not_started',
+            'closed': 'closed',
+            'draft': 'draft'
         };
-        return map[dynamicStatus] || dynamicStatus;
+        const key = map[dynamicStatus] || dynamicStatus;
+        
+        // 直接使用 i18n.t
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            const result = window.i18n.t(key);
+            if (result && result !== key) {
+                return result;
+            }
+        }
+        if (typeof window.t === 'function') {
+            const result = window.t(key);
+            if (result && result !== key) {
+                return result;
+            }
+        }
+        
+        // 英文 fallback
+        const fallback = {
+            'ongoing': 'Ongoing',
+            'not_started': 'Not started',
+            'closed': 'Closed',
+            'draft': 'Draft'
+        };
+        return fallback[key] || dynamicStatus;
     }
 
+    // 状态样式（用于 CSS 类名）- 不翻译，返回类名
     function getStatusClass(dynamicStatus) {
         const map = {
-            'active': safeT('ongoing'),
-            'pending': safeT('not_started'),
-            'closed': safeT('closed'),
-            'draft': safeT('draft')
+            'active': 'active',
+            'pending': 'pending',
+            'closed': 'closed',
+            'draft': 'draft'
         };
         return map[dynamicStatus] || 'draft';
     }
@@ -349,6 +403,198 @@
             console.error('获取用户信息失败:', err);
         }
     }
+
+    // ============================================================
+    // 季度搜索（输入即搜索）
+    // ============================================================
+
+    let allQuarters = [];
+    let selectedQuarter = '';
+    let quarterSearchTimeout = null;
+
+    // 加载季度列表
+    async function loadQuarterList() {
+        try {
+            const res = await fetch('/api/common/quarters');
+            const quarters = await res.json();
+            allQuarters = quarters || [];
+            return allQuarters;
+        } catch (err) {
+            console.error('加载季度列表失败:', err);
+            allQuarters = [];
+            return [];
+        }
+    }
+
+    // 渲染季度下拉列表
+    function renderQuarterDropdown(quarters, searchTerm = '') {
+        const container = document.getElementById('quarterListContainer');
+        const dropdown = document.getElementById('quarterDropdown');
+        
+        if (!container) return;
+        
+        let filtered = quarters;
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase().trim();
+            filtered = quarters.filter(q => q.toLowerCase().includes(term));
+        }
+        
+        if (!filtered || filtered.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <span>${searchTerm ? safeT('no_matching_quarter_found') : safeT('no_quarter_data_available')}</span>
+                </div>
+            `;
+            if (dropdown) dropdown.style.display = 'block';
+            return;
+        }
+        
+        let html = '';
+        filtered.forEach(q => {
+            const isSelected = selectedQuarter === q;
+            html += `
+                <div class="dropdown-item ${isSelected ? 'active' : ''}" 
+                    data-quarter="${q}"
+                    onclick="selectQuarter('${q}')"
+                    style="${isSelected ? 'background-color: #e7f3ff;' : ''}">
+                    <span>${q}</span>
+                    ${isSelected ? '<span class="selected-mark"><i class="bi bi-check-circle-fill"></i></span>' : ''}
+                </div>
+            `;
+        });
+        
+        container.innerHTML = html;
+        if (dropdown) dropdown.style.display = 'block';
+    }
+
+    // 选择季度
+    function selectQuarter(quarter) {
+        selectedQuarter = quarter;
+        const input = document.getElementById('filterQuarterInput');
+        if (input) input.value = quarter;
+        
+        // 更新清除按钮
+        const clearBtn = document.getElementById('quarterClearBtn');
+        if (clearBtn) clearBtn.style.display = 'block';
+        
+        // 关闭下拉
+        const dropdown = document.getElementById('quarterDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+        
+        // 更新当前过滤器并应用
+        currentFilters.quarter = quarter;
+        applyFilters();
+    }
+
+    // 清除季度选择
+    function clearQuarterSelection() {
+        selectedQuarter = '';
+        const input = document.getElementById('filterQuarterInput');
+        if (input) input.value = '';
+        
+        const clearBtn = document.getElementById('quarterClearBtn');
+        if (clearBtn) clearBtn.style.display = 'none';
+        
+        const dropdown = document.getElementById('quarterDropdown');
+        if (dropdown) dropdown.style.display = 'none';
+        
+        currentFilters.quarter = '';
+        applyFilters();
+    }
+
+    // 设置季度搜索事件
+    function setupQuarterSearch() {
+        const input = document.getElementById('filterQuarterInput');
+        const dropdown = document.getElementById('quarterDropdown');
+        const clearBtn = document.getElementById('quarterClearBtn');
+        
+        if (!input) return;
+        
+        // 点击输入框显示下拉
+        input.addEventListener('click', function() {
+            if (allQuarters.length === 0) {
+                loadQuarterList().then(() => {
+                    renderQuarterDropdown(allQuarters);
+                });
+            } else {
+                const q = this.value.trim();
+                renderQuarterDropdown(allQuarters, q);
+            }
+        });
+        
+        // 输入搜索（防抖）
+        input.addEventListener('input', function() {
+            clearTimeout(quarterSearchTimeout);
+            const q = this.value.trim();
+            
+            if (q.length === 0) {
+                // 显示所有季度
+                if (allQuarters.length > 0) {
+                    renderQuarterDropdown(allQuarters);
+                } else {
+                    loadQuarterList().then(() => {
+                        renderQuarterDropdown(allQuarters);
+                    });
+                }
+                clearBtn.style.display = selectedQuarter ? 'block' : 'none';
+                return;
+            }
+            
+            clearBtn.style.display = 'block';
+            
+            quarterSearchTimeout = setTimeout(() => {
+                if (allQuarters.length > 0) {
+                    renderQuarterDropdown(allQuarters, q);
+                } else {
+                    loadQuarterList().then(() => {
+                        renderQuarterDropdown(allQuarters, q);
+                    });
+                }
+            }, 200);
+        });
+        
+        // 清除按钮
+        clearBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            clearQuarterSelection();
+            input.focus();
+        });
+        
+        // 键盘事件
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const container = document.getElementById('quarterListContainer');
+                if (container) {
+                    const firstItem = container.querySelector('.dropdown-item:not(.empty-state)');
+                    if (firstItem) {
+                        selectQuarter(firstItem.dataset.quarter);
+                    }
+                }
+                dropdown.style.display = 'none';
+            }
+            if (e.key === 'Escape') {
+                dropdown.style.display = 'none';
+                this.blur();
+            }
+        });
+        
+        // 失焦延迟关闭
+        input.addEventListener('blur', function() {
+            setTimeout(() => {
+                dropdown.style.display = 'none';
+            }, 200);
+        });
+    }
+
+    // 点击外部关闭下拉
+    document.addEventListener('click', function(e) {
+        const wrapper = document.querySelector('.quarter-input-wrapper');
+        if (wrapper && !wrapper.contains(e.target)) {
+            const dropdown = document.getElementById('quarterDropdown');
+            if (dropdown) dropdown.style.display = 'none';
+        }
+    });
 
     // ---------- 加载培训列表（只加载有照片的） ----------
     async function loadTrainingList(onlyMine = false) {
@@ -648,7 +894,7 @@
                     training.photos = photoCache[trainingId];
                     // 更新徽章
                     const badge = document.querySelector(`.training-card[data-training-id="${trainingId}"] .photo-badge`);
-                    if (badge) badge.textContent = `📷 ${training.photo_count}张`;
+                    if (badge) badge.textContent = `📷 ${training.photo_count}${safeT('photo_unit')}`;
                 }
                 // 重新渲染网格
                 grid.innerHTML = renderPhotoGrid(trainingId, photoCache[trainingId]);
@@ -853,7 +1099,7 @@
     // ---------- 筛选事件绑定 ----------
     function setupFilters() {
         const nameInput = document.getElementById('filterTrainingName');
-        const quarterSelect = document.getElementById('filterQuarter');
+        const quarterSelect = document.getElementById('filterQuarterInput');
 
         nameInput.addEventListener('input', function() {
             currentFilters.name = this.value;
@@ -871,12 +1117,9 @@
             const month = now.getMonth() + 1;
             const quarter = Math.ceil(month / 3);
             const q = `${year}Q${quarter}`;
-            quarterSelect.value = q;
-            currentFilters.quarter = q;
-            // 清除激活样式
+            selectQuarter(q);
             document.querySelectorAll('.quick-btn-group .btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            applyFilters();
         });
 
         document.getElementById('quickPrevious').addEventListener('click', function() {
@@ -886,16 +1129,14 @@
             let quarter = Math.ceil(month / 3) - 1;
             if (quarter === 0) { quarter = 4; year--; }
             const q = `${year}Q${quarter}`;
-            quarterSelect.value = q;
-            currentFilters.quarter = q;
+            selectQuarter(q);
             document.querySelectorAll('.quick-btn-group .btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            applyFilters();
         });
 
         document.getElementById('resetFilterBtn').addEventListener('click', function() {
-            nameInput.value = '';
-            quarterSelect.value = '';
+            document.getElementById('filterTrainingName').value = '';
+            clearQuarterSelection();  // 使用新的清除函数
             currentFilters = { name: '', quarter: '' };
             document.querySelectorAll('.quick-btn-group .btn').forEach(b => b.classList.remove('active'));
             applyFilters();
@@ -947,10 +1188,9 @@
             const createdDate = t.created_at ? new Date(t.created_at).toLocaleDateString() : '-';
             const isSelected = selectedId == t.id;
 
-            // 确定动态状态（优先级：status_text > dynamic_status > 计算 > is_active）
-            let dynStatus = t.dynamic_status;
+            // 确定动态状态
+            let dynStatus = t.dynamic_status || 'draft';
             if (!dynStatus && t.start_time && t.end_time) {
-                // 如果后端没有返回 dynamic_status，前端自己计算
                 try {
                     const now = new Date();
                     const start = new Date(t.start_time);
@@ -962,10 +1202,10 @@
             }
             if (!dynStatus) dynStatus = t.is_active ? 'active' : 'draft';
             
-            // 获取状态文本
-            const statusText = t.status_text || getStatusText(dynStatus);
+            // 🔥 关键修改：优先使用 dynamic_status 进行实时翻译
+            const statusText = getStatusText(dynStatus);
             
-            // 获取状态颜色（使用和升级前一样的 if-else 逻辑）
+            // 获取状态颜色
             let statusColor = 'secondary';
             if (dynStatus === 'active') statusColor = 'success';
             else if (dynStatus === 'pending') statusColor = 'info';
@@ -989,7 +1229,7 @@
                         <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '通用')}</span>
                         <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
                         <span><span class="badge bg-${statusColor}">${statusText}</span></span>
-                        ${t.photo_count ? `<span><i class="bi bi-images"></i> ${t.photo_count}张</span>` : ''}
+                        ${t.photo_count ? `<span><i class="bi bi-images"></i> ${t.photo_count}${safeT('photo_unit')}</span>` : ''}
                     </div>
                 </div>
             `;
@@ -1266,9 +1506,9 @@
         }
 
         await getUserInfo();
-        await loadQuarterOptions();
+        await loadQuarterList();
         setupFilters();
-
+        setupQuarterSearch();
         await loadTrainingsForSelector();
         await loadTrainingList();
 

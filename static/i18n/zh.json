@@ -1082,8 +1082,6 @@
 "retry": "重试",
 "confirm_delete_message": "确定要删除这条消息吗？",
 "message_deleted": "消息已删除",
-"confirm_delete_message": "确定要删除这条消息吗？",
-"message_deleted": "消息已删除",
 "manage_training_photos": "管理培训照片",
 "no_photos": "暂无照片",
 "placeholder_search_training": "搜索并选择培训...",
@@ -1119,6 +1117,9 @@
 "uploading": "上传中...",
 "upload": "上传",
 "clear_all": "清空",
-"description": "描述"
-
+"description": "描述",
+"placeholder_search_quarter": "搜索季度",
+"select_quarter": "选择季度",
+"support_jpg_png": "支持jpg,png",
+"photo_unit": "张"
 }

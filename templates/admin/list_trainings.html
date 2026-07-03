@@ -780,7 +780,7 @@
             const photoBtnHtml = `
                 <a href="/admin/training/photos?training_id=${t.id}" 
                     class="photo-manage-btn ${photoCount === 0 ? 'no-photos' : ''}" 
-                    title="${photoCount > 0 ? safeT('manage_training_photos') + ' (' + photoCount + '张)' : safeT('no_photos')}"
+                    title="${photoCount > 0 ? safeT('manage_training_photos') + ' (' + photoCount + safeT('photo_unit') + ')' : safeT('no_photos')}"
                     ${photoCount === 0 ? 'onclick="return false;" style="cursor: not-allowed; opacity: 0.4;"' : 'target="_blank"'}
                     ${photoCount > 0 ? `target="_blank"` : ''}>
                     <i class="bi bi-images" style="font-size: 14px;"></i>
