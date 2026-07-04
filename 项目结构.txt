@@ -14,7 +14,7 @@ exam-system/
 │   │   └── i18n.js                         # 翻译文件
 │   │
 │   ├── js/                          
-│   │   │                             
+│   │   ├── privacy.js                      # 前端交互
 │   │   ├── training_photos.js              # 前端交互逻辑
 │   │   └── timezone.js                     # 前端时区检测增强
 │   │
@@ -40,6 +40,7 @@ exam-system/
 │
 ├── services/
 │   ├── __init__.py                         # 空文件，仅用于导入
+│   ├── privacy.py                          # 隐私声明服务层
 │   ├── auth.py                             # 邮箱验证码/密码哈希
 │   ├── db.py                               # get_supabase
 │   ├── exam.py                             # Word解析/自动判分/答题逻辑
@@ -58,7 +59,7 @@ exam-system/
 │   │   └── register_standalone.html        # 注册界面(新)
 │   │
 │   ├── components/          
-│   │   ├──                    
+│   │   ├── privacy_modal.html              # 隐私声明弹窗组件
 │   │   └── delete_modal.html               # 全局删除模态框组件
 │   │
 │   ├── exam/
@@ -69,6 +70,7 @@ exam-system/
 │   │   └── dashboard.html                  # 学员面板
 │   │
 │   └── admin/
+│        ├── privacy_management.html        # 管理员：声明管理页面
 │        ├── import.html                    # Word导入界面
 │        ├── import_preview.html            # Word导入，拷贝，编辑预览
 │        ├── resigned_users.html            # 离职人员管理
@@ -90,6 +92,8 @@ exam-system/
 │   
 ├── routes/
 │   ├── __init__.py                         # 蓝图注册中心
+│   ├── admin_privacy.py                    # 管理员：声明管理
+│   ├── api_privacy.py                      # 用户端：声明确认 API
 │   ├── helpers.py                          # 公共辅助函数 & 装饰器
 │   ├── api_auth.py                         # 认证模块
 │   ├── api_exam.py                         # 学员考试模块admin_training_photos.py
@@ -103,4 +107,8 @@ exam-system/
 │   ├── admin_training.py                   # 管理员：培训管理
 │   ├── admin_inspection.py                 # 管理员：访谈管理
 │   └── admin_export.py                     # 管理员：导出模块
+│   
+├── models/
+│   ├── __init__.py                         
+│   └── privacy_models.py                   # 隐私声明数据模型
 

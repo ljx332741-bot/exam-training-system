@@ -644,6 +644,14 @@
                         <i class="bi bi-bar-chart-steps me-2"></i> <span data-i18n="training_completion_report">培训完成度报表</span>
                     </a>
                 </li>
+                <!-- 隐私声明管理（仅超管/开发者可见） -->
+                {% if session.get('role') in ['super_admin', 'developer'] %}
+                <li>
+                    <a class="dropdown-item" href="{{ url_for('admin_privacy.admin_privacy_page') }}" target="_blank">
+                        <i class="bi bi-shield-lock me-2"></i> <span data-i18n="privacy_management">隐私声明管理</span>
+                    </a>
+                </li>
+                {% endif %}
                 <!-- 离职人员管理（仅超管/开发者可见） -->
                 {% if session.get('role') in ['super_admin', 'developer'] %}
                 <li><hr class="dropdown-divider"></li>
@@ -1453,6 +1461,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='js/privacy.js') }}"></script>
 <script>
     // 在前端添加缓存，不要每次都请求
     let unreadCountCache = 0;

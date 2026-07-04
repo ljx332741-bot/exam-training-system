@@ -164,9 +164,14 @@ def register_blueprints(app):
     from . import admin_export
     from . import admin_wh
 
+    from .api_privacy import privacy_api_bp
+    from .admin_privacy import admin_privacy_bp
+
     # 注册 admin_bp 和 admin_message_bp
     app.register_blueprint(message_bp)
     app.register_blueprint(admin_training_photos_bp)
+    app.register_blueprint(privacy_api_bp)
+    app.register_blueprint(admin_privacy_bp)
     app.register_blueprint(admin_bp)
 
     # 注册 API 蓝图

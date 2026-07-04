@@ -10,6 +10,7 @@ from services import auth
 from services.auth import hash_password
 from routes.helpers import login_required
 from utils.manage_messages import log_user_login, log_user_logout
+from services.privacy import PrivacyService
 
 logger = logging.getLogger(__name__)
 
@@ -367,8 +368,14 @@ def login():
             except Exception as e:
                 logger.warning(f"记录登录消息失败: {e}")
 
+            privacy_status = PrivacyService.check_user_needs_acknowledgment(user['id'])
+            
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({"success": True, "redirect": url_for('exam.dashboard')})
+                return jsonify({
+                    "success": True, 
+                    "redirect": url_for('exam.dashboard'),
+                    "needs_privacy": privacy_status["needs_acknowledgment"]
+                })
 
             flash({'msg': 'login_success', 'params': []}, 'success')
             return redirect(url_for('exam.dashboard'))

@@ -1133,5 +1133,20 @@
 "title_unassigned_count": "培训或考试未分配的学员数（去重）",
 "click_to_filter": "点击筛选",
 "no_photos_uploaded": "暂无照片上传",
-"name_input_hint": "加载需要时间请稍等"
+"name_input_hint": "加载需要时间请稍等",
+    "privacy_title": "数据保护与隐私声明",
+    "privacy_agree_text": "我已阅读并同意以上隐私声明",
+    "confirm_and_continue": "确认并继续",
+    "privacy_management": "隐私声明管理",
+    "new_version": "新版本",
+    "version_history": "版本历史",
+    "content_preview": "内容预览",
+    "changelog": "更新日志",
+    "create_new_version": "创建新版本",
+    "edit_version": "编辑版本",
+    "confirmed_users": "已确认用户",
+    "unconfirmed_users": "未确认用户",
+    "confirmation_rate": "确认率",
+    "current_active": "当前活跃",
+    "activate_version": "激活版本（用户需重新确认）"
 }

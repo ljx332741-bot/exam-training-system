@@ -7,7 +7,6 @@ BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".env"
 load_dotenv(ENV_FILE, override=True)
 
-
 class Config:
     # 🔑 Flask
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-change-this-now")
@@ -162,5 +161,3 @@ class Config:
         print(f"   R2_PUBLIC_URL: {cls.get_r2_public_url()}")
         print("=" * 60)
 
-
-# 为了保持原有兼容，直接导出 Config

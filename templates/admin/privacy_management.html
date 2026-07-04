@@ -1,0 +1,556 @@
+<!-- templates/admin/privacy_management.html -->
+{% extends "base.html" %}
+{% block title %}隐私声明管理{% endblock %}
+
+{% block extra_css %}
+<style>
+    .privacy-content-preview {
+        max-height: 80px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: #6c757d;
+        font-size: 0.85rem;
+    }
+    .version-badge {
+        font-family: monospace;
+        font-weight: 600;
+    }
+    .status-badge.active {
+        background: #d4edda;
+        color: #155724;
+    }
+    .status-badge.inactive {
+        background: #e9ecef;
+        color: #6c757d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-0"><i class="bi bi-shield-lock me-2"></i><span data-i18n="privacy_management">隐私声明管理</span></h2>
+            <small class="text-muted">管理用户隐私声明版本和确认记录</small>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" id="refreshStatsBtn">
+                <i class="bi bi-arrow-clockwise"></i> <span data-i18n="refresh">刷新</span>
+            </button>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal">
+                <i class="bi bi-plus-circle"></i> <span data-i18n="new_version">新版本</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="row g-3 mb-4" id="statsContainer">
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted"><span data-i18n="total_users">总用户数</span></h6>
+                    <h3 class="card-title mb-0" id="statTotalUsers">-</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success bg-opacity-10">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted"><span data-i18n="confirmed_users">已确认</span></h6>
+                    <h3 class="card-title mb-0 text-success" id="statConfirmed">-</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning bg-opacity-10">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted"><span data-i18n="unconfirmed_users">未确认</span></h6>
+                    <h3 class="card-title mb-0 text-warning" id="statUnconfirmed">-</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info bg-opacity-10">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-2 text-muted"><span data-i18n="confirmation_rate">确认率</span></h6>
+                    <h3 class="card-title mb-0 text-info" id="statRate">-</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 版本列表 -->
+    <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-list-ul me-2"></i><span data-i18n="version_history">版本历史</span></span>
+            <span id="totalVersions" class="badge bg-secondary">0</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 10%;"><span data-i18n="version">版本</span></th>
+                            <th style="width: 15%;"><span data-i18n="title">标题</span></th>
+                            <th style="width: 25%;"><span data-i18n="content_preview">内容预览</span></th>
+                            <th style="width: 10%;"><span data-i18n="status">状态</span></th>
+                            <th style="width: 15%;"><span data-i18n="updated_at">更新时间</span></th>
+                            <th style="width: 10%;"><span data-i18n="changelog">更新日志</span></th>
+                            <th style="width: 15%;"><span data-i18n="actions">操作</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="agreementList">
+                        <tr>
+                            <td colspan="7" class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                                <span data-i18n="loading">加载中...</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="card-footer">
+            <nav>
+                <ul class="pagination justify-content-center mb-0" id="pagination"></ul>
+            </nav>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 创建版本模态框 ========== -->
+<div class="modal fade" id="createModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i><span data-i18n="create_new_version">创建新版本</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="createForm">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold"><span data-i18n="version">版本号</span> <span class="text-danger">*</span></label>
+                            <input type="text" id="createVersion" class="form-control" placeholder="1.1" required>
+                            <div class="form-text">建议格式: 1.0, 1.1, 2.0</div>
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-bold"><span data-i18n="title">标题</span> <span class="text-danger">*</span></label>
+                            <input type="text" id="createTitle" class="form-control" placeholder="数据保护与隐私声明" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold"><span data-i18n="content">内容</span> <span class="text-danger">*</span></label>
+                            <textarea id="createContent" class="form-control" rows="10" placeholder="输入HTML格式的隐私声明内容..." required></textarea>
+                            <div class="form-text">支持 HTML 标签（h4, p, ul, li 等）</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold"><span data-i18n="changelog">更新日志</span></label>
+                            <input type="text" id="createChangelog" class="form-control" placeholder="本次更新的主要内容...">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                    <button type="submit" class="btn btn-primary" id="createSubmitBtn">
+                        <i class="bi bi-check2"></i> <span data-i18n="create">创建</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- ========== 编辑模态框 ========== -->
+<div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pencil me-2"></i><span data-i18n="edit_version">编辑版本</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="editForm">
+                <input type="hidden" id="editId">
+                <div class="modal-body">
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-bold"><span data-i18n="title">标题</span> <span class="text-danger">*</span></label>
+                            <input type="text" id="editTitle" class="form-control" required>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold"><span data-i18n="content">内容</span> <span class="text-danger">*</span></label>
+                            <textarea id="editContent" class="form-control" rows="10" required></textarea>
+                            <div class="form-text">支持 HTML 标签（h4, p, ul, li 等）</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-bold"><span data-i18n="changelog">更新日志</span></label>
+                            <input type="text" id="editChangelog" class="form-control" placeholder="本次更新的主要内容...">
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                    <button type="submit" class="btn btn-primary" id="editSubmitBtn">
+                        <i class="bi bi-save"></i> <span data-i18n="save">保存</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ============================================================
+    // 隐私声明管理 - 管理员端
+    // ============================================================
+
+    let currentPage = 1;
+    let perPage = 20;
+
+    // ---------- 加载统计 ----------
+    async function loadStats() {
+        try {
+            const res = await fetch('/api/admin/privacy/stats');
+            const data = await res.json();
+            if (data.success) {
+                document.getElementById('statTotalUsers').textContent = data.data.total_users;
+                document.getElementById('statConfirmed').textContent = data.data.confirmed_users;
+                document.getElementById('statUnconfirmed').textContent = data.data.unconfirmed_users;
+                document.getElementById('statRate').textContent = data.data.confirmation_rate + '%';
+            }
+        } catch (err) {
+            console.error('加载统计失败:', err);
+        }
+    }
+
+    // ---------- 加载版本列表 ----------
+    async function loadAgreements(page = 1) {
+        currentPage = page;
+        const tbody = document.getElementById('agreementList');
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="7" class="text-center py-3">
+                    <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                    <span>${safeT('loading')}</span>
+                </td>
+            </tr>
+        `;
+
+        try {
+            const params = new URLSearchParams({ page: page, per_page: perPage });
+            const res = await fetch(`/api/admin/privacy/agreements?${params}`);
+            const data = await res.json();
+
+            if (data.success) {
+                document.getElementById('totalVersions').textContent = data.total;
+                renderAgreements(data.data);
+                renderPagination(data.total, data.page, data.per_page);
+            } else {
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">${data.message || safeT('load_failed')}</td></tr>`;
+            }
+        } catch (err) {
+            console.error('加载版本列表失败:', err);
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">${safeT('load_failed')}</td></tr>`;
+        }
+    }
+
+    // ---------- 渲染版本列表 ----------
+    function renderAgreements(agreements) {
+        const tbody = document.getElementById('agreementList');
+        if (!agreements || agreements.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">暂无版本记录</td></tr>`;
+            return;
+        }
+
+        let html = '';
+        agreements.forEach(item => {
+            const isActive = item.is_active;
+            const statusText = isActive ? '当前活跃' : '已停用';
+            const statusClass = isActive ? 'active' : 'inactive';
+            const createdDate = item.created_at ? new Date(item.created_at).toLocaleString() : '-';
+            const contentPreview = item.content ? item.content.replace(/<[^>]+>/g, '').substring(0, 80) + '...' : '-';
+
+            html += `
+                <tr>
+                    <td><span class="version-badge badge bg-secondary">v${escapeHtml(item.version)}</span></td>
+                    <td><strong>${escapeHtml(item.title)}</strong></td>
+                    <td><div class="privacy-content-preview" title="${escapeHtml(contentPreview)}">${escapeHtml(contentPreview)}</div></td>
+                    <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+                    <td>${createdDate}</td>
+                    <td>${escapeHtml(item.changelog || '-')}</td>
+                    <td>
+                        <div class="btn-group btn-group-sm">
+                            ${!isActive ? `
+                                <button class="btn btn-outline-success activate-btn" data-id="${item.id}" title="激活此版本（用户需重新确认）">
+                                    <i class="bi bi-check2-circle"></i>
+                                </button>
+                            ` : ''}
+                            <button class="btn btn-outline-primary edit-btn" data-id="${item.id}" title="${safeT('edit')}">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            ${!isActive ? `
+                                <button class="btn btn-outline-danger delete-btn" data-id="${item.id}" title="${safeT('delete')}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            ` : ''}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        tbody.innerHTML = html;
+
+        // 绑定事件
+        document.querySelectorAll('.activate-btn').forEach(btn => {
+            btn.addEventListener('click', () => activateAgreement(btn.dataset.id));
+        });
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', () => openEditModal(btn.dataset.id));
+        });
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', () => deleteAgreement(btn.dataset.id));
+        });
+    }
+
+    // ---------- 分页 ----------
+    function renderPagination(total, page, perPage) {
+        const totalPages = Math.ceil(total / perPage);
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+        if (page > 1) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${page - 1}">«</a></li>`;
+        }
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === page ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>`;
+        }
+        if (page < totalPages) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${page + 1}">»</a></li>`;
+        }
+        pagination.innerHTML = html;
+
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                loadAgreements(parseInt(link.dataset.page));
+            });
+        });
+    }
+
+    // ---------- 创建版本 ----------
+    document.getElementById('createForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('createSubmitBtn');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 创建中...';
+
+        try {
+            const data = {
+                version: document.getElementById('createVersion').value.trim(),
+                title: document.getElementById('createTitle').value.trim(),
+                content: document.getElementById('createContent').value.trim(),
+                changelog: document.getElementById('createChangelog').value.trim()
+            };
+
+            const res = await fetch('/api/admin/privacy/agreements', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                showToast('版本创建成功', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
+                this.reset();
+                loadAgreements(currentPage);
+                loadStats();
+            } else {
+                showToast(result.message || '创建失败', 'error');
+            }
+        } catch (err) {
+            console.error('创建失败:', err);
+            showToast('创建失败: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    });
+
+    // ---------- 打开编辑模态框 ----------
+    async function openEditModal(id) {
+        try {
+            const res = await fetch(`/api/admin/privacy/agreements/${id}`);
+            const data = await res.json();
+            
+            if (!data.success) {
+                showToast(data.message || '加载失败', 'error');
+                return;
+            }
+            
+            const agreement = data.data;
+            document.getElementById('editId').value = agreement.id;
+            document.getElementById('editTitle').value = agreement.title || '';
+            document.getElementById('editContent').value = agreement.content || '';
+            document.getElementById('editChangelog').value = agreement.changelog || '';
+
+            new bootstrap.Modal(document.getElementById('editModal')).show();
+        } catch (err) {
+            console.error('加载版本失败:', err);
+            showToast('加载失败: ' + err.message, 'error');
+        }
+    }
+
+    // ---------- 编辑版本 ----------
+    document.getElementById('editForm')?.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const btn = document.getElementById('editSubmitBtn');
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 保存中...';
+
+        try {
+            const id = document.getElementById('editId').value;
+            const data = {
+                title: document.getElementById('editTitle').value.trim(),
+                content: document.getElementById('editContent').value.trim(),
+                changelog: document.getElementById('editChangelog').value.trim()
+            };
+
+            const res = await fetch(`/api/admin/privacy/agreements/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                showToast('保存成功', 'success');
+                bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
+                loadAgreements(currentPage);
+            } else {
+                showToast(result.message || '保存失败', 'error');
+            }
+        } catch (err) {
+            console.error('保存失败:', err);
+            showToast('保存失败: ' + err.message, 'error');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    });
+
+    // ---------- 激活版本 ----------
+    async function activateAgreement(id) {
+        if (!confirm('激活此版本后，所有用户需要重新确认隐私声明。确定继续吗？')) return;
+
+        try {
+            const res = await fetch(`/api/admin/privacy/agreements/${id}/activate`, {
+                method: 'POST'
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                showToast('已激活，用户需重新确认', 'success');
+                loadAgreements(currentPage);
+                loadStats();
+            } else {
+                showToast(result.message || '激活失败', 'error');
+            }
+        } catch (err) {
+            console.error('激活失败:', err);
+            showToast('激活失败', 'error');
+        }
+    }
+
+    // ---------- 删除版本 ----------
+    async function deleteAgreement(id) {
+        if (!confirm('确定要删除此版本吗？')) return;
+
+        try {
+            const res = await fetch(`/api/admin/privacy/agreements/${id}`, {
+                method: 'DELETE'
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                showToast('删除成功', 'success');
+                loadAgreements(currentPage);
+            } else {
+                showToast(result.message || '删除失败', 'error');
+            }
+        } catch (err) {
+            console.error('删除失败:', err);
+            showToast('删除失败', 'error');
+        }
+    }
+
+    // ---------- 刷新 ----------
+    document.getElementById('refreshStatsBtn')?.addEventListener('click', () => {
+        loadStats();
+        loadAgreements(currentPage);
+    });
+
+    // ---------- 工具函数 ----------
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function safeT(key, ...args) {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key, ...args) || key;
+        }
+        return key;
+    }
+
+// ============================================================
+    // Toast 工具函数（修复无限递归）
+    // ============================================================
+    function showToast(message, type = 'info') {
+        // ✅ 直接使用全局 showToast，但加上安全检查
+        if (typeof window.showToast === 'function') {
+            // 如果全局 showToast 就是当前函数，说明是重复注册，使用备用方案
+            if (window.showToast === showToast) {
+                // 使用 alert 作为备用
+                const prefix = type === 'error' ? '❌ ' : type === 'success' ? '✅ ' : '';
+                alert(prefix + message);
+                return;
+            }
+            // 正常调用全局 showToast
+            const titleMap = {
+                'success': '成功',
+                'error': '错误',
+                'warning': '警告',
+                'info': '提示'
+            };
+            window.showToast(message, titleMap[type] || '提示', type);
+            return;
+        }
+        
+        // 降级方案
+        const prefix = type === 'error' ? '❌ ' : type === 'success' ? '✅ ' : '';
+        alert(prefix + message);
+    }
+
+    // ---------- 初始化 ----------
+    document.addEventListener('DOMContentLoaded', function() {
+        loadStats();
+        loadAgreements(1);
+    });
+</script>
+{% endblock %}
