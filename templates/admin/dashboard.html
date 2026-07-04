@@ -11,6 +11,12 @@
 {% block extra_css %}
 {{ super() }}
 <style>
+    .tab-content .name-input {
+        font-size: 0.75rem;
+        color: #f9f9f9e5;
+        margin-bottom: 12px;
+        padding: 6px 0;
+    }
     /* ==================== 统计卡片 - 毛玻璃效果（保留各自颜色） ==================== */
     /* 卡片基础样式 - 所有统计卡片共用 */
     .dashboard-stats-card {
@@ -1004,7 +1010,7 @@
                             <div class="row g-3 mb-3">
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold" for="filterTrainingName">
-                                        <span data-i18n="training_name">培训名称</span>
+                                        <span data-i18n="training_name">培训名称</span> <span class="name-input"><i class="bi bi-hourglass-split"></i> <span data-i18n="name_input_hint">加载需要时间请稍等</span></span>
                                     </label>
                                     <div class="position-relative">
                                         <input type="text" id="filterTrainingName" class="form-control" 
@@ -1031,7 +1037,7 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold" for="filterExamName">
-                                        <span data-i18n="exam_name">考试名称</span>
+                                        <span data-i18n="exam_name">考试名称</span> <span class="name-input"><i class="bi bi-hourglass-split"></i> <span data-i18n="name_input_hint">加载需要时间请稍等</span></span>
                                     </label>
                                     <div class="position-relative">
                                         <input type="text" id="filterExamName" class="form-control" 

@@ -1136,5 +1136,7 @@
 "title_force_push_all": "Force push all user(s)(without changing period of the exam, and can immediately take the exam)",
 "title_pending_persons": "The number of who have not yet checked in or awaiting exams (unique)",
 "title_unassigned_count": "The number of who have not assigned for exam or training (unique)",
-"click_to_filter": "Click to filter"
+"click_to_filter": "Click to filter",
+"no_photos_uploaded": "No photos uploaded",
+"name_input_hint": "Loading will take some time. Please wait a moment."
 }
