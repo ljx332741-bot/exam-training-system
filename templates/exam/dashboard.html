@@ -282,7 +282,11 @@
                     </table>
                 </div>
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer d-flex justify-content-between align-items-center">
+                <span class="text-muted small" id="myInterviewsUserId" style="font-size: 0.8rem;">
+                    <i class="bi bi-person-badge me-1"></i>
+                    <span>uid</span>: <span id="userIdDisplay">-</span>
+                </span>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <span data-i18n="close">关闭</span>
                 </button>
@@ -1320,6 +1324,12 @@
     }
 
     document.addEventListener('DOMContentLoaded', async () => {
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        if (userIdDisplay) {
+            // 从后端渲染的用户ID获取
+            userIdDisplay.textContent = "{{ session.get('user_id', '-') }}";
+        }
+        
         await waitForI18n();
         
         if (window.i18n && typeof window.i18n.applyTranslations === 'function') {

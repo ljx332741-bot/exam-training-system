@@ -1081,7 +1081,6 @@ def my_attendances():
         logger.error(f"获取签到记录失败: {e}")
         return jsonify([])
 
-
 # ==================== 我的访谈记录 API ====================
 @exam_bp.route('/api/my/interview_results')
 @login_required
@@ -1091,6 +1090,8 @@ def my_interview_results():
     db = get_supabase()
     
     try:
+        logger.info(f"=== 用户 {user_id} 请求访谈记录 ===")
+        
         # 查询访谈答题记录，关联访谈信息
         res = db.table("interview_results")\
             .select("interview_id, question_id, answer, submitted_at, is_correct, interviews!fk_interview_results_interview_id(title, exam_id)")\
@@ -1102,14 +1103,26 @@ def my_interview_results():
         
         if not results:
             return jsonify([])
+
+        logger.info(f"查询到 {len(results)} 条 interview_results 记录")
         
         # 获取访谈信息
-        interview_ids = list(set([r['interview_id'] for r in results]))
+        interview_ids = [r.get('interview_id') for r in results if r.get('interview_id') is not None]
+        interview_ids = list(set(interview_ids))
+        logger.info(f"interview_ids: {interview_ids}")
+        
+        if not interview_ids:
+            return jsonify([])
+        
         interview_res = db.table("interviews").select("id, title, exam_id").in_("id", interview_ids).execute()
+        logger.info(f"interview_res.data: {interview_res.data}")
+
         interview_map = {i['id']: i for i in (interview_res.data or [])}
+        logger.info(f"interview_map keys: {list(interview_map.keys())}")
 
         # 获取所有 question_id
-        question_ids = list(set([r['question_id'] for r in results if r.get('question_id')]))
+        question_ids = [r.get('question_id') for r in results if r.get('question_id') is not None]
+        question_ids = list(set(question_ids))
         
         # 查询完整的题目信息（包括 content 和 options）
         questions_map = {}
@@ -1127,7 +1140,9 @@ def my_interview_results():
                 questions_map[q['id']] = q
         
         # 获取所有关联的考试ID
-        exam_ids = list(set([i.get('exam_id') for i in interview_map.values() if i.get('exam_id')]))
+        exam_ids = [i.get('exam_id') for i in interview_map.values() if i.get('exam_id') is not None]
+        exam_ids = list(set(exam_ids))
+        
         exam_country_map = {}
         if exam_ids:
             exams_res = db.table("exams").select("id, countries, country").in_("id", exam_ids).execute()
@@ -1140,7 +1155,7 @@ def my_interview_results():
                         except:
                             countries_data = [exam.get('country', '')] if exam.get('country') else []
                     elif isinstance(countries_data, list):
-                        pass  # 已经是列表
+                        pass
                     else:
                         countries_data = [exam.get('country', '')] if exam.get('country') else []
                 else:
@@ -1150,87 +1165,100 @@ def my_interview_results():
         # 按 interview_id 分组聚合
         interviews = {}
         for r in results:
-            inv_id = r.get('interview_id')
-            if not inv_id:
-                continue
+            try:
+                inv_id = r.get('interview_id')
+                if not inv_id:
+                    continue
+                    
+                if inv_id not in interviews:
+                    interview_info = interview_map.get(inv_id, {})
+                    exam_id = interview_info.get('exam_id')
+                    country_display = exam_country_map.get(exam_id, '')
+                    
+                    interviews[inv_id] = {
+                        'interview_id': inv_id,
+                        'title': interview_info.get('title', '未知访谈'),
+                        'country': country_display,
+                        'questions': [],
+                        'completed_at': None,
+                        'correct_count': 0,
+                        'total_questions': 0,
+                        'answered_count': 0
+                    }
                 
-            if inv_id not in interviews:
-                interview_info = interview_map.get(inv_id, {})
-                exam_id = interview_info.get('exam_id')
-                country_display = exam_country_map.get(exam_id, '')
-                
-                interviews[inv_id] = {
-                    'interview_id': inv_id,
-                    'title': interview_info.get('title', '未知访谈'),
-                    'country': country_display,
-                    'questions': [],
-                    'completed_at': None,
-                    'correct_count': 0,
-                    'total_questions': 0,
-                    'answered_count': 0
-                }
-            
-            q_info = questions_map.get(r.get('question_id'), {})
+                q_info = questions_map.get(r.get('question_id'), {})
 
-            # 确保 is_correct 是布尔值
-            is_correct_raw = r.get('is_correct')
-            if is_correct_raw is None:
-                is_correct_bool = False
-            elif isinstance(is_correct_raw, bool):
-                is_correct_bool = is_correct_raw
-            elif isinstance(is_correct_raw, str):
-                is_correct_bool = is_correct_raw.lower() == 'true'
-            elif isinstance(is_correct_raw, (int, float)):
-                is_correct_bool = is_correct_raw == 1
-            else:
-                is_correct_bool = False
-            
-            # 统计答对数量
-            has_answer = r.get('answer') and r.get('answer') != '未作答'
-            if has_answer and is_correct_bool:
-                interviews[inv_id]['correct_count'] += 1
-            if has_answer:
-                interviews[inv_id]['answered_count'] += 1
-            interviews[inv_id]['total_questions'] += 1
-            
-            # 获取正确答案
-            correct_answer = q_info.get('answer', '')
-            if q_info.get('type') == 'judge' and correct_answer:
-                if correct_answer.upper() in ('T', 'TRUE', '√', '正确', '对'):
-                    correct_answer = 'T (正确)'
-                elif correct_answer.upper() in ('F', 'FALSE', '×', '错误', '错'):
-                    correct_answer = 'F (错误)'
-            
-            interviews[inv_id]['questions'].append({
-                'question_id': r.get('question_id'),
-                'answer': r.get('answer', '未作答'),
-                'user_answer': r.get('answer', ''),
-                'is_correct': r.get('is_correct'),
-                'correct_answer': correct_answer,
-                'content': q_info.get('content_cn') or q_info.get('content') or q_info.get('content_raw', ''),
-                'options': q_info.get('options', {}),
-                'type': q_info.get('type', 'single'),
-                'num': q_info.get('num', 0)
-            })
-            
-            # 更新完成时间（取最新的 submitted_at）
-            submitted_at = r.get('submitted_at')
-            if submitted_at:
-                if not interviews[inv_id]['completed_at'] or submitted_at > interviews[inv_id]['completed_at']:
-                    interviews[inv_id]['completed_at'] = submitted_at
+                # 确保 is_correct 是布尔值
+                is_correct_raw = r.get('is_correct')
+                if is_correct_raw is None:
+                    is_correct_bool = False
+                elif isinstance(is_correct_raw, bool):
+                    is_correct_bool = is_correct_raw
+                elif isinstance(is_correct_raw, str):
+                    is_correct_bool = is_correct_raw.lower() == 'true'
+                elif isinstance(is_correct_raw, (int, float)):
+                    is_correct_bool = is_correct_raw == 1
+                else:
+                    is_correct_bool = False
+                
+                # 统计答对数量
+                has_answer = r.get('answer') and r.get('answer') != '未作答'
+                if has_answer and is_correct_bool:
+                    interviews[inv_id]['correct_count'] += 1
+                if has_answer:
+                    interviews[inv_id]['answered_count'] += 1
+                interviews[inv_id]['total_questions'] += 1
+                
+                # 获取正确答案
+                correct_answer = q_info.get('answer', '')
+                if q_info.get('type') == 'judge' and correct_answer:
+                    if correct_answer.upper() in ('T', 'TRUE', '√', '正确', '对'):
+                        correct_answer = 'T (正确)'
+                    elif correct_answer.upper() in ('F', 'FALSE', '×', '错误', '错'):
+                        correct_answer = 'F (错误)'
+                
+                interviews[inv_id]['questions'].append({
+                    'question_id': r.get('question_id'),
+                    'answer': r.get('answer', '未作答'),
+                    'user_answer': r.get('answer', ''),
+                    'is_correct': r.get('is_correct'),
+                    'correct_answer': correct_answer,
+                    'content': q_info.get('content_cn') or q_info.get('content') or q_info.get('content_raw', ''),
+                    'options': q_info.get('options', {}),
+                    'type': q_info.get('type', 'single'),
+                    'num': q_info.get('num', 0)
+                })
+                
+                # 更新完成时间（取最新的 submitted_at）
+                submitted_at = r.get('submitted_at')
+                if submitted_at:
+                    current_completed = interviews[inv_id]['completed_at']
+                    # ⭐ 关键修复：确保 current_completed 不是 None
+                    if current_completed is None:
+                        interviews[inv_id]['completed_at'] = submitted_at
+                    elif isinstance(submitted_at, str) and isinstance(current_completed, str):
+                        if submitted_at > current_completed:
+                            interviews[inv_id]['completed_at'] = submitted_at
+                    else:
+                        # 如果类型不一致，直接赋值
+                        interviews[inv_id]['completed_at'] = submitted_at
+                        
+            except Exception as inner_e:
+                logger.error(f"处理记录 {r} 时出错: {inner_e}", exc_info=True)
+                continue
         
         # 转换为列表
         result_list = []
         for inv in interviews.values():
             inv['question_count'] = len(inv['questions'])
             result_list.append(inv)
-            
-        result_list.sort(key=lambda x: x.get('completed_at', ''), reverse=True)
+        
+        # ⭐ 安全排序：确保 key 是字符串
+        result_list.sort(key=lambda x: str(x.get('completed_at', '')), reverse=True)
 
         return jsonify(result_list)
         
     except Exception as e:
-        logger.error(f"获取访谈记录失败: {e}")
+        logger.error(f"获取访谈记录失败: {e}", exc_info=True)
         return jsonify([])
-
 
