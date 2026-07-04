@@ -185,10 +185,43 @@ def profile():
 
 @auth_bp.route('/api/send-otp', methods=['POST'])
 def api_send_otp():
+    """发送邮箱验证码（支持注册和重置密码）"""
     email = request.json.get('email')
-    if not email: return jsonify({"success": False, "message": "缺少邮箱"}), 400
-    try: auth.send_otp(email); return jsonify({"success": True})
-    except Exception as e: return jsonify({"success": False, "message": str(e)}), 500
+    purpose = request.json.get('purpose', 'register')  # 'register' 或 'reset'
+    
+    if not email:
+        return jsonify({"success": False, "message": "缺少邮箱"}), 400
+    
+    if not auth._is_valid_email(email):
+        return jsonify({"success": False, "message": "邮箱格式无效"}), 400
+    
+    # 如果是重置密码场景，验证邮箱是否已注册
+    if purpose == 'reset':
+        db = get_supabase()
+        user_res = db.table("users").select("id").eq("email", email).is_("deleted_at", "null").execute()
+        if not user_res.data:
+            return jsonify({
+                "success": False, 
+                "message": "email_not_registered",  # 返回翻译键
+                "params": []
+            }), 400
+    
+    # 如果是注册场景，验证邮箱是否已被注册（防止重复注册）
+    if purpose == 'register':
+        db = get_supabase()
+        user_res = db.table("users").select("id").eq("email", email).is_("deleted_at", "null").execute()
+        if user_res.data:
+            return jsonify({
+                "success": False, 
+                "message": "email_already_registered",
+                "params": []
+            }), 400
+    
+    try:
+        auth.send_otp(email)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @auth_bp.route('/api/register', methods=['POST'])
 def api_register():

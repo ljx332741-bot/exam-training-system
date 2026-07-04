@@ -157,7 +157,7 @@
     background: #e9ecef;
     color: #6c757d;
 }
-.training-card-header .training-meta {
+.training-card-body .training-meta {
     font-size: 0.65rem;
     color: #6c757d;
     margin-bottom: 12px;
