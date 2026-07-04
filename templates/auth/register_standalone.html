@@ -766,7 +766,9 @@ const translations = {
         otpSendFailed: '发送失败，请重试',
         networkError: '网络错误',
         enterEmail: '请输入邮箱地址',
-        enterValidEmail: '请输入有效的邮箱地址'
+        enterValidEmail: '请输入有效的邮箱地址',
+        "email_not_registered": "该邮箱未注册，请先注册账号",
+        "otp_invalid": "验证码无效，请重新获取"
     },
     en: {
         registerTitle: 'New User Registration',
@@ -801,7 +803,9 @@ const translations = {
         otpSendFailed: 'Failed to send, please retry',
         networkError: 'Network error',
         enterEmail: 'Please enter your email',
-        enterValidEmail: 'Please enter a valid email'
+        enterValidEmail: 'Please enter a valid email',
+        "email_not_registered": "This email is not registered, please sign up first",
+        "otp_invalid": "Invalid verification code, please try again"
     }
 };
 
@@ -1044,10 +1048,22 @@ document.getElementById('regOtpBtn').addEventListener('click', async function() 
         const res = await fetch('/api/send-otp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email })
+            body: JSON.stringify({ 
+                email,
+                purpose: 'register'
+            })
         });
-        if (!res.ok) throw new Error('发送失败');
-        showToast(t('otpSent'), 'success');
+        const data = await res.json();
+        
+        if (res.ok && data.success) {
+            showToast(t('otpSent'), 'success');
+        } else {
+            const msg = t(data.message) || t('otpSendFailed');
+            showToast(msg, 'error');
+            clearInterval(timer);
+            this.disabled = false;
+            this.innerHTML = originalText;
+        }
     } catch(e) {
         clearInterval(timer);
         this.disabled = false;

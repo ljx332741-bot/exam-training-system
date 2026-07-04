@@ -196,6 +196,7 @@
         max-height: 65vh;
         border-radius: 6px;
         object-fit: contain;
+        transition: opacity 0.3s ease;
     }
     .photo-view-modal .modal-footer {
         border-top: 1px solid rgba(255,255,255,0.08);
@@ -361,16 +362,20 @@
             <div class="modal-body">
                 <img id="viewImage" src="" alt="照片预览">
                 <div class="photo-nav">
-                    <button class="nav-btn" id="prevPhotoBtn" 
-                        data-i18n-title="prev_one"
-                        title="上一张">
+                    <!-- ✅ 新增：第一张按钮 -->
+                    <button class="nav-btn" id="firstPhotoBtn" title="第一张">
+                        <i class="bi bi-chevron-double-left"></i>
+                    </button>
+                    <button class="nav-btn" id="prevPhotoBtn" title="上一张">
                         <i class="bi bi-chevron-left"></i>
                     </button>
                     <span class="nav-counter" id="photoCounter">1 / 1</span>
-                    <button class="nav-btn" id="nextPhotoBtn" 
-                        data-i18n-title="next_one"
-                        title="下一张">
+                    <button class="nav-btn" id="nextPhotoBtn" title="下一张">
                         <i class="bi bi-chevron-right"></i>
+                    </button>
+                    <!-- ✅ 新增：最后一张按钮 -->
+                    <button class="nav-btn" id="lastPhotoBtn" title="最后一张">
+                        <i class="bi bi-chevron-double-right"></i>
                     </button>
                 </div>
             </div>
@@ -399,395 +404,501 @@
 
 {% block extra_js %}
 <script>
-// ============================================================
-// 管理员端照片管理 - 完整逻辑
-// ============================================================
+    // ============================================================
+    // 管理员端照片管理 - 完整逻辑
+    // ============================================================
 
-// ---------- 状态 ----------
-let currentPage = 1;
-let perPage = 24;
-let totalPhotos = 0;
-let photoData = [];
-let selectedIds = new Set();
-let currentViewIndex = 0;
-let currentViewPhotos = [];
+    // ---------- 状态 ----------
+    let currentPage = 1;
+    let perPage = 24;
+    let totalPhotos = 0;
+    let photoData = [];
+    let selectedIds = new Set();
+    let currentViewIndex = 0;
+    let currentViewPhotos = [];
+    let viewModalInstance = null;
+    let isModalOpen = false;
 
-// ---------- 工具函数 ----------
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    });
-}
-
-function safeT(key, ...args) {
-    if (window.i18n && typeof window.i18n.t === 'function') {
-        return window.i18n.t(key, ...args) || key;
-    }
-    return key;
-}
-
-function formatLocalTime(utcString) {
-    if (!utcString) return '-';
-    try {
-        const date = new Date(utcString);
-        if (isNaN(date.getTime())) return utcString;
-        return date.toLocaleString();
-    } catch { return utcString; }
-}
-
-// ---------- 加载照片 ----------
-async function loadPhotos(page = 1) {
-    currentPage = page;
-    const container = document.getElementById('photoGridContainer');
-    container.innerHTML = `
-        <div class="loading-spinner">
-            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
-            <span>${safeT('loading')}</span>
-        </div>
-    `;
-
-    const trainingId = document.getElementById('pageTrainingId').value;
-    if (!trainingId) {
-        container.innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-exclamation-triangle"></i>
-                <h5>${safeT('no_training_selected')}</h5>
-                <p>${safeT('please_select_training_first')}</p>
-            </div>
-        `;
-        return;
+    // ---------- 工具函数 ----------
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
     }
 
-    const params = new URLSearchParams({
-        page: page,
-        per_page: perPage,
-        training_id: trainingId
-    });
-
-    try {
-        const res = await fetch(`/api/admin/training/photos?${params}`);
-        const data = await res.json();
-
-        if (data.success) {
-            photoData = data.data || [];
-            totalPhotos = data.total || 0;
-            document.getElementById('totalCount').textContent = totalPhotos;
-            renderPhotos(photoData);
-            renderPagination(data.total, data.page, data.per_page);
-            updateToolbar();
-        } else {
-            container.innerHTML = `<div class="alert alert-danger">${data.message || safeT('load_failed')}</div>`;
+    function safeT(key, ...args) {
+        if (window.i18n && typeof window.i18n.t === 'function') {
+            return window.i18n.t(key, ...args) || key;
         }
-    } catch (err) {
-        console.error('加载照片失败:', err);
-        container.innerHTML = `<div class="alert alert-danger">${safeT('load_failed')}</div>`;
+        return key;
     }
-}
 
-// ---------- 渲染照片网格 ----------
-function renderPhotos(photos) {
-    const container = document.getElementById('photoGridContainer');
+    function formatLocalTime(utcString) {
+        if (!utcString) return '-';
+        try {
+            const date = new Date(utcString);
+            if (isNaN(date.getTime())) return utcString;
+            return date.toLocaleString();
+        } catch { return utcString; }
+    }
 
-    if (!photos || photos.length === 0) {
+    // ---------- 加载照片 ----------
+    async function loadPhotos(page = 1) {
+        currentPage = page;
+        const container = document.getElementById('photoGridContainer');
         container.innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-images"></i>
-                <h5>${safeT('no_photos_uploaded')}</h5>
-                <p>${safeT('upload_first_photo_hint')}</p>
+            <div class="loading-spinner">
+                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                <span>${safeT('loading')}</span>
             </div>
         `;
-        return;
+
+        const trainingId = document.getElementById('pageTrainingId').value;
+        if (!trainingId) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <h5>${safeT('no_training_selected')}</h5>
+                    <p>${safeT('please_select_training_first')}</p>
+                </div>
+            `;
+            return;
+        }
+
+        const params = new URLSearchParams({
+            page: page,
+            per_page: perPage,
+            training_id: trainingId
+        });
+
+        try {
+            const res = await fetch(`/api/admin/training/photos?${params}`);
+            const data = await res.json();
+
+            if (data.success) {
+                photoData = data.data || [];
+                totalPhotos = data.total || 0;
+                document.getElementById('totalCount').textContent = totalPhotos;
+                renderPhotos(photoData);
+                renderPagination(data.total, data.page, data.per_page);
+                updateToolbar();
+            } else {
+                container.innerHTML = `<div class="alert alert-danger">${data.message || safeT('load_failed')}</div>`;
+            }
+        } catch (err) {
+            console.error('加载照片失败:', err);
+            container.innerHTML = `<div class="alert alert-danger">${safeT('load_failed')}</div>`;
+        }
     }
 
-    let html = '<div class="photo-grid">';
-    photos.forEach(photo => {
-        const isSelected = selectedIds.has(photo.id);
-        const isCover = photo.is_cover || false;
-        const fileName = photo.file_name || '未命名';
-        const uploader = photo.uploaded_by_name || '系统';
+    // ---------- 渲染照片网格 ----------
+    function renderPhotos(photos) {
+        const container = document.getElementById('photoGridContainer');
 
-        html += `
-            <div class="photo-item ${isSelected ? 'selected' : ''}" data-id="${photo.id}" data-index="${photoData.indexOf(photo)}">
-                ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
-                <input type="checkbox" class="photo-checkbox" data-id="${photo.id}" ${isSelected ? 'checked' : ''}>
-                <img src="${photo.photo_url}" alt="${escapeHtml(fileName)}" loading="lazy"
-                     onclick="viewPhoto(${photoData.indexOf(photo)})"
-                     onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.8rem;\\'>📷<br>加载失败</div>'">
-                <div class="photo-overlay">
-                    <div class="filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</div>
-                    <div class="uploader">👤 ${escapeHtml(uploader)}</div>
+        if (!photos || photos.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-images"></i>
+                    <h5>${safeT('no_photos_uploaded')}</h5>
+                    <p>${safeT('upload_first_photo_hint')}</p>
                 </div>
-                <div class="action-buttons">
-                    <button class="btn download-btn" onclick="event.stopPropagation();downloadPhoto(${photo.id})" title="${safeT('download')}">
-                        <i class="bi bi-download"></i>
-                    </button>
-                    <button class="btn" onclick="event.stopPropagation();deletePhoto(${photo.id})" title="${safeT('delete')}">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            </div>
-        `;
-    });
-    html += '</div>';
-    container.innerHTML = html;
+            `;
+            return;
+        }
 
-    // 绑定复选框事件
-    document.querySelectorAll('.photo-checkbox').forEach(cb => {
-        cb.addEventListener('change', function(e) {
-            e.stopPropagation();
-            const id = parseInt(this.dataset.id);
-            if (this.checked) {
+        let html = '<div class="photo-grid">';
+        photos.forEach(photo => {
+            const isSelected = selectedIds.has(photo.id);
+            const isCover = photo.is_cover || false;
+            const fileName = photo.file_name || '未命名';
+            const uploader = photo.uploaded_by_name || '系统';
+
+            html += `
+                <div class="photo-item ${isSelected ? 'selected' : ''}" data-id="${photo.id}" data-index="${photoData.indexOf(photo)}">
+                    ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
+                    <input type="checkbox" class="photo-checkbox" data-id="${photo.id}" ${isSelected ? 'checked' : ''}>
+                    <img src="${photo.photo_url}" alt="${escapeHtml(fileName)}" loading="lazy"
+                        onclick="viewPhoto(${photoData.indexOf(photo)})"
+                        onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.8rem;\\'>📷<br>加载失败</div>'">
+                    <div class="photo-overlay">
+                        <div class="filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</div>
+                        <div class="uploader">👤 ${escapeHtml(uploader)}</div>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn download-btn" onclick="event.stopPropagation();downloadPhoto(${photo.id})" title="${safeT('download')}">
+                            <i class="bi bi-download"></i>
+                        </button>
+                        <button class="btn" onclick="event.stopPropagation();deletePhoto(${photo.id})" title="${safeT('delete')}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+
+        // 绑定复选框事件
+        document.querySelectorAll('.photo-checkbox').forEach(cb => {
+            cb.addEventListener('change', function(e) {
+                e.stopPropagation();
+                const id = parseInt(this.dataset.id);
+                if (this.checked) {
+                    selectedIds.add(id);
+                    this.closest('.photo-item').classList.add('selected');
+                } else {
+                    selectedIds.delete(id);
+                    this.closest('.photo-item').classList.remove('selected');
+                }
+                updateToolbar();
+            });
+        });
+    }
+
+    // ---------- 分页 ----------
+    function renderPagination(total, page, perPage) {
+        const totalPages = Math.ceil(total / perPage);
+        const pagination = document.getElementById('pagination');
+        if (totalPages <= 1) {
+            pagination.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+        if (page > 1) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${page - 1}">«</a></li>`;
+        }
+        for (let i = 1; i <= totalPages; i++) {
+            html += `<li class="page-item ${i === page ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>`;
+        }
+        if (page < totalPages) {
+            html += `<li class="page-item"><a class="page-link" href="#" data-page="${page + 1}">»</a></li>`;
+        }
+        pagination.innerHTML = html;
+
+        pagination.querySelectorAll('.page-link').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const pageNum = parseInt(link.dataset.page);
+                if (!isNaN(pageNum)) {
+                    selectedIds.clear();
+                    loadPhotos(pageNum);
+                }
+            });
+        });
+    }
+
+    // ---------- 工具栏状态 ----------
+    function updateToolbar() {
+        const count = selectedIds.size;
+        document.getElementById('downloadSelectedBtn').disabled = count === 0;
+        document.getElementById('deleteSelectedBtn').disabled = count === 0;
+        document.getElementById('selectAll').checked = count > 0 && count === photoData.length;
+    }
+
+    // ---------- 全选 ----------
+    document.getElementById('selectAll')?.addEventListener('change', function() {
+        const checked = this.checked;
+        document.querySelectorAll('.photo-checkbox').forEach(cb => {
+            cb.checked = checked;
+            const id = parseInt(cb.dataset.id);
+            if (checked) {
                 selectedIds.add(id);
-                this.closest('.photo-item').classList.add('selected');
+                cb.closest('.photo-item').classList.add('selected');
             } else {
                 selectedIds.delete(id);
-                this.closest('.photo-item').classList.remove('selected');
-            }
-            updateToolbar();
-        });
-    });
-}
-
-// ---------- 分页 ----------
-function renderPagination(total, page, perPage) {
-    const totalPages = Math.ceil(total / perPage);
-    const pagination = document.getElementById('pagination');
-    if (totalPages <= 1) {
-        pagination.innerHTML = '';
-        return;
-    }
-
-    let html = '';
-    if (page > 1) {
-        html += `<li class="page-item"><a class="page-link" href="#" data-page="${page - 1}">«</a></li>`;
-    }
-    for (let i = 1; i <= totalPages; i++) {
-        html += `<li class="page-item ${i === page ? 'active' : ''}">
-                    <a class="page-link" href="#" data-page="${i}">${i}</a>
-                </li>`;
-    }
-    if (page < totalPages) {
-        html += `<li class="page-item"><a class="page-link" href="#" data-page="${page + 1}">»</a></li>`;
-    }
-    pagination.innerHTML = html;
-
-    pagination.querySelectorAll('.page-link').forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const pageNum = parseInt(link.dataset.page);
-            if (!isNaN(pageNum)) {
-                selectedIds.clear();
-                loadPhotos(pageNum);
+                cb.closest('.photo-item').classList.remove('selected');
             }
         });
+        updateToolbar();
     });
-}
 
-// ---------- 工具栏状态 ----------
-function updateToolbar() {
-    const count = selectedIds.size;
-    document.getElementById('downloadSelectedBtn').disabled = count === 0;
-    document.getElementById('deleteSelectedBtn').disabled = count === 0;
-    document.getElementById('selectAll').checked = count > 0 && count === photoData.length;
-}
+    // ---------- 查看照片（模态框） ----------
+    function viewPhoto(index) {
+        if (!photoData || photoData.length === 0) return;
+        currentViewIndex = index;
+        currentViewPhotos = photoData;
+        showPhotoInModal(index);
+    }
 
-// ---------- 全选 ----------
-document.getElementById('selectAll')?.addEventListener('change', function() {
-    const checked = this.checked;
-    document.querySelectorAll('.photo-checkbox').forEach(cb => {
-        cb.checked = checked;
-        const id = parseInt(cb.dataset.id);
-        if (checked) {
-            selectedIds.add(id);
-            cb.closest('.photo-item').classList.add('selected');
-        } else {
-            selectedIds.delete(id);
-            cb.closest('.photo-item').classList.remove('selected');
+    // ---------- 更新模态框内容（不重新创建模态框） ----------
+    function updateModalContent(index) {
+        const photo = currentViewPhotos[index];
+        if (!photo) return;
+
+        // 更新当前索引
+        currentViewIndex = index;
+
+        // 更新图片（添加淡入效果）
+        const img = document.getElementById('viewImage');
+        img.style.opacity = '0.5';
+        img.src = photo.photo_url;
+        img.onload = function() {
+            img.style.opacity = '1';
+        };
+
+        // 更新标题和文件信息
+        document.getElementById('viewTitle').textContent = photo.file_name || '照片预览';
+        document.getElementById('viewFileName').textContent = `${safeT('filename')}: ${photo.file_name || '-'}`;
+        document.getElementById('viewUploader').textContent = `${safeT('uploader')}: ${photo.uploaded_by_name || '系统'}`;
+        document.getElementById('viewTime').textContent = `${safeT('upload_at')}: ${formatLocalTime(photo.uploaded_at)}`;
+        document.getElementById('photoCounter').textContent = `${index + 1} / ${currentViewPhotos.length}`;
+
+        // ✅ 更新所有导航按钮状态（循环导航下按钮始终可用，但为了视觉反馈仍更新状态）
+        const total = currentViewPhotos.length;
+        const isFirst = index === 0;
+        const isLast = index === total - 1;
+
+        // 第一张按钮：在第一张时禁用（或保持可用，取决于设计）
+        document.getElementById('firstPhotoBtn').disabled = isFirst && total > 1;
+        // 最后一张按钮：在最后一张时禁用
+        document.getElementById('lastPhotoBtn').disabled = isLast && total > 1;
+        // 上一张/下一张：循环导航下始终可用，但为了视觉反馈显示状态
+        document.getElementById('prevPhotoBtn').disabled = false;
+        document.getElementById('nextPhotoBtn').disabled = false;
+    }
+
+    function showPhotoInModal(index) {
+        const photo = currentViewPhotos[index];
+        if (!photo) return;
+
+        // 如果模态框已经打开，直接更新内容
+        if (isModalOpen) {
+            updateModalContent(index);
+            return;
         }
-    });
-    updateToolbar();
-});
 
-// ---------- 查看照片（模态框） ----------
-function viewPhoto(index) {
-    if (!photoData || photoData.length === 0) return;
-    currentViewIndex = index;
-    currentViewPhotos = photoData;
-    showPhotoInModal(index);
-}
+        // 首次打开，设置内容并显示模态框
+        // 更新图片
+        const img = document.getElementById('viewImage');
+        img.src = photo.photo_url;
+        img.onload = function() {
+            img.style.opacity = '1';
+        };
+        img.style.opacity = '0.5';
 
-function showPhotoInModal(index) {
-    const photo = currentViewPhotos[index];
-    if (!photo) return;
+        document.getElementById('viewTitle').textContent = photo.file_name || '照片预览';
+        document.getElementById('viewFileName').textContent = `${safeT('filename')}: ${photo.file_name || '-'}`;
+        document.getElementById('viewUploader').textContent = `${safeT('uploader')}: ${photo.uploaded_by_name || '系统'}`;
+        document.getElementById('viewTime').textContent = `${safeT('upload_at')}: ${formatLocalTime(photo.uploaded_at)}`;
+        document.getElementById('photoCounter').textContent = `${index + 1} / ${currentViewPhotos.length}`;
 
-    document.getElementById('viewImage').src = photo.photo_url;
-    document.getElementById('viewTitle').textContent = photo.file_name || '照片预览';
-    document.getElementById('viewFileName').textContent = `${t('filename')}: ${photo.file_name || '-'}`;
-    document.getElementById('viewUploader').textContent = `${t('uploader')}: ${photo.uploaded_by_name || '系统'}`;
-    document.getElementById('viewTime').textContent = `${t('upload_at')}: ${formatLocalTime(photo.uploaded_at)}`;
-    document.getElementById('photoCounter').textContent = `${index + 1} / ${currentViewPhotos.length}`;
+        document.getElementById('prevPhotoBtn').disabled = index === 0;
+        document.getElementById('nextPhotoBtn').disabled = index === currentViewPhotos.length - 1;
 
-    document.getElementById('prevPhotoBtn').disabled = index === 0;
-    document.getElementById('nextPhotoBtn').disabled = index === currentViewPhotos.length - 1;
-
-    // 下载按钮
-    document.getElementById('viewDownloadBtn').onclick = function() {
-        downloadPhoto(photo.id);
-    };
-
-    // 删除按钮
-    document.getElementById('viewDeleteBtn').onclick = function() {
-        const modal = bootstrap.Modal.getInstance(document.getElementById('photoViewModal'));
-        modal.hide();
-        deletePhoto(photo.id);
-    };
-
-    const modal = new bootstrap.Modal(document.getElementById('photoViewModal'));
-    modal.show();
-}
-
-// ---------- 左右导航 ----------
-document.getElementById('prevPhotoBtn')?.addEventListener('click', function() {
-    if (currentViewIndex > 0) {
-        showPhotoInModal(currentViewIndex - 1);
-    }
-});
-
-document.getElementById('nextPhotoBtn')?.addEventListener('click', function() {
-    if (currentViewIndex < currentViewPhotos.length - 1) {
-        showPhotoInModal(currentViewIndex + 1);
-    }
-});
-
-// 键盘左右键导航
-document.addEventListener('keydown', function(e) {
-    const modal = document.getElementById('photoViewModal');
-    if (!modal.classList.contains('show')) return;
-    if (e.key === 'ArrowLeft') {
-        document.getElementById('prevPhotoBtn')?.click();
-    } else if (e.key === 'ArrowRight') {
-        document.getElementById('nextPhotoBtn')?.click();
-    } else if (e.key === 'Escape') {
-        bootstrap.Modal.getInstance(modal)?.hide();
-    }
-});
-
-// ---------- 下载单张照片 ----------
-function downloadPhoto(photoId) {
-    const photo = photoData.find(p => p.id === photoId);
-    if (!photo) return;
-    window.open(photo.photo_url, '_blank');
-}
-
-// ---------- 批量下载 ----------
-document.getElementById('downloadSelectedBtn')?.addEventListener('click', function() {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    // 逐个打开下载（或实现ZIP打包）
-    ids.forEach(id => {
-        const photo = photoData.find(p => p.id === id);
-        if (photo) window.open(photo.photo_url, '_blank');
-    });
-    showToast(safeT('download_started', ids.length), 'info');
-});
-
-// ---------- 删除单张照片 ----------
-async function deletePhoto(photoId) {
-    const photo = photoData.find(p => p.id === photoId);
-    if (!photo) return;
-    if (!confirm(safeT('confirm_delete_photo', photo.file_name || ''))) return;
-
-    try {
-        const res = await fetch(`/api/admin/training/photos/${photoId}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (data.success) {
-            showToast(safeT('photo_deleted'), 'success');
-            selectedIds.delete(photoId);
-            loadPhotos(currentPage);
-        } else {
-            showToast(data.message || safeT('delete_failed'), 'error');
+        // 显示模态框
+        const modalEl = document.getElementById('photoViewModal');
+        if (!viewModalInstance) {
+            viewModalInstance = new bootstrap.Modal(modalEl);
         }
-    } catch (err) {
-        console.error('删除失败:', err);
-        showToast(safeT('delete_failed'), 'error');
+        viewModalInstance.show();
+        isModalOpen = true;
     }
-}
 
-// ---------- 批量删除 ----------
-document.getElementById('deleteSelectedBtn')?.addEventListener('click', async function() {
-    const ids = Array.from(selectedIds);
-    if (ids.length === 0) return;
-    if (!confirm(safeT('confirm_batch_delete_photos', ids.length))) return;
-
-    try {
-        const res = await fetch('/api/admin/training/photos/batch_delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: ids })
-        });
-        const data = await res.json();
-        if (data.success) {
-            showToast(safeT('batch_delete_success', data.success_count), 'success');
-            selectedIds.clear();
-            loadPhotos(currentPage);
+    // ---------- 导航函数 ----------
+    function goToPrevPhoto() {
+        if (currentViewPhotos.length === 0) return;
+        // ✅ 循环导航：到第一张后跳到最后一张
+        if (currentViewIndex > 0) {
+            updateModalContent(currentViewIndex - 1);
         } else {
-            showToast(data.message || safeT('delete_failed'), 'error');
+            // 循环到最后一张
+            updateModalContent(currentViewPhotos.length - 1);
         }
-    } catch (err) {
-        console.error('批量删除失败:', err);
-        showToast(safeT('delete_failed'), 'error');
-    }
-});
-
-// ---------- 刷新 ----------
-document.getElementById('refreshBtn')?.addEventListener('click', function() {
-    selectedIds.clear();
-    loadPhotos(currentPage);
-});
-
-// ---------- Toast ----------
-function showToast(message, type = 'info') {
-    if (typeof window.showToast === 'function') {
-        window.showToast(message, type);
-        return;
-    }
-    alert(message);
-}
-
-// ---------- 初始化 ----------
-document.addEventListener('DOMContentLoaded', async function() {
-    await waitForI18n();
-    if (window.i18n) {
-        window.i18n.applyTranslations();
     }
 
-    const trainingId = document.getElementById('pageTrainingId').value;
-    if (trainingId) {
-        // 获取培训名称显示
+    function goToNextPhoto() {
+        if (currentViewPhotos.length === 0) return;
+        // ✅ 循环导航：到最后一张后跳到第一张
+        if (currentViewIndex < currentViewPhotos.length - 1) {
+            updateModalContent(currentViewIndex + 1);
+        } else {
+            // 循环到第一张
+            updateModalContent(0);
+        }
+    }
+
+    // ✅ 新增：跳转到第一张
+    function goToFirstPhoto() {
+        if (currentViewPhotos.length === 0) return;
+        updateModalContent(0);
+    }
+
+    // ✅ 新增：跳转到最后一张
+    function goToLastPhoto() {
+        if (currentViewPhotos.length === 0) return;
+        updateModalContent(currentViewPhotos.length - 1);
+    }
+
+    // ---------- 下载单张照片 ----------
+    function downloadPhoto(photoId) {
+        const photo = photoData.find(p => p.id === photoId);
+        if (!photo) return;
+        window.open(photo.photo_url, '_blank');
+    }
+
+    // ---------- 删除单张照片 ----------
+    async function deletePhoto(photoId) {
+        const photo = photoData.find(p => p.id === photoId);
+        if (!photo) return;
+        if (!confirm(safeT('confirm_delete_photo', photo.file_name || ''))) return;
+
         try {
-            const res = await fetch(`/api/admin/trainings/${trainingId}`);
+            const res = await fetch(`/api/admin/training/photos/${photoId}`, { method: 'DELETE' });
             const data = await res.json();
-            if (data.success && data.data) {
-                const nameEl = document.querySelector('.text-muted');
-                if (nameEl) nameEl.textContent = `- ${data.data.name}`;
+            if (data.success) {
+                showToast(safeT('photo_deleted'), 'success');
+                selectedIds.delete(photoId);
+                loadPhotos(currentPage);
+            } else {
+                showToast(data.message || safeT('delete_failed'), 'error');
             }
-        } catch (e) {
-            console.warn('获取培训名称失败:', e);
+        } catch (err) {
+            console.error('删除失败:', err);
+            showToast(safeT('delete_failed'), 'error');
         }
-        loadPhotos(1);
-    } else {
-        document.getElementById('photoGridContainer').innerHTML = `
-            <div class="empty-state">
-                <i class="bi bi-exclamation-triangle"></i>
-                <h5>${safeT('no_training_selected')}</h5>
-                <p>${safeT('please_select_training_first')}</p>
-            </div>
-        `;
     }
-});
+
+    // ---------- 批量删除 ----------
+    document.getElementById('deleteSelectedBtn')?.addEventListener('click', async function() {
+        const ids = Array.from(selectedIds);
+        if (ids.length === 0) return;
+        if (!confirm(safeT('confirm_batch_delete_photos', ids.length))) return;
+
+        try {
+            const res = await fetch('/api/admin/training/photos/batch_delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: ids })
+            });
+            const data = await res.json();
+            if (data.success) {
+                showToast(safeT('batch_delete_success', data.success_count), 'success');
+                selectedIds.clear();
+                loadPhotos(currentPage);
+            } else {
+                showToast(data.message || safeT('delete_failed'), 'error');
+            }
+        } catch (err) {
+            console.error('批量删除失败:', err);
+            showToast(safeT('delete_failed'), 'error');
+        }
+    });
+
+    // ---------- 刷新 ----------
+    document.getElementById('refreshBtn')?.addEventListener('click', function() {
+        selectedIds.clear();
+        loadPhotos(currentPage);
+    });
+
+    // ---------- Toast ----------
+    function showToast(message, type = 'info') {
+        if (typeof window.showToast === 'function') {
+            window.showToast(message, type);
+            return;
+        }
+        alert(message);
+    }
+
+    // ---------- 初始化 ----------
+    document.addEventListener('DOMContentLoaded', async function() {
+        await waitForI18n();
+        if (window.i18n) {
+            window.i18n.applyTranslations();
+        }
+
+        // ✅ 绑定模态框导航事件（只绑定一次，使用独立的导航函数）
+        document.getElementById('firstPhotoBtn')?.addEventListener('click', goToFirstPhoto);
+        document.getElementById('prevPhotoBtn')?.addEventListener('click', goToPrevPhoto);
+        document.getElementById('nextPhotoBtn')?.addEventListener('click', goToNextPhoto);
+        document.getElementById('lastPhotoBtn')?.addEventListener('click', goToLastPhoto);
+
+        // ✅ 下载按钮（只绑定一次）
+        document.getElementById('viewDownloadBtn')?.addEventListener('click', function() {
+            const photo = currentViewPhotos[currentViewIndex];
+            if (photo) downloadPhoto(photo.id);
+        });
+
+        // ✅ 删除按钮（只绑定一次）
+        document.getElementById('viewDeleteBtn')?.addEventListener('click', function() {
+            const photo = currentViewPhotos[currentViewIndex];
+            if (photo) {
+                // 关闭模态框后再删除
+                if (viewModalInstance) {
+                    viewModalInstance.hide();
+                    isModalOpen = false;
+                }
+                setTimeout(() => {
+                    deletePhoto(photo.id);
+                }, 300);
+            }
+        });
+
+        // ✅ 键盘事件（支持循环导航）
+        document.addEventListener('keydown', function(e) {
+            const modal = document.getElementById('photoViewModal');
+            if (!modal || !modal.classList.contains('show')) return;
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                goToPrevPhoto();  // ✅ 已有循环逻辑
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                goToNextPhoto();  // ✅ 已有循环逻辑
+            } else if (e.key === 'Home') {
+                e.preventDefault();
+                goToFirstPhoto();
+            } else if (e.key === 'End') {
+                e.preventDefault();
+                goToLastPhoto();
+            } else if (e.key === 'Escape') {
+                if (viewModalInstance) {
+                    viewModalInstance.hide();
+                    isModalOpen = false;
+                }
+            }
+        });
+
+        // ✅ 模态框关闭时清理状态
+        document.getElementById('photoViewModal')?.addEventListener('hidden.bs.modal', function() {
+            isModalOpen = false;
+            // 重置图片，防止下次打开闪烁
+            document.getElementById('viewImage').src = '';
+            document.getElementById('viewImage').style.opacity = '1';
+            // 移除可能残留的焦点
+            if (document.activeElement) {
+                document.activeElement.blur();
+            }
+        });
+
+        const trainingId = document.getElementById('pageTrainingId').value;
+        if (trainingId) {
+            // 获取培训名称显示
+            try {
+                const res = await fetch(`/api/admin/trainings/${trainingId}`);
+                const data = await res.json();
+                if (data.success && data.data) {
+                    const nameEl = document.querySelector('.text-muted');
+                    if (nameEl) nameEl.textContent = `- ${data.data.name}`;
+                }
+            } catch (e) {
+                console.warn('获取培训名称失败:', e);
+            }
+            loadPhotos(1);
+        } else {
+            document.getElementById('photoGridContainer').innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <h5>${safeT('no_training_selected')}</h5>
+                    <p>${safeT('please_select_training_first')}</p>
+                </div>
+            `;
+        }
+    });
 </script>
 {% endblock %}

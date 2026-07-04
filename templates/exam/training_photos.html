@@ -206,7 +206,7 @@
     </nav>
 </div>
 
-<!-- 照片查看模态框（新增删除按钮） -->
+<!-- 照片查看模态框（删除按钮，导航按钮） -->
 <div class="modal fade photo-view-modal" id="photoViewModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
@@ -215,7 +215,33 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body text-center">
-                <img id="photoViewImage" src="" alt="照片预览" style="max-width: 100%; max-height: 65vh; border-radius: 8px;">
+                <img id="photoViewImage" src="" alt="照片预览" style="max-width: 100%; max-height: 60vh; border-radius: 8px; transition: opacity 0.3s ease;">
+
+                <!-- 导航栏 -->
+                <div class="photo-nav" style="display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px;">
+                    <button class="nav-btn" id="firstPhotoBtn" title="第一张" 
+                            style="background: rgba(0,0,0,0.05); border: 1px solid #ddd; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: #333;"
+                            onmouseover="this.style.background='rgba(0,0,0,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.05)'">
+                        <i class="bi bi-chevron-double-left" style="font-size: 0.8rem;"></i>
+                    </button>
+                    <button class="nav-btn" id="prevPhotoBtn" title="上一张" 
+                            style="background: rgba(0,0,0,0.05); border: 1px solid #ddd; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: #333;"
+                            onmouseover="this.style.background='rgba(0,0,0,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.05)'">
+                        <i class="bi bi-chevron-left" style="font-size: 0.9rem;"></i>
+                    </button>
+                    <span class="nav-counter" id="photoCounter" style="font-size: 0.85rem; color: #6c757d; min-width: 60px; text-align: center; font-weight: 500;">1 / 1</span>
+                    <button class="nav-btn" id="nextPhotoBtn" title="下一张" 
+                            style="background: rgba(0,0,0,0.05); border: 1px solid #ddd; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: #333;"
+                            onmouseover="this.style.background='rgba(0,0,0,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.05)'">
+                        <i class="bi bi-chevron-right" style="font-size: 0.9rem;"></i>
+                    </button>
+                    <button class="nav-btn" id="lastPhotoBtn" title="最后一张" 
+                            style="background: rgba(0,0,0,0.05); border: 1px solid #ddd; border-radius: 50%; width: 34px; height: 34px; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; color: #333;"
+                            onmouseover="this.style.background='rgba(0,0,0,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.05)'">
+                        <i class="bi bi-chevron-double-right" style="font-size: 0.8rem;"></i>
+                    </button>
+                </div>
+
                 <div class="mt-3 text-start">
                     <p class="mb-1"><strong><span data-i18n="filename">文件名</span>：</strong><span id="photoViewName"></span></p>
                     <p class="mb-1"><strong><span data-i18n="uploader">上传人</span>：</strong><span id="photoViewUploader"></span></p>
@@ -266,7 +292,6 @@
     // ============================================================
     // 培训照片管理 - 完整逻辑
     // ============================================================
-
     // ---------- 基础状态 ----------
     let currentPage = 1;
     let perPage = 20;
@@ -284,7 +309,6 @@
     let expandedTrainingId = null;
     let photoCache = {}; // { trainingId: [photos] }
     let trainingListData = []; // 有照片的培训列表
-
     // ---------- Toast 兼容 ----------
     if (typeof window.showToast !== 'function') {
         window.showToast = function(message, title = '提示', type = 'info') {
@@ -755,13 +779,12 @@
                     <div class="training-card-header" onclick="toggleTrainingCard(${t.id})">
                         <span class="expand-icon ${isExpanded ? 'expanded' : ''}">▶</span>
                         <span class="country-tag">${escapeHtml(t.country || '通用')}</span>
-                        <span class="training-name">${escapeHtml(t.name)}</span>
-                        <span class="training-meta">📅 ${safeT('valid_period')}：${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}</span>
-                        <span class="quarter-tag">${quarter || '-'}</span>
+                        <span class="training-name">${escapeHtml(t.name)}</span><span class="quarter-tag">${quarter || '-'}</span>
                         <span class="photo-badge">📷 ${t.photo_count}${safeT('photos')}</span>
                         <span class="status-badge ${statusClass}">${statusText}</span>
                     </div>
                     <div class="training-card-body ${isExpanded ? 'expanded' : ''}" id="trainingBody_${t.id}">
+                        <span class="training-meta">📅 ${safeT('valid_period')}：${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}</span>
                         <div class="upload-section">
                             <button class="btn btn-sm btn-primary btn-upload-photo" onclick="uploadToTraining(${t.id})">
                                 <i class="bi bi-plus-circle"></i> ${safeT('upload_photos')}
@@ -907,22 +930,40 @@
         }
     }
 
-    // ---------- 从网格查看照片 ----------
-    function viewPhotoFromGrid(trainingId, photoId) {
-        const photos = photoCache[trainingId] || [];
-        const photo = photos.find(p => p.id === photoId);
-        if (!photo) return;
+    // ============================================================
+    // 大图模态框导航逻辑
+    // ============================================================
+    // ---------- 导航状态 ----------
+    let modalPhotoList = [];          // 当前模态框中的照片列表
+    let modalCurrentIndex = 0;        // 当前显示的照片索引
+    let isModalOpen = false;          // 模态框是否已打开
+    let modalViewTrainingId = null;   // 当前查看的培训ID
 
-        viewPhoto(photo, trainingId);
-    }
+    // ---------- 更新模态框内容 ----------
+    function updateModalContent(index) {
+        const photos = modalPhotoList;
+        if (!photos || photos.length === 0 || index < 0 || index >= photos.length) return;
 
-    // ---------- 查看照片（大图模态框） ----------
-    function viewPhoto(photo, trainingId) {
-        document.getElementById('photoViewImage').src = photo.photo_url;
+        const photo = photos[index];
+        modalCurrentIndex = index;
+
+        // 更新图片
+        const img = document.getElementById('photoViewImage');
+        img.style.opacity = '0.5';
+        img.src = photo.photo_url;
+        img.onload = function() {
+            img.style.opacity = '1';
+        };
+
+        // 更新标题
+        document.getElementById('photoViewTitle').textContent = photo.file_name || '照片预览';
+
+        // 更新文件信息
         document.getElementById('photoViewName').textContent = photo.file_name || '-';
         document.getElementById('photoViewUploader').textContent = photo.uploaded_by_name || '系统';
         document.getElementById('photoViewTime').textContent = photo.uploaded_at ? new Date(photo.uploaded_at).toLocaleString() : '-';
 
+        // 描述
         const descWrap = document.getElementById('photoViewDescriptionWrap');
         if (photo.photo_description) {
             descWrap.style.display = 'block';
@@ -931,24 +972,120 @@
             descWrap.style.display = 'none';
         }
 
+        // 水印
         const hasWatermark = photo.metadata?.has_watermark;
         const watermarkText = photo.metadata?.watermark_text;
-        document.getElementById('photoViewWatermark').textContent = hasWatermark ? `💧 已添加水印${watermarkText ? ': ' + watermarkText : ''}` : '未添加水印';
+        document.getElementById('photoViewWatermark').textContent = hasWatermark ? 
+            `💧 已添加水印${watermarkText ? ': ' + watermarkText : ''}` : '未添加水印';
 
-        // 显示删除按钮（如果有权限）
+        // 计数器
+        document.getElementById('photoCounter').textContent = `${index + 1} / ${photos.length}`;
+
+        // 导航按钮状态
+        document.getElementById('firstPhotoBtn').disabled = index === 0;
+        document.getElementById('prevPhotoBtn').disabled = false;
+        document.getElementById('nextPhotoBtn').disabled = false;
+        document.getElementById('lastPhotoBtn').disabled = index === photos.length - 1;
+
+        // 删除按钮
         const deleteBtn = document.getElementById('photoViewDeleteBtn');
         if (photo.can_delete) {
             deleteBtn.style.display = 'inline-block';
             deleteBtn.onclick = function() {
-                document.getElementById('photoViewModal')._bsModal?.hide();
-                confirmDeletePhoto(photo.id, trainingId);
+                const modalEl = document.getElementById('photoViewModal');
+                const modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.hide();
+                isModalOpen = false;
+                setTimeout(() => {
+                    confirmDeletePhoto(photo.id, modalViewTrainingId);
+                }, 300);
             };
         } else {
             deleteBtn.style.display = 'none';
         }
+    }
 
-        const modal = new bootstrap.Modal(document.getElementById('photoViewModal'));
+    // ---------- 显示模态框 ----------
+    function showModalWithNavigation(index) {
+        const photos = modalPhotoList;
+        if (!photos || photos.length === 0) return;
+
+        if (isModalOpen) {
+            updateModalContent(index);
+            return;
+        }
+
+        updateModalContent(index);
+        const modalEl = document.getElementById('photoViewModal');
+        const modal = new bootstrap.Modal(modalEl);
         modal.show();
+        isModalOpen = true;
+    }
+
+    // ---------- 导航函数 ----------
+    function goToPrevPhoto() {
+        if (!modalPhotoList || modalPhotoList.length === 0) return;
+        if (modalCurrentIndex > 0) {
+            updateModalContent(modalCurrentIndex - 1);
+        } else {
+            updateModalContent(modalPhotoList.length - 1);
+        }
+    }
+
+    function goToNextPhoto() {
+        if (!modalPhotoList || modalPhotoList.length === 0) return;
+        if (modalCurrentIndex < modalPhotoList.length - 1) {
+            updateModalContent(modalCurrentIndex + 1);
+        } else {
+            updateModalContent(0);
+        }
+    }
+
+    function goToFirstPhoto() {
+        if (!modalPhotoList || modalPhotoList.length === 0) return;
+        updateModalContent(0);
+    }
+
+    function goToLastPhoto() {
+        if (!modalPhotoList || modalPhotoList.length === 0) return;
+        updateModalContent(modalPhotoList.length - 1);
+    }
+
+    // ---------- 查看照片（融合导航） ----------
+    function viewPhoto(photo, trainingId) {
+        modalViewTrainingId = trainingId;
+        const cachedPhotos = photoCache[trainingId] || [];
+        
+        if (cachedPhotos && cachedPhotos.length > 1) {
+            modalPhotoList = cachedPhotos;
+            const index = modalPhotoList.findIndex(p => p.id === photo.id);
+            modalCurrentIndex = index >= 0 ? index : 0;
+            showModalWithNavigation(modalCurrentIndex);
+        } else {
+            modalPhotoList = [photo];
+            modalCurrentIndex = 0;
+            showModalWithNavigation(0);
+        }
+    }
+
+    // ---------- 从网格查看照片 ----------
+    function viewPhotoFromGrid(trainingId, photoId) {
+        const photos = photoCache[trainingId] || [];
+        const photo = photos.find(p => p.id === photoId);
+        if (!photo) return;
+
+        modalViewTrainingId = trainingId;
+
+        if (photos && photos.length > 1) {
+            modalPhotoList = photos;
+            const index = modalPhotoList.findIndex(p => p.id === photoId);
+            modalCurrentIndex = index >= 0 ? index : 0;
+            showModalWithNavigation(modalCurrentIndex);
+        } else {
+            modalPhotoList = [photo];
+            modalCurrentIndex = 0;
+            showModalWithNavigation(0);
+        }
     }
 
     // ---------- 从网格删除照片 ----------
@@ -1514,6 +1651,42 @@
 
         // 设置上传区域功能
         setupUploadArea();
+        // 绑定模态框导航事件
+        document.getElementById('firstPhotoBtn')?.addEventListener('click', goToFirstPhoto);
+        document.getElementById('prevPhotoBtn')?.addEventListener('click', goToPrevPhoto);
+        document.getElementById('nextPhotoBtn')?.addEventListener('click', goToNextPhoto);
+        document.getElementById('lastPhotoBtn')?.addEventListener('click', goToLastPhoto);
+
+        // 键盘事件（支持循环导航）
+        document.addEventListener('keydown', function(e) {
+            const modal = document.getElementById('photoViewModal');
+            if (!modal || !modal.classList.contains('show')) return;
+            if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                goToPrevPhoto();
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault();
+                goToNextPhoto();
+            } else if (e.key === 'Home') {
+                e.preventDefault();
+                goToFirstPhoto();
+            } else if (e.key === 'End') {
+                e.preventDefault();
+                goToLastPhoto();
+            } else if (e.key === 'Escape') {
+                // 由 Bootstrap 自动处理
+            }
+        });
+
+        // 模态框关闭时清理状态
+        document.getElementById('photoViewModal')?.addEventListener('hidden.bs.modal', function() {
+            isModalOpen = false;
+            document.getElementById('photoViewImage').src = '';
+            document.getElementById('photoViewImage').style.opacity = '1';
+            if (document.activeElement) {
+                document.activeElement.blur();
+            }
+        });
     });
 
     // ---------- 上传区域功能 ----------
