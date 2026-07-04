@@ -1131,5 +1131,7 @@
 "title_force_push_all": "强制推送给全部学员（不改变考试有效期，学员可立即参加考试）",
 "title_pending_persons": "培训待签到或待考试的学员数（去重）",
 "title_unassigned_count": "培训或考试未分配的学员数（去重）",
-"click_to_filter": "点击筛选"
+"click_to_filter": "点击筛选",
+"no_photos_uploaded": "暂无照片上传",
+"name_input_hint": "加载需要时间请稍等"
 }
