@@ -1174,5 +1174,6 @@
 "jsonify_ agreement_does_not_exist": "The agreement does not exist.",
 "jsonify_active_version_cannot_delete": "The current active version cannot be deleted.",
 "privacy_tatement_onfirmed": "Privacy Statement Confirmed",
-"confirmation_failed_try_again": "Confirmation failed. Please try again."
+"confirmation_failed_try_again": "Confirmation failed. Please try again.",
+"confirming": "Confirming..."
 }
