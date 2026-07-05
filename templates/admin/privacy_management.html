@@ -31,7 +31,7 @@
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="mb-0"><i class="bi bi-shield-lock me-2"></i><span data-i18n="privacy_management">隐私声明管理</span></h2>
-            <small class="text-muted">管理用户隐私声明版本和确认记录</small>
+            <small class="text-muted" data-i18n="privacy_management_hint">管理用户隐私声明版本和确认记录</small>
         </div>
         <div class="d-flex gap-2">
             <button class="btn btn-outline-secondary" id="refreshStatsBtn">
@@ -39,6 +39,9 @@
             </button>
             <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#createModal">
                 <i class="bi bi-plus-circle"></i> <span data-i18n="new_version">新版本</span>
+            </button>
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
             </button>
         </div>
     </div>
@@ -267,7 +270,7 @@
         let html = '';
         agreements.forEach(item => {
             const isActive = item.is_active;
-            const statusText = isActive ? '当前活跃' : '已停用';
+            const statusText = isActive ? t('is_active_true') : t('is_active_false');
             const statusClass = isActive ? 'active' : 'inactive';
             const createdDate = item.created_at ? new Date(item.created_at).toLocaleString() : '-';
             const contentPreview = item.content ? item.content.replace(/<[^>]+>/g, '').substring(0, 80) + '...' : '-';
@@ -351,7 +354,8 @@
         const btn = document.getElementById('createSubmitBtn');
         const originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 创建中...';
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>${t('creating')}
+`;
 
         try {
             const data = {
@@ -369,7 +373,7 @@
             const result = await res.json();
 
             if (result.success) {
-                showToast('版本创建成功', 'success');
+                showToast(t('version_created_success'), 'success');
                 bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
                 this.reset();
                 loadAgreements(currentPage);
@@ -416,7 +420,7 @@
         const btn = document.getElementById('editSubmitBtn');
         const originalHtml = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 保存中...';
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>${t('saving')}`;
 
         try {
             const id = document.getElementById('editId').value;
@@ -434,11 +438,11 @@
             const result = await res.json();
 
             if (result.success) {
-                showToast('保存成功', 'success');
+                showToast(t('t_save_successful'), 'success');
                 bootstrap.Modal.getInstance(document.getElementById('editModal')).hide();
                 loadAgreements(currentPage);
             } else {
-                showToast(result.message || '保存失败', 'error');
+                showToast(result.message || t('save_failed'), 'error');
             }
         } catch (err) {
             console.error('保存失败:', err);
@@ -451,7 +455,7 @@
 
     // ---------- 激活版本 ----------
     async function activateAgreement(id) {
-        if (!confirm('激活此版本后，所有用户需要重新确认隐私声明。确定继续吗？')) return;
+        if (!confirm(t('aversion_ctivating_hint'))) return;
 
         try {
             const res = await fetch(`/api/admin/privacy/agreements/${id}/activate`, {
@@ -460,7 +464,7 @@
             const result = await res.json();
 
             if (result.success) {
-                showToast('已激活，用户需重新确认', 'success');
+                showToast(t('activated_needs_to_reconfirm.'), 'success');
                 loadAgreements(currentPage);
                 loadStats();
             } else {
