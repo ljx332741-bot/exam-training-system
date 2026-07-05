@@ -124,7 +124,7 @@
                 container.innerHTML = `
                     <div class="text-center py-4">
                         <i class="bi bi-exclamation-triangle" style="font-size: 2rem; color: #f87171; display: block; margin-bottom: 12px;"></i>
-                        <p class="text-danger">加载失败，请刷新页面重试</p>
+                        <p class="text-danger">${t('failed_to_load_try_again')}</p>
                     </div>
                 `;
             }
@@ -138,7 +138,7 @@
             
             this.isLoading = true;
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> 确认中...';
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span>${t('confirming')}`;
 
             try {
                 const res = await fetch('/api/privacy/agree', {

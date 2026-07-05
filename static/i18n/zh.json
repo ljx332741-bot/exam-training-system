@@ -1169,5 +1169,6 @@
 "jsonify_ agreement_does_not_exist": "协议不存在",
 "jsonify_active_version_cannot_delete": "不能删除当前活跃版本",
 "privacy_tatement_onfirmed": "已确认隐私声明",
-"confirmation_failed_try_again": "确认失败，请重试"
+"confirmation_failed_try_again": "确认失败，请重试",
+"confirming": "确认中..."
 }
