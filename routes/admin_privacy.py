@@ -227,3 +227,98 @@ def api_admin_privacy_stats():
             "confirmation_rate": round(confirmed / total_users * 100, 1) if total_users > 0 else 0
         }
     })
+
+@admin_privacy_bp.route('/api/admin/privacy/users', methods=['GET'])
+@login_required
+@admin_required
+def api_admin_privacy_users():
+    """
+    获取隐私声明相关的用户清单
+    GET /api/admin/privacy/users?agreement_id=1&type=confirmed&per_page=10000
+    """
+    from utils.permissions import filter_users_by_permission, get_admin_allowed_countries
+
+    agreement_id = request.args.get('agreement_id', type=int)
+    list_type = request.args.get('type', 'total')
+    per_page = request.args.get('per_page', 10000, type=int)
+
+    if not agreement_id:
+        return jsonify({"success": False, "message": "缺少协议ID"}), 400
+
+    db = get_supabase_admin()
+    allowed_countries = get_admin_allowed_countries()
+    current_user_id = session.get('user_id')
+
+    # 1. 获取所有用户（未删除）
+    user_res = db.table("users").select("*").is_("deleted_at", "null").execute()
+    all_users = user_res.data or []
+
+    # 2. 获取该协议的确认记录
+    ack_res = db.table("user_agreement_acks") \
+        .select("user_id, agreement_id, acknowledged_at") \
+        .eq("agreement_id", agreement_id) \
+        .execute()
+    ack_map = {item['user_id']: item for item in (ack_res.data or [])}
+
+    # 3. 获取协议版本信息
+    agreement = PrivacyService.get_agreement_by_id(agreement_id)
+    agreement_version = agreement.get('version') if agreement else None
+
+    # 4. 根据类型筛选用户
+    result_users = []
+    for user in all_users:
+        user_id = user['id']
+        is_confirmed = user_id in ack_map
+
+        if list_type == 'confirmed' and not is_confirmed:
+            continue
+        if list_type == 'unconfirmed' and is_confirmed:
+            continue
+        # rate 类型：全部显示（前端会展示确认状态）
+
+        # 构建返回数据
+        user_data = {
+            'id': user_id,
+            'name_en': user.get('name_en', ''),
+            'email': user.get('email', ''),
+            'country': user.get('country', ''),
+            'user_status': user.get('user_status', ''),
+            'is_resign': user.get('is_resign', False),
+            'is_rehire': user.get('is_rehire', False),
+            'rehire_at': user.get('rehire_at'),
+            'resigned_at': user.get('resigned_at'),
+            'last_login_at': user.get('last_login_at'),
+            'created_at': user.get('created_at'),
+            'agreement_version': agreement_version,
+            'acknowledged_at': ack_map[user_id]['acknowledged_at'] if is_confirmed else None
+        }
+        result_users.append(user_data)
+
+    # 5. 权限过滤（与用户列表一致）
+    filtered_users = filter_users_by_permission(result_users, allowed_countries, current_user_id)
+
+    # 6. 排序：已确认的按确认时间倒序，未确认的按创建时间倒序
+    confirmed_list = [u for u in filtered_users if u['acknowledged_at']]
+    unconfirmed_list = [u for u in filtered_users if not u['acknowledged_at']]
+    confirmed_list.sort(key=lambda x: x['acknowledged_at'], reverse=True)
+    unconfirmed_list.sort(key=lambda x: x['created_at'] or '', reverse=True)
+
+    if list_type == 'confirmed':
+        sorted_users = confirmed_list
+    elif list_type == 'unconfirmed':
+        sorted_users = unconfirmed_list
+    else:  # total 或 rate
+        sorted_users = confirmed_list + unconfirmed_list
+
+    # 分页
+    total = len(sorted_users)
+    if per_page and per_page > 0:
+        # 简单分页（实际上前端自己做分页）
+        pass
+
+    return jsonify({
+        "success": True,
+        "data": sorted_users,
+        "total": total,
+        "agreement_version": agreement_version
+    })

@@ -108,7 +108,4 @@ exam-system/
 │   ├── admin_inspection.py                 # 管理员：访谈管理
 │   └── admin_export.py                     # 管理员：导出模块
 │   
-├── models/
-│   ├── __init__.py                         
-│   └── privacy_models.py                   # 隐私声明数据模型
 
