@@ -56,23 +56,20 @@ def api_admin_get_agreements():
 @admin_required
 def api_admin_get_agreement(agreement_id):
     """获取单个隐私声明版本详情"""
-    print(f"🔍 调用 api_admin_get_agreement, agreement_id={agreement_id}")
     try:
         from services.db import get_supabase_admin
         db = get_supabase_admin()
         
-        # ✅ 使用 admin 客户端
         res = db.table("privacy_agreements").select("*").eq("id", agreement_id).execute()
-        print(f"   admin 查询结果: {res.data if res and hasattr(res, 'data') else 'None'}")
         
         if res and hasattr(res, 'data') and res.data and len(res.data) > 0:
             return jsonify({"success": True, "data": res.data[0]})
         
-        return jsonify({"success": False, "message": "协议不存在"}), 404
+        return jsonify({"success": False, "message": "jsonify_agreement_does_not_exist", "params": []}), 404
     except Exception as e:
         import traceback
         print(f"❌ 错误: {traceback.format_exc()}")
-        logger.error(f"获取协议失败: {e}")
+        logger.error(f"获取协议失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
 
 
@@ -90,7 +87,7 @@ def api_admin_create_agreement():
     changelog = data.get('changelog', '')
     
     if not all([version, title, content]):
-        return jsonify({"success": False, "message": "请填写完整信息"}), 400
+        return jsonify({"success": False, "message": "jsonify_fillin_info_completely", "params": []}), 400
     
     try:
         result = PrivacyService.create_agreement(
@@ -119,7 +116,7 @@ def api_admin_update_agreement(agreement_id):
     changelog = data.get('changelog', '')
     
     if not all([title, content]):
-        return jsonify({"success": False, "message": "请填写完整信息"}), 400
+        return jsonify({"success": False, "message": "jsonify_fillin_info_completely", "params": []}), 400
     
     try:
         result = PrivacyService.update_agreement(
@@ -144,7 +141,7 @@ def api_admin_activate_agreement(agreement_id):
     
     agreement = PrivacyService.get_agreement_by_id(agreement_id)
     if not agreement:
-        return jsonify({"success": False, "message": "协议不存在"}), 404
+        return jsonify({"success": False, "message": "jsonify_ agreement_does_not_exist", "params": []}), 404
     
     try:
         # 将所有协议设为非活跃
@@ -178,10 +175,10 @@ def api_admin_delete_agreement(agreement_id):
     
     agreement = PrivacyService.get_agreement_by_id(agreement_id)
     if not agreement:
-        return jsonify({"success": False, "message": "协议不存在"}), 404
+        return jsonify({"success": False, "message": "jsonify_ agreement_does_not_exist", "params": []}), 404
     
     if agreement.get('is_active'):
-        return jsonify({"success": False, "message": "不能删除当前活跃版本"}), 400
+        return jsonify({"success": False, "message": "jsonify_active_version_cannot_delete", "params": []}), 400
     
     try:
         db.table("privacy_agreements").delete().eq("id", agreement_id).execute()

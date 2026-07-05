@@ -56,17 +56,12 @@
 
         async checkStatus() {
             try {
-                console.log('🔍 检查隐私状态...');
                 const res = await fetch('/api/privacy/status');
                 const data = await res.json();
-                console.log('📊 隐私状态:', data);
 
                 if (data.needs_acknowledgment && data.agreement) {
-                    console.log('✅ 需要确认隐私声明，显示弹窗');
                     this.agreementData = data.agreement;
                     await this.showModal();
-                } else {
-                    console.log('❌ 不需要确认隐私声明');
                 }
             } catch (err) {
                 console.error('检查隐私状态失败:', err);
@@ -167,7 +162,7 @@
                     
                     // 显示成功提示
                     if (typeof showToast === 'function') {
-                        showToast('已确认隐私声明', 'success');
+                        showToast(t('privacy_tatement_onfirmed'), 'success');
                     }
                     
                     // 执行回调
@@ -181,7 +176,7 @@
                         document.body.classList.remove('modal-open');
                     }, 300);
                 } else {
-                    const msg = data.message || '确认失败，请重试';
+                    const msg = data.message || t('confirmation_failed_try_again');
                     if (typeof showToast === 'function') {
                         showToast(msg, 'error');
                     }
@@ -191,7 +186,7 @@
             } catch (err) {
                 console.error('确认失败:', err);
                 if (typeof showToast === 'function') {
-                    showToast('网络错误，请重试', 'error');
+                    showToast(t('network_error_retry'), 'error');
                 }
                 btn.disabled = false;
                 btn.innerHTML = originalText;
@@ -210,8 +205,6 @@
         const privacyManager = new PrivacyManager();
         privacyManager.init({
             onConfirm: function() {
-                // 确认后可执行额外操作，如刷新页面数据
-                console.log('隐私声明已确认');
                 // 如果当前在 dashboard，刷新数据
                 if (window.location.pathname.includes('/dashboard')) {
                     if (typeof loadDashboardData === 'function') {

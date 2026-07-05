@@ -754,6 +754,8 @@ const translations = {
         otpPlaceholder: '6位数字',
         passwordPlaceholder: '至少6位',
         confirmPlaceholder: '再次输入',
+        input_password: '请输入6位密码',
+        input_name: '请输入全称，中文请使用拼音',
         namePlaceholder: 'John Alexander Smith',
         countryPlaceholder: '输入选择国家',
         emailError: '请输入有效的邮箱地址',
@@ -767,8 +769,9 @@ const translations = {
         networkError: '网络错误',
         enterEmail: '请输入邮箱地址',
         enterValidEmail: '请输入有效的邮箱地址',
-        "email_not_registered": "该邮箱未注册，请先注册账号",
-        "otp_invalid": "验证码无效，请重新获取"
+        email_not_registered: '该邮箱未注册，请先注册账号',
+        otp_invalid: '验证码无效，请重新获取',
+        privacy_policy_login_hint: '请先阅读并同意隐私声明'
     },
     en: {
         registerTitle: 'New User Registration',
@@ -791,6 +794,8 @@ const translations = {
         otpPlaceholder: '6 digits',
         passwordPlaceholder: 'Min 6 chars',
         confirmPlaceholder: 'Confirm password',
+        input_password: 'Please enter 6 characters',
+        input_name: 'Please enter your full name, PinYin need if Chinese',
         namePlaceholder: 'John Alexander Smith',
         countryPlaceholder: 'Select country',
         emailError: 'Please enter a valid email',
@@ -804,8 +809,9 @@ const translations = {
         networkError: 'Network error',
         enterEmail: 'Please enter your email',
         enterValidEmail: 'Please enter a valid email',
-        "email_not_registered": "This email is not registered, please sign up first",
-        "otp_invalid": "Invalid verification code, please try again"
+        email_not_registered: 'This email is not registered, please sign up first',
+        otp_invalid: 'Invalid verification code, please try again',
+        privacy_policy_login_hint: 'Please read and agree to the privacy policy first.'
     }
 };
 
@@ -1143,7 +1149,7 @@ document.getElementById('regForm').addEventListener('submit', async function(e) 
     }
     
     if (!otp.value || otp.value.length !== 6) {
-        showToast('请输入6位验证码', 'warning');
+        showToast(t('input_password'), 'warning');
         valid = false;
     }
     
@@ -1162,7 +1168,7 @@ document.getElementById('regForm').addEventListener('submit', async function(e) 
     }
     
     if (!name.value.trim()) {
-        showToast('请输入姓名', 'warning');
+        showToast(t('input_name'), 'warning');
         valid = false;
     }
     
