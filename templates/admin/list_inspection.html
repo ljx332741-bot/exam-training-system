@@ -305,9 +305,13 @@
     let previewData = [];          // 预览数据
     let currentPreviewIndex = 0;
     let pendingSaveData = null;   // 暂存待提交的表单数据
-
     let editMode = false;
     let editingInterviewId = null;
+
+    // ✅ 新增：已关闭访谈编辑状态
+    let isClosedInterview = false;
+    let existingUserIds = [];           // 已参与该访谈的用户ID列表
+    let forceDurationHours = 24;        // 强制访谈有效期（小时），默认为24小时
 
     // 等待 i18n 就绪工具函数
     function waitForI18n() {
@@ -656,6 +660,37 @@
                 document.getElementById('whIdFilter').disabled = false;
                 document.getElementById('countryFilter').disabled = false;
                 document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = false);
+                
+                // ✅ 重置已关闭状态相关变量
+                isClosedInterview = false;
+                existingUserIds = [];
+                editMode = false;
+                editingInterviewId = null;
+                
+                // ✅ 恢复按钮状态
+                const saveDraftBtn = document.getElementById('saveDraftBtn');
+                const savePublishBtn = document.getElementById('saveAndPublishBtn');
+                const previewBtn = document.getElementById('previewBtn');
+                
+                if (saveDraftBtn) {
+                    saveDraftBtn.style.display = 'inline-block';
+                    saveDraftBtn.removeEventListener('click', saveDraftBtn._forceHandler);
+                    saveDraftBtn._forceHandler = null;
+                }
+                if (previewBtn) previewBtn.style.display = 'inline-block';
+                if (savePublishBtn) {
+                    savePublishBtn.removeEventListener('click', savePublishBtn._forceHandler);
+                    savePublishBtn._forceHandler = null;
+                    savePublishBtn.innerHTML = `<span data-i18n="save_public">保存并发布</span>`;
+                    savePublishBtn.className = 'btn btn-success';
+                    savePublishBtn.style.display = 'inline-block';
+                }
+                
+                // 重置模态框标题
+                const modalTitle = document.querySelector('#newInterviewModal .modal-title');
+                if (modalTitle) {
+                    modalTitle.innerHTML = `<span data-i18n="add_new_interviewee">新增访谈</span>`;
+                }
             });
         }
     });
@@ -727,11 +762,13 @@
                 <button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>
                 <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
         } else if (status === 'closed') {
-            // 已关闭：仅详情；超管额外显示删除
+            // ✅ 已关闭：详情 + 强制新增（超管/开发者可见）
             actionButtons = `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>`;
             if (isSuperAdmin || isDeveloper) {
                 actionButtons += `
-                <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
+                <button class="btn btn-sm btn-outline-warning edit-interview-btn" data-id="${inv.id}" title="为已关闭访谈新增学员（创建强制访谈）">
+                    <i class="bi bi-lightning-charge"></i> ${t('force_add_users') || '强制新增'}
+                </button>
                 <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
             }
         }
@@ -920,7 +957,7 @@
 
     // 加载学员列表
     document.getElementById('loadUsersBtn').addEventListener('click', loadUserListForInterview);
-    async function loadUserListForInterview(examId = null) {
+    async function loadUserListForInterview(examId = null, includeAll = false) {
         const search = document.getElementById('userSearch').value;
         const countryText = document.getElementById('countryFilter').value;
         const countryCode = document.getElementById('countryCodeForInterview').value || resolveCountryParam(countryText);
@@ -939,7 +976,7 @@
         url.searchParams.append('exclude_resigned', 'true');
         
         // 如果指定了考试ID，添加 exam_id 参数让后端根据考试国家过滤
-        if (effectiveExamId) {
+        if (effectiveExamId && !includeAll) {
             url.searchParams.append('exam_id', effectiveExamId);
         }
         
@@ -1060,10 +1097,101 @@
         const feedback = document.getElementById('feedbackInput').value;
         const startTime = localDateTimeToUTC(document.getElementById('startTime').value);
         const endTime = localDateTimeToUTC(document.getElementById('endTime').value);
-        const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
-        if (!examId) { alert('请选择考试'); return; }
-        if (userIds.length === 0) { alert('请选择学员'); return; }
+        
+        // ✅ 判断是否为已关闭状态（从编辑模式判断）
+        const isClosedMode = isClosedInterview || false;
+        
+        let userIds = [];
+        
+        if (isClosedMode) {
+            // 已关闭状态：只提交未参与的用户（未禁用的复选框）
+            userIds = Array.from(document.querySelectorAll('.user-checkbox:checked:not(:disabled)')).map(cb => cb.value);
+        } else {
+            // 非已关闭状态：提交所有选中的用户
+            userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
+        }
+        
+        // 已关闭状态且没有新用户，提示并返回
+        if (isClosedMode && userIds.length === 0) {
+            if (typeof showToast === 'function') {
+                showToast(t('please_select_users_to_add'), 'warning');
+            } else {
+                alert(t('please_select_users_to_add') || '请选择要新增的用户');
+            }
+            return;
+        }
+        
+        if (!examId) { 
+            alert(t('t_choice_exam')); 
+            return; 
+        }
+        if (!isClosedMode && userIds.length === 0) { 
+            alert(t('t_choice_candidate')); 
+            return; 
+        }
 
+        // ========== ✅ 已关闭状态：调用强制新增API ==========
+        if (isClosedMode) {
+            const payload = {
+                user_ids: userIds,
+                force_duration_hours: forceDurationHours || 24
+            };
+            
+            // 显示加载状态
+            const saveBtn = document.getElementById('saveAndPublishBtn');
+            const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${t('creating')}...`;
+            }
+            
+            try {
+                const res = await fetch(`/api/admin/interview/${editingInterviewId}/force_add_users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalHtml;
+                }
+                
+                if (result.success) {
+                    const successMsg = t(result.message || 'force_interview_created_success', 
+                        result.success_count || 0, 
+                        forceDurationHours
+                    );
+                    if (typeof showToast === 'function') {
+                        showToast(successMsg, 'success');
+                    } else {
+                        alert(successMsg);
+                    }
+                    bootstrap.Modal.getInstance(document.getElementById('newInterviewModal')).hide();
+                    editMode = false;
+                    isClosedInterview = false;
+                    resetInterviewForm();
+                    loadInterviews();
+                } else {
+                    const errorMsg = t(result.message || 'operation_failed');
+                    if (typeof showToast === 'function') {
+                        showToast(errorMsg, 'error');
+                    } else {
+                        alert('创建强制访谈失败: ' + (result.message || ''));
+                    }
+                }
+            } catch (e) {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalHtml;
+                }
+                alert('操作出错: ' + e.message);
+            }
+            return;
+        }
+
+        // ========== 非已关闭状态：使用原有逻辑 ==========
         const payload = {
             exam_id: examId,
             question_count: questionCount,
@@ -1079,7 +1207,7 @@
             payload.id = editingInterviewId;
         }
 
-        const url = editMode ? '/api/admin/interviews' : '/api/admin/interviews';
+        const url = '/api/admin/interviews';
         const method = editMode ? 'PUT' : 'POST';
 
         try {
@@ -1094,6 +1222,7 @@
                 bootstrap.Modal.getInstance(document.getElementById('newInterviewModal')).hide();
                 bootstrap.Modal.getInstance(document.getElementById('previewModal'))?.hide();
                 editMode = false;
+                isClosedInterview = false;
                 resetInterviewForm();
                 loadInterviews();
             } else {
@@ -1178,19 +1307,12 @@
             console.log('========== 访谈详情调试 ==========');
             console.log('interview 完整数据:', JSON.stringify(interview, null, 2));
             console.log('interview.status:', interview.status);
-            console.log('interview.status 类型:', typeof interview.status);
-            console.log('interview.status 是否等于 draft:', interview.status === 'draft');
-            console.log('interview.status 是否等于 created:', interview.status === 'created');
-            console.log('interview.status 是否等于 active:', interview.status === 'active');
-            console.log('interview.status 是否等于 closed:', interview.status === 'closed');
-            console.log('interview 所有字段:', Object.keys(interview));
             console.log('=====================================');
-            // ========== 调试日志结束 ==========
             
             editMode = true;
             editingInterviewId = invId;
 
-            //1. 先重置所有禁用状态
+            // 获取DOM元素引用
             const examSelect = document.getElementById('examSelect');
             const questionCount = document.getElementById('questionCount');
             const userSearch = document.getElementById('userSearch');
@@ -1202,9 +1324,8 @@
             const reviewerInput = document.getElementById('reviewerInput');
             const feedbackInput = document.getElementById('feedbackInput');
             const selectAllUsers = document.getElementById('selectAllUsers');
-            const allCheckboxes = document.querySelectorAll('.user-checkbox');
             
-            // 重置所有字段
+            // ========== 1. 先重置所有禁用状态 ==========
             [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter].forEach(el => {
                 if (el) {
                     el.disabled = false;
@@ -1212,10 +1333,9 @@
                     el.style.pointerEvents = 'auto';
                 }
             });
-            allCheckboxes.forEach(cb => cb.disabled = false);
             if (selectAllUsers) selectAllUsers.disabled = false;
             
-            // 填充基本信息
+            // ========== 2. 填充基本信息 ==========
             if (examSelect) examSelect.value = interview.exam_title || '';
             document.getElementById('selectedExamId').value = interview.exam_id || '';
             if (questionCount) questionCount.value = interview.question_count || 8;
@@ -1224,25 +1344,42 @@
             if (startTime) startTime.value = toLocalDatetimeLocal(interview.start_time);
             if (endTime) endTime.value = toLocalDatetimeLocal(interview.end_time);
             
-            // 加载并勾选已分配的学员
-            await loadUserListForInterview(interview.exam_id);
-            
+            // ========== 3. 获取已参与用户列表 ==========
             const userIds = interview.user_ids || [];
-            allCheckboxes.forEach(cb => {
-                cb.checked = userIds.includes(cb.value);
-            });
-            
-            //2. 根据状态控制字段
+            existingUserIds = userIds;
+            console.log(`✅ 已参与用户列表 (${existingUserIds.length}人):`, existingUserIds);
+
+            // ========== 4. 加载用户列表 ==========
+            // ✅ 注意：这里不传 includeAll，保持原有国家权限过滤逻辑
+            // 但传入 exam_id 以便后端根据考试国家过滤
+            await loadUserListForInterview(interview.exam_id);
+
+            // ========== 5. 获取所有已加载的用户 ==========
+            const allCheckboxes = document.querySelectorAll('.user-checkbox');
+            console.log(`✅ 加载用户列表完成，共 ${allCheckboxes.length} 人`);
+
+            // ========== 6. 判断访谈状态 ==========
             const status = interview.status;
+            isClosedInterview = (status === 'closed');
             
+            // 根据状态设置模态框标题
+            const modalTitle = document.querySelector('#newInterviewModal .modal-title');
+            if (modalTitle) {
+                if (isClosedInterview) {
+                    modalTitle.innerHTML = `<i class="bi bi-lightning-charge text-warning me-2"></i>${t('force_interview_add_users') || '强制访谈 - 新增用户'}`;
+                } else {
+                    modalTitle.innerHTML = editMode ? t('edit_interview') : t('add_new_interviewee');
+                }
+            }
+
+            // ========== 7. 根据状态控制字段禁用 ==========
             if (status === 'closed') {
-                // 已关闭：所有字段禁用
+                // 已关闭：基本信息字段全部禁用（但用户列表复选框需要特殊处理）
                 [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter, startTime, endTime, reviewerInput, feedbackInput].forEach(el => {
                     if (el) el.disabled = true;
                 });
-                allCheckboxes.forEach(cb => cb.disabled = true);
                 if (selectAllUsers) selectAllUsers.disabled = true;
-                showToast(t('t_closed_interview_readonly'), 'warning');
+                showToast(t('closed_interview_readonly'), 'warning');
             } else if (status === 'active') {
                 // 进行中：考试和人员禁用，有效期等可编辑
                 [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter].forEach(el => {
@@ -1250,12 +1387,11 @@
                 });
                 allCheckboxes.forEach(cb => cb.disabled = true);
                 if (selectAllUsers) selectAllUsers.disabled = true;
-                // 有效期、阅卷人、反馈人可编辑
                 [startTime, endTime, reviewerInput, feedbackInput].forEach(el => {
                     if (el) el.disabled = false;
                 });
             } else {
-                //草稿和未开始：所有字段可编辑（明确设置）
+                // 草稿和未开始：所有字段可编辑
                 [examSelect, questionCount, userSearch, isPartnerFilter, whIdFilter, countryFilter, startTime, endTime, reviewerInput, feedbackInput].forEach(el => {
                     if (el) {
                         el.disabled = false;
@@ -1271,23 +1407,74 @@
                 });
                 if (selectAllUsers) selectAllUsers.disabled = false;
                 
-                //确保 examSelect 可以获得焦点
                 if (examSelect) {
-                    // 移除可能残留的禁用属性
                     examSelect.removeAttribute('readonly');
                     examSelect.removeAttribute('disabled');
-                    // 确保样式正常
                     examSelect.style.backgroundColor = '#ffffff';
                     examSelect.style.cursor = 'text';
-                    // 重新触发事件绑定（如果有需要）
+                }
+            }
+
+            // ========== 8. ✅ 核心：已关闭状态处理用户复选框 ==========
+            if (isClosedInterview) {
+                // 已关闭状态：用户复选框特殊处理
+                // - 已参与用户：选中 + 禁用（灰色）+ 显示"已参与"标记
+                // - 未参与用户：未选中 + 可用（可选择）
+                
+                allCheckboxes.forEach(cb => {
+                    const userId = cb.value;
+                    const isExisting = existingUserIds.includes(userId);
+                    
+                    if (isExisting) {
+                        // ✅ 已参与用户：选中 + 禁用 + 标记
+                        cb.checked = true;
+                        cb.disabled = true;
+                        
+                        const row = cb.closest('tr');
+                        if (row) {
+                            // 移除旧的标记
+                            const oldSpan = row.querySelector('.already-participated-badge');
+                            if (oldSpan) oldSpan.remove();
+                            
+                            const statusSpan = document.createElement('span');
+                            statusSpan.className = 'badge bg-secondary ms-2 already-participated-badge';
+                            statusSpan.textContent = t('already_participated') || '已参与';
+                            statusSpan.style.fontSize = '0.6rem';
+                            
+                            const nameCell = row.querySelector('td:nth-child(2)');
+                            if (nameCell) {
+                                nameCell.appendChild(statusSpan);
+                            }
+                            row.style.opacity = '0.7';
+                            row.style.backgroundColor = '#f8f9fa';
+                        }
+                    } else {
+                        // ✅ 未参与用户：未选中 + 可用
+                        cb.checked = false;
+                        cb.disabled = false;
+                    }
+                });
+                
+                // ✅ 更新全选逻辑：只控制未参与的用户
+                if (selectAllUsers) {
+                    selectAllUsers.onclick = (e) => {
+                        document.querySelectorAll('.user-checkbox:not(:disabled)').forEach(cb => {
+                            cb.checked = e.target.checked;
+                        });
+                    };
                 }
                 
-                console.log('✅ 草稿/未开始状态，所有字段已启用');
-                console.log('examSelect disabled:', examSelect.disabled);
-                console.log('examSelect readonly:', examSelect.readOnly);
+                // ✅ 更新底部按钮
+                updateModalButtonsForClosedStatus();
+                
+            } else {
+                // 非已关闭状态：正常勾选
+                allCheckboxes.forEach(cb => {
+                    cb.checked = existingUserIds.includes(cb.value);
+                });
             }
-            
-            //3. 显示模态框
+
+            // ========== 9. 显示模态框 ==========
             if (window.interviewModalInstance) {
                 try {
                     window.interviewModalInstance.dispose();
@@ -1299,12 +1486,10 @@
                 backdrop: true,
                 keyboard: true
             });
-             
-            // 监听模态框显示完成事件，确保字段状态
+            
+            // 监听模态框显示完成事件
             modalEl.addEventListener('shown.bs.modal', function onShown() {
                 modalEl.removeEventListener('shown.bs.modal', onShown);
-                
-                // 如果是草稿或未开始，再次确保启用
                 if (status !== 'closed' && status !== 'active') {
                     const examSelectEl = document.getElementById('examSelect');
                     if (examSelectEl) {
@@ -1312,7 +1497,6 @@
                         examSelectEl.readOnly = false;
                         examSelectEl.style.pointerEvents = 'auto';
                         examSelectEl.style.backgroundColor = '#ffffff';
-                        // 强制聚焦
                         setTimeout(() => {
                             examSelectEl.focus();
                         }, 150);
@@ -1327,6 +1511,133 @@
         } catch (err) {
             console.error('加载访谈详情失败:', err);
             alert(t('t_failed_load_interview'));
+        }
+    }
+
+    // ============================================================
+    // ✅ 新增：根据已关闭状态更新模态框底部按钮
+    // ============================================================
+    function updateModalButtonsForClosedStatus() {
+        const saveDraftBtn = document.getElementById('saveDraftBtn');
+        const savePublishBtn = document.getElementById('saveAndPublishBtn');
+        const previewBtn = document.getElementById('previewBtn');
+        
+        if (isClosedInterview) {
+            // 已关闭状态：隐藏原有按钮，显示"创建强制访谈"
+            if (saveDraftBtn) {
+                saveDraftBtn.style.display = 'none';
+            }
+            if (previewBtn) {
+                previewBtn.style.display = 'none';
+            }
+            if (savePublishBtn) {
+                savePublishBtn.innerHTML = `<i class="bi bi-lightning-charge me-1"></i>${t('create_force_interview') || '创建强制访谈'}`;
+                savePublishBtn.className = 'btn btn-warning';
+                savePublishBtn.style.display = 'inline-block';
+                // ✅ 移除旧事件，绑定新事件
+                savePublishBtn.removeEventListener('click', savePublishBtn._forceHandler);
+                savePublishBtn._forceHandler = forceAddUsersForClosedInterview;
+                savePublishBtn.addEventListener('click', savePublishBtn._forceHandler);
+            }
+        } else {
+            // 非已关闭状态：恢复原有按钮
+            if (saveDraftBtn) {
+                saveDraftBtn.style.display = 'inline-block';
+            }
+            if (previewBtn) {
+                previewBtn.style.display = 'inline-block';
+            }
+            if (savePublishBtn) {
+                savePublishBtn.innerHTML = `<span data-i18n="save_public">保存并发布</span>`;
+                savePublishBtn.className = 'btn btn-success';
+                // 移除强制事件，恢复原有事件
+                savePublishBtn.removeEventListener('click', savePublishBtn._forceHandler);
+                savePublishBtn._forceHandler = null;
+            }
+        }
+    }
+
+    // ============================================================
+    // ✅ 新增：已关闭访谈新增用户的强制访谈保存函数
+    // ============================================================
+    async function forceAddUsersForClosedInterview() {
+        // 获取选中的用户（排除已参与的用户）
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked:not(:disabled)');
+        const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+        
+        if (selectedUserIds.length === 0) {
+            if (typeof showToast === 'function') {
+                showToast(t('please_select_users_to_add'), 'warning');
+            } else {
+                alert(t('please_select_users_to_add') || '请选择要新增的用户');
+            }
+            return;
+        }
+        
+        // 确认操作
+        const confirmMsg = t('confirm_create_force_interview', count, forceDurationHours) || '将为选中的 {count} 名学员创建强制访谈（有效期24小时），确认继续？';
+        if (!confirm(confirmMsg.replace('{count}', selectedUserIds.length))) {
+            return;
+        }
+        
+        // 显示加载状态
+        const saveBtn = document.getElementById('saveAndPublishBtn');
+        const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${t('creating')}...`;
+        }
+        
+        try {
+            const response = await fetch(`/api/admin/interview/${editingInterviewId}/force_add_users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    user_ids: selectedUserIds,
+                    force_duration_hours: forceDurationHours  // 默认24小时
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // ✅ 使用翻译键名 + 参数
+                const successMsg = t(result.message || 'force_interview_created_success', 
+                    result.success_count || 0, 
+                    forceDurationHours
+                );
+                if (typeof showToast === 'function') {
+                    showToast(successMsg, 'success');
+                } else {
+                    alert(successMsg);
+                }
+                
+                // 关闭模态框并刷新列表
+                if (window.interviewModalInstance) {
+                    window.interviewModalInstance.hide();
+                }
+                loadInterviews();
+                
+            } else {
+                const errorMsg = t(result.message || 'operation_failed');
+                if (typeof showToast === 'function') {
+                    showToast(errorMsg, 'error');
+                } else {
+                    alert(errorMsg);
+                }
+            }
+        } catch (err) {
+            console.error('创建强制访谈失败:', err);
+            if (typeof showToast === 'function') {
+                showToast(t('network_error_retry'), 'error');
+            } else {
+                alert(t('network_error_retry'));
+            }
+        } finally {
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalHtml;
+            }
         }
     }
 

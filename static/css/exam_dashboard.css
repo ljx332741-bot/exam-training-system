@@ -1,0 +1,332 @@
+/* static/css/exam_dashboard.css */
+/* ===== 卡片新布局样式 ===== */
+/* 卡片名称 - 完整显示，独占一行 */
+.card-title-full {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 600;
+    line-height: 1.4;
+    color: #1a1a2e;
+}
+
+.card-title-full .card-name-text {
+    flex: 1;
+    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+.card-title-full i {
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+}
+
+/* 元数据行 - 徽章 + 日期/信息 */
+.card-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem 0.6rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.75rem;
+    color: #6c757d;
+}
+
+.card-meta-row .badge-status {
+    font-size: 0.65rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 20px;
+    font-weight: 500;
+}
+
+.card-meta-row .question-count {
+    background: #f0f0f0;
+    padding: 0.1rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.65rem;
+    color: #555;
+}
+
+.card-meta-row .badge {
+    font-size: 0.6rem;
+    padding: 0.15rem 0.5rem;
+}
+
+/* 日期行 - 独立显示 */
+.card-date-row {
+    font-size: 0.75rem;
+    color: #6c757d;
+    margin-bottom: 0.4rem;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+/* 操作按钮 - 居中 */
+.card-action {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.5rem;
+}
+
+.card-action .btn {
+    min-width: 120px;
+}
+
+/* 卡片底部间距统一 */
+.card-dashboard .card-body {
+    padding: 1rem 1.25rem;
+}
+
+/* 卡片名称高度自适应 */
+.card-dashboard .card-body .card-title-full {
+    min-height: auto;
+}
+
+/* 响应式调整 */
+@media (max-width: 576px) {
+    .card-title-full {
+        font-size: 0.9rem;
+    }
+    .card-meta-row {
+        font-size: 0.65rem;
+        gap: 0.3rem;
+    }
+    .card-action .btn {
+        min-width: 80px;
+        font-size: 0.75rem;
+    }
+}
+
+/* 记录模态框美化 */
+.record-table .table {
+    font-size: 0.9rem;
+    margin-bottom: 0;
+}
+.record-table .table th {
+    background: #f8f9fa;
+    font-weight: 600;
+    border-bottom: 2px solid #dee2e6;
+}
+.record-table .table td {
+    vertical-align: middle;
+    padding: 0.6rem 0.75rem;
+}
+.record-table .badge-country {
+    background: #e9ecef;
+    color: #495057;
+    padding: 0.2rem 0.6rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+}
+.view-btn {
+    transition: all 0.2s ease;
+}
+.view-btn:hover {
+    transform: scale(1.15);
+    background: #0d6efd;
+    color: white;
+}
+/* 空状态美化 */
+.empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #adb5bd;
+}
+.empty-state i {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 12px;
+}
+/* 卡片通用美化 */
+.card-dashboard {
+    border: none;
+    border-radius: 16px;
+    transition: transform 0.2s, box-shadow 0.2s;
+    overflow: hidden;
+    background: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+.card-dashboard:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
+}
+/* 左侧彩色条 */
+.card-status-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    border-radius: 16px 0 0 16px;
+}
+.card-status-bar.warning { background: #ff9800; }
+.card-status-bar.success { background: #4caf50; }
+.card-status-bar.danger { background: #f44336; }
+.card-status-bar.secondary { background: #9e9e9e; }
+.card-status-bar.primary { background: #2196f3; }
+
+/* 卡片内容 */
+.card-dashboard .card-body {
+    padding: 1.25rem;
+    position: relative;
+    z-index: 1;
+}
+.card-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.card-title i {
+    font-size: 1.2rem;
+    opacity: 0.8;
+}
+.card-meta {
+    font-size: 0.8rem;
+    color: #6c757d;
+    margin-bottom: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+}
+.card-meta .date-range {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+.badge-status {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.6rem;
+    border-radius: 20px;
+    font-weight: 500;
+}
+.progress-indicator {
+    margin: 0.75rem 0;
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.progress-bar-custom {
+    flex: 1;
+    height: 4px;
+    background: #e9ecef;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.progress-bar-custom > div {
+    height: 100%;
+    background: #4caf50;
+    border-radius: 2px;
+}
+.btn-gradient {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+    color: white;
+    transition: transform 0.1s, box-shadow 0.2s;
+}
+.btn-gradient:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    color: white;
+}
+.btn-outline-gradient {
+    background: transparent;
+    border: 1px solid #667eea;
+    color: #667eea;
+    transition: all 0.2s;
+}
+.btn-outline-gradient:hover {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-color: transparent;
+    color: white;
+}
+/* 签到卡片专用 */
+.training-card .card-meta i {
+    margin-right: 0.2rem;
+}
+/* 访谈卡片专用 */
+.interview-card .question-count {
+    background: #f8f9fa;
+    padding: 0.2rem 0.6rem;
+    border-radius: 30px;
+    font-size: 0.7rem;
+    font-weight: 500;
+}
+
+/* 可调整列宽的表格 */
+.resizable-table {
+    table-layout: fixed;
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.resizable-table th {
+    position: relative;
+    overflow: hidden; /* 改为 hidden，不显示滚动条 */
+    text-overflow: ellipsis;
+    white-space: nowrap; /* 表头不换行 */
+    padding: 8px 12px;
+    border-right: 1px solid #dee2e6;
+    user-select: none;
+}
+
+/* 表格单元格 - 不换行，溢出显示省略号，悬浮显示完整内容 */
+.resizable-table td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap; /* 关键：不换行 */
+    padding: 8px 12px;
+    vertical-align: middle;
+    max-width: 0; /* 配合 table-layout: fixed 使用 */
+}
+
+/* 对于需要完整显示内容的单元格，添加 title 属性通过 JS 设置 */
+.resizable-table td[title] {
+    cursor: help;
+}
+
+/* 列宽拖动手柄 */
+.resizable-table .resize-handle {
+    position: absolute;
+    top: 0;
+    right: -4px;
+    width: 8px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 10;
+    background: transparent;
+    transition: background 0.15s;
+}
+
+.resizable-table .resize-handle:hover,
+.resizable-table .resize-handle:active {
+    background: rgba(13, 110, 253, 0.3);
+}
+
+/* 拖拽时的辅助提示 */
+.resizing-active {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+.resizing-active th {
+    cursor: col-resize !important;
+}
+
+/* 特定的徽章和代码样式，保持不换行 */
+.resizable-table td .badge-country,
+.resizable-table td code {
+    white-space: nowrap;
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

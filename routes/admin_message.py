@@ -180,29 +180,19 @@ def delete_message(message_id):
     """删除单条消息（仅超管/开发者可用）"""
     # 添加调试日志
     print(f"🔍🔍🔍 DELETE 路由被调用了！message_id={message_id}")
-    logger.info(f"🔍 DELETE 路由被调用了！message_id={message_id}")
 
     if not is_developer() and session.get('role') != 'super_admin':
         return jsonify({"success": False, "message": "权限不足"}), 403
     
     db = get_supabase_admin()
     try:
-        # 添加调试日志
-        logger.info(f"🔍 尝试删除消息 ID: {message_id}")
-
         # 先检查消息是否存在
         check_res = db.table("admin_messages").select("id").eq("id", message_id).execute()
-        # 打印查询结果
-        logger.info(f"🔍 check_res.data: {check_res.data}")
-        logger.info(f"🔍 check_res 完整: {check_res}")
-        
         if not check_res.data:
-            logger.warning(f"❌ 消息 ID {message_id} 不存在")
             return jsonify({"success": False, "message": "消息不存在"}), 404
         
         result = db.table("admin_messages").delete().eq("id", message_id).execute()
         if result.data:
-            logger.info(f"消息 {message_id} 已删除，操作人: {session.get('user_id')}")
             return jsonify({"success": True, "message": "消息已删除"})
         else:
             return jsonify({"success": False, "message": "消息不存在"}), 404

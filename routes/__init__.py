@@ -215,11 +215,3 @@ def register_blueprints(app):
                 # 4. 仍失败则抛出原始错误
                 raise
         return {'url_for': compat_url_for}
-
-
-# ========== 调试：打印已注册的路由 ==========
-print("=" * 60)
-print("🔍 admin_message 模块已加载")
-print(f"   message_bp 名称: {message_bp.name}")
-print(f"   message_bp url_prefix: {message_bp.url_prefix}")
-print("=" * 60)

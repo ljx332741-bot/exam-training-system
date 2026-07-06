@@ -215,15 +215,15 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
+                <div class="table-responsive" style="overflow-x: auto;">
+                    <table class="table table-hover align-middle" style="min-width: 1000px;">
                         <thead class="table-light">
                             <tr>
-                                <th><span data-i18n="country">国家</span></th>
-                                <th><span data-i18n="training_name">培训名称</span></th>
-                                <th>tid</th>
-                                <th><span data-i18n="sign_in_period">签到时间</span></th>
-                                <th><span data-i18n="signature">签名</span></th>
+                                <th style="white-space: nowrap;"><span data-i18n="country">国家</span></th>
+                                <th style="white-space: nowrap;"><span data-i18n="training_name">培训名称</span></th>
+                                <th style="white-space: nowrap;">tid</th>
+                                <th style="white-space: nowrap;"><span data-i18n="sign_in_period">签到时间</span></th>
+                                <th style="white-space: nowrap;"><span data-i18n="signature">签名</span></th>
                             </tr>
                         </thead>
                         <tbody id="myAttendancesBody">
@@ -258,17 +258,39 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-                <div class="table-responsive">
-                    <table class="table table-hover align-middle">
+                <div class="table-responsive" style="overflow-x: auto;">
+                    <table class="table table-hover align-middle resizable-table" 
+                        style="min-width: 1000px; table-layout: fixed;">
                         <thead class="table-light">
                             <tr>
-                                <th><span data-i18n="country">国家</span></th>
-                                <th><span data-i18n="interview_name">访谈名称</span></th>
-                                <th>iid</th>
-                                <th><span data-i18n="question_qty">题目数量</span></th>
-                                <th><span data-i18n="correct_qty">答对数量</span></th>
-                                <th><span data-i18n="completed_time">完成时间</span></th>
-                                <th><span data-i18n="details">详情</span></th>
+                                <th style="width: 80px; min-width: 20px;">
+                                    <span data-i18n="country">国家</span>
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th style="width: 200px; min-width: 120px;">
+                                    <span data-i18n="interview_name">访谈名称</span>
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th style="width: 80px; min-width: 20px;">
+                                    iid
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th style="width: 100px; min-width: 20px;">
+                                    <span data-i18n="question_qty">题目数量</span>
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th style="width: 110px; min-width: 30px;">
+                                    <span data-i18n="correct_qty">答对数量</span>
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th style="width: 160px; min-width: 60px;">
+                                    <span data-i18n="completed_time">完成时间</span>
+                                    <div class="resize-handle"></div>
+                                </th>
+                                <th style="width: 80px; min-width: 20px;">
+                                    <span data-i18n="details">详情</span>
+                                    <div class="resize-handle"></div>
+                                </th>
                             </tr>
                         </thead>
                         <tbody id="myInterviewsBody">
@@ -361,168 +383,11 @@
 </div>
 {% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/exam_dashboard.css') }}">
+{% endblock %}
+
 {% block extra_js %}
-<style>
-    /* 记录模态框美化 */
-    .record-table .table {
-        font-size: 0.9rem;
-        margin-bottom: 0;
-    }
-    .record-table .table th {
-        background: #f8f9fa;
-        font-weight: 600;
-        border-bottom: 2px solid #dee2e6;
-    }
-    .record-table .table td {
-        vertical-align: middle;
-        padding: 0.6rem 0.75rem;
-    }
-    .record-table .badge-country {
-        background: #e9ecef;
-        color: #495057;
-        padding: 0.2rem 0.6rem;
-        border-radius: 12px;
-        font-size: 0.75rem;
-    }
-    .view-btn {
-        transition: all 0.2s ease;
-    }
-    .view-btn:hover {
-        transform: scale(1.15);
-        background: #0d6efd;
-        color: white;
-    }
-    /* 空状态美化 */
-    .empty-state {
-        padding: 40px 20px;
-        text-align: center;
-        color: #adb5bd;
-    }
-    .empty-state i {
-        font-size: 3rem;
-        display: block;
-        margin-bottom: 12px;
-    }
-    /* 卡片通用美化 */
-    .card-dashboard {
-        border: none;
-        border-radius: 16px;
-        transition: transform 0.2s, box-shadow 0.2s;
-        overflow: hidden;
-        background: white;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    }
-    .card-dashboard:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 24px rgba(0, 0, 0, 0.1);
-    }
-    /* 左侧彩色条 */
-    .card-status-bar {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 6px;
-        height: 100%;
-        border-radius: 16px 0 0 16px;
-    }
-    .card-status-bar.warning { background: #ff9800; }
-    .card-status-bar.success { background: #4caf50; }
-    .card-status-bar.danger { background: #f44336; }
-    .card-status-bar.secondary { background: #9e9e9e; }
-    .card-status-bar.primary { background: #2196f3; }
-    
-    /* 卡片内容 */
-    .card-dashboard .card-body {
-        padding: 1.25rem;
-        position: relative;
-        z-index: 1;
-    }
-    .card-title {
-        font-size: 1.1rem;
-        font-weight: 600;
-        margin-bottom: 0.5rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    .card-title i {
-        font-size: 1.2rem;
-        opacity: 0.8;
-    }
-    .card-meta {
-        font-size: 0.8rem;
-        color: #6c757d;
-        margin-bottom: 0.75rem;
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .card-meta .date-range {
-        display: flex;
-        align-items: center;
-        gap: 0.3rem;
-    }
-    .badge-status {
-        font-size: 0.7rem;
-        padding: 0.25rem 0.6rem;
-        border-radius: 20px;
-        font-weight: 500;
-    }
-    .progress-indicator {
-        margin: 0.75rem 0;
-        font-size: 0.75rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-    .progress-bar-custom {
-        flex: 1;
-        height: 4px;
-        background: #e9ecef;
-        border-radius: 2px;
-        overflow: hidden;
-    }
-    .progress-bar-custom > div {
-        height: 100%;
-        background: #4caf50;
-        border-radius: 2px;
-    }
-    .btn-gradient {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border: none;
-        color: white;
-        transition: transform 0.1s, box-shadow 0.2s;
-    }
-    .btn-gradient:hover {
-        transform: scale(1.02);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        color: white;
-    }
-    .btn-outline-gradient {
-        background: transparent;
-        border: 1px solid #667eea;
-        color: #667eea;
-        transition: all 0.2s;
-    }
-    .btn-outline-gradient:hover {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-color: transparent;
-        color: white;
-    }
-    /* 签到卡片专用 */
-    .training-card .card-meta i {
-        margin-right: 0.2rem;
-    }
-    /* 访谈卡片专用 */
-    .interview-card .question-count {
-        background: #f8f9fa;
-        padding: 0.2rem 0.6rem;
-        border-radius: 30px;
-        font-size: 0.7rem;
-        font-weight: 500;
-    }
-</style>
 <script src="https://cdn.jsdelivr.net/npm/signature_pad@4.1.7/dist/signature_pad.umd.min.js"></script>
 <script>
     function safeT(key, fallback = '') {
@@ -588,20 +453,27 @@
                 <div class="card-dashboard training-card position-relative">
                     <div class="card-status-bar ${getStatusBarClass(t)}"></div>
                     <div class="card-body">
-                        <div class="card-title">
-                            <i class="bi bi-calendar-check-fill text-primary"></i>
-                            ${escapeHtml(t.name)}
+                        <!-- 顶部：培训名称（完整显示，独占一行） -->
+                        <div class="card-title-full">
+                            <i class="bi bi-calendar-check-fill text-primary me-2"></i>
+                            <span class="card-name-text">${escapeHtml(t.name)}</span>
+                        </div>
+                        
+                        <!-- 元数据行：状态徽章 + 日期 -->
+                        <div class="card-meta-row">
                             <span class="badge-status ${getStatusBadgeClass(t)}">${statusBadge}</span>
+                            <span class="card-date-range">
+                                <i class="bi bi-calendar-range me-1"></i>
+                                ${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}
+                            </span>
+                            ${t.signed && !t.is_future ? `<span class="text-success"><i class="bi bi-check-circle-fill me-1"></i>${safeT('signed')}</span>` : ''}
                         </div>
-                        <div class="card-meta">
-                            <div class="date-range">
-                                <i class="bi bi-calendar-range"></i>
-                                <span>${formatLocalTime(t.start_time)} → ${formatLocalTime(t.end_time)}</span>
-                            </div>
-                            ${t.signed && !t.is_future ? `<div><i class="bi bi-check-circle-fill text-success"></i> ${safeT('signed')}</div>` : ''}
-                        </div>
+                        
+                        <!-- 签到时间（如有） -->
                         ${signTimeHtml}
-                        <div class="mt-2">${actionHtml}</div>
+                        
+                        <!-- 操作按钮 -->
+                        <div class="card-action mt-2">${actionHtml}</div>
                     </div>
                 </div>
             `;
@@ -672,16 +544,31 @@
                 const isFuture = inv.is_future === true;
                 const isActive = inv.is_active === true;
                 const isCompleted = inv.is_completed === true;
+                const isForce = inv.is_force === true;
                 const examCompleted = inv.exam_completed === true;
                 
                 let statusBarClass = '';
                 let statusBadge = '';
+                let forceBadge = '';
+                let titlePrefix = '';
                 let btnHtml = '';
                 let progressPercent = 0;
                 let progressText = '';
                 let btnDisabled = false;
                 let btnTooltip = '';
-                
+
+                // 强制访谈标识（独立变量，不被后续覆盖）
+                let forceValidityHtml = '';
+                if (isForce && inv.start_time && inv.end_time) {
+                    const startLocal = formatLocalTime(inv.start_time);
+                    const endLocal = formatLocalTime(inv.end_time);
+                    forceValidityHtml = `<div class="small text-warning mt-1"><i class="bi bi-hourglass-split"></i> ${safeT('force_validity')}: ${startLocal} → ${endLocal}</div>`;
+                }
+                if (isForce) {
+                    titlePrefix = '⚡ ';
+                    forceBadge = `<span class="badge bg-warning text-dark ms-1">⚡ ${t('force')}</span>`;
+                }
+
                 if (isCompleted) {
                     // 已完成
                     statusBarClass = 'success';
@@ -727,31 +614,46 @@
                 } else if (!examCompleted && !isCompleted && !isFuture) {
                     examInfoHtml = `<div class="small text-warning mt-1"><i class="bi bi-exclamation-triangle-fill"></i> ${safeT('t_exam_not_completed')}</div>`;
                 }
-            
+
+                // 卡片HTML中同时显示 statusBadge 和 forceBadge
                 card.innerHTML = `
                     <div class="card-dashboard interview-card position-relative" ${btnDisabled ? `title="${btnTooltip}"` : ''}>
                         <div class="card-status-bar ${statusBarClass}"></div>
                         <div class="card-body">
-                            <div class="card-title">
-                                <i class="bi bi-chat-dots-fill text-info"></i>
-                                ${escapeHtml(inv.title)}
+                            <!-- 顶部：访谈名称（完整显示，独占一行） -->
+                            <div class="card-title-full">
+                                <i class="bi bi-chat-dots-fill text-info me-2"></i>
+                                <span class="card-name-text">${titlePrefix}${escapeHtml(inv.title)}</span>
+                            </div>
+                            
+                            <!-- 元数据行：状态徽章 + 题目数量 + 强制标识 -->
+                            <div class="card-meta-row">
+                                <span class="badge-status ${getStatusBadgeClass(inv)}">${statusBadge}</span>
+                                ${forceBadge}
                                 <span class="question-count">${inv.question_count || '?'} ${safeT('t_question')}</span>
-                                ${statusBadge}
+                                ${isForce ? `<span class="badge bg-warning text-dark" title="${safeT('force_interview_validity')}">⏳ ${safeT('limited_time')}</span>` : ''}
                             </div>
-                            <div class="card-meta">
-                                <div class="date-range">
-                                    <i class="bi bi-clock"></i>
-                                    <span>${formatLocalTime(inv.start_time)} → ${formatLocalTime(inv.end_time)}</span>
-                                </div>
+                            
+                            <!-- 有效期 -->
+                            <div class="card-date-row">
+                                <i class="bi bi-clock me-1"></i>
+                                ${formatLocalTime(inv.start_time)} → ${formatLocalTime(inv.end_time)}
                             </div>
+                            
+                            <!-- 强制访谈有效期详情（如有） -->
+                            ${forceValidityHtml}
+                            
+                            <!-- 进度条 -->
                             <div class="progress-indicator">
                                 <span>${progressText}</span>
                                 <div class="progress-bar-custom"><div style="width: ${progressPercent}%;"></div></div>
                             </div>
+                            
+                            <!-- 考试信息（如有） -->
                             ${examInfoHtml}
-                            <div class="mt-2">
-                                ${btnHtml}
-                            </div>
+                            
+                            <!-- 操作按钮 -->
+                            <div class="card-action mt-2">${btnHtml}</div>
                         </div>
                     </div>
                 `;
@@ -763,6 +665,7 @@
             console.error(safeT('js_interview_load_failed'), e);
         }
     }
+
     // 监听访谈提交完成事件（从 iframe 或弹窗触发）
     window.addEventListener('interviewSubmitted', function() {
         console.log('访谈已提交，刷新列表');
@@ -1146,22 +1049,27 @@
                     questions: inv.questions || []
                 };
 
-                // 计算答对数量（从后端返回，或前端计算）
+                // 计算答对数量
                 const totalQuestions = inv.total_questions || inv.questions?.length || 0;
                 const correctCount = inv.correct_count || 0;
                 
+                // 对可能过长的文本进行截断并添加 title 属性
+                const countryText = escapeHtml(inv.country || '-');
+                const titleText = escapeHtml(inv.title);
+                const interviewIdText = String(inv.interview_id);
+                
                 return `
                     <tr>
-                        <td><span class="badge-country">${escapeHtml(inv.country || '-')}</span></td>
-                        <td><strong>${escapeHtml(inv.title)}</strong></td>
-                        <td><code>${inv.interview_id}</code></td>
+                        <td title="${countryText}">${countryText}</td>
+                        <td title="${titleText}">${titleText}</td>
+                        <td title="${interviewIdText}"><code>${interviewIdText}</code></td>
                         <td><span class="badge bg-primary">${totalQuestions}</span></td>
                         <td>
                             <span class="badge ${correctCount === totalQuestions && totalQuestions > 0 ? 'bg-success' : correctCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'}">
                                 ${correctCount}/${totalQuestions}
                             </span>
                         </td>
-                        <td>${inv.completed_at ? formatLocalTime(inv.completed_at) : '-'}</td>
+                        <td title="${inv.completed_at ? formatLocalTime(inv.completed_at) : '-'}">${inv.completed_at ? formatLocalTime(inv.completed_at) : '-'}</td>
                         <td>
                             <button class="btn btn-sm btn-outline-success view-interview-detail-btn" 
                                     data-key="${dataKey}"
@@ -1184,6 +1092,9 @@
                 });
             });
             
+            // 初始化列宽拖动
+            initColumnResize();
+            
         } catch (err) {
             console.error('加载访谈记录失败:', err);
             tbody.innerHTML = `
@@ -1195,7 +1106,93 @@
                 </tr>
             `;
         }
+
+        // 在 loadMyInterviewsRecords 中，为所有带有 title 的 td 初始化 tooltip
+        document.querySelectorAll('#myInterviewsBody td[title]').forEach(el => {
+            if (el.scrollWidth > el.clientWidth) {
+                // 只有内容被截断时才显示 tooltip
+                new bootstrap.Tooltip(el, {
+                    placement: 'top',
+                    title: el.getAttribute('title')
+                });
+            }
+        });
     }
+
+    // 列宽拖动功能（优化版）
+    function initColumnResize() {
+        const tables = document.querySelectorAll('.resizable-table');
+        
+        tables.forEach(table => {
+            // 移除旧的事件监听（避免重复绑定）
+            if (table._resizeInitialized) return;
+            table._resizeInitialized = true;
+            
+            let currentTh = null;
+            let startX = 0;
+            let startWidth = 0;
+            let isResizing = false;
+            
+            // 为每个 th 添加拖动手柄事件
+            table.querySelectorAll('th').forEach(th => {
+                const handle = th.querySelector('.resize-handle');
+                if (!handle) return;
+                
+                // 移除旧监听
+                handle.removeEventListener('mousedown', handle._mouseDownHandler);
+                
+                // 创建新监听
+                const handler = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startResize(e, th);
+                };
+                handle._mouseDownHandler = handler;
+                handle.addEventListener('mousedown', handler);
+            });
+            
+            function startResize(e, th) {
+                currentTh = th;
+                startX = e.clientX;
+                startWidth = th.offsetWidth;
+                isResizing = true;
+                
+                document.body.classList.add('resizing-active');
+                document.body.style.cursor = 'col-resize';
+                
+                document.addEventListener('mousemove', onMouseMove);
+                document.addEventListener('mouseup', onMouseUp);
+            }
+            
+            function onMouseMove(e) {
+                if (!isResizing || !currentTh) return;
+                
+                const delta = e.clientX - startX;
+                const newWidth = Math.max(40, startWidth + delta);
+                
+                // 更新当前列宽度
+                currentTh.style.width = newWidth + 'px';
+                currentTh.style.minWidth = newWidth + 'px';
+            }
+            
+            function onMouseUp() {
+                isResizing = false;
+                currentTh = null;
+                
+                document.body.classList.remove('resizing-active');
+                document.body.style.cursor = '';
+                
+                document.removeEventListener('mousemove', onMouseMove);
+                document.removeEventListener('mouseup', onMouseUp);
+            }
+        });
+    }
+
+    // 在模态框显示时重新初始化列宽拖动
+    document.getElementById('myInterviewsModal')?.addEventListener('shown.bs.modal', function() {
+        // 延迟执行确保 DOM 已完全渲染
+        setTimeout(initColumnResize, 100);
+    });
 
     // ==================== 显示访谈答题详情 ====================
     function showInterviewDetail(interviewId, title, questions) {
