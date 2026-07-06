@@ -23,9 +23,6 @@ def admin_interviews_page():
 @admin_required
 def api_admin_interviews():
     """访谈列表查询、创建、更新"""
-    print("=" * 60)
-    print("🔥 api_admin_interviews 被调用！")
-
     db = get_supabase()
     if request.method == 'GET':
         name = request.args.get('name', '')
@@ -687,6 +684,7 @@ def submit_interview(interview_id):
     """② 后端新增接口：提交学员的答案"""
     user_id = session['user_id']
     answers = request.json.get('answers', {})  # {result_id: answer}
+    now_utc = datetime.now(timezone.utc).isoformat()
     db = get_supabase()
 
     # 获取访谈级别的 feedback
@@ -723,6 +721,26 @@ def submit_interview(interview_id):
             "submitted_at": datetime.now(timezone.utc).isoformat(),
             "feedback": interview_feedback
         }).eq("id", rid).eq("user_id", user_id).execute()
+
+    # 标记所有未提交的题目也为"已提交"（防止部分题目未回答导致状态不更新）
+    # 如果用户提交时有些题目没有回答，将这些题目的 submitted_at 也设置为当前时间
+    # 这样前端查询 submitted_at 时就能正确判断为"已完成"
+    unsubmitted_results = db.table("interview_results") \
+        .select("id") \
+        .eq("interview_id", interview_id) \
+        .eq("user_id", user_id) \
+        .is_("submitted_at", "null") \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    for unsubmitted in (unsubmitted_results.data or []):
+        db.table("interview_results").update({
+            "submitted_at": now_utc,
+            "answer": "Not answer"  # 可选：标记为未作答
+        }).eq("id", unsubmitted['id']).execute()
+    
+    logger.info(f"用户 {user_id} 提交访谈 {interview_id}，共 {len(answers)} 道题，{len(unsubmitted_results.data or [])} 道未作答")
+    
     return jsonify({"success": True, "message": "jsonify_interview_has_been_submitted", "params": []})
 
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/user/<user_id>/answers')
@@ -1388,3 +1406,324 @@ def force_resample_interview(interview_id):
         "message": "force_interview_complete", "params": [success_count, skipped_count, failed_count],
         "errors": errors[:10]
     })
+
+# ============================================================
+# 新增：已关闭访谈新增用户（创建强制访谈）
+# ============================================================
+@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/force_add_users', methods=['POST'])
+@login_required
+@admin_required
+def force_add_users_for_closed_interview(interview_id):
+    """已关闭访谈新增用户 - 创建强制访谈"""
+    import sys
+    from utils.permissions import get_admin_allowed_countries
+    from datetime import datetime, timedelta, timezone
+    
+    # 强制输出函数（立即刷新）
+    def log(msg):
+        print(f"[FORCE_ADD] {msg}")
+        sys.stdout.flush()
+    
+    data = request.json
+    user_ids = data.get('user_ids', [])
+    force_duration_hours = data.get('force_duration_hours', 24)
+    
+    log("=" * 60)
+    log(f"🚀 开始强制访谈流程: interview_id={interview_id}")
+    log(f"📋 接收到的 user_ids: {user_ids}")
+    log(f"⏰ 强制时长: {force_duration_hours} 小时")
+    log("=" * 60)
+    
+    if not user_ids:
+        return jsonify({
+            "success": False, 
+            "message": "jsonify_please_select_users_to_add",
+            "params": []
+        }), 400
+    
+    db = get_supabase()
+    admin_db = get_supabase_admin()
+    operator_id = session['user_id']
+    
+    # 1. 获取原访谈信息
+    interview_res = db.table("interviews").select("*").eq("id", interview_id).execute()
+    if not interview_res.data:
+        return jsonify({
+            "success": False, 
+            "message": "jsonify_interview_not_found",
+            "params": []
+        }), 404
+    
+    original_interview = interview_res.data[0]
+    exam_id = original_interview.get('exam_id')
+    question_count = original_interview.get('question_count', 5)
+    reviewer = original_interview.get('reviewer', '')
+    feedback = original_interview.get('feedback', '')
+    title = original_interview.get('title', '访谈')
+    
+    log(f"📊 原访谈信息:")
+    log(f"   - interview_id: {interview_id}")
+    log(f"   - title: {title}")
+    log(f"   - exam_id: {exam_id}")
+    log(f"   - question_count (设定值): {question_count}")
+    log(f"   - reviewer: {reviewer}")
+    
+    # 2. 检查考试和题目
+    if not exam_id:
+        return jsonify({
+            "success": False, 
+            "message": "jsonify_interview_no_exam",
+            "params": []
+        }), 400
+    
+    # 查询考试题目总数
+    all_questions_res = db.table("questions").select("id").eq("exam_id", exam_id).execute()
+    total_questions_in_exam = len(all_questions_res.data or [])
+    
+    q_check = db.table("questions").select("id").eq("exam_id", exam_id).limit(1).execute()
+    if not q_check.data:
+        return jsonify({
+            "success": False, 
+            "message": "jsonify_exam_no_questions",
+            "params": []
+        }), 400
+    
+    # 3. 权限检查
+    allowed = get_admin_allowed_countries()
+    if allowed is not None:
+        exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_countries = parse_exam_countries(exam_res.data)
+            if not any(c in allowed for c in exam_countries):
+                return jsonify({
+                    "success": False, 
+                    "message": "jsonify_no_permission_for_interview",
+                    "params": []
+                }), 403
+    
+    # 4. 获取已有用户列表
+    existing_results = admin_db.table("interview_results") \
+        .select("user_id") \
+        .eq("interview_id", interview_id) \
+        .execute()
+    existing_user_ids = set(r['user_id'] for r in (existing_results.data or []))
+    
+    # 5. 过滤出真正需要新增的用户（去重 + 排除已有）
+    unique_user_ids = list(set(user_ids))
+    valid_user_ids = list(set(unique_user_ids) - existing_user_ids)
+
+    # 确保没有重复
+    valid_user_ids = list(set(valid_user_ids))
+
+    if not valid_user_ids:
+        return jsonify({
+            "success": True,
+            "message": "jsonify_all_users_already_in_interview",
+            "params": [],
+            "success_count": 0,
+            "skipped_count": len(user_ids),
+            "failed_count": 0
+        })
+    
+    # 6. 验证用户是否存在
+    users_res = db.table("users").select("id, name_en").in_("id", valid_user_ids).execute()
+    existing_valid_ids = set(u['id'] for u in (users_res.data or []))
+    valid_user_ids = [uid for uid in valid_user_ids if uid in existing_valid_ids]
+    
+    if not valid_user_ids:
+        return jsonify({
+            "success": False, 
+            "message": "jsonify_selected_users_not_found",
+            "params": []
+        }), 400
+    
+    # 7. 设置强制访谈有效期
+    now = datetime.now(timezone.utc)
+    force_start_time = now.isoformat()
+    force_end_time = (now + timedelta(hours=force_duration_hours)).isoformat()
+    
+    success_count = 0
+    failed_count = 0
+    failed_users = []
+    processed_users = set()
+    user_results = {}
+    
+    for user_id in valid_user_ids:
+        if user_id in processed_users:
+            continue
+        processed_users.add(user_id)
+        
+        user_results[user_id] = {"user_id": user_id}
+        
+        try:
+            # 7a. 清理旧的强制访谈记录
+            admin_db.table("user_interview_force_records").delete() \
+                .eq("user_id", user_id) \
+                .eq("original_interview_id", interview_id) \
+                .execute()
+            
+            # 7b. 检查并删除残留的 interview_results
+            check_res = admin_db.table("interview_results").select("id") \
+                .eq("interview_id", interview_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            
+            before_delete_count = len(check_res.data or [])
+            
+            if before_delete_count > 0:
+                admin_db.table("interview_results").delete() \
+                    .eq("interview_id", interview_id) \
+                    .eq("user_id", user_id) \
+                    .execute()
+            else:
+                log(f"   ℹ️ 没有旧记录需要删除")
+            
+            # 验证删除结果
+            verify_res = admin_db.table("interview_results").select("id") \
+                .eq("interview_id", interview_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            after_delete_count = len(verify_res.data or [])
+            
+            # 7c. 抽题
+            questions = random_pick_questions(exam_id, question_count)
+            actual_count = len(questions)
+            
+            question_ids = [q.get('id') for q in questions]
+            
+            if not questions:
+                failed_count += 1
+                failed_users.append(user_id)
+                user_results[user_id]["status"] = "failed"
+                user_results[user_id]["error"] = "抽题失败，没有题目"
+                continue
+            
+            # 7c1. 插入题目（带验证和重试）
+            pre_check = admin_db.table("interview_results").select("id") \
+                .eq("interview_id", interview_id) \
+                .eq("user_id", user_id) \
+                .execute()
+
+            if len(pre_check.data or []) > 0:
+                admin_db.table("interview_results").delete() \
+                    .eq("interview_id", interview_id) \
+                    .eq("user_id", user_id) \
+                    .execute()
+
+            inserted_count = 0
+            inserted_question_ids = []
+
+            for q in questions:
+                result = admin_db.table("interview_results").insert({
+                    "interview_id": interview_id,
+                    "user_id": user_id,
+                    "question_id": q['id'],
+                    "created_at": now.isoformat(),
+                    "feedback": feedback
+                }).execute()
+                if result.data:
+                    inserted_count += 1
+                    inserted_question_ids.append(q['id'])
+                else:
+                    log(f"   ⚠️ 插入题目 {q['id']} 失败")
+
+            # 验证插入结果，如果不匹配则重试一次
+            verify_insert_res = admin_db.table("interview_results").select("id, question_id") \
+                .eq("interview_id", interview_id) \
+                .eq("user_id", user_id) \
+                .execute()
+            actual_inserted = len(verify_insert_res.data or [])
+
+            # 初始化 verify_retry_res 为 None
+            verify_retry_res = None
+
+            if actual_inserted != question_count:
+                # 删除所有已插入的记录
+                admin_db.table("interview_results").delete() \
+                    .eq("interview_id", interview_id) \
+                    .eq("user_id", user_id) \
+                    .execute()
+                
+                # 重新插入所有题目
+                for q in questions:
+                    admin_db.table("interview_results").insert({
+                        "interview_id": interview_id,
+                        "user_id": user_id,
+                        "question_id": q['id'],
+                        "created_at": now.isoformat(),
+                        "feedback": feedback
+                    }).execute()
+                
+                # 再次验证
+                verify_retry_res = admin_db.table("interview_results").select("id, question_id") \
+                    .eq("interview_id", interview_id) \
+                    .eq("user_id", user_id) \
+                    .execute()
+                retry_count = len(verify_retry_res.data or [])
+                actual_inserted = retry_count
+
+            # 根据 verify_retry_res 是否为空，选择正确的数据源
+            if verify_retry_res is not None:
+                inserted_question_ids = [r.get('question_id') for r in (verify_retry_res.data or [])]
+            else:
+                inserted_question_ids = [r.get('question_id') for r in (verify_insert_res.data or [])]
+            
+            # 7d. 创建强制访谈记录
+            force_title = f"{title} (强制访谈)"
+            admin_db.table("user_interview_force_records").insert({
+                "user_id": user_id,
+                "original_interview_id": interview_id,
+                "exam_id": exam_id,
+                "title": force_title,
+                "question_count": actual_count,
+                "reviewer": reviewer,
+                "feedback": feedback,
+                "start_time": force_start_time,
+                "end_time": force_end_time,
+                "created_at": now.isoformat(),
+                "created_by": operator_id
+            }).execute()
+            
+            success_count += 1
+            user_results[user_id]["status"] = "success"
+            user_results[user_id]["expected"] = question_count
+            user_results[user_id]["actual"] = actual_count
+            user_results[user_id]["question_ids"] = inserted_question_ids
+            
+        except Exception as e:
+            failed_count += 1
+            failed_users.append({"user_id": user_id, "error": str(e)})
+            user_results[user_id]["status"] = "failed"
+            user_results[user_id]["error"] = str(e)
+            log(f"❌ 为用户 {user_id} 创建强制访谈失败: {e}")
+            import traceback
+            log(traceback.format_exc())
+    
+    # 8. 总结日志
+    log("=" * 60)
+    log("📊 强制访谈处理结果汇总:")
+    log(f"   - 成功: {success_count} 人")
+    log(f"   - 失败: {failed_count} 人")
+    log("📊 每个用户的详细结果:")
+    for uid, result in user_results.items():
+        log(f"   - {uid}: {result}")
+    log("=" * 60)
+    
+    if success_count > 0:
+        return jsonify({
+            "success": True,
+            "message": "jsonify_force_interview_created_success",
+            "params": [success_count, force_duration_hours],
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "failed_users": failed_users[:10],
+            "force_end_time": force_end_time,
+            "user_results": user_results
+        })
+    else:
+        return jsonify({
+            "success": False,
+            "message": "jsonify_force_interview_creation_failed",
+            "params": [],
+            "failed_users": failed_users[:10]
+        }), 500

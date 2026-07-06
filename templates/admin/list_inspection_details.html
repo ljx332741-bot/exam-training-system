@@ -283,7 +283,7 @@
         
         if (typeof window.showDeleteConfirm === 'function') {
             window.showDeleteConfirm({
-                message: `确定要删除选中的 ${selectedUserIds.length} 条访谈记录吗？`,
+                message: `${t('confirm_to_delete_selected_record', selectedUserIds.length)}`,
                 ids: selectedUserIds,
                 type: 'soft',
                 onConfirm: async (deleteType, ids) => {
@@ -294,7 +294,7 @@
                     });
                     const data = await response.json();
                     if (data.success) {
-                        alert(`删除成功: ${data.success_count} 条`);
+                        alert(`${t('delete_success')} : ${data.success_count} 条`);
                         loadDetails(); // 刷新列表
                     } else {
                         alert('删除失败: ' + (data.message || ''));
@@ -302,7 +302,7 @@
                 }
             });
         } else {
-            if (confirm(`确定要删除选中的 ${selectedUserIds.length} 条访谈记录吗？`)) {
+            if (confirm(`${t('confirm_to_delete_selected_record', selectedUserIds.length)}`)) {
                 const response = await fetch(`/api/admin/interview/${interviewId}/batch_delete`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -310,7 +310,7 @@
                 });
                 const data = await response.json();
                 if (data.success) {
-                    alert(`删除成功: ${data.success_count} 条`);
+                    alert(`${t('delete_success')}: ${data.success_count} ${t('suffix')}`);
                     loadDetails();
                 }
             }

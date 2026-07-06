@@ -1347,42 +1347,32 @@
             };
         })();
 
-        // 全局 Toast 函数（支持翻译）
+        // 全局 Toast 函数（支持翻译）- 修复版
         function showToast(message, title = '提示', type = 'info') {
             const toastEl = document.getElementById('globalToast');
             const toastTitle = document.getElementById('toastTitle');
             const toastMessage = document.getElementById('toastMessage');
             
-            // 检查元素是否存在，如果不存在则使用 alert 作为降级方案
+            // 检查元素是否存在
             if (!toastEl || !toastTitle || !toastMessage) {
                 console.warn('Toast 元素不存在，使用 alert 代替');
-                alert(message);
+                const prefix = type === 'error' ? '❌ ' : type === 'success' ? '✅ ' : '';
+                alert(prefix + message);
                 return;
             }
             
-            // 对消息进行翻译（如果传入的是翻译键名）
+            // 处理消息翻译
             let displayMessage = message;
             let displayTitle = title;
             
             if (typeof t === 'function') {
-                // 翻译消息内容
-                if (message && typeof message === 'string') {
-                    // 尝试翻译，如果翻译后和原字符串不同，说明成功翻译
-                    const translated = t(message);
-                    if (translated !== message) {
-                        displayMessage = translated;
-                    } else if (message.includes('_') && !message.includes(' ')) {
-                        // 如果包含下划线且无空格，很可能是未翻译的键名，保留原样
-                        displayMessage = message;
-                    }
+                const translated = t(message);
+                if (translated !== message) {
+                    displayMessage = translated;
                 }
-                
-                // 翻译标题（如果标题是翻译键名）
-                if (title && typeof title === 'string') {
-                    const translatedTitle = t(title);
-                    if (translatedTitle !== title) {
-                        displayTitle = translatedTitle;
-                    }
+                const translatedTitle = t(title);
+                if (translatedTitle !== title) {
+                    displayTitle = translatedTitle;
                 }
             }
             
@@ -1403,27 +1393,59 @@
             toastTitle.innerHTML = `<i class="bi ${icon} me-1 ${headerClass}"></i> ${displayTitle}`;
             toastMessage.innerText = displayMessage;
 
-            // 销毁旧实例，避免事件冲突
+            // 安全销毁旧实例
             if (toastEl._bsToast) {
                 try {
                     toastEl._bsToast.dispose();
-                } catch(e) {}
+                } catch(e) {
+                    // 忽略销毁错误
+                }
                 toastEl._bsToast = null;
             }
             
-            const toast = new bootstrap.Toast(toastEl, {
-                autohide: true,
-                delay: 3000
-            });
-            // 保存实例引用
-            toastEl._bsToast = toast;
+            // 重置 Toast 元素状态（保留 display: block 以便显示）
+            toastEl.classList.remove('show', 'showing', 'hide', 'hiding');
+            toastEl.style.opacity = '';
+            toastEl.style.display = 'block';
             
-            // 确保关闭按钮事件正常
+            // ✅ 确保关闭按钮事件正常
             const closeBtn = toastEl.querySelector('.btn-close');
             if (closeBtn) {
-                closeBtn.removeEventListener('click', function() {});
+                // 移除旧的事件监听（如果有）
+                if (closeBtn._toastHandler) {
+                    closeBtn.removeEventListener('click', closeBtn._toastHandler);
+                    closeBtn._toastHandler = null;
+                }
+                // Bootstrap 5 使用 data-bs-dismiss 自动处理关闭，不需要额外绑定
+                // 但需要确保属性存在
+                if (!closeBtn.hasAttribute('data-bs-dismiss')) {
+                    closeBtn.setAttribute('data-bs-dismiss', 'toast');
+                }
             }
-            toast.show();
+            
+            // ✅ 创建新的 Toast 实例
+            try {
+                const toast = new bootstrap.Toast(toastEl, {
+                    autohide: true,
+                    delay: 3000
+                });
+                toastEl._bsToast = toast;
+                
+                // ✅ 监听隐藏事件，清理状态（不干扰关闭按钮）
+                const hideHandler = function() {
+                    toastEl._bsToast = null;
+                    toastEl.classList.remove('showing', 'show');
+                    toastEl.style.display = 'none';
+                    toastEl.removeEventListener('hidden.bs.toast', hideHandler);
+                };
+                toastEl.addEventListener('hidden.bs.toast', hideHandler);
+                
+                // 显示 Toast
+                toast.show();
+            } catch (e) {
+                console.warn('Toast 显示失败:', e);
+                alert(displayMessage);
+            }
         }
 
         // 显示 flash 消息的 Toast
@@ -2366,10 +2388,10 @@
             </div>
         </div>
     </div>
-    <!-- ✅ 引入隐私声明模态框（放在 body 底部） -->
+    <!-- 引入隐私声明模态框（放在 body 底部） -->
     {% include 'components/privacy_modal.html' %}
 
-    <!-- ✅ 引入隐私声明 JS -->
+    <!-- 引入隐私声明 JS -->
     <script src="{{ url_for('static', filename='js/privacy.js') }}"></script>
     <script>
         // 确保隐私管理器在页面加载后初始化

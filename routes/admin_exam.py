@@ -2066,7 +2066,7 @@ def api_admin_exam_scores(exam_id):
     if not results_all:
         return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
 
-    # ✅ 过滤掉离职人员的成绩记录
+    # 过滤掉离职人员的成绩记录
     user_ids = list(set(r['user_id'] for r in results_all))
     if user_ids:
         active_users = db.table("users").select("id").in_("id", user_ids).eq("is_resign", False).execute()
@@ -2083,14 +2083,23 @@ def api_admin_exam_scores(exam_id):
     users_dict = {u['id']: u for u in (users_res.data or [])}
 
     # 3. 国家权限过滤（基于用户的国家）
+    is_dev = is_developer()
+    current_user_id = session.get('user_id')
+
     if allowed is not None:
         if not allowed:
             return jsonify({"data": [], "total": 0, "page": page, "per_page": per_page})
         filtered_results = []
         for r in results_all:
             user = users_dict.get(r['user_id'])
-            if user and user.get('country') in allowed:
-                filtered_results.append(r)
+            if user:
+                # 开发者：永远可以看到自己
+                if is_dev and r['user_id'] == current_user_id:
+                    filtered_results.append(r)
+                    continue
+                # 普通用户：检查国家是否在权限范围内
+                if user.get('country') in allowed:
+                    filtered_results.append(r)
         results_all = filtered_results
 
     # 4. 搜索过滤（基于用户姓名或邮箱）
@@ -3004,14 +3013,26 @@ def get_eligible_users_for_exam(exam_id):
         # 2. 获取管理员权限范围
         allowed = get_admin_allowed_countries()
         is_dev = is_developer()
+        current_user_id = session.get('user_id')
         
         # 3. 确定最终国家列表
         final_countries = exam_countries
         if allowed is not None and not is_dev:
             final_countries = [c for c in exam_countries if c in allowed]
+
+        # 如果是开发者，即使 final_countries 为空，也应该能获取所有用户（但受考试国家限制）
+        # 对于开发者，不应该用 final_countries 来过滤用户
+        # 而是应该获取所有国家的用户，但只显示未完成该考试的用户
         
-        if not final_countries:
-            return jsonify({"data": [], "total": 0})
+        if is_dev:
+            # 开发者：获取所有国家用户（不受考试国家限制）
+            users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id")\
+                .eq("user_status", "registered")\
+                .is_("deleted_at", "null")\
+                .eq("is_resign", False)
+        else:
+            if not final_countries:
+                return jsonify({"data": [], "total": 0})
         
         # 4. 获取该国家的所有活跃用户
         users_query = db.table("users").select("id, name_en, name_cn, email, country, wh_id")\
@@ -3034,8 +3055,14 @@ def get_eligible_users_for_exam(exam_id):
         # 7. 过滤：只显示未完成考试的用户
         eligible_users = []
         for user in all_users:
-            if user['id'] in completed_user_ids:
+            # 开发者：永远可以看到自己（即使自己已完成考试？这里需要判断）
+            # 如果开发者已经完成了考试，也应该能看到自己（可以重新推送）
+            # 但如果是普通用户，已完成考试则不应该显示
+            if not is_dev and user['id'] in completed_user_ids:
                 continue
+            # 开发者特殊规则：即使已完成，也显示（用于测试重新推送）
+            # 但对于普通用户，如果已完成则跳过
+            
             eligible_users.append({
                 "id": user['id'],
                 "name": user.get('name_cn') or user.get('name_en') or '',
@@ -3044,6 +3071,29 @@ def get_eligible_users_for_exam(exam_id):
                 "wh_id": user.get('wh_id', ''),
                 "is_assigned": user['id'] in assigned_user_ids
             })
+
+        # 7.1. 开发者特殊处理：确保自己始终在列表中
+        if is_dev:
+            # 检查开发者自己是否在列表中
+            dev_in_list = any(u['id'] == current_user_id for u in eligible_users)
+            if not dev_in_list:
+                # 如果开发者不在列表中，手动添加
+                dev_res = db.table("users").select("id, name_en, name_cn, email, country, wh_id")\
+                    .eq("id", current_user_id)\
+                    .maybe_single()\
+                    .execute()
+                if dev_res.data:
+                    dev_user = dev_res.data
+                    eligible_users.append({
+                        "id": dev_user['id'],
+                        "name": dev_user.get('name_cn') or dev_user.get('name_en') or '',
+                        "email": dev_user.get('email', ''),
+                        "country": dev_user.get('country', ''),
+                        "wh_id": dev_user.get('wh_id', ''),
+                        "is_assigned": dev_user['id'] in assigned_user_ids,
+                        "is_completed": dev_user['id'] in completed_user_ids
+                    })
+                    logger.info(f"✅ 开发者 {current_user_id} 已手动添加到可推送列表")
         
         # 8. 搜索过滤
         search = request.args.get('search', '').strip()

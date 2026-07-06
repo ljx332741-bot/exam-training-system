@@ -765,25 +765,24 @@ def exam_export_pdf(result_id):
 @exam_bp.route('/api/my/interviews')
 @login_required
 def my_interviews():
-    """获取学员的访谈列表（合并普通访谈和强制访谈，优先使用普通访谈）"""
+    """获取学员的访谈列表（合并普通访谈和强制访谈）"""
     user_id = session['user_id']
     db = get_supabase()
+    admin_db = get_supabase_admin()
     now = datetime.now(timezone.utc).isoformat()
 
     # 使用字典按 interview_id 去重
     result_map = {}
     
-    # ========== 1. 优先处理普通访谈 ==========
+    # ========== 1. 查询普通访谈 ==========
     res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
     interview_ids = list(set(r['interview_id'] for r in (res.data or [])))
     
     if interview_ids:
         inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
-
-        # 获取所有关联的考试ID
-        exam_ids = list(set([i.get('exam_id') for i in (inv_res.data or []) if i.get('exam_id')]))
         
-        # 查询考试的国家信息
+        # 获取关联的考试信息
+        exam_ids = list(set([i.get('exam_id') for i in (inv_res.data or []) if i.get('exam_id')]))
         exam_country_map = {}
         if exam_ids:
             exams_res = db.table("exams").select("id, countries, country").in_("id", exam_ids).execute()
@@ -819,9 +818,9 @@ def my_interviews():
             is_future = now < start_time
             is_active = start_time <= now <= end_time
             
-            # 检查是否已完成
-            answers = db.table("interview_results").select("answer").eq("interview_id", interview_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
-            is_completed = all(row.get('answer') for row in (answers.data or []))
+            # 检查普通访谈是否已完成（所有问题都有答案）
+            answers = db.table("interview_results").select("submitted_at").eq("interview_id", interview_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+            is_completed = any(row.get('submitted_at') for row in (answers.data or []))
             
             # 检查考试是否已完成
             exam_completed = False
@@ -844,78 +843,89 @@ def my_interviews():
                 "exam_completed": exam_completed,
                 "exam_total_score": exam_total_score,
                 "country": exam_country_map.get(exam_id, ''),
-                "is_force": False
+                "is_force": False,
+                "source": "normal"
             }
     
-    # ========== 2. 处理强制访谈（只添加普通访谈中不存在的）==========
-    force_res = db.table("user_interview_force_records").select("*").eq("user_id", user_id).is_("deleted_at", "null").execute()
+    # ========== 2. 查询强制访谈 ==========
+    force_res = admin_db.table("user_interview_force_records").select("*").eq("user_id", user_id).is_("deleted_at", "null").execute()
     
     for force in (force_res.data or []):
         original_id = force.get('original_interview_id')
-
-        # 获取所有关联的考试ID
-        exam_ids = list(set([i.get('exam_id') for i in (force_res.data or []) if i.get('exam_id')]))
-        
-        # 查询考试的国家信息
-        exam_country_map = {}
-        if exam_ids:
-            exams_res = db.table("exams").select("id, countries, country").in_("id", exam_ids).execute()
-            for exam in (exams_res.data or []):
-                countries_data = exam.get('countries')
-                if countries_data:
-                    if isinstance(countries_data, str):
-                        try:
-                            countries_data = json.loads(countries_data)
-                        except:
-                            countries_data = [exam.get('country', '')] if exam.get('country') else []
-                    elif isinstance(countries_data, list):
-                        pass
-                    else:
-                        countries_data = [exam.get('country', '')] if exam.get('country') else []
-                else:
-                    countries_data = [exam.get('country', '')] if exam.get('country') else []
-                exam_country_map[exam['id']] = ', '.join(countries_data) if countries_data else ''
-        
-        # ✅ 如果普通访谈已经存在，删除强制访谈记录并跳过
-        if original_id in result_map:
-            logger.info(f"访谈 {original_id} 已存在普通访谈，删除强制访谈记录")
-            db.table("user_interview_force_records").update({
-                "deleted_at": now,
-                "deleted_by": user_id
-            }).eq("id", force['id']).execute()
-            continue
-            
+        force_id = force.get('id')
         start_time = force.get('start_time')
         end_time = force.get('end_time')
+        exam_id = force.get('exam_id')
         
         if not start_time or not end_time:
             continue
         
         # 过期则删除
         if now > end_time:
-            db.table("user_interview_force_records").update({
+            admin_db.table("user_interview_force_records").update({
                 "deleted_at": now,
                 "deleted_by": user_id
-            }).eq("id", force['id']).execute()
+            }).eq("id", force_id).execute()
             continue
         
         is_future = now < start_time
         is_active = start_time <= now <= end_time
         
-        # 检查是否已完成
-        answers = db.table("interview_results").select("answer").eq("interview_id", original_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
-        is_completed = all(row.get('answer') for row in (answers.data or []))
+        # 检查强制访谈是否已完成（所有问题都有答案）
+        answers = db.table("interview_results").select("submitted_at").eq("interview_id", original_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
+        is_completed = any(row.get('submitted_at') for row in (answers.data or []))
         
         # 检查考试是否已完成
         exam_completed = False
         exam_total_score = 0
-        exam_id = force.get('exam_id')
         if exam_id:
             exam_result = db.table("exam_results").select("total_score").eq("exam_id", exam_id).eq("user_id", user_id).is_("deleted_at", "null").execute()
             if exam_result.data:
                 exam_completed = True
                 exam_total_score = exam_result.data[0].get('total_score', 0)
         
+        # ✅ 关键逻辑：判断是否用强制访谈覆盖普通访谈
+        should_use_force = True
+        
+        if original_id in result_map:
+            normal = result_map[original_id]
+            
+            # 如果普通访谈已完成，用强制访谈覆盖（补考/重新作答）
+            if normal.get('is_completed', False):
+                logger.info(f"✅ 访谈 {original_id} 已完成，使用强制访谈记录覆盖（补考模式）")
+                should_use_force = True
+            else:
+                # 普通访谈未完成，保留普通访谈，跳过强制访谈
+                logger.info(f"⏭️ 访谈 {original_id} 未完成，保留普通访谈，跳过强制访谈")
+                should_use_force = False
+                # 删除这个强制访谈记录（已失效）
+                admin_db.table("user_interview_force_records").update({
+                    "deleted_at": now,
+                    "deleted_by": user_id
+                }).eq("id", force_id).execute()
+                continue
+        
+        # 获取关联考试的国家信息
+        country_display = ''
+        if exam_id:
+            exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+            if exam_res.data:
+                countries_data = exam_res.data.get('countries')
+                if countries_data:
+                    if isinstance(countries_data, str):
+                        try:
+                            countries_data = json.loads(countries_data)
+                        except:
+                            countries_data = [exam_res.data.get('country', '')] if exam_res.data.get('country') else []
+                    elif isinstance(countries_data, list):
+                        pass
+                    else:
+                        countries_data = [exam_res.data.get('country', '')] if exam_res.data.get('country') else []
+                else:
+                    countries_data = [exam_res.data.get('country', '')] if exam_res.data.get('country') else []
+                country_display = ', '.join(countries_data) if countries_data else ''
+        
+        # ✅ 构建强制访谈数据（覆盖普通访谈）
         result_map[original_id] = {
             "id": original_id,
             "title": force.get('title', '强制访谈'),
@@ -927,9 +937,10 @@ def my_interviews():
             "is_completed": is_completed,
             "exam_completed": exam_completed,
             "exam_total_score": exam_total_score,
-            "country": exam_country_map.get(exam_id, ''),
+            "country": country_display,
             "is_force": True,
-            "force_record_id": force['id']
+            "force_record_id": force_id,
+            "source": "force"
         }
     
     return jsonify(list(result_map.values()))

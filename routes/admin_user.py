@@ -3,7 +3,7 @@ import os, json, logging, uuid, secrets, string, sys, openpyxl, re
 from io import BytesIO
 from datetime import datetime, timezone, timedelta, date
 from flask import  (
-    Flask, render_template, request, redirect, url_for, 
+    Blueprint, Flask, render_template, request, redirect, url_for, 
     session, flash, jsonify, send_file, make_response, current_app as app
 )
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -177,13 +177,13 @@ def api_admin_users():
     if not final_countries and allowed_countries is not None and allowed_countries and not is_dev:
         final_countries = allowed_countries
     
-    logger.info(f"用户列表请求 - 最终国家过滤: {final_countries}")
+    print(f"用户列表请求 - 最终国家过滤: {final_countries}")
 
-    logger.info(f"=== 调试国家过滤 ===")
-    logger.info(f"matched_country_codes: {matched_country_codes}")
-    logger.info(f"exam_countries: {exam_countries}")
-    logger.info(f"training_countries: {training_countries}")
-    logger.info(f"final_countries: {final_countries}")
+    print(f"=== 调试国家过滤 ===")
+    print(f"matched_country_codes: {matched_country_codes}")
+    print(f"exam_countries: {exam_countries}")
+    print(f"training_countries: {training_countries}")
+    print(f"final_countries: {final_countries}")
     
     # ========== 4. 基础查询 ==========
     query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
@@ -216,9 +216,14 @@ def api_admin_users():
             user_country = user.get('country') or ''
             user_status = user.get('user_status', '')
             created_by = user.get('created_by')
-            
+            user_id = user.get('id')
+
+            # 开发者：永远可以看到自己（即使自己的国家不属于该考试/访谈）
+            if is_dev and user_id == current_user_id:
+                # 开发者看到自己，跳过国家检查
+                pass
             # 情况1：用户有国家且在权限范围内
-            if user_country and user_country in final_countries:
+            elif user_country and user_country in final_countries:
                 pass
             # 情况2：已导入用户，检查创建者国家
             elif user_status == 'imported' and created_by:
