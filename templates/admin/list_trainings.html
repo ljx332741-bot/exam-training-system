@@ -9,196 +9,6 @@
 {% endblock %}
 
 {% block content %}
-    <style>
-    /* 照片管理按钮样式 - 轻量化悬浮 */
-    .photo-manage-btn {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: rgba(13, 110, 253, 0.08);
-        color: #0d6efd;
-        text-decoration: none;
-        transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-        flex-shrink: 0;
-        border: none;
-        cursor: pointer;
-    }
-
-    .photo-manage-btn:hover {
-        background: rgba(13, 110, 253, 0.18);
-        transform: scale(1.12);
-        color: #0a58ca;
-        box-shadow: 0 2px 12px rgba(13, 110, 253, 0.2);
-    }
-
-    .photo-manage-btn .photo-count-badge {
-        position: absolute;
-        top: -5px;
-        right: -5px;
-        background: #dc3545;
-        color: white;
-        border-radius: 50%;
-        font-size: 8px;
-        padding: 1px 5px;
-        min-width: 16px;
-        text-align: center;
-        font-weight: 700;
-        border: 1.5px solid white;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.15);
-        line-height: 1.3;
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    /* 无照片时只显示一个更淡的图标 */
-    .photo-manage-btn.no-photos {
-        background: rgba(108, 117, 125, 0.08);
-        color: #adb5bd;
-    }
-
-    .photo-manage-btn.no-photos:hover {
-        background: rgba(13, 110, 253, 0.12);
-        color: #0d6efd;
-    }
-
-    /* 表格名称列布局 */
-    .name-cell .d-flex {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-
-    /* 培训名称文字溢出处理 */
-    .name-cell .training-name-link {
-        flex: 1;
-        min-width: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    /* 可展开行样式 */
-    .expand-icon {
-        cursor: pointer;
-        transition: transform 0.2s;
-        display: inline-block;
-        margin-right: 8px;
-        font-size: 12px;
-        color: #0d6efd;
-    }
-    .expand-icon:hover {
-        color: #0a58ca;
-    }
-    .expand-icon.expanded {
-        transform: rotate(90deg);
-    }
-    .binding-detail-row {
-        background-color: #f8f9fc;
-    }
-    .binding-detail-row td {
-        padding: 0 !important;
-    }
-    .binding-content {
-        padding: 15px 20px;
-        background: #f8f9fc;
-        border-left: 3px solid #0d6efd;
-    }
-    .binding-table {
-        margin-bottom: 0;
-        font-size: 0.85rem;
-    }
-    .binding-table th {
-        background-color: #e9ecef;
-    }
-    .binding-table td {
-        vertical-align: middle;
-    }
-    .pass-score-input {
-        width: 70px;
-        display: inline-block;
-    }
-
-    /* 绑定关系绑定考试绑定链接样式 */
-    .exam-binding-link {
-        color: #0d6efd !important;
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.2s ease;
-    }
-
-    .exam-binding-link:hover {
-        color: #0a58ca !important;
-        text-decoration: underline !important;
-    }
-
-    /* 或者使用不同的颜色突出显示 */
-    .exam-binding-link {
-        color: #6f42c1 !important;  /* 紫色，更醒目 */
-        text-decoration: none;
-        font-weight: 600;
-    }
-
-    .exam-binding-link:hover {
-        color: #5a32a3 !important;
-        text-decoration: underline !important;
-    }
-
-    /* 绑定关系绑定考试的三角形符号样式 */
-    .expand-icon-wrapper {
-        position: relative;
-        display: inline-block;
-        margin-right: 4px;
-    }
-
-    .expand-icon-wrapper .badge-count {
-        position: absolute;
-        top: -12px;
-        right: -8px;
-        background: #0d6efd;
-        color: white;
-        border-radius: 50%;
-        font-size: 9px;
-        padding: 1px 5px;
-        min-width: 16px;
-        text-align: center;
-        line-height: 1.4;
-        border: 1px solid white;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-        cursor: pointer;
-        z-index: 1;
-        font-weight: bold;
-        transition: transform 0.2s;
-    }
-
-    .expand-icon-wrapper .badge-count:hover {
-        transform: scale(1.2);
-    }
-
-    .expand-icon-wrapper .badge-count.has-bindings {
-        background: #198754;  /* 有绑定时变为绿色 */
-    }
-
-    .expand-icon {
-        cursor: pointer;
-        transition: transform 0.2s;
-        display: inline-block;
-        font-size: 12px;
-        color: #0d6efd;
-        margin-right: 2px;
-    }
-
-    .expand-icon:hover {
-        color: #0a58ca;
-    }
-
-    .expand-icon.expanded {
-        transform: rotate(90deg);
-    }
-</style>
-
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
@@ -519,6 +329,10 @@
 </td>
 {% endblock %}
 
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/list_trainings.css') }}">
+{% endblock %}
+
 {% block extra_js %}
 <script>
     // 在页面顶部定义缓存变量
@@ -679,11 +493,9 @@
         const tbody = document.getElementById('trainingsTbody');
         if (!tbody) return;
 
-        // 如果有进度条，先隐藏
         window.hideTableProgress('trainingsTbody');
         
-        const perPage = 20; // 与后端分页大小一致
-        // 使用 DocumentFragment 批量构建
+        const perPage = 20;
         const fragment = document.createDocumentFragment();
         
         tbody.innerHTML = '';
@@ -693,32 +505,6 @@
             const row = tbody.insertRow();
             row.setAttribute('data-id', t.id);
 
-            // 使用 safeT 函数，如果不可用则使用 fallback
-            const tooltipText = (typeof safeT === 'function') 
-                ? safeT('click_view_exam_bindings') 
-                : '点击查看已绑定考试';
-            
-            const inconsistent = t.has_inconsistent_templates || false;
-            let headerBtnHtml = '';
-            if (inconsistent) {
-                headerBtnHtml = `<span class="d-inline-block" title="存在多个国家的不同表头模板，无法统一编辑，请在分组详情页分别录入">
-                                    <button class="btn btn-sm btn-outline-secondary header-btn" 
-                                            data-id="${t.id}" 
-                                            disabled 
-                                            style="pointer-events: auto; cursor: not-allowed; opacity: 0.65;">
-                                        📋 ${safeT('header_input')}
-                                    </button>
-                                </span>`;
-            } else {
-                headerBtnHtml = `<button class="btn btn-sm btn-outline-info header-btn" 
-                                        data-id="${t.id}"
-                                        title="录入表头字段">
-                                    📋 ${safeT('header_input')}
-                                </button>`;
-            }
-
-            // 序号：1,2,3...（按当前顺序，最新在上，序号1）
-            // const seq = index + 1;
             // 动态状态映射
             let statusText = '', statusClass = '';
             switch (t.dynamic_status) {
@@ -743,15 +529,20 @@
                     statusClass = 'bg-light text-dark';
             }
 
-            // 修改培训名称列：根据是否有国家决定跳转方式
-            // 绑定考试的位置以及绑定考试的查看方式三角形const expandIcon = `<span class="expand-icon" data-training-id="${t.id}">▶</span>`;
+            // ✅ 修改：根据 binding_count 决定展开图标样式
+            const hasBindings = t.binding_count > 0;
+            const tooltipText = hasBindings 
+                ? safeT('click_view_exam_bindings') + `（${t.binding_count}）`
+                : safeT('no_exam_bindings');
+
+            // ✅ 修改：保持原始结构，只改变样式属性
             const expandIcon = `
                 <span class="expand-icon-wrapper" style="position: relative; display: inline-block; margin-right: 2px;">
                     <span class="badge-count" style="
                         position: absolute;
                         top: -12px;
                         right: -8px;
-                        background: ${t.binding_count > 0 ? '#198754' : '#0d6efd'};
+                        background: ${hasBindings ? '#198754' : '#6c757d'};
                         color: white;
                         border-radius: 50%;
                         font-size: 9px;
@@ -759,23 +550,30 @@
                         min-width: 16px;
                         text-align: center;
                         line-height: 1.4;
-                        border: 1px solid white;
+                        border: 1.5px solid white;
                         box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-                        display: ${t.binding_count > 0 ? 'inline' : 'none'};
+                        display: ${hasBindings ? 'inline' : 'none'};
                         cursor: pointer;
                         z-index: 1;
                         font-weight: bold;
                         transition: transform 0.2s;
                     ">${t.binding_count || 0}</span>
-                    <span class="expand-icon" data-training-id="${t.id}" 
-                        title="${tooltipText}（${t.binding_count || 0}）"
-                        style="cursor: pointer; transition: transform 0.2s; display: inline-block; font-size: 12px; color: #0d6efd;">
+                    <span class="expand-icon ${hasBindings ? '' : 'no-bindings'}" 
+                        data-training-id="${t.id}" 
+                        data-has-bindings="${hasBindings}"
+                        title="${tooltipText}"
+                        style="cursor: ${hasBindings ? 'pointer' : 'not-allowed'}; 
+                            transition: transform 0.2s; 
+                            display: inline-block; 
+                            font-size: 12px; 
+                            color: ${hasBindings ? '#0d6efd' : '#adb5bd'};
+                            opacity: ${hasBindings ? '1' : '0.5'};">
                         ▶
                     </span>
                 </span>
             `;
 
-            // 照片管理按钮
+            // 照片管理按钮（保持原样）
             const photoCount = t.photo_count || 0;
             const photoBtnHtml = `
                 <a href="/admin/training/photos?training_id=${t.id}" 
@@ -788,7 +586,7 @@
                 </a>
             `;
 
-            // 培训名称列
+            // 培训名称列（保持原样）
             let nameHtml = '';
             if (t.country) {
                 nameHtml = `
@@ -816,9 +614,9 @@
                 `;
             }
 
-            // 构建行内容...
+            // 构建行内容（其余部分保持不变）
             row.innerHTML = `
-                <td class="seq-column">${rowNumber}</td>  <!-- 使用连续序号 -->
+                <td class="seq-column">${rowNumber}</td>
                 <td class="country-cell" title="${escapeHtml(t.country || safeT('general'))}">${escapeHtml(t.country || safeT('general'))}</td>
                 <td class="name-cell">${nameHtml}</td>
                 <td>
@@ -829,15 +627,14 @@
                 <td>${quarter}</td>
                 <td>${t.signed_count || 0}</td>
                 <td title="${formatLocalTime(t.created_at)}">${formatLocalTime(t.created_at)}</td>
-                <td 
-                    class="time-range" title="${formatLocalTime(t.start_time)} - ${formatLocalTime(t.end_time)}">
+                <td class="time-range" title="${formatLocalTime(t.start_time)} - ${formatLocalTime(t.end_time)}">
                     ${formatLocalTime(t.start_time)} - ${formatLocalTime(t.end_time)}
                 </td>
                 <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>
                     ${t.country ? `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary" data-i18n-key="t_details">${safeT('t_details')}</a>` : 
                     `<button class="btn btn-sm btn-outline-info group-detail-btn" data-id="${t.id}" data-i18n-key="details_by_country">${safeT('details_by_country')}</button>`}
-                    ${inconsistent ? 
+                    ${t.has_inconsistent_templates ? 
                         `<button class="btn btn-sm btn-outline-info header-btn" 
                                 data-id="${t.id}"
                                 style="pointer-events: none; opacity: 0.65;"
@@ -855,11 +652,11 @@
                     <button class="btn btn-sm btn-outline-primary edit-name-btn" data-id="${t.id}" data-i18n-key="t_edit_name">${safeT('t_edit_name')}</button>
                     <button class="btn btn-sm btn-outline-secondary copy-training-btn" data-id="${t.id}" data-i18n-key="t_copy">${safeT('t_copy')}</button>
                     <button class="btn btn-sm btn-outline-danger delete-btn" data-id="${t.id}" data-i18n-key="t_delete">${safeT('t_delete')}</button>
-                  </td>
+                </td>
             `;
             fragment.appendChild(row);
         });
-        // ✅ 一次性添加所有行
+        
         tbody.innerHTML = '';
         tbody.appendChild(fragment);
         
@@ -873,7 +670,7 @@
             });
         });
     }
-
+    
     function formatDate(iso) {
         if (!iso) return '-';
         return new Date(iso).toLocaleString();
@@ -1126,20 +923,43 @@
         });
 
         // 展开图标点击事件 培训考试关系绑定
+        // 在 attachRowEvents 函数中修改
         document.querySelectorAll('.expand-icon').forEach(icon => {
             icon.removeEventListener('click', handleExpandClick);
             icon.addEventListener('click', handleExpandClick);
         });
 
-        // ✅ 添加加载状态锁，防止重复请求
+        // 添加加载状态锁，防止重复请求
         let isLoading = false;
+
         async function handleExpandClick(e) {
             e.stopPropagation();
             
-            // ✅ 防止重复点击
-            if (this._isLoading) return;
-            
             const icon = e.currentTarget;
+            
+            // 检查是否无绑定（通过 data-has-bindings 属性或 class）
+            const hasBindings = icon.dataset.hasBindings === 'true';
+            
+            if (!hasBindings) {
+                // 无绑定，显示轻提示（Toast 或短暂闪烁）
+                const trainingId = icon.dataset.trainingId;
+                const trainingName = icon.closest('tr')?.querySelector('.training-name-link')?.textContent || trainingId;
+                if (typeof showToast === 'function') {
+                    showToast(`培训「${trainingName}」暂无绑定考试`, 'info');
+                } else {
+                    // 降级方案：短暂闪烁提示
+                    const originalColor = icon.style.color;
+                    icon.style.color = '#dc3545';
+                    setTimeout(() => {
+                        icon.style.color = originalColor || '#adb5bd';
+                    }, 300);
+                }
+                return;
+            }
+            
+            // 防止重复点击
+            if (icon._isLoading) return;
+            
             const trainingId = icon.dataset.trainingId;
             const row = icon.closest('tr');
             
@@ -1152,15 +972,15 @@
                 icon.classList.remove('expanded');
             } else {
                 // 展开：加载详情
-                this._isLoading = true;
+                icon._isLoading = true;
                 try {
                     await loadTrainingBindings(trainingId, row, icon);
-                    // ✅ 只有成功加载后才添加 expanded 类
+                    // 只有成功加载后才添加 expanded 类
                     if (document.getElementById(`binding-detail-${trainingId}`)) {
                         icon.classList.add('expanded');
                     }
                 } finally {
-                    this._isLoading = false;
+                    icon._isLoading = false;
                 }
             }
         }
