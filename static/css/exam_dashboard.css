@@ -261,44 +261,74 @@
     font-weight: 500;
 }
 
-/* 可调整列宽的表格 */
+/* ==================== 工业级列宽调整表格 ==================== */
+/* 表格容器 - 负责滚动 */
+.resizable-table-wrapper {
+    overflow-x: auto;
+    overflow-y: visible;
+    width: 100%;
+    /* 添加滚动条底部留白，提升体验 */
+    padding-bottom: 2px;
+}
+
+/* 滚动条美化 */
+.resizable-table-wrapper::-webkit-scrollbar {
+    height: 8px;
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.resizable-table-wrapper::-webkit-scrollbar-thumb {
+    background: #c1c7cd;
+    border-radius: 4px;
+}
+
+.resizable-table-wrapper::-webkit-scrollbar-thumb:hover {
+    background: #a0a7ae;
+}
+
+/* 表格本身 - 宽度自增长 */
 .resizable-table {
     table-layout: fixed;
-    width: 100%;
+    width: max-content;  /* 关键：让表格随内容增长 */
+    min-width: 100%;
     border-collapse: collapse;
+    background: white;
 }
 
-.resizable-table th {
+/* 表格头部 */
+.resizable-table thead th {
     position: relative;
-    overflow: hidden; /* 改为 hidden，不显示滚动条 */
-    text-overflow: ellipsis;
-    white-space: nowrap; /* 表头不换行 */
-    padding: 8px 12px;
+    white-space: nowrap;
+    padding: 8px 14px 8px 12px;
     border-right: 1px solid #dee2e6;
+    background: #f8f9fa;
     user-select: none;
+    font-weight: 600;
+    /* 列宽由 colgroup 控制，这里不设置宽度 */
 }
 
-/* 表格单元格 - 不换行，溢出显示省略号，悬浮显示完整内容 */
-.resizable-table td {
+/* 表格单元格 */
+.resizable-table tbody td {
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap; /* 关键：不换行 */
+    white-space: nowrap;
     padding: 8px 12px;
     vertical-align: middle;
-    max-width: 0; /* 配合 table-layout: fixed 使用 */
+    max-width: 0;  /* 配合 table-layout: fixed 使用 */
 }
 
-/* 对于需要完整显示内容的单元格，添加 title 属性通过 JS 设置 */
+/* 悬浮显示完整内容 */
 .resizable-table td[title] {
     cursor: help;
 }
 
-/* 列宽拖动手柄 */
-.resizable-table .resize-handle {
+/* ==================== 列宽拖动手柄 ==================== */
+.resizable-table thead th .col-resize-handle {
     position: absolute;
     top: 0;
-    right: -4px;
-    width: 8px;
+    right: -5px;
+    width: 10px;
     height: 100%;
     cursor: col-resize;
     z-index: 10;
@@ -306,19 +336,27 @@
     transition: background 0.15s;
 }
 
-.resizable-table .resize-handle:hover,
-.resizable-table .resize-handle:active {
-    background: rgba(13, 110, 253, 0.3);
+/* 悬停时显示手柄 */
+.resizable-table thead th .col-resize-handle:hover {
+    background: rgba(13, 110, 253, 0.15);
 }
 
-/* 拖拽时的辅助提示 */
-.resizing-active {
-    cursor: col-resize !important;
+/* 拖动时高亮 */
+.resizable-table.resizing .col-resize-handle {
+    background: rgba(13, 110, 253, 0.25);
+}
+
+.resizable-table.resizing .col-resize-handle:hover {
+    background: rgba(13, 110, 253, 0.35);
+}
+
+/* 拖拽时的全局状态 */
+.resizable-table.resizing {
     user-select: none !important;
 }
 
-.resizing-active th {
-    cursor: col-resize !important;
+.resizable-table.resizing thead th {
+    cursor: col-resize;
 }
 
 /* 特定的徽章和代码样式，保持不换行 */
@@ -329,4 +367,17 @@
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* 空状态样式 */
+.empty-state {
+    padding: 40px 20px;
+    text-align: center;
+    color: #adb5bd;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    display: block;
+    margin-bottom: 12px;
 }

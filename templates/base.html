@@ -14,6 +14,11 @@
     <!-- 📦 CDN 引入 -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- 新增：jQuery + jQuery Resizable Columns -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <!-- 使用官方 GitHub 版本（更稳定） -->
+    <script src="https://cdn.jsdelivr.net/gh/dobtco/jquery-resizable-columns@master/dist/jquery.resizableColumns.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/dobtco/jquery-resizable-columns@master/dist/jquery.resizableColumns.css">
     <style>
         /* ==================== 顶部导航栏 - 简约高级 ==================== */
         .navbar {
@@ -2327,6 +2332,365 @@
                     }
                 });
             });
+        }
+
+
+        // ==================== 工业级列宽调整（使用 colgroup + requestAnimationFrame） ====================
+
+        /**
+         * 获取表格的 colgroup 中的 cols
+         */
+        function getTableCols(tableId) {
+            const table = document.getElementById(tableId);
+            if (!table) return null;
+            
+            let colgroup = table.querySelector('colgroup');
+            if (!colgroup) {
+                // 如果没有 colgroup，动态创建
+                colgroup = document.createElement('colgroup');
+                colgroup.id = tableId + '_colgroup';
+                const thCount = table.querySelectorAll('thead th').length;
+                for (let i = 0; i < thCount; i++) {
+                    const col = document.createElement('col');
+                    col.style.width = '100px';
+                    col.style.minWidth = '40px';
+                    colgroup.appendChild(col);
+                }
+                table.prepend(colgroup);
+            }
+            
+            return colgroup.querySelectorAll('col');
+        }
+
+        /**
+         * 初始化表格列宽拖动功能（工业级实现）
+         * @param {string} tableId - 表格的 ID
+         * @param {Object} options - 配置选项
+         */
+        function initResizableTable(tableId, options = {}) {
+            const table = document.getElementById(tableId);
+            if (!table) {
+                console.warn('表格不存在:', tableId);
+                return;
+            }
+            
+            // 避免重复初始化
+            if (table._resizeInitialized) {
+                // 如果已初始化，只重新加载列宽
+                if (options.persist) {
+                    loadColumnWidths(tableId, table);
+                }
+                return;
+            }
+            table._resizeInitialized = true;
+            
+            const config = {
+                minWidth: options.minWidth || 40,
+                maxWidth: options.maxWidth || 600,
+                persist: options.persist || false,
+                storageKey: options.storageKey || 'table_column_widths'
+            };
+            
+            // 获取 colgroup 中的 col 元素
+            const cols = getTableCols(tableId);
+            if (!cols || cols.length === 0) {
+                console.warn('无法获取 colgroup');
+                return;
+            }
+            
+            let currentCol = null;
+            let currentIndex = -1;
+            let startX = 0;
+            let startWidth = 0;
+            let isResizing = false;
+            let rafId = null;  // requestAnimationFrame ID
+            let pendingWidth = null;  // 待应用的宽度
+            
+            // 为每个 th 添加拖动手柄
+            table.querySelectorAll('thead th').forEach((th, index) => {
+                // 移除旧手柄
+                const oldHandle = th.querySelector('.col-resize-handle');
+                if (oldHandle) oldHandle.remove();
+                
+                // 创建新手柄
+                const handle = document.createElement('div');
+                handle.className = 'col-resize-handle';
+                // 添加提示
+                handle.title = '拖动调整列宽';
+                th.appendChild(handle);
+                
+                // 鼠标按下事件
+                handle.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    // 如果正在拖动，忽略
+                    if (isResizing) return;
+                    
+                    currentIndex = index;
+                    currentCol = cols[index];
+                    if (!currentCol) return;
+                    
+                    startX = e.clientX;
+                    startWidth = currentCol.offsetWidth || parseInt(currentCol.style.width) || 100;
+                    isResizing = true;
+                    pendingWidth = null;
+                    
+                    table.classList.add('resizing');
+                    document.body.style.cursor = 'col-resize';
+                    document.body.style.userSelect = 'none';
+                    
+                    // 全局监听（使用 capture 阶段确保优先捕获）
+                    document.addEventListener('mousemove', onMouseMove, true);
+                    document.addEventListener('mouseup', onMouseUp, true);
+                });
+            });
+            
+            function onMouseMove(e) {
+                if (!isResizing || !currentCol) return;
+                
+                const delta = e.clientX - startX;
+                let newWidth = startWidth + delta;
+                
+                // 限制最小/最大宽度
+                newWidth = Math.max(config.minWidth, Math.min(config.maxWidth, newWidth));
+                
+                // 使用 requestAnimationFrame 节流
+                if (rafId === null) {
+                    rafId = requestAnimationFrame(() => {
+                        // 应用宽度到 col
+                        if (currentCol) {
+                            currentCol.style.width = newWidth + 'px';
+                            currentCol.style.minWidth = newWidth + 'px';
+                            currentCol.style.maxWidth = newWidth + 'px';
+                            
+                            // 同时更新 th 的宽度（保证表头与列对齐）
+                            const th = table.querySelectorAll('thead th')[currentIndex];
+                            if (th) {
+                                th.style.width = newWidth + 'px';
+                                th.style.minWidth = newWidth + 'px';
+                                th.style.maxWidth = newWidth + 'px';
+                            }
+                        }
+                        rafId = null;
+                        pendingWidth = null;
+                    });
+                }
+            }
+            
+            function onMouseUp() {
+                if (isResizing && currentCol) {
+                    // 应用最终宽度
+                    const finalWidth = currentCol.offsetWidth || parseInt(currentCol.style.width) || startWidth;
+                    
+                    // 保存列宽
+                    if (config.persist) {
+                        saveColumnWidths(tableId, table);
+                    }
+                    
+                    // 触发自定义事件，通知列宽已变化
+                    const event = new CustomEvent('columnResized', {
+                        detail: { 
+                            tableId: tableId, 
+                            columnIndex: currentIndex, 
+                            width: finalWidth 
+                        }
+                    });
+                    table.dispatchEvent(event);
+                }
+                
+                // 清理状态
+                isResizing = false;
+                currentCol = null;
+                currentIndex = -1;
+                
+                if (rafId) {
+                    cancelAnimationFrame(rafId);
+                    rafId = null;
+                }
+                pendingWidth = null;
+                
+                table.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                
+                document.removeEventListener('mousemove', onMouseMove, true);
+                document.removeEventListener('mouseup', onMouseUp, true);
+            }
+            
+            // 加载保存的列宽
+            if (config.persist) {
+                loadColumnWidths(tableId, table);
+            }
+            
+            // 返回列控制对象，方便外部操作
+            return {
+                table: table,
+                cols: cols,
+                getColumnWidth: function(index) {
+                    if (cols[index]) {
+                        return cols[index].offsetWidth || parseInt(cols[index].style.width) || 100;
+                    }
+                    return null;
+                },
+                setColumnWidth: function(index, width) {
+                    if (cols[index]) {
+                        const clampedWidth = Math.max(config.minWidth, Math.min(config.maxWidth, width));
+                        cols[index].style.width = clampedWidth + 'px';
+                        cols[index].style.minWidth = clampedWidth + 'px';
+                        cols[index].style.maxWidth = clampedWidth + 'px';
+                        
+                        const th = table.querySelectorAll('thead th')[index];
+                        if (th) {
+                            th.style.width = clampedWidth + 'px';
+                            th.style.minWidth = clampedWidth + 'px';
+                            th.style.maxWidth = clampedWidth + 'px';
+                        }
+                        
+                        if (config.persist) {
+                            saveColumnWidths(tableId, table);
+                        }
+                    }
+                }
+            };
+        }
+
+        /**
+         * 保存列宽到 localStorage
+         */
+        function saveColumnWidths(tableId, table) {
+            if (!tableId) return;
+            
+            const storageKey = 'table_column_widths';
+            let saved = {};
+            
+            try {
+                const existing = localStorage.getItem(storageKey);
+                if (existing) {
+                    saved = JSON.parse(existing);
+                }
+            } catch(e) {
+                // 忽略
+            }
+            
+            if (!saved[tableId]) {
+                saved[tableId] = {};
+            }
+            
+            const cols = table.querySelectorAll('colgroup col');
+            cols.forEach((col, index) => {
+                const width = col.offsetWidth || parseInt(col.style.width) || 100;
+                saved[tableId][index] = width;
+            });
+            
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(saved));
+            } catch(e) {
+                // 忽略
+            }
+        }
+
+        /**
+         * 从 localStorage 加载列宽
+         */
+        function loadColumnWidths(tableId, table) {
+            if (!tableId) return;
+            
+            const storageKey = 'table_column_widths';
+            
+            try {
+                const saved = localStorage.getItem(storageKey);
+                if (!saved) return;
+                
+                const data = JSON.parse(saved);
+                const widths = data[tableId];
+                if (!widths) return;
+                
+                const cols = table.querySelectorAll('colgroup col');
+                const ths = table.querySelectorAll('thead th');
+                
+                cols.forEach((col, index) => {
+                    if (widths[index] && widths[index] > 0) {
+                        const width = widths[index];
+                        col.style.width = width + 'px';
+                        col.style.minWidth = width + 'px';
+                        col.style.maxWidth = width + 'px';
+                        
+                        if (ths[index]) {
+                            ths[index].style.width = width + 'px';
+                            ths[index].style.minWidth = width + 'px';
+                            ths[index].style.maxWidth = width + 'px';
+                        }
+                    }
+                });
+            } catch(e) {
+                // 忽略
+            }
+        }
+
+        /**
+         * 为模态框中的表格启用列宽调整
+         */
+        function initResizableTableInModal(modalSelector, tableId, options = {}) {
+            const modal = document.querySelector(modalSelector);
+            if (!modal) {
+                console.warn('模态框不存在:', modalSelector);
+                return;
+            }
+            
+            let resizeInstance = null;
+            
+            // 监听模态框显示事件
+            modal.addEventListener('shown.bs.modal', function() {
+                // 延迟执行确保 DOM 渲染完成
+                setTimeout(() => {
+                    const table = document.getElementById(tableId);
+                    if (table) {
+                        // 重置初始化标记，允许重新初始化
+                        table._resizeInitialized = false;
+                        // 初始化
+                        resizeInstance = initResizableTable(tableId, options);
+                    }
+                }, 200);
+            });
+            
+            // 可选：模态框隐藏时清理
+            modal.addEventListener('hidden.bs.modal', function() {
+                // 不销毁，保留状态
+                resizeInstance = null;
+            });
+        }
+
+        // ==================== 工具函数：重置列宽 ====================
+        function resetTableColumns(tableId, defaultWidths) {
+            const table = document.getElementById(tableId);
+            if (!table) return;
+            
+            const cols = table.querySelectorAll('colgroup col');
+            const ths = table.querySelectorAll('thead th');
+            
+            cols.forEach((col, index) => {
+                const width = defaultWidths && defaultWidths[index] ? defaultWidths[index] : 100;
+                col.style.width = width + 'px';
+                col.style.minWidth = width + 'px';
+                col.style.maxWidth = width + 'px';
+                
+                if (ths[index]) {
+                    ths[index].style.width = width + 'px';
+                    ths[index].style.minWidth = width + 'px';
+                    ths[index].style.maxWidth = width + 'px';
+                }
+            });
+            
+            // 清除保存的列宽
+            const storageKey = 'table_column_widths';
+            try {
+                const saved = JSON.parse(localStorage.getItem(storageKey) || '{}');
+                delete saved[tableId];
+                localStorage.setItem(storageKey, JSON.stringify(saved));
+            } catch(e) {
+                // 忽略
+            }
         }
     </script>
 
