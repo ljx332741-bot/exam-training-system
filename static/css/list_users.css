@@ -1,0 +1,153 @@
+/* static/css/list_users.css */
+    /* 复制按钮样式 */
+    .user-id-code {
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .user-id-code:hover {
+        background: #e0e0e0 !important;
+    }
+    /* 确保 datalist 下拉选项可见 */
+    datalist {
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    datalist option {
+        padding: 8px;
+        cursor: pointer;
+    }
+
+    datalist option:hover {
+        background-color: #f0f0f0;
+    }
+    
+    /* 模态框标题中的小号文本样式 */
+    .modal-title small {
+        font-size: 0.75rem;
+        opacity: 0.85;
+        font-weight: normal;
+    }
+    /* ==================== 工业级列宽调整表格 ==================== */
+    /* 表格容器 - 负责滚动 */
+    .resizable-table-wrapper {
+        overflow-x: auto;
+        overflow-y: visible;
+        width: 100%;
+        padding-bottom: 2px;
+    }
+
+    .resizable-table-wrapper::-webkit-scrollbar {
+        height: 8px;
+        background: #f1f1f1;
+        border-radius: 4px;
+    }
+
+    .resizable-table-wrapper::-webkit-scrollbar-thumb {
+        background: #c1c7cd;
+        border-radius: 4px;
+    }
+
+    .resizable-table-wrapper::-webkit-scrollbar-thumb:hover {
+        background: #a0a7ae;
+    }
+
+    /* 表格本身 - 宽度自增长 */
+    .resizable-table {
+        table-layout: fixed;
+        width: max-content;
+        min-width: 100%;
+        border-collapse: collapse;
+        background: white;
+    }
+
+    /* 表格头部 */
+    .resizable-table thead th {
+        position: relative;
+        white-space: nowrap;
+        padding: 8px 14px 8px 12px;
+        border-right: 1px solid #dee2e6;
+        background: #f8f9fa;
+        user-select: none;
+        font-weight: 600;
+    }
+
+    /* 表格单元格 */
+    .resizable-table tbody td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 8px 12px;
+        vertical-align: middle;
+        max-width: 0;
+    }
+
+    .resizable-table td[title] {
+        cursor: help;
+    }
+
+    /* ==================== 列宽拖动手柄 ==================== */
+    .resizable-table thead th .col-resize-handle {
+        position: absolute;
+        top: 0;
+        right: -5px;
+        width: 10px;
+        height: 100%;
+        cursor: col-resize;
+        z-index: 10;
+        background: transparent;
+        transition: background 0.15s;
+    }
+
+    .resizable-table thead th .col-resize-handle:hover {
+        background: rgba(13, 110, 253, 0.15);
+    }
+
+    .resizable-table.resizing .col-resize-handle {
+        background: rgba(13, 110, 253, 0.25);
+    }
+
+    .resizable-table.resizing {
+        user-select: none !important;
+    }
+
+    .resizable-table.resizing thead th {
+        cursor: col-resize;
+    }
+
+    /* 复制按钮样式 */
+    .user-id-code {
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .user-id-code:hover {
+        background: #e0e0e0 !important;
+    }
+
+    /* 确保 datalist 下拉选项可见 */
+    datalist {
+        background: white;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+
+    datalist option {
+        padding: 8px;
+        cursor: pointer;
+    }
+
+    datalist option:hover {
+        background-color: #f0f0f0;
+    }
+
+    /* 模态框标题中的小号文本样式 */
+    .modal-title small {
+        font-size: 0.75rem;
+        opacity: 0.85;
+        font-weight: normal;
+    }

@@ -1,69 +1,6 @@
 <!-- templates/admin/list_users.html -->
 {% extends "base.html" %}
 {% block title %}{{ _('user_management') }}{% endblock %}
-{% block extra_head %}
-/* 在 extra_head 中添加 */
-<style>
-    /* 复制按钮样式 */
-    .user-id-code {
-        cursor: pointer;
-        transition: all 0.2s;
-    }
-    .user-id-code:hover {
-        background: #e0e0e0 !important;
-    }
-    #userTable th {
-        position: relative;
-        background-clip: padding-box;
-    }
-    .col-resize-handle {
-        position: absolute;
-        right: 0;
-        top: 0;
-        bottom: 0;
-        width: 8px;
-        cursor: col-resize;
-        background: rgba(0,0,0,0.05);
-        z-index: 10;
-        transition: background 0.2s;
-    }
-    .col-resize-handle:hover {
-        background: rgba(0,0,0,0.2);
-    }
-    .col-resize-handle:active {
-        background: rgba(0,0,0,0.3);
-    }
-    /* 调整时禁用文本选择 */
-    body.resizing {
-        user-select: none;
-        cursor: col-resize;
-    }
-    /* 确保 datalist 下拉选项可见 */
-    datalist {
-        background: white;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-        max-height: 200px;
-        overflow-y: auto;
-    }
-
-    datalist option {
-        padding: 8px;
-        cursor: pointer;
-    }
-
-    datalist option:hover {
-        background-color: #f0f0f0;
-    }
-    
-    /* 模态框标题中的小号文本样式 */
-    .modal-title small {
-        font-size: 0.75rem;
-        opacity: 0.85;
-        font-weight: normal;
-    }
-</style>
-{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -141,7 +78,7 @@
                         
                         <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
 
-                        <!-- ✅ 新增：导出按钮 -->
+                        <!-- 导出按钮 -->
                         {% if session.get('role') in ['admin', 'super_admin', 'developer'] %}
                         <button class="btn btn-outline-success me-2" id="exportUsersBtn">
                             <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
@@ -185,19 +122,13 @@
     <!-- 用户列表表格 -->
     <div class="card shadow-sm">
         <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0" style="min-width: 1800px; white-space: nowrap;" id="userTable">
+            <div class="resizable-table-wrapper">
+                <table id="userTable" class="table table-hover align-middle mb-0 resizable-table">
+                    <thead class="table-light"  id="userTableHead">
+                        <!-- 表头由 JS 动态渲染 -->
+                    </thead>
                     <tbody id="userTableBody">
-                        <tr>
-                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
-                                <div class="d-flex flex-column align-items-center justify-content-center">
-                                    <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
-                                        <span class="visually-hidden">Loading...</span>
-                                    </div>
-                                    <span class="text-muted" data-i18n="loading">加载中...</span>
-                                </div>
-                            </td>
-                        </tr>
+                        <!-- 内容由 JS 动态渲染 -->
                     </tbody>
                 </table>
             </div>
@@ -432,6 +363,10 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/list_users.css') }}">
 {% endblock %}
 
 {% block extra_js %}
@@ -938,9 +873,6 @@
             renderPagination('pagination', currentPage, totalPages, loadUsers);
 
             updateBatchDeleteButton();
-            setTimeout(() => {
-                restoreColumnWidths();
-            }, 50);
 
         } catch (err) {
             console.error('加载用户列表失败:', err);
@@ -1117,32 +1049,23 @@
         const table = document.getElementById('userTable');
         if (!table) return;
         
-        // 过滤超级管理员行（非超管看不到）
+        // 过滤用户
         let displayUsers = users;
-
         if (isDev) {
-            // 开发者：显示所有用户（包括超管、开发者自己）
             displayUsers = users;
         } else if (currentUserRole === 'super_admin') {
-            // 超管：显示所有用户（排除开发者，但包括其他超管）
             displayUsers = users.filter(u => u.role !== 'developer');
         } else if (currentUserRole === 'admin') {
-            // ✅ 管理员：显示普通用户 + 管理员自己（以及其他相同国家的管理员）
-            // 如果管理员权限范围是国家，应该显示该国家下的所有用户（包括管理员自己）
-            // 但为了安全，只显示普通用户和管理员自己
             displayUsers = users.filter(u => {
-                // 显示普通用户
                 if (u.role === 'user') return true;
-                // 显示自己
                 if (u.id === currentUserId) return true;
-                // ✅ 可选：显示同一国家的其他管理员（如果权限允许）
                 if (u.role === 'admin' && u.country === currentUserCountry) return true;
                 return false;
             });
         } else {
-            // 其他角色
             displayUsers = users.filter(u => u.role === 'user');
         }
+        
         if (!displayUsers.length) {
             document.getElementById('userTableBody').innerHTML = `
                 <tr>
@@ -1165,6 +1088,7 @@
             'user_status', 'employment_status', 
             'employee_id', 'company', 'department', 'wh_type', 'birthday', 'created_by'
         ];
+        
         const labels = {
             index: '#',
             country: t('country'), 
@@ -1185,143 +1109,190 @@
             created_by: t('created_by')
         };
         
-        // 构建表头HTML
-        let headerHtml = '<thead class="table-light"><tr>';
-        headerHtml += '<th style="width: 40px;"><input type="checkbox" id="selectAllActive"></th>';
+        // ==================== 构建表头 ====================
+        let headerHtml = '<tr>';
+        headerHtml += '<th style="width: 40px; min-width: 30px;"><input type="checkbox" id="selectAllActive"></th>';
         
+        // 计算可见列数，用于 colgroup
+        let visibleColumns = [];
         for (const field of fieldOrder) {
             if (visibleFields && visibleFields[field]) {
-                headerHtml += `<th>${labels[field]}</th>`;
+                visibleColumns.push(field);
+                let label = labels[field] || field;
+                headerHtml += `<th>${label}</th>`;
             }
         }
-        // 权限范围列（仅超管显示）
+        
+        // 权限范围列
         if ((CURRENT_USER_ROLE === 'super_admin' || IS_DEVELOPER) && visibleFields && visibleFields.power_scope !== false) {
+            visibleColumns.push('power_scope');
             headerHtml += `<th><span data-i18n="power_scope">${t('power_scope')}</span></th>`;
         }
-        headerHtml += `<th>${t('actions')}</th></tr></thead>`;
+        
+        headerHtml += `<th>${t('actions')}</th></tr>`;
+        
+        // ==================== 构建 colgroup ====================
+        let colgroupHtml = '<colgroup>';
+        // 复选框列
+        colgroupHtml += '<col style="width: 40px; min-width: 30px; max-width: 50px;">';
+        // 数据列
+        for (const field of visibleColumns) {
+            // 根据字段设置默认宽度
+            let defaultWidth = 100;
+            switch(field) {
+                case 'index': defaultWidth = 40; break;
+                case 'country': defaultWidth = 80; break;
+                case 'name_en': defaultWidth = 120; break;
+                case 'email': defaultWidth = 180; break;
+                case 'id': defaultWidth = 100; break;
+                case 'wh_id': defaultWidth = 100; break;
+                case 'wh_name_en': defaultWidth = 150; break;
+                case 'role': defaultWidth = 80; break;
+                case 'is_partner': defaultWidth = 70; break;
+                case 'user_status': defaultWidth = 80; break;
+                case 'employment_status': defaultWidth = 80; break;
+                case 'employee_id': defaultWidth = 100; break;
+                case 'company': defaultWidth = 120; break;
+                case 'department': defaultWidth = 100; break;
+                case 'wh_type': defaultWidth = 100; break;
+                case 'birthday': defaultWidth = 100; break;
+                case 'created_by': defaultWidth = 100; break;
+                case 'power_scope': defaultWidth = 150; break;
+                default: defaultWidth = 100;
+            }
+            colgroupHtml += `<col style="width: ${defaultWidth}px; min-width: 40px;">`;
+        }
+        // 操作列
+        colgroupHtml += '<col style="width: 200px; min-width: 120px; max-width: 300px;">';
+        colgroupHtml += '</colgroup>';
         
         // ==================== 构建数据行 ====================
         let bodyHtml = '<tbody>';
-        const perPage = 20;  // 每页显示数量，与后端一致
+        const perPage = 20;
         const page = typeof currentPage !== 'undefined' ? currentPage : 1;
         const startIndex = (page - 1) * perPage + 1;
         let rowIndex = startIndex;
+        
         for (const u of displayUsers) {
             bodyHtml += `<tr>
-                <td><input type="checkbox" class="user-checkbox" data-id="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''}>${'</td>'}`;
+                <td><input type="checkbox" class="user-checkbox" data-id="${u.id}" ${selectedUserIds.has(u.id) ? 'checked' : ''}></td>`;
             
-            for (const field of fieldOrder) {
-                if (visibleFields && visibleFields[field]) {
-                    let cellValue = '';
-                    switch (field) {
-                        case 'index':
-                            cellValue = String(rowIndex);
-                            break;
-                        case 'country':
-                            cellValue = escapeHtml(u.country || '-');
-                            break;
-                        case 'name_en':
-                            cellValue = escapeHtml(u.name_en || '-');
-                            break;
-                        case 'email':
-                            cellValue = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
-                            break;
-                        case 'id':
-                            const userIdFull = u.id;
-                            const userIdDisplay = u.id.slice(0, 8) + '...';
-                            cellValue = `<div class="d-flex align-items-center gap-2">
-                                <span title="${escapeHtml(userIdFull)}" style="cursor: help;">${escapeHtml(userIdDisplay)}</span>
-                                <button class="btn btn-sm btn-outline-secondary copy-id-btn" 
-                                    style="padding: 0px 4px; font-size: 0.7rem;" 
-                                    onclick="window.copyToClipboard('${escapeHtml(userIdFull)}', this)" 
-                                    title="复制完整ID">
-                                    <i class="bi bi-files"></i>
-                                </button>
-                            </div>`;
-                            break;
-                        case 'wh_id':
-                            cellValue = escapeHtml(u.wh_id || '-');
-                            break;
-                        case 'wh_name_en':
-                            cellValue = escapeHtml(u.wh_name_en || '-');
-                            break;
-                        case 'user_status':
-                            cellValue = u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'));
-                            break;
-                        case 'role':
-                            if (u.role === 'developer') {
-                                cellValue = t('t_developer');  // 显示"开发者"
-                            } else if (u.role === 'super_admin') {
-                                cellValue = t('t_super_admin');
-                            } else if (u.role === 'admin') {
-                                cellValue = t('t_admin');
+            for (const field of visibleColumns) {
+                let cellValue = '';
+                switch (field) {
+                    case 'index':
+                        cellValue = String(rowIndex);
+                        break;
+                    case 'country':
+                        cellValue = escapeHtml(u.country || '-');
+                        break;
+                    case 'name_en':
+                        cellValue = escapeHtml(u.name_en || '-');
+                        break;
+                    case 'email':
+                        cellValue = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
+                        break;
+                    case 'id':
+                        const userIdFull = u.id;
+                        const userIdDisplay = u.id.slice(0, 8) + '...';
+                        cellValue = `<div class="d-flex align-items-center gap-2">
+                            <span title="${escapeHtml(userIdFull)}" style="cursor: help;">${escapeHtml(userIdDisplay)}</span>
+                            <button class="btn btn-sm btn-outline-secondary copy-id-btn" 
+                                style="padding: 0px 4px; font-size: 0.7rem;" 
+                                onclick="window.copyToClipboard('${escapeHtml(userIdFull)}', this)" 
+                                title="复制完整ID">
+                                <i class="bi bi-files"></i>
+                            </button>
+                        </div>`;
+                        break;
+                    case 'wh_id':
+                        cellValue = escapeHtml(u.wh_id || '-');
+                        break;
+                    case 'wh_name_en':
+                        cellValue = escapeHtml(u.wh_name_en || '-');
+                        break;
+                    case 'user_status':
+                        cellValue = u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'));
+                        break;
+                    case 'role':
+                        if (u.role === 'developer') {
+                            cellValue = t('t_developer');
+                        } else if (u.role === 'super_admin') {
+                            cellValue = t('t_super_admin');
+                        } else if (u.role === 'admin') {
+                            cellValue = t('t_admin');
+                        } else {
+                            cellValue = t('t_ordinary_user');
+                        }
+                        break;
+                    case 'is_partner':
+                        cellValue = u.is_partner ? t('t_yes') : t('t_no');
+                        break;
+                    case 'employment_status':
+                        if (u.user_status === 'imported') {
+                            cellValue = `<span class="badge bg-secondary">${t('not_activated') || '未激活'}</span>`;
+                        } else if (u.is_rehire && u.rehire_at && !u.is_resign) {
+                            const rehireLocal = formatLocalTime(u.rehire_at);
+                            const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '无';
+                            const title = `${t('resign_rehire_date_marked', { rehireLocal, resignLocal })}`;
+                            cellValue = `<span class="badge bg-info" title="${title}">${t('rehired') || '已复职'}</span>`;
+                        } else if (u.is_resign) {
+                            const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '-';
+                            cellValue = `<span class="badge bg-danger" title="离职日期: ${resignLocal}">${t('resigned') || '已离职'}</span>`;
+                        } else {
+                            cellValue = `<span class="badge bg-success">${t('active_employee') || '在职'}</span>`;
+                        }
+                        break;
+                    case 'employee_id':
+                        cellValue = escapeHtml(u.employee_id || '-');
+                        break;
+                    case 'company':
+                        cellValue = escapeHtml(u.company || '-');
+                        break;
+                    case 'department':
+                        cellValue = escapeHtml(u.department || '-');
+                        break;
+                    case 'wh_type':
+                        cellValue = escapeHtml(u.wh_type || '-');
+                        break;
+                    case 'birthday':
+                        cellValue = escapeHtml(u.birthday || '-');
+                        break;
+                    case 'created_by':
+                        cellValue = escapeHtml(u.created_by_name || u.created_by?.slice(0,8) || '-');
+                        break;
+                    case 'power_scope':
+                        let scopeDisplay = '-';
+                        const userRole = u.role || 'user';
+                        if (userRole === 'developer') {
+                            scopeDisplay = t('t_unrestricted');
+                        } else if (userRole === 'admin' || userRole === 'super_admin') {
+                            if (u.admin_countries) {
+                                try {
+                                    const codes = JSON.parse(u.admin_countries);
+                                    scopeDisplay = codes && codes.length > 0 ? codes.join(', ') : t('t_unrestricted');
+                                } catch(e) {
+                                    scopeDisplay = u.admin_countries;
+                                }
                             } else {
-                                cellValue = t('t_ordinary_user');
+                                scopeDisplay = t('t_unrestricted');
                             }
-                            break;
-                        case 'is_partner':
-                            cellValue = u.is_partner ? t('t_yes') : t('t_no');
-                            break;
-                        case 'employment_status':
-                            // 已导入但未注册的用户
-                            if (u.user_status === 'imported') {
-                                cellValue = `<span class="badge bg-secondary">${t('not_activated') || '未激活'}</span>`;
-                            } 
-                            // 已复职（有复职时间，且当前在职）
-                            else if (u.is_rehire && u.rehire_at && !u.is_resign) {
-                                // ✅ 使用 formatLocalTime 转换复职时间
-                                const rehireLocal = formatLocalTime(u.rehire_at);
-                                const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '无';
-                                //const title = `复职日期: ${rehireLocal}\n离职日期: ${resignLocal}`;
-                                const title = `${t('resign_rehire_date_marked', { rehireLocal, resignLocal })}`;
-                                cellValue = `<span class="badge bg-info" title="${title}">${t('rehired') || '已复职'}</span>`;
-                            } 
-                            // 已离职
-                            else if (u.is_resign) {
-                                const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '-';
-                                cellValue = `<span class="badge bg-danger" title="离职日期: ${resignLocal}">${t('resigned') || '已离职'}</span>`;
-                            } 
-                            // 在职
-                            else {
-                                cellValue = `<span class="badge bg-success">${t('active_employee') || '在职'}</span>`;
-                            }
-                            break;
-                        case 'employee_id':
-                            cellValue = escapeHtml(u.employee_id || '-');
-                            break;
-                        case 'company':
-                            cellValue = escapeHtml(u.company || '-');
-                            break;
-                        case 'department':
-                            cellValue = escapeHtml(u.department || '-');
-                            break;
-                        case 'wh_type':
-                            cellValue = escapeHtml(u.wh_type || '-');
-                            break;
-                        case 'birthday':
-                            cellValue = escapeHtml(u.birthday || '-');
-                            break;
-                        case 'created_by':
-                            cellValue = escapeHtml(u.created_by_name || u.created_by?.slice(0,8) || '-');
-                            break;
-                    }
-                    bodyHtml += `<td>${cellValue}</td>`;
+                        }
+                        cellValue = escapeHtml(scopeDisplay);
+                        break;
                 }
+                bodyHtml += `<td>${cellValue}</td>`;
             }
-
-            // 在操作列中，根据用户状态显示不同按钮
+            
+            // 操作列
             const isActive = !u.is_resign && u.user_status === 'registered';
             const isResigned = u.is_resign && !u.is_rehire && u.user_status === 'registered';
-            const isRehired = u.is_resign && u.is_rehire && u.user_status === 'registered';
-            const isImported = u.user_status === 'imported';
-
-            // ✅ 使用权限判断函数
             const canResign = canResignUser(u, currentUserId, currentUserRole, isDev);
             const canRehire = canRehireUser(u, currentUserId, currentUserRole, isDev);
-
+            
             let resignBtn = '';
             let rehireBtn = '';
-
+            
             if (isActive && canResign) {
                 resignBtn = `<button class="btn btn-sm btn-outline-warning resign-btn" data-id="${u.id}" data-name="${escapeHtml(u.name_en)}" title="标记为离职">
                                 <i class="bi bi-person-x"></i> ${t('resign')}
@@ -1331,34 +1302,7 @@
                                 <i class="bi bi-person-check"></i> ${t('rehire')}
                             </button>`;
             }
-            // 权限范围列（仅超管显示）
-            if ((CURRENT_USER_ROLE === 'super_admin' || IS_DEVELOPER) && visibleFields && visibleFields.power_scope !== false) {
-                let scopeDisplay = '-';
-                const userRole = u.role || 'user';
-                // 开发者：显示"无限制"
-                if (userRole === 'developer') {
-                    scopeDisplay = t('t_unrestricted');
-                } 
-                // 管理员或超管：显示权限范围
-                else if (userRole === 'admin' || userRole === 'super_admin') {
-                    if (u.admin_countries) {
-                        try {
-                            const codes = JSON.parse(u.admin_countries);
-                            // 如果有国家列表则显示，否则显示"无限制"
-                            scopeDisplay = codes && codes.length > 0 ? codes.join(', ') : t('t_unrestricted');
-                        } catch(e) {
-                            scopeDisplay = u.admin_countries;
-                        }
-                    } else {
-                        // 异常情况：数据库为空，降级显示"无限制"
-                        scopeDisplay = t('t_unrestricted');
-                    }
-                    // 普通用户：显示 '-'（不适用）
-                }
-                bodyHtml += `<td>${escapeHtml(scopeDisplay)}</td>`;
-            }
             
-            // 操作列
             bodyHtml += `<td>
                 ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
                 ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
@@ -1367,21 +1311,48 @@
                 ${rehireBtn}
             </td></tr>`;
             
-            // ✅ 添加这一行：每行结束后序号 +1
             rowIndex++;
         }
         bodyHtml += '</tbody>';
         
-        // 合并表头和数据行
-        const newTableHtml = headerHtml + bodyHtml;
-        const tableElement = document.getElementById('userTable');
-        if (tableElement) {
-            tableElement.innerHTML = newTableHtml;
+        // ==================== 合并渲染 ====================
+        // 先设置 colgroup
+        let existingColgroup = table.querySelector('colgroup');
+        if (existingColgroup) {
+            existingColgroup.remove();
         }
-
-        // 添加调整手柄
-        addResizeHandles();
-
+        table.insertAdjacentHTML('afterbegin', colgroupHtml);
+        
+        // 设置表头
+        const thead = table.querySelector('thead');
+        if (thead) {
+            thead.innerHTML = headerHtml;
+        } else {
+            table.insertAdjacentHTML('afterbegin', `<thead>${headerHtml}</thead>`);
+        }
+        
+        // 设置表体
+        const tbody = document.getElementById('userTableBody');
+        if (tbody) {
+            tbody.innerHTML = bodyHtml;
+        }
+        
+        // ==================== 重新初始化列宽调整 ====================
+        // 重置初始化标记，允许重新初始化
+        table._resizeInitialized = false;
+        // 移除旧手柄
+        table.querySelectorAll('.col-resize-handle').forEach(el => el.remove());
+        
+        // 使用全局函数初始化
+        if (typeof initResizableTable === 'function') {
+            initResizableTable('userTable', {
+                minWidth: 40,
+                maxWidth: 600,
+                persist: true,
+                storageKey: 'user_table_widths'
+            });
+        }
+        
         // ==================== 绑定事件 ====================
         // 编辑按钮
         document.querySelectorAll('.edit-btn').forEach(btn => {
@@ -2881,79 +2852,6 @@
         });
     })();
 
-    // 全局标志，防止重复初始化
-    let colResizeInitialized = false;
-
-    function initColumnResizableNative() {
-        const table = document.getElementById('userTable');
-        if (!table) return;
-        
-        // 使用事件委托，只需初始化一次
-        if (colResizeInitialized) return;
-        colResizeInitialized = true;
-        
-        let startX, startWidth, currentTh;
-        
-        // 使用事件监听（不直接修改 DOM）
-        table.addEventListener('mousedown', (e) => {
-            // 查找是否点击了调整手柄
-            const handle = e.target.closest('.col-resize-handle');
-            if (!handle) return;
-            
-            e.preventDefault();
-            currentTh = handle.parentElement;
-            startX = e.clientX;
-            startWidth = currentTh.offsetWidth;
-            
-            document.addEventListener('mousemove', onMouseMove);
-            document.addEventListener('mouseup', onMouseUp);
-        });
-        
-        function onMouseMove(e) {
-            if (!currentTh) return;
-            const newWidth = startWidth + (e.clientX - startX);
-            if (newWidth > 50) {
-                currentTh.style.width = newWidth + 'px';
-            }
-        }
-        
-        function onMouseUp() {
-            currentTh = null;
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-            saveColumnWidths();
-        }
-        
-        // 恢复保存的列宽
-        restoreColumnWidths();
-    }
-
-    // 保存列宽
-    function saveColumnWidths() {
-        const table = document.getElementById('userTable');
-        if (!table) return;
-        
-        const widths = [];
-        table.querySelectorAll('thead th').forEach(th => {
-            widths.push(th.offsetWidth);
-        });
-        localStorage.setItem('userTableColumnWidths', JSON.stringify(widths));
-    }
-
-    // 恢复列宽
-    function restoreColumnWidths() {
-        const saved = localStorage.getItem('userTableColumnWidths');
-        if (!saved) return;
-        
-        try {
-            const widths = JSON.parse(saved);
-            const ths = document.querySelectorAll('#userTable thead th');
-            for (let i = 0; i < widths.length && i < ths.length; i++) {
-                ths[i].style.width = widths[i] + 'px';
-            }
-        } catch(e) {}
-    }
-
     // 前端需要对应的翻译映射
     const errorMessages = {
         'user_already_exists': {
@@ -3197,7 +3095,6 @@
         loadUsers();
         loadFieldConfig();
         bindFieldToggleEvents();
-        initColumnResizableNative();
         
         // 批量删除按钮
         document.getElementById('batchDeleteActiveBtn')?.addEventListener('click', batchDeleteSelected);

@@ -215,15 +215,22 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-                <div class="table-responsive" style="overflow-x: auto;">
-                    <table class="table table-hover align-middle" style="min-width: 1000px;">
+                <div class="resizable-table-wrapper">
+                    <table id="myAttendancesTable" class="table table-hover align-middle resizable-table">
+                        <colgroup id="myAttendancesColgroup">
+                            <col style="width: 80px; min-width: 50px;">
+                            <col style="width: 200px; min-width: 80px;">
+                            <col style="width: 70px; min-width: 50px;">
+                            <col style="width: 160px; min-width: 80px;">
+                            <col style="width: 80px; min-width: 50px;">
+                        </colgroup>
                         <thead class="table-light">
                             <tr>
-                                <th style="white-space: nowrap;"><span data-i18n="country">国家</span></th>
-                                <th style="white-space: nowrap;"><span data-i18n="training_name">培训名称</span></th>
-                                <th style="white-space: nowrap;">tid</th>
-                                <th style="white-space: nowrap;"><span data-i18n="sign_in_period">签到时间</span></th>
-                                <th style="white-space: nowrap;"><span data-i18n="signature">签名</span></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="training_name">培训名称</span></th>
+                                <th>tid</th>
+                                <th><span data-i18n="sign_in_period">签到时间</span></th>
+                                <th><span data-i18n="signature">签名</span></th>
                             </tr>
                         </thead>
                         <tbody id="myAttendancesBody">
@@ -258,44 +265,33 @@
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" style="max-height: 70vh; overflow-y: auto;">
-                <div class="table-responsive" style="overflow-x: auto;">
-                    <table class="table table-hover align-middle resizable-table" 
-                        style="min-width: 1000px; table-layout: fixed;">
+                <div class="resizable-table-wrapper">
+                    <table id="myInterviewsTable" class="table table-hover align-middle resizable-table"
+                        <!-- colgroup 控制列宽，由 JS 动态维护 -->
+                        <colgroup id="myInterviewsColgroup">
+                            <col style="width: 80px; min-width: 50px;">
+                            <col style="width: 200px; min-width: 80px;">
+                            <col style="width: 70px; min-width: 50px;">
+                            <col style="width: 100px; min-width: 60px;">
+                            <col style="width: 160px; min-width: 80px;">
+                            <col style="width: 70px; min-width: 50px;">
+                        </colgroup>
                         <thead class="table-light">
                             <tr>
-                                <th style="width: 80px; min-width: 20px;">
-                                    <span data-i18n="country">国家</span>
-                                    <div class="resize-handle"></div>
-                                </th>
-                                <th style="width: 200px; min-width: 120px;">
-                                    <span data-i18n="interview_name">访谈名称</span>
-                                    <div class="resize-handle"></div>
-                                </th>
-                                <th style="width: 80px; min-width: 20px;">
-                                    iid
-                                    <div class="resize-handle"></div>
-                                </th>
-                                <th style="width: 100px; min-width: 20px;">
-                                    <span data-i18n="question_qty">题目数量</span>
-                                    <div class="resize-handle"></div>
-                                </th>
-                                <th style="width: 110px; min-width: 30px;">
-                                    <span data-i18n="correct_qty">答对数量</span>
-                                    <div class="resize-handle"></div>
-                                </th>
-                                <th style="width: 160px; min-width: 60px;">
-                                    <span data-i18n="completed_time">完成时间</span>
-                                    <div class="resize-handle"></div>
-                                </th>
-                                <th style="width: 80px; min-width: 20px;">
-                                    <span data-i18n="details">详情</span>
-                                    <div class="resize-handle"></div>
-                                </th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="interview_name">访谈名称</span></th>
+                                <th>iid</th>
+                                <!--
+                                <th><span data-i18n="question_qty">题目数量</span></th>
+                                -->
+                                <th><span data-i18n="correct_qty">答对数量</span></th>
+                                <th><span data-i18n="completed_time">完成时间</span></th>
+                                <th><span data-i18n="details">详情</span></th>
                             </tr>
                         </thead>
                         <tbody id="myInterviewsBody">
                             <tr>
-                                <td colspan="7" class="text-center">
+                                <td colspan="6" class="text-center">
                                     <div class="spinner-border spinner-border-sm me-2" role="status"></div>
                                     <span data-i18n="loading">加载中...</span>
                                 </td>
@@ -1028,7 +1024,7 @@
             if (!data || data.length === 0) {
                 tbody.innerHTML = `
                     <tr>
-                        <td colspan="7">
+                        <td colspan="6">
                             <div class="empty-state">
                                 <i class="bi bi-emoji-grimace"></i>
                                 <p class="text-muted">${safeT('no_interview_records') || '暂无访谈记录'}</p>
@@ -1063,7 +1059,7 @@
                         <td title="${countryText}">${countryText}</td>
                         <td title="${titleText}">${titleText}</td>
                         <td title="${interviewIdText}"><code>${interviewIdText}</code></td>
-                        <td><span class="badge bg-primary">${totalQuestions}</span></td>
+                        <!-- <td><span class="badge bg-primary">${totalQuestions}</span></td> -->
                         <td>
                             <span class="badge ${correctCount === totalQuestions && totalQuestions > 0 ? 'bg-success' : correctCount > 0 ? 'bg-warning text-dark' : 'bg-secondary'}">
                                 ${correctCount}/${totalQuestions}
@@ -1091,15 +1087,11 @@
                     }
                 });
             });
-            
-            // 初始化列宽拖动
-            initColumnResize();
-            
         } catch (err) {
             console.error('加载访谈记录失败:', err);
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="7" class="text-center text-danger">
+                    <td colspan="6" class="text-center text-danger">
                         <i class="bi bi-exclamation-triangle me-1"></i>
                         ${safeT('load_failed') || '加载失败，请重试'}
                     </td>
@@ -1118,81 +1110,6 @@
             }
         });
     }
-
-    // 列宽拖动功能（优化版）
-    function initColumnResize() {
-        const tables = document.querySelectorAll('.resizable-table');
-        
-        tables.forEach(table => {
-            // 移除旧的事件监听（避免重复绑定）
-            if (table._resizeInitialized) return;
-            table._resizeInitialized = true;
-            
-            let currentTh = null;
-            let startX = 0;
-            let startWidth = 0;
-            let isResizing = false;
-            
-            // 为每个 th 添加拖动手柄事件
-            table.querySelectorAll('th').forEach(th => {
-                const handle = th.querySelector('.resize-handle');
-                if (!handle) return;
-                
-                // 移除旧监听
-                handle.removeEventListener('mousedown', handle._mouseDownHandler);
-                
-                // 创建新监听
-                const handler = function(e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    startResize(e, th);
-                };
-                handle._mouseDownHandler = handler;
-                handle.addEventListener('mousedown', handler);
-            });
-            
-            function startResize(e, th) {
-                currentTh = th;
-                startX = e.clientX;
-                startWidth = th.offsetWidth;
-                isResizing = true;
-                
-                document.body.classList.add('resizing-active');
-                document.body.style.cursor = 'col-resize';
-                
-                document.addEventListener('mousemove', onMouseMove);
-                document.addEventListener('mouseup', onMouseUp);
-            }
-            
-            function onMouseMove(e) {
-                if (!isResizing || !currentTh) return;
-                
-                const delta = e.clientX - startX;
-                const newWidth = Math.max(40, startWidth + delta);
-                
-                // 更新当前列宽度
-                currentTh.style.width = newWidth + 'px';
-                currentTh.style.minWidth = newWidth + 'px';
-            }
-            
-            function onMouseUp() {
-                isResizing = false;
-                currentTh = null;
-                
-                document.body.classList.remove('resizing-active');
-                document.body.style.cursor = '';
-                
-                document.removeEventListener('mousemove', onMouseMove);
-                document.removeEventListener('mouseup', onMouseUp);
-            }
-        });
-    }
-
-    // 在模态框显示时重新初始化列宽拖动
-    document.getElementById('myInterviewsModal')?.addEventListener('shown.bs.modal', function() {
-        // 延迟执行确保 DOM 已完全渲染
-        setTimeout(initColumnResize, 100);
-    });
 
     // ==================== 显示访谈答题详情 ====================
     function showInterviewDetail(interviewId, title, questions) {
@@ -1350,6 +1267,22 @@
                 loadMyInterviews();
             });
         }
+        
+        // 同样为签到记录表格启用
+        initResizableTableInModal('#myAttendancesModal', 'myAttendancesTable', {
+            minWidth: 40,
+            maxWidth: 400,
+            persist: true,
+            storageKey: 'dashboard_table_widths'
+        });
+
+        // 初始化模态框中的表格列宽调整（工业级实现）
+        initResizableTableInModal('#myInterviewsModal', 'myInterviewsTable', {
+            minWidth: 40,
+            maxWidth: 500,
+            persist: true,
+            storageKey: 'dashboard_table_widths'
+        });
     });
 
     // 修改 loadTrainings 中的签到按钮事件，不再清除画板（每次打开模态框会重新初始化）

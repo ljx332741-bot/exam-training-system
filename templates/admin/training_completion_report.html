@@ -722,6 +722,7 @@
                             <i class="bi bi-info-circle text-muted" 
                             data-bs-toggle="tooltip" 
                             data-bs-placement="top"
+                            data-i18n-title="title_unassigned_count"
                             title="培训或考试未分配的学员数（去重）"
                             style="font-size: 0.6rem; cursor: help;"></i>
                         </p>
@@ -1718,7 +1719,7 @@
                             data-training-id="${trainingId}" 
                             data-user-id="${userId}"
                             onclick="assignTraining(event, ${trainingId}, '${userId}')"
-                            title="分配培训">
+                            title=${t('assign_training')}>
                         <i class="bi bi-plus-circle"></i>
                     </button>`;
         }
@@ -1728,7 +1729,7 @@
                             data-training-id="${trainingId}" 
                             data-user-id="${userId}"
                             onclick="unassignTraining(event, ${trainingId}, '${userId}')"
-                            title="取消分配培训">
+                            title=${t('cancel_assign_training')}>
                         <i class="bi bi-dash-circle"></i>
                     </button>`;
         }
@@ -1747,7 +1748,7 @@
                             data-exam-id="${examId}" 
                             data-user-id="${userId}"
                             onclick="assignExam(event, ${examId}, '${userId}')"
-                            title="分配考试">
+                            title=${t('assign_exam')}>
                         <i class="bi bi-plus-circle"></i>
                     </button>`;
         }
@@ -1757,7 +1758,7 @@
                             data-exam-id="${examId}" 
                             data-user-id="${userId}"
                             onclick="unassignExam(event, ${examId}, '${userId}')"
-                            title="取消分配考试">
+                            title=${t('cancel_assign_exam')}>
                         <i class="bi bi-dash-circle"></i>
                     </button>`;
         }
@@ -1780,12 +1781,12 @@
         const user = allReportData.find(d => d.user_id === userId);
         const userName = user ? user.user_name : '';
         const confirmMsg = userName 
-            ? `确认分配培训给学员「${userName}」吗？` 
-            : '确认分配此培训给该学员吗？';
+            ? `${t('confirm_assign_training_to_user', userName)}` 
+            : `${t('confirm_assign_training_to_this_user')}`;
         
         if (!confirm(confirmMsg)) return;
         
-        showLoading('正在分配培训...');
+        showLoading(t('assigning_training'));
         try {
             const res = await fetch(`/api/admin/training/${trainingId}/assign`, {
                 method: 'POST',
@@ -1796,7 +1797,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message || '分配成功', 'success');
+                showToast(result.message || t('assign_success'), 'success');
                 
                 // ✅ 直接更新本地数据，不刷新页面
                 updateLocalTrainingStatus(trainingId, userId, 'assign');
@@ -1804,7 +1805,7 @@
                 // ✅ 重新渲染表格
                 applyFilters();
             } else {
-                showToast(result.message || '分配失败', 'error');
+                showToast(result.message || t('assign_failed'), 'error');
             }
         } catch (err) {
             hideLoading();
@@ -1825,12 +1826,12 @@
         const user = allReportData.find(d => d.user_id === userId);
         const userName = user ? user.user_name : '';
         const confirmMsg = userName 
-            ? `确认取消学员「${userName}」的培训分配吗？` 
-            : '确认取消分配此培训吗？';
+            ? `${t('confirm_cancel_assign_training_to_user', userName)}` 
+            : `${t('confirm_cancel_assign_training_to_this_user')}`;
         
         if (!confirm(confirmMsg)) return;
         
-        showLoading('正在取消分配培训...');
+        showLoading(t('assigning_training_canceling'));
         try {
             const res = await fetch(`/api/admin/training/${trainingId}/unassign`, {
                 method: 'POST',
@@ -1841,7 +1842,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message || '取消分配成功', 'success');
+                showToast(result.message || t('cancel_assign_success'), 'success');
                 
                 // ✅ 直接更新本地数据，不刷新页面
                 updateLocalTrainingStatus(trainingId, userId, 'unassign');
@@ -1849,7 +1850,7 @@
                 // ✅ 重新渲染表格
                 applyFilters();
             } else {
-                showToast(result.message || '取消分配失败', 'error');
+                showToast(result.message || t('cancel_assign_failed'), 'error');
             }
         } catch (err) {
             hideLoading();
@@ -1875,18 +1876,18 @@
             if (user) userName = user.user_name || '';
         }
         
-        let confirmMsg = '确认分配此考试给该学员吗？';
+        let confirmMsg = `${t('confirm_assign_exam_to_this_user')}`;
         if (examName && userName) {
-            confirmMsg = `确认将考试「${examName}」分配给学员「${userName}」吗？`;
+            confirmMsg = `${t('confirm_to_assign_exam_to_user', examName, userName)}`;
         } else if (examName) {
-            confirmMsg = `确认分配考试「${examName}」给该学员吗？`;
+            confirmMsg = `${t('confirm_to_assign_exam_to_this_user', examName)}`;
         } else if (userName) {
-            confirmMsg = `确认分配考试给学员「${userName}」吗？`;
+            confirmMsg = `${t('confirm_assign_exam_to_user', userName)}`;
         }
         
         if (!confirm(confirmMsg)) return;
         
-        showLoading('正在分配考试...');
+        showLoading(t('assinging_exam'));
         
         try {
             const response = await fetch('/api/admin/exam/assign', {
@@ -1902,7 +1903,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message || '分配成功', 'success');
+                showToast(result.message || t('assign_success'), 'success');
                 
                 // ✅ 直接更新本地数据，不刷新页面
                 updateLocalExamStatus(examId, userId, 'assign');
@@ -1938,18 +1939,18 @@
             if (user) userName = user.user_name || '';
         }
         
-        let confirmMsg = '确认取消分配此考试吗？';
+        let confirmMsg = t('confirm_cancel_assign_exam');
         if (examName && userName) {
-            confirmMsg = `确认取消学员「${userName}」的考试「${examName}」分配吗？`;
+            confirmMsg = `${t('confirm_to_cancel_assign_exam_to_user', examName, userName)}`;
         } else if (examName) {
-            confirmMsg = `确认取消考试「${examName}」的分配吗？`;
+            confirmMsg = `${t('confirm_to_cancel_assign_exam', examName)}`;
         } else if (userName) {
-            confirmMsg = `确认取消学员「${userName}」的考试分配吗？`;
+            confirmMsg = `${t('confirm_to_cancel_assign_exam_for_user', userName)}`;
         }
         
         if (!confirm(confirmMsg)) return;
         
-        showLoading('正在取消分配...');
+        showLoading(t('assigning_exam_canceling'));
         
         try {
             const response = await fetch('/api/admin/exam/unassign', {
@@ -1965,7 +1966,7 @@
             hideLoading();
             
             if (result.success) {
-                showToast(result.message || '取消分配成功', 'success');
+                showToast(result.message || t('cancel_assign_success'), 'success');
                 
                 // ✅ 直接更新本地数据，不刷新页面
                 updateLocalExamStatus(examId, userId, 'unassign');
@@ -2122,12 +2123,12 @@
         }
         
         if (!userIds || userIds.length === 0) {
-            showToast('请至少选择一位学员', 'warning');
+            showToast(t('at_least_one_candidate_choice_needed'), 'warning');
             return;
         }
         
         const confirmMsg = examName 
-            ? `确认将考试「${examName}」分配给 ${userIds.length} 名学员吗？`
+            ? `${t('confirm_to_exam_to_select_user', examName, userIds.length)}`
             : `确认将考试分配给 ${userIds.length} 名学员吗？`;
         
         if (!confirm(confirmMsg)) return;
