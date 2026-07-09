@@ -2754,9 +2754,10 @@
     </div>
     <!-- 引入隐私声明模态框（放在 body 底部） -->
     {% include 'components/privacy_modal.html' %}
-
+    {% include "components/help_modal.html" %}
     <!-- 引入隐私声明 JS -->
     <script src="{{ url_for('static', filename='js/privacy.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/help.js') }}"></script>
     <script>
         // 确保隐私管理器在页面加载后初始化
         document.addEventListener('DOMContentLoaded', function() {

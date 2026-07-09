@@ -12,9 +12,15 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-calendar-event"></i><span data-i18n="training_sign_in_management">培训签到管理</span></h2>
-        <button class="btn btn-secondary" onclick="window.close()">
-            <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
-        </button>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-info" data-help="help-trainings" title="帮助 / Help">
+                <i class="bi bi-question-circle-fill me-1"></i>
+                <span data-i18n="help">帮助</span>
+            </button>
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
+            </button>
+        </div>
     </div>
 
     <!-- 过滤栏 -->
