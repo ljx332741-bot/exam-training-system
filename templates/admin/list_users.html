@@ -6,7 +6,11 @@
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
-        <div>            
+        <div>
+            <button class="btn btn-outline-info me-2" data-help="help-users" title="帮助 / Help">
+                <i class="bi bi-question-circle-fill me-1"></i>
+                <span data-i18n="help">帮助</span>
+            </button>       
             {% if has_permission('batch_delete') %}
             <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>

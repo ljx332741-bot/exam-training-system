@@ -13,7 +13,8 @@ exam-system/
 │   │   ├── zh.json                         # 词典中文
 │   │   └── i18n.js                         # 翻译文件
 │   │
-│   ├── js/                          
+│   ├── js/
+│   │   ├── help.js                         # 前端交互
 │   │   ├── privacy.js                      # 前端交互
 │   │   ├── training_photos.js              # 前端交互逻辑
 │   │   └── timezone.js                     # 前端时区检测增强
@@ -60,7 +61,8 @@ exam-system/
 │   │   ├── register.html                   # 注册界面(旧)
 │   │   └── register_standalone.html        # 注册界面(新)
 │   │
-│   ├── components/          
+│   ├── components/               
+│   │   ├── help_modal.html                 # 隐私声明弹窗组件
 │   │   ├── privacy_modal.html              # 隐私声明弹窗组件
 │   │   └── delete_modal.html               # 全局删除模态框组件
 │   │

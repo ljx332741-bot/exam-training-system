@@ -65,7 +65,7 @@ class I18n {
     }
 
     // ============================================================
-    // ✅ 新增：支持参数替换的翻译函数
+    // 支持参数替换的翻译函数
     // ============================================================
     t(key, params = {}) {
         let text = this.translations[key] || key;
@@ -78,7 +78,7 @@ class I18n {
     }
 
     // ============================================================
-    // ✅ 新增：统一的属性翻译方法（支持带参数标题）
+    // 统一的属性翻译方法（支持带参数标题）
     // ============================================================
     translateAttributes() {
         // 1. 翻译 data-i18n-title（简单文本，无参数）
@@ -89,7 +89,7 @@ class I18n {
             }
         });
 
-        // 2. ✅ 新增：翻译 data-i18n-title-key（支持参数）
+        // 2. 翻译 data-i18n-title-key（支持参数）
         document.querySelectorAll('[data-i18n-title-key]').forEach(el => {
             const key = el.getAttribute('data-i18n-title-key');
             if (!key) return;
@@ -129,31 +129,54 @@ class I18n {
     }
 
     // ============================================================
-    // ✅ 扩展 applyTranslations，调用 translateAttributes
+    // ✅ 扩展 applyTranslations，支持 data-i18n-html
     // ============================================================
     applyTranslations() {
-        // 翻译带 data-i18n 属性的元素
+        // ============================================================
+        // 🔥 关键修改：处理 data-i18n 属性，支持 HTML 渲染
+        // ============================================================
         document.querySelectorAll('[data-i18n]').forEach(el => {
             const key = el.getAttribute('data-i18n');
+            if (key === undefined || key === null) return;
+            
             const translation = this.translations[key];
             if (translation === undefined) return;
+            
+            // 处理 TITLE 标签
             if (el.tagName === 'TITLE') {
                 document.title = translation;
                 return;
             }
-            if (el.children.length === 0) {
-                el.textContent = translation;
+            
+            // 🔥 核心逻辑：检查是否需要 HTML 渲染
+            // 条件1：元素有 data-i18n-html 属性
+            // 条件2：元素在帮助模态框内（.help-section 或 .help-item）
+            const useHtml = el.hasAttribute('data-i18n-html') || 
+                           el.closest('.help-section') !== null ||
+                           el.closest('.help-item') !== null ||
+                           el.classList.contains('help-html');
+            
+            if (useHtml) {
+                // ✅ 使用 innerHTML 渲染 HTML 标签（如 <strong>）
+                el.innerHTML = translation;
             } else {
-                for (let node of el.childNodes) {
-                    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
-                        node.textContent = translation;
-                        break;
+                // ✅ 纯文本渲染
+                // 如果元素有子节点，保留子节点，只替换文本节点
+                if (el.children.length === 0) {
+                    el.textContent = translation;
+                } else {
+                    // 有子节点时，只替换第一个文本节点
+                    for (let node of el.childNodes) {
+                        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
+                            node.textContent = translation;
+                            break;
+                        }
                     }
                 }
             }
         });
 
-        // ✅ 调用统一的属性翻译方法
+        // 调用统一的属性翻译方法
         this.translateAttributes();
     }
 
@@ -164,16 +187,11 @@ class I18n {
     notifyObservers() {
         this.observers.forEach(fn => fn(this.currentLang, this.translations));
     }
-
-    // ✅ 保留 t 方法，但实际使用 this.t
-    // 为了兼容，保持原有 t 方法
 }
 
 window.i18n = new I18n();
 
-// ============================================================
-// ✅ 兼容全局 t() 函数（支持参数）
-// ============================================================
+// 兼容全局 t() 函数（支持参数）
 window.t = function(key, params = {}) {
     return window.i18n.t(key, params);
 };
