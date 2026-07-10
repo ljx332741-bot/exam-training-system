@@ -5,7 +5,11 @@
 <div class="container py-4">
     <h3 class="mb-4">
         <i class="bi bi-file-text me-2"></i><span data-i18n="grade_detail">成绩详情</span>
-        <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary float-end"><span data-i18n="back">← 返回</span></a>
+        <a class="btn btn-sm btn-outline-secondary float-end">
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
+            </button>
+        </a>
     </h3>
     
     <div class="card mb-4">
@@ -55,6 +59,10 @@
             </tbody>
         </table>
     </div>
-    <a href="{{ url_for('dashboard') }}" class="btn btn-sm btn-outline-secondary float-end"><span data-i18n="back">← 返回</span></a>
+        <a class="btn btn-sm btn-outline-secondary float-end">
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
+            </button>
+        </a>
 </div>
 {% endblock %}
