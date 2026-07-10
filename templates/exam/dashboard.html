@@ -153,7 +153,7 @@
                         <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at if r.created_at else '-' }}</span>
                         </td>
                         <td>
-                        <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
+                        <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" target="_blank" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
                         <a href="{{ url_for('exam_export_pdf', result_id=r.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a></td>
                     </tr>
                 {% else %}
