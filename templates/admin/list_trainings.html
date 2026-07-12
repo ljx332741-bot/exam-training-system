@@ -1013,7 +1013,7 @@
         });
     }
 
-    // 加载推送候选用户（根据培训国家过滤）
+    // 加载推送候选用户（根据培训国家过滤 + 只显示未签到和待重新签字的用户）
     async function loadPushUserList() {
         const search = document.getElementById('pushUserSearch').value;
         const whFilter = document.getElementById('pushWhFilter').value.toLowerCase();
@@ -1028,7 +1028,7 @@
         }
         
         try {
-            // ✅ 修复1：使用正确的API获取培训详情
+            // ========== 1. 获取培训详情 ==========
             const trainingRes = await fetch(`/api/admin/trainings/${trainingId}`);
             if (!trainingRes.ok) {
                 throw new Error(`HTTP ${trainingRes.status}`);
@@ -1043,16 +1043,14 @@
                 return;
             }
             
-            // ✅ 修复2：正确解析培训的国家列表
+            // ========== 2. 解析培训国家列表 ==========
             let trainingCountries = [];
             
-            // 优先使用 countries 字段（JSON数组）
             if (training.countries) {
                 try {
                     trainingCountries = typeof training.countries === 'string' 
                         ? JSON.parse(training.countries) 
                         : training.countries;
-                    // 确保是数组
                     if (!Array.isArray(trainingCountries)) {
                         trainingCountries = [trainingCountries];
                     }
@@ -1061,18 +1059,16 @@
                 }
             }
             
-            // 兼容旧的 country 字段
             if (trainingCountries.length === 0 && training.country) {
                 trainingCountries = [training.country];
             }
             
-            // 如果还是没有国家，尝试从签到记录中获取
+            // 如果还是没有国家，从签到记录中获取
             if (trainingCountries.length === 0) {
                 try {
                     const attRes = await fetch(`/api/training/attendance/${trainingId}`);
                     const attData = await attRes.json();
                     const attendances = attData.attendances || [];
-                    // 从签到记录中提取国家
                     const countrySet = new Set();
                     attendances.forEach(att => {
                         if (att.country) countrySet.add(att.country);
@@ -1091,7 +1087,7 @@
             
             console.log('培训国家:', trainingCountries);
             
-            // ✅ 修复3：使用正确的API参数获取用户
+            // ========== 3. 获取培训国家下的所有用户 ==========
             const url = new URL('/api/admin/users', window.location.origin);
             url.searchParams.append('search', search);
             url.searchParams.append('status', 'registered');
@@ -1099,7 +1095,7 @@
             url.searchParams.append('per_page', '100');
             url.searchParams.append('exclude_resigned', 'true');
             
-            // ✅ 为每个国家添加 country 参数（支持多国家）
+            // 为每个国家添加 country 参数
             trainingCountries.forEach(c => {
                 url.searchParams.append('country', c);
             });
@@ -1110,7 +1106,6 @@
             if (countryCodeHidden && countryCodeHidden.value) {
                 url.searchParams.append('country', countryCodeHidden.value);
             } else if (countryFilterInput && countryFilterInput.value) {
-                // 尝试解析国家
                 const countryText = countryFilterInput.value;
                 const resolved = resolveCountryParam(countryText);
                 if (resolved) {
@@ -1126,34 +1121,95 @@
             
             console.log(`返回用户数: ${users.length}`);
             
-            // 前端额外过滤：库房编码/名称
+            // ========== 4. 前端额外过滤：库房编码/名称 ==========
             if (whFilter) {
                 users = users.filter(u =>
                     (u.wh_id && u.wh_id.toLowerCase().includes(whFilter)) ||
                     (u.wh_name_en && u.wh_name_en.toLowerCase().includes(whFilter))
                 );
             }
-            // 合作方过滤
+            
+            // ========== 5. 合作方过滤 ==========
             if (isPartner) {
                 users = users.filter(u => u.is_partner === (isPartner === 'Y'));
             }
             
+            // ========== 6. 🔥 核心新增：签到状态过滤 ==========
+            // 只显示未签到 或 待重新签字的用户
+            
+            // 6.1 获取该培训的所有签到记录
+            const attRes = await fetch(`/api/training/attendance/${trainingId}`);
+            const attData = await attRes.json();
+            const attendances = attData.attendances || [];
+            
+            // 构建签到映射：user_id -> 签到记录
+            const attendanceMap = {};
+            attendances.forEach(att => {
+                attendanceMap[att.user_id] = {
+                    has_signature: !!(att.signature_url && att.signature_url !== '' && att.signature_url !== 'null'),
+                    sign_time: att.sign_time,
+                    signed_name: att.signed_name
+                };
+            });
+            
+            // 6.2 过滤用户：只保留未签到 或 待重新签字的用户
+            const filteredUsers = users.filter(user => {
+                const userId = user.id;
+                const attendance = attendanceMap[userId];
+                
+                // 情况1：没有签到记录 → 未签到 → 显示
+                if (!attendance) {
+                    return true;
+                }
+                
+                // 情况2：有签到记录但无签名 → 待重新签字 → 显示
+                if (!attendance.has_signature) {
+                    return true;
+                }
+                
+                // 情况3：有签到记录且有签名 → 已签到 → 不显示
+                return false;
+            });
+            
+            console.log(`签到状态过滤: 原始 ${users.length} 人，过滤后 ${filteredUsers.length} 人`);
+            console.log(`  已签到(隐藏): ${users.length - filteredUsers.length} 人`);
+            console.log(`  未签到/待重新签字(显示): ${filteredUsers.length} 人`);
+            
+            // ========== 7. 渲染用户列表 ==========
             const tbody = document.getElementById('pushUserListBody');
-            if (users.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="text-center text-muted">该培训国家(${trainingCountries.join(', ')})下暂无用户</td></tr>`;
-            } else {
-                tbody.innerHTML = users.map(u => `
+            if (filteredUsers.length === 0) {
+                tbody.innerHTML = `
                     <tr>
-                        <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
-                        <td>${escapeHtml(u.name_en || u.name_cn || '')}</td>
-                        <td>${escapeHtml(u.email)}</td>
-                        <td class="country-cell">${escapeHtml(u.country || '-')}</td>
-                        <td>${escapeHtml(u.wh_id || '-')}</td>
+                        <td colspan="5" class="text-center text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            该培训国家(${trainingCountries.join(', ')})下暂无未签到或待重新签字的用户
+                        </td>
                     </tr>
-                `).join('');
+                `;
+            } else {
+                tbody.innerHTML = filteredUsers.map(u => {
+                    // 显示用户状态标签
+                    const attendance = attendanceMap[u.id];
+                    let statusBadge = '';
+                    if (!attendance) {
+                        statusBadge = `<span class="badge bg-warning text-dark ms-1">${safeT('pending_sign') || '待签到'}</span>`;
+                    } else if (!attendance.has_signature) {
+                        statusBadge = `<span class="badge bg-danger ms-1">${safeT('need_re-sign') || '待重新签字'}</span>`;
+                    }
+                    
+                    return `
+                        <tr>
+                            <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
+                            <td>${escapeHtml(u.name_en || u.name_cn || '')} ${statusBadge}</td>
+                            <td>${escapeHtml(u.email)}</td>
+                            <td class="country-cell">${escapeHtml(u.country || '-')}</td>
+                            <td>${escapeHtml(u.wh_id || '-')}</td>
+                        </tr>
+                    `;
+                }).join('');
             }
             
-            // 绑定全选事件
+            // ========== 8. 绑定全选事件 ==========
             const selectAllCheckbox = document.getElementById('pushSelectAll');
             if (selectAllCheckbox) {
                 const newSelectAll = selectAllCheckbox.cloneNode(true);
