@@ -81,9 +81,11 @@
 .expand-icon:hover {
     color: #0a58ca;
 }
+/*
 .expand-icon.expanded {
     transform: rotate(90deg);
 }
+*/
 .binding-detail-row {
     background-color: #f8f9fc;
 }
@@ -181,10 +183,6 @@
 
 .expand-icon:hover {
     color: #0a58ca;
-}
-
-.expand-icon.expanded {
-    transform: rotate(90deg);
 }
 
 /* 无绑定时禁用样式 - 覆盖内联样式 */

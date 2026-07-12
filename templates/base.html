@@ -1047,9 +1047,9 @@
                 input.value = '';
                 if (hidden) hidden.value = '';
                 if (typeof showToast === 'function') {
-                    showToast(t('t_country_requred'), 'warning');
+                    showToast(t('country_requred'), 'warning');
                 } else {
-                    alert(t('t_country_requred'));
+                    alert(t('country_requred'));
                 }
                 return false;
             }
@@ -1331,7 +1331,7 @@
                 if (progressContainer) progressContainer.style.display = 'none';
                 
                 if (success) {
-                    if (titleEl) titleEl.innerHTML = `<i class="bi bi-check-circle-fill text-success me-2"></i> ${t('t_import_successful')}`;
+                    if (titleEl) titleEl.innerHTML = `<i class="bi bi-check-circle-fill text-success me-2"></i> ${t('import_successful')}`;
                     if (msgEl) msgEl.innerHTML = message;
                 } else {
                     if (titleEl) titleEl.innerHTML = `<i class="bi bi-x-circle-fill text-danger me-2"></i> ${t('import_failed')}`;
@@ -1344,7 +1344,7 @@
                     if (importModalInstance) {
                         importModalInstance.hide();
                         if (spinner) spinner.style.display = 'inline-block';
-                        if (titleEl && !success) titleEl.innerHTML = t('t_importing');
+                        if (titleEl && !success) titleEl.innerHTML = t('importing');
                         if (progressContainer) progressContainer.style.display = 'none';
                         if (footer) footer.style.display = 'none';
                     }
