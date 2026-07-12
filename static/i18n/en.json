@@ -1380,5 +1380,13 @@
     "help_photo_grid": "<strong>Photo Wall</strong>: Photos are grouped by training, supports expand/collapse.",
     "help_photo_filter": "<strong>Filter</strong>: Filter photos by training name or quarter.",
     "help_photo_preview": "<strong>Preview</strong>: Click to view full-screen photos with previous/next navigation.",
-    "help_footer": "Click the table of contents on the left to jump quickly"
+    "help_footer": "Click the table of contents on the left to jump quickly",
+    "Unable_retrieve_training_information": "Operation failed: Unable to retrieve training information",
+"unbind_success": "Unbind success",
+"unbind_failed": "Unbind failed",
+"bind_success": "Bind success",
+"bind_failed": "Bind failed",
+"binding": "Binding in process...",
+"all_users_have_assigned": "All users have assigned",
+"pass_score_hint": "The passing score must be within the range of 0 to 100."
 }

@@ -1376,5 +1376,13 @@
     "help_photo_grid": "<strong>照片墙</strong>：按培训分组展示照片，支持展开/折叠。",
     "help_photo_filter": "<strong>筛选</strong>：按培训名称或季度筛选照片。",
     "help_photo_preview": "<strong>预览</strong>：点击照片大图查看，支持前后翻页。",
-    "help_footer": "点击左侧目录快速跳转"
+    "help_footer": "点击左侧目录快速跳转",
+    "Unable_retrieve_training_information": "操作失败：无法获取培训信息",
+"unbind_success": "解除成功",
+"unbind_failed": "解除失败",
+"bind_success": "绑定成功",
+"bind_failed": "绑定失败",
+"binding": "绑定中...",
+"all_users_have_assigned": "所有学员已分配",
+"pass_score_hint": "及格分数必须在0-100之间"
 }
