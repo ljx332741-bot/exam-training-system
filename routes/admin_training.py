@@ -2691,7 +2691,7 @@ def get_training_bindings(training_id):
     bindings = db.table("training_exam_bindings").select("*")\
         .eq("training_id", training_id)\
         .is_("deleted_at", "null")\
-        .order("sort_order")\
+        .order("sort_order", desc=False)\
         .execute()
     
     # 获取考试信息
@@ -2828,6 +2828,7 @@ def bind_exam_to_training():
     logger.info("=" * 60)
 
     data = request.json
+    logger.info(f"📥 接收到的数据: {data}")
     training_id = data.get('training_id')
     exam_id = data.get('exam_id')
     pass_score = data.get('pass_score', 85)
@@ -2835,16 +2836,20 @@ def bind_exam_to_training():
     is_required = data.get('is_required', True)
     sort_order = data.get('sort_order', 0)
     now = datetime.now(timezone.utc).isoformat()
+    operator_id = session.get('user_id')
 
     logger.info(f"   training_id={training_id}, exam_id={exam_id}")
     logger.info(f"   is_auto_assign={is_auto_assign}")
 
-    logger.info(f"========== 绑定考试到培训 ==========")
-    logger.info(f"training_id: {training_id}, exam_id: {exam_id}")
-    logger.info(f"is_auto_assign: {is_auto_assign}, pass_score: {pass_score}")
+    if not training_id:
+        logger.error("❌ training_id 缺失")
+        return jsonify({"success": False, "message": "培训ID不能为空"}), 400
     
-    if not training_id or not exam_id:
-        return jsonify({"success": False, "message": "参数不完整"}), 400
+    if not exam_id:
+        logger.error("❌ exam_id 缺失")
+        return jsonify({"success": False, "message": "考试ID不能为空"}), 400
+    
+    logger.info(f"✅ 参数: training_id={training_id}, exam_id={exam_id}")
     
     db = get_supabase_admin()
     
@@ -2865,7 +2870,7 @@ def bind_exam_to_training():
             "is_required": is_required,
             "sort_order": sort_order,
             "updated_at": datetime.now(timezone.utc).isoformat(),
-            "updated_by": session.get('user_id')
+            "updated_by": operator_id
         }).eq("id", soft_deleted.data[0]['id']).execute()
 
         if not result.data:
@@ -2874,10 +2879,15 @@ def bind_exam_to_training():
         binding_id = result.data[0]['id']
         logger.info(f"✅ 恢复绑定成功: binding_id={binding_id}")
         
-        # ✅ 补分配逻辑（抽取为单独调用）
-        _auto_assign_exam_to_signed_users(db, training_id, exam_id, is_auto_assign, session.get('user_id'), now)
+        # ✅ 恢复后执行补分配
+        sync_result = _auto_assign_exam_to_signed_users_safe(db, training_id, exam_id, is_auto_assign, operator_id, now)
         
-        return jsonify({"success": True, "binding_id": binding_id, "restored": True})
+        return jsonify({
+            "success": True, 
+            "binding_id": binding_id, 
+            "restored": True,
+            "sync_result": sync_result
+        })
         
     # 检查是否已有活跃绑定
     existing = db.table("training_exam_bindings").select("id")\
@@ -2898,7 +2908,7 @@ def bind_exam_to_training():
         "is_required": is_required,
         "sort_order": sort_order,
         "created_at": now,
-        "created_by": session.get('user_id')
+        "created_by": operator_id
     }).execute()
     
     if not result.data:
@@ -2907,17 +2917,283 @@ def bind_exam_to_training():
     binding_id = result.data[0]['id']
     logger.info(f"✅ 绑定成功: binding_id={binding_id}")
 
-    # ✅ 调用数据同步
-    sync_results = _sync_training_binding_data(db, training_id, session.get('user_id'))
-    
-    # ✅ 补分配逻辑（抽取为单独调用）
-    _auto_assign_exam_to_signed_users(db, training_id, exam_id, is_auto_assign, session.get('user_id'), now)
+    # ✅ 只执行补分配，不调用 _sync_training_binding_data（避免重复）
+    sync_result = _auto_assign_exam_to_signed_users_safe(db, training_id, exam_id, is_auto_assign, operator_id, now)
     
     return jsonify({
         "success": True, 
         "binding_id": binding_id,
-        "sync_results": sync_results
+        "sync_result": sync_result
     })
+
+def _auto_assign_exam_to_signed_users_safe(db, training_id, exam_id, is_auto_assign, operator_id, now):
+    """
+    为已签到学员分配考试（安全版：跳过已分配的学员）
+    """
+    if not is_auto_assign:
+        logger.info(f"is_auto_assign=False，跳过自动分配")
+        return {"assigned_count": 0, "skipped_count": 0}
+    
+    # 获取已签到学员
+    attendances_res = db.table("training_attendances").select("user_id")\
+        .eq("training_id", training_id)\
+        .is_("deleted_at", "null")\
+        .execute()
+    signed_user_ids = [a['user_id'] for a in (attendances_res.data or [])]
+    
+    if not signed_user_ids:
+        logger.info(f"培训 {training_id} 无已签到学员")
+        return {"assigned_count": 0, "skipped_count": 0}
+    
+    # ✅ 检查哪些学员已有该考试的分配记录
+    existing_res = db.table("exam_assignments").select("user_id")\
+        .eq("exam_id", exam_id)\
+        .in_("user_id", signed_user_ids)\
+        .is_("deleted_at", "null")\
+        .execute()
+    existing_user_ids = set([r['user_id'] for r in (existing_res.data or [])])
+    
+    # 过滤出未分配的学员
+    to_assign_user_ids = [uid for uid in signed_user_ids if uid not in existing_user_ids]
+    skipped_count = len(signed_user_ids) - len(to_assign_user_ids)
+    
+    if not to_assign_user_ids:
+        logger.info(f"考试 {exam_id} 所有已签到学员已分配，跳过")
+        return {"assigned_count": 0, "skipped_count": skipped_count}
+    
+    # 构建插入数据
+    to_assign_exams = [{
+        "exam_id": exam_id,
+        "user_id": uid,
+        "assigned_at": now,
+        "created_by": operator_id or 'system'
+    } for uid in to_assign_user_ids]
+    
+    # 批量插入
+    try:
+        insert_result = db.table("exam_assignments").insert(to_assign_exams).execute()
+        assigned_count = len(insert_result.data or [])
+        logger.info(f"✅ 为 {assigned_count} 名已签到学员分配考试，跳过 {skipped_count} 名已分配学员")
+        return {"assigned_count": assigned_count, "skipped_count": skipped_count}
+    except Exception as e:
+        # 如果批量插入失败，逐条插入
+        logger.warning(f"批量插入失败，尝试逐条插入: {e}")
+        success_count = 0
+        for item in to_assign_exams:
+            try:
+                db.table("exam_assignments").insert(item).execute()
+                success_count += 1
+            except Exception as inner_e:
+                if '23505' in str(inner_e) or 'duplicate' in str(inner_e).lower():
+                    logger.warning(f"学员 {item['user_id']} 已有分配记录，跳过")
+                    skipped_count += 1
+                else:
+                    logger.error(f"插入失败: {inner_e}")
+        return {"assigned_count": success_count, "skipped_count": skipped_count}
+
+
+def _sync_training_binding_data(db, training_id, created_by=None):
+    """
+    培训绑定考试后的数据同步：双向同步
+    1. 已签到学员 → 自动分配考试
+    2. 已完成考试学员 → 自动创建签到记录
+    
+    Args:
+        db: 数据库连接
+        training_id: 培训ID
+        created_by: 创建人ID（用于记录）
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    sync_results = {
+        "assigned_exams": 0,      # 已签到→分配考试 的数量
+        "created_attendances": 0,  # 已完成考试→创建签到 的数量
+        "created_assignments": 0,  # 已完成考试→创建培训分配 的数量
+        "errors": []
+    }
+    
+    logger.info("=" * 60)
+    logger.info(f"🔄 开始培训绑定数据同步: training_id={training_id}")
+    
+    try:
+        # ========== 1. 获取培训信息 ==========
+        training_res = db.table("trainings").select("country, name, start_time, end_time, is_active").eq("id", training_id).maybe_single().execute()
+        if not training_res.data:
+            logger.warning(f"培训不存在: training_id={training_id}")
+            return sync_results
+        
+        training = training_res.data
+        
+        # ========== 2. 获取该培训绑定的所有考试 ==========
+        bindings_res = db.table("training_exam_bindings").select("exam_id, is_auto_assign")\
+            .eq("training_id", training_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        bindings = bindings_res.data or []
+        
+        if not bindings:
+            logger.info("该培训暂无绑定考试，跳过同步")
+            return sync_results
+        
+        exam_ids = [b['exam_id'] for b in bindings]
+        auto_assign_exam_ids = [b['exam_id'] for b in bindings if b.get('is_auto_assign', True)]
+        
+        logger.info(f"绑定的考试: {exam_ids}")
+        
+        # ========== 3. 获取该培训国家下的所有用户 ==========
+        training_country = training.get('country')
+        if not training_country:
+            logger.warning("培训未指定国家，跳过同步")
+            return sync_results
+        
+        users_res = db.table("users").select("id, name_en, email")\
+            .eq("country", training_country)\
+            .eq("user_status", "registered")\
+            .eq("is_resign", False)\
+            .is_("deleted_at", "null")\
+            .execute()
+        all_users = users_res.data or []
+        all_user_ids = [u['id'] for u in all_users]
+        
+        if not all_user_ids:
+            logger.info("该国家无有效用户，跳过同步")
+            return sync_results
+        
+        logger.info(f"培训国家 {training_country} 下的用户数: {len(all_user_ids)}")
+        
+        # ========== 4. 获取已签到学员 ==========
+        attendances_res = db.table("training_attendances").select("user_id")\
+            .eq("training_id", training_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        signed_user_ids = {a['user_id'] for a in (attendances_res.data or [])}
+        logger.info(f"已签到学员数: {len(signed_user_ids)}")
+        
+        # ========== 5. 获取已完成考试的学员（针对绑定的考试） ==========
+        completed_users_per_exam = {}
+        if exam_ids:
+            results_res = db.table("exam_results").select("user_id, exam_id")\
+                .in_("exam_id", exam_ids)\
+                .in_("user_id", all_user_ids)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            for r in (results_res.data or []):
+                exam_id = r['exam_id']
+                user_id = r['user_id']
+                if exam_id not in completed_users_per_exam:
+                    completed_users_per_exam[exam_id] = set()
+                completed_users_per_exam[exam_id].add(user_id)
+        
+        # ========== 6. 获取已分配考试 ==========
+        assigned_exam_map = {}
+        if exam_ids:
+            assign_res = db.table("exam_assignments").select("exam_id, user_id")\
+                .in_("exam_id", exam_ids)\
+                .in_("user_id", all_user_ids)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            for a in (assign_res.data or []):
+                key = f"{a['exam_id']}_{a['user_id']}"
+                assigned_exam_map[key] = True
+        
+        # ========== 7. 获取培训分配记录 ==========
+        training_assign_res = db.table("training_assignments").select("user_id")\
+            .eq("training_id", training_id)\
+            .in_("user_id", all_user_ids)\
+            .execute()
+        training_assigned_set = {a['user_id'] for a in (training_assign_res.data or [])}
+        
+        # ========== 8. 双向数据同步 ==========
+        
+        # 8.1 已签到但未分配考试 → 自动分配考试
+        if signed_user_ids and auto_assign_exam_ids:
+            to_assign_exams = []
+            skipped_count = 0
+            
+            for exam_id in auto_assign_exam_ids:
+                for user_id in signed_user_ids:
+                    key = f"{exam_id}_{user_id}"
+                    if key not in assigned_exam_map:
+                        to_assign_exams.append({
+                            "exam_id": exam_id,
+                            "user_id": user_id,
+                            "created_by": created_by or 'system',
+                            "assigned_at": now
+                        })
+                    else:
+                        skipped_count += 1
+            
+            if to_assign_exams:
+                try:
+                    insert_result = db.table("exam_assignments").insert(to_assign_exams).execute()
+                    sync_results["assigned_exams"] = len(insert_result.data or [])
+                except Exception as e:
+                    # 如果批量插入失败，逐条插入
+                    logger.warning(f"批量插入失败，尝试逐条插入: {e}")
+                    success_count = 0
+                    for item in to_assign_exams:
+                        try:
+                            db.table("exam_assignments").insert(item).execute()
+                            success_count += 1
+                        except Exception as inner_e:
+                            if '23505' in str(inner_e) or 'duplicate' in str(inner_e).lower():
+                                skipped_count += 1
+                            else:
+                                logger.error(f"插入失败: {inner_e}")
+                    sync_results["assigned_exams"] = success_count
+            
+            sync_results["skipped_existing"] = skipped_count
+            logger.info(f"✅ 为已签到学员分配考试: {sync_results['assigned_exams']} 条，跳过 {skipped_count} 条")
+        
+        # 8.2 已完成考试但未签到 → 自动创建签到记录
+        if exam_ids:
+            # 收集所有已完成考试的用户
+            all_completed_users = set()
+            for exam_id, users in completed_users_per_exam.items():
+                all_completed_users.update(users)
+            
+            # 过滤出未签到的用户
+            to_create_attendance = [uid for uid in all_completed_users if uid not in signed_user_ids]
+            
+            if to_create_attendance:
+                # 创建签到记录
+                attendance_records = [{
+                    "training_id": training_id,
+                    "user_id": uid,
+                    "sign_time": now,
+                    "signed_name": next((u.get('name_en', '自动签到') for u in all_users if u['id'] == uid), '自动签到'),
+                    "signature_url": None  # 无签名
+                } for uid in to_create_attendance]
+                
+                insert_result = db.table("training_attendances").insert(attendance_records).execute()
+                sync_results["created_attendances"] = len(insert_result.data or [])
+                logger.info(f"✅ 为已完成考试学员创建签到: {sync_results['created_attendances']} 条")
+                
+                # 同时创建培训分配记录
+                to_create_assignment = [uid for uid in to_create_attendance if uid not in training_assigned_set]
+                if to_create_assignment:
+                    assignment_records = [{
+                        "training_id": training_id,
+                        "user_id": uid,
+                        "created_by": created_by or 'system',
+                        "created_at": now
+                    } for uid in to_create_assignment]
+                    
+                    insert_result = db.table("training_assignments").insert(assignment_records).execute()
+                    sync_results["created_assignments"] = len(insert_result.data or [])
+                    logger.info(f"✅ 为已完成考试学员创建培训分配: {sync_results['created_assignments']} 条")
+        
+        logger.info(f"🔄 数据同步完成: {sync_results}")
+        
+    except Exception as e:
+        logger.error(f"数据同步失败: {e}", exc_info=True)
+        sync_results["errors"].append(str(e))
+    
+    return sync_results
+
+
+
 
 def _auto_assign_exam_to_signed_users(db, training_id, exam_id, is_auto_assign, created_by, assigned_at):
     """
@@ -3017,14 +3293,26 @@ def delete_training_binding(binding_id):
     """解除绑定（硬删除）"""
     db = get_supabase_admin()
     
+    # 先获取绑定信息（用于清除缓存）
+    binding_res = db.table("training_exam_bindings").select("training_id").eq("id", binding_id).maybe_single().execute()
+    training_id = binding_res.data.get('training_id') if binding_res.data else None
+    
     # 硬删除记录
     result = db.table("training_exam_bindings").delete().eq("id", binding_id).execute()
     
     if result.data:
+        # ✅ 清除绑定列表缓存
+        if training_id:
+            # 清除该培训的绑定缓存
+            from utils.cache_manager import training_cache
+            training_cache.clear(f'training_bindings_{training_id}')
+            # 也清除通用的绑定缓存
+            training_cache.clear('training_bindings')
+            logger.info(f"✅ 已清除培训 {training_id} 的绑定缓存")
+        
         return jsonify({"success": True})
     else:
         return jsonify({"success": False, "message": "解除绑定失败"}), 500
-
 # ==================== 培训学员分配管理 API ====================
 
 @admin_training_bp.route('/api/admin/training/<int:training_id>/assign', methods=['POST'])
@@ -3325,187 +3613,6 @@ def reassign_training_binding(training_id, binding_id):
             "success": False,
             "message": "补分配失败: " + str(e)
         }), 500
-
-def _sync_training_binding_data(db, training_id, created_by=None):
-    """
-    培训绑定考试后的数据同步：双向同步
-    1. 已签到学员 → 自动分配考试
-    2. 已完成考试学员 → 自动创建签到记录
-    
-    Args:
-        db: 数据库连接
-        training_id: 培训ID
-        created_by: 创建人ID（用于记录）
-    """
-    now = datetime.now(timezone.utc).isoformat()
-    sync_results = {
-        "assigned_exams": 0,      # 已签到→分配考试 的数量
-        "created_attendances": 0,  # 已完成考试→创建签到 的数量
-        "created_assignments": 0,  # 已完成考试→创建培训分配 的数量
-        "errors": []
-    }
-    
-    logger.info("=" * 60)
-    logger.info(f"🔄 开始培训绑定数据同步: training_id={training_id}")
-    
-    try:
-        # ========== 1. 获取培训信息 ==========
-        training_res = db.table("trainings").select("country, name, start_time, end_time, is_active").eq("id", training_id).maybe_single().execute()
-        if not training_res.data:
-            logger.warning(f"培训不存在: training_id={training_id}")
-            return sync_results
-        
-        training = training_res.data
-        
-        # ========== 2. 获取该培训绑定的所有考试 ==========
-        bindings_res = db.table("training_exam_bindings").select("exam_id, is_auto_assign")\
-            .eq("training_id", training_id)\
-            .is_("deleted_at", "null")\
-            .execute()
-        bindings = bindings_res.data or []
-        
-        if not bindings:
-            logger.info("该培训暂无绑定考试，跳过同步")
-            return sync_results
-        
-        exam_ids = [b['exam_id'] for b in bindings]
-        auto_assign_exam_ids = [b['exam_id'] for b in bindings if b.get('is_auto_assign', True)]
-        
-        logger.info(f"绑定的考试: {exam_ids}")
-        
-        # ========== 3. 获取该培训国家下的所有用户 ==========
-        training_country = training.get('country')
-        if not training_country:
-            logger.warning("培训未指定国家，跳过同步")
-            return sync_results
-        
-        users_res = db.table("users").select("id, name_en, email")\
-            .eq("country", training_country)\
-            .eq("user_status", "registered")\
-            .eq("is_resign", False)\
-            .is_("deleted_at", "null")\
-            .execute()
-        all_users = users_res.data or []
-        all_user_ids = [u['id'] for u in all_users]
-        
-        if not all_user_ids:
-            logger.info("该国家无有效用户，跳过同步")
-            return sync_results
-        
-        logger.info(f"培训国家 {training_country} 下的用户数: {len(all_user_ids)}")
-        
-        # ========== 4. 获取已签到学员 ==========
-        attendances_res = db.table("training_attendances").select("user_id")\
-            .eq("training_id", training_id)\
-            .is_("deleted_at", "null")\
-            .execute()
-        signed_user_ids = {a['user_id'] for a in (attendances_res.data or [])}
-        logger.info(f"已签到学员数: {len(signed_user_ids)}")
-        
-        # ========== 5. 获取已完成考试的学员（针对绑定的考试） ==========
-        completed_users_per_exam = {}
-        if exam_ids:
-            results_res = db.table("exam_results").select("user_id, exam_id")\
-                .in_("exam_id", exam_ids)\
-                .in_("user_id", all_user_ids)\
-                .is_("deleted_at", "null")\
-                .execute()
-            
-            for r in (results_res.data or []):
-                exam_id = r['exam_id']
-                user_id = r['user_id']
-                if exam_id not in completed_users_per_exam:
-                    completed_users_per_exam[exam_id] = set()
-                completed_users_per_exam[exam_id].add(user_id)
-        
-        # ========== 6. 获取已分配考试 ==========
-        assigned_exam_map = {}
-        if exam_ids:
-            assign_res = db.table("exam_assignments").select("exam_id, user_id")\
-                .in_("exam_id", exam_ids)\
-                .in_("user_id", all_user_ids)\
-                .is_("deleted_at", "null")\
-                .execute()
-            
-            for a in (assign_res.data or []):
-                key = f"{a['exam_id']}_{a['user_id']}"
-                assigned_exam_map[key] = True
-        
-        # ========== 7. 获取培训分配记录 ==========
-        training_assign_res = db.table("training_assignments").select("user_id")\
-            .eq("training_id", training_id)\
-            .in_("user_id", all_user_ids)\
-            .execute()
-        training_assigned_set = {a['user_id'] for a in (training_assign_res.data or [])}
-        
-        # ========== 8. 双向数据同步 ==========
-        
-        # 8.1 已签到但未分配考试 → 自动分配考试
-        if signed_user_ids and auto_assign_exam_ids:
-            to_assign_exams = []
-            for exam_id in auto_assign_exam_ids:
-                for user_id in signed_user_ids:
-                    key = f"{exam_id}_{user_id}"
-                    if key not in assigned_exam_map:
-                        to_assign_exams.append({
-                            "exam_id": exam_id,
-                            "user_id": user_id,
-                            "created_by": created_by or 'system',
-                            "assigned_at": now
-                        })
-            
-            if to_assign_exams:
-                insert_result = db.table("exam_assignments").insert(to_assign_exams).execute()
-                sync_results["assigned_exams"] = len(insert_result.data or [])
-                logger.info(f"✅ 为已签到学员分配考试: {sync_results['assigned_exams']} 条")
-        
-        # 8.2 已完成考试但未签到 → 自动创建签到记录
-        if exam_ids:
-            # 收集所有已完成考试的用户
-            all_completed_users = set()
-            for exam_id, users in completed_users_per_exam.items():
-                all_completed_users.update(users)
-            
-            # 过滤出未签到的用户
-            to_create_attendance = [uid for uid in all_completed_users if uid not in signed_user_ids]
-            
-            if to_create_attendance:
-                # 创建签到记录
-                attendance_records = [{
-                    "training_id": training_id,
-                    "user_id": uid,
-                    "sign_time": now,
-                    "signed_name": next((u.get('name_en', '自动签到') for u in all_users if u['id'] == uid), '自动签到'),
-                    "signature_url": None  # 无签名
-                } for uid in to_create_attendance]
-                
-                insert_result = db.table("training_attendances").insert(attendance_records).execute()
-                sync_results["created_attendances"] = len(insert_result.data or [])
-                logger.info(f"✅ 为已完成考试学员创建签到: {sync_results['created_attendances']} 条")
-                
-                # 同时创建培训分配记录
-                to_create_assignment = [uid for uid in to_create_attendance if uid not in training_assigned_set]
-                if to_create_assignment:
-                    assignment_records = [{
-                        "training_id": training_id,
-                        "user_id": uid,
-                        "created_by": created_by or 'system',
-                        "created_at": now
-                    } for uid in to_create_assignment]
-                    
-                    insert_result = db.table("training_assignments").insert(assignment_records).execute()
-                    sync_results["created_assignments"] = len(insert_result.data or [])
-                    logger.info(f"✅ 为已完成考试学员创建培训分配: {sync_results['created_assignments']} 条")
-        
-        logger.info(f"🔄 数据同步完成: {sync_results}")
-        
-    except Exception as e:
-        logger.error(f"数据同步失败: {e}", exc_info=True)
-        sync_results["errors"].append(str(e))
-    
-    return sync_results
-
-# routes/admin_training.py
 
 @admin_training_bp.route('/api/admin/training/assign', methods=['POST'])
 @login_required
