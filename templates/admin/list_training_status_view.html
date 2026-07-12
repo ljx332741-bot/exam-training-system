@@ -402,7 +402,18 @@
         color: #9c27b0;
         background: rgba(156, 39, 176, 0.15);
     }
-
+    /* 未分配卡片 - 灰色主题（已在原有样式中定义 secondary 类，但需要确认） */
+    .crystal-card.secondary {
+        background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%);
+        border: 1px solid rgba(108, 117, 125, 0.2);
+    }
+    .crystal-card.secondary::after {
+        background: linear-gradient(90deg, #6c757d, #adb5bd);
+    }
+    .crystal-card.secondary .card-icon {
+        color: #6c757d;
+        background: rgba(108, 117, 125, 0.15);
+    }
     /* 响应式调整 */
     @media (max-width: 768px) {
         .crystal-card {
@@ -455,11 +466,6 @@
             <button class="btn btn-outline-secondary" id="backToTrainingsBtn">
                 <i class="bi bi-arrow-return-left"></i> <span data-i18n="back">返回</span>
             </button>
-            <!--
-            <button class="btn btn-outline-secondary" id="closePageBtn">
-                <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
-            </button>
-            -->
         </div>
     </div>
 
@@ -498,7 +504,7 @@
 
     <!-- 统计卡片 - 水晶样式 -->
     <div class="row mb-3">
-        <div class="col-md-3">
+        <div class="col-md-2 col-6">
             <div class="crystal-card green stat-card" data-filter="signed">
                 <div class="card-content">
                     <div class="card-left">
@@ -511,7 +517,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2 col-6">
             <div class="crystal-card orange stat-card" data-filter="pending">
                 <div class="card-content">
                     <div class="card-left">
@@ -524,7 +530,7 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2 col-6">
             <div class="crystal-card pink stat-card" data-filter="resign">
                 <div class="card-content">
                     <div class="card-left">
@@ -537,7 +543,21 @@
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-2 col-6">
+            <!-- 未分配卡片 -->
+            <div class="crystal-card secondary stat-card" data-filter="not_assigned" style="background: linear-gradient(135deg, #f0f0f0 0%, #e0e0e0 100%); border: 1px solid rgba(108, 117, 125, 0.2);">
+                <div class="card-content">
+                    <div class="card-left">
+                        <p class="card-title"><span data-i18n="not_assigned">未分配</span></p>
+                        <h3 class="card-value" id="notAssignedCount">0</h3>
+                    </div>
+                    <div class="card-icon" style="color: #6c757d; background: rgba(108, 117, 125, 0.15);">
+                        <i class="bi bi-person-x-fill"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-2 col-6">
             <div class="crystal-card purple stat-card" data-filter="all">
                 <div class="card-content">
                     <div class="card-left">
@@ -831,16 +851,19 @@
         let signed = 0;
         let pending = 0;
         let resign = 0;
+        let notAssigned = 0;
         
         data.forEach(item => {
             if (item.sign_status === 'signed') signed++;
             else if (item.sign_status === 'pending') pending++;
             else if (item.sign_status === 'resign') resign++;
+            else if (item.sign_status === 'not_assigned') notAssigned++;
         });
         
         document.getElementById('signedCount').innerText = signed;
         document.getElementById('pendingCount').innerText = pending;
         document.getElementById('resignCount').innerText = resign;
+        document.getElementById('notAssignedCount').innerText = notAssigned;
         document.getElementById('totalCount').innerText = data.length;
     }
 
@@ -869,7 +892,7 @@
             
             switch (item.sign_status) {
                 case 'not_assigned':
-                    statusBadge = '<span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> ' + (t('t_not_assigned') || '未分配') + '</span>';
+                    statusBadge = '<span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> ' + (t('not_assigned') || '未分配') + '</span>';
                     actionHtml = `<button class="btn btn-sm btn-outline-primary assign-btn" 
                                         data-training-id="${item.training_id}" 
                                         data-user-id="${item.user_id}"

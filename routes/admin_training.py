@@ -1139,19 +1139,35 @@ def api_training_users_with_status():
     training_countries = list(set(training_countries))
     
     # ========== 4. 获取用户 ==========
-    if training_countries:
-        users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", training_countries)
+    # 开发者特殊处理：先获取所有用户，后续再确保开发者自己出现在列表中
+    if is_dev:
+        # 开发者：获取所有用户（不受国家限制）
+        users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
     else:
-        if allowed_countries is not None and allowed_countries:
-            users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", allowed_countries)
+        if training_countries:
+            users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", training_countries)
         else:
-            users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
+            if allowed_countries is not None and allowed_countries:
+                users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", allowed_countries)
+            else:
+                users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
 
     # ========== 5. 获取所有用户（用于后续过滤） ==========
     users_res = users_query.execute()
     all_users = users_res.data or []
-    
-    # ========== 6. ✅ 多字段组合查询（姓名/邮箱/库房/国家） ==========
+
+    # 开发者特殊处理：确保自己始终在用户列表中
+    if is_dev:
+        # 检查开发者是否在 all_users 中
+        dev_in_list = any(u['id'] == current_user_id for u in all_users)
+        if not dev_in_list:
+            # 手动添加开发者自己
+            dev_res = db.table("users").select("*").eq("id", current_user_id).maybe_single().execute()
+            if dev_res and dev_res.data:
+                all_users.append(dev_res.data)
+                logger.info(f"✅ 开发者 {current_user_id} 已手动添加到用户列表")
+
+    # ========== 6. 多字段组合查询（姓名/邮箱/库房/国家） ==========
     if search:
         keywords = search.strip().split()
         filtered_users = []
@@ -1323,10 +1339,17 @@ def api_training_users_with_status():
         
         for user in users:
             user_country = user.get('country', '')
+            user_id = user.get('id', '')
             
-            # 如果培训有国家，用户国家必须匹配
-            if training_country and user_country != training_country:
-                continue
+            # 开发者特殊处理：即使国家不匹配，也显示自己
+            if is_dev and user_id == current_user_id:
+                # 开发者自己，跳过国家检查
+                pass
+            else:
+            
+                # 如果培训有国家，用户国家必须匹配
+                if training_country and user_country != training_country:
+                    continue
             
             key = f"{training_id}_{user['id']}"
 

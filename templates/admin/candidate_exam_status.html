@@ -482,11 +482,11 @@
             const text = badge.innerText;
             // 根据当前语言重新设置文本
             if (text === '未分配' || text === 'Not Assigned') {
-                badge.innerText = t('t_not_assigned');
+                badge.innerText = t('not_assigned');
             } else if (text === '待考试' || text === 'Pending') {
-                badge.innerText = t('t_pending_exam');
+                badge.innerText = t('pending_exam');
             } else if (text === '进行中' || text === 'In Progress') {
-                badge.innerText = t('t_in_progress');
+                badge.innerText = t('in_progress');
             } else if (text === '已提交' || text === 'Submitted') {
                 badge.innerText = t('t_submitted');
             } else if (text === '是' || text === 'Yes') {
@@ -574,13 +574,13 @@
             let statusBadge = '';
             switch (u.exam_status) {
                 case 'not_assigned':
-                    statusBadge = `<span class="badge bg-secondary">${t('t_not_assigned')}</span>`;
+                    statusBadge = `<span class="badge bg-secondary">${t('not_assigned')}</span>`;
                     break;
                 case 'pending':
-                    statusBadge = `<span class="badge bg-info">${t('t_pending_exam')}</span>`;
+                    statusBadge = `<span class="badge bg-info">${t('pending_exam')}</span>`;
                     break;
                 case 'in_progress':
-                    statusBadge = `<span class="badge bg-warning text-dark">${t('t_in_progress')}</span>`;
+                    statusBadge = `<span class="badge bg-warning text-dark">${t('in_progress')}</span>`;
                     break;
                 case 'submitted':
                     statusBadge = `<span class="badge bg-success">${t('t_submitted')}</span>`;
