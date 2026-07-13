@@ -19,7 +19,7 @@ from utils.training_helpers import get_training_country_templates_status, _save_
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, get_allowed_countries, is_developer
-from utils.cache_manager import cache_get, invalidate_cache_on_change, training_cache, clear_all_assignment_caches
+from utils.cache_manager import clear_training_related_cache, cache_get, invalidate_cache_on_change, training_cache, clear_all_assignment_caches
 
 from routes.helpers import (
     login_required, 
@@ -2837,10 +2837,9 @@ def bind_exam_to_training():
     sort_order = data.get('sort_order', 0)
     now = datetime.now(timezone.utc).isoformat()
     operator_id = session.get('user_id')
-
-    logger.info(f"   training_id={training_id}, exam_id={exam_id}")
-    logger.info(f"   is_auto_assign={is_auto_assign}")
-
+    db = get_supabase_admin()
+    
+    # ========== 参数验证 ==========
     if not training_id:
         logger.error("❌ training_id 缺失")
         return jsonify({"success": False, "message": "培训ID不能为空"}), 400
@@ -2849,11 +2848,19 @@ def bind_exam_to_training():
         logger.error("❌ exam_id 缺失")
         return jsonify({"success": False, "message": "考试ID不能为空"}), 400
     
-    logger.info(f"✅ 参数: training_id={training_id}, exam_id={exam_id}")
+    # ========== 权限验证 ==========
+    # 检查当前用户是否有权限操作此培训
+    training_check = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
+    if not training_check.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
     
-    db = get_supabase_admin()
+    allowed_countries = get_admin_allowed_countries()
+    training_country = training_check.data.get('country')
+    if allowed_countries is not None and training_country and training_country not in allowed_countries:
+        logger.warning(f"⚠️ 用户无权操作培训 {training_id} (国家: {training_country})")
+        return jsonify({"success": False, "message": "无权操作此培训"}), 403
     
-    # 检查是否存在软删除的记录
+    # ========== 检查是否存在软删除的记录 ==========
     soft_deleted = db.table("training_exam_bindings").select("*")\
         .eq("training_id", training_id)\
         .eq("exam_id", exam_id)\
@@ -2879,17 +2886,28 @@ def bind_exam_to_training():
         binding_id = result.data[0]['id']
         logger.info(f"✅ 恢复绑定成功: binding_id={binding_id}")
         
-        # ✅ 恢复后执行补分配
+        # ========== 使用统一的缓存清除函数 ==========
+        clear_training_related_cache(training_id)
+        clear_all_assignment_caches(training_id=training_id, exam_id=exam_id)
+        logger.info(f"🧹 已清除培训 {training_id} 和考试 {exam_id} 的相关缓存")
+        
+        # ========== 补分配考试给已签到学员 ==========
         sync_result = _auto_assign_exam_to_signed_users_safe(db, training_id, exam_id, is_auto_assign, operator_id, now)
+        
+        # ========== 获取考试标题 ==========
+        exam_title = _get_exam_title(db, exam_id)
         
         return jsonify({
             "success": True, 
             "binding_id": binding_id, 
             "restored": True,
-            "sync_result": sync_result
+            "sync_result": sync_result,
+            "training_id": training_id,
+            "exam_id": exam_id,
+            "exam_title": exam_title
         })
-        
-    # 检查是否已有活跃绑定
+    
+    # ========== 检查是否已有活跃绑定 ==========
     existing = db.table("training_exam_bindings").select("id")\
         .eq("training_id", training_id)\
         .eq("exam_id", exam_id)\
@@ -2897,9 +2915,10 @@ def bind_exam_to_training():
         .execute()
     
     if existing.data:
+        logger.warning(f"⚠️ 考试 {exam_id} 已绑定到培训 {training_id}")
         return jsonify({"success": False, "message": "该考试已绑定到此培训"}), 400
     
-    # 创建新绑定
+    # ========== 创建新绑定 ==========
     result = db.table("training_exam_bindings").insert({
         "training_id": training_id,
         "exam_id": exam_id,
@@ -2912,19 +2931,42 @@ def bind_exam_to_training():
     }).execute()
     
     if not result.data:
+        logger.error(f"❌ 绑定失败: training_id={training_id}, exam_id={exam_id}")
         return jsonify({"success": False, "message": "绑定失败"}), 500
     
     binding_id = result.data[0]['id']
     logger.info(f"✅ 绑定成功: binding_id={binding_id}")
 
-    # ✅ 只执行补分配，不调用 _sync_training_binding_data（避免重复）
+    # ========== 使用统一的缓存清除函数 ==========
+    clear_training_related_cache(training_id)
+    clear_all_assignment_caches(training_id=training_id, exam_id=exam_id)
+    logger.info(f"🧹 已清除培训 {training_id} 和考试 {exam_id} 的相关缓存")
+    
+    # ========== 获取考试标题 ==========
+    exam_title = _get_exam_title(db, exam_id)
+
+    # ========== 补分配考试给已签到学员 ==========
     sync_result = _auto_assign_exam_to_signed_users_safe(db, training_id, exam_id, is_auto_assign, operator_id, now)
     
     return jsonify({
         "success": True, 
         "binding_id": binding_id,
+        "restored": False,
+        "training_id": training_id,
+        "exam_id": exam_id,
+        "exam_title": exam_title,
         "sync_result": sync_result
     })
+
+def _get_exam_title(db, exam_id):
+    """获取考试标题"""
+    try:
+        res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+        if res.data:
+            return res.data.get('title', f'考试{exam_id}')
+        return f'考试{exam_id}'
+    except:
+        return f'考试{exam_id}'
 
 def _auto_assign_exam_to_signed_users_safe(db, training_id, exam_id, is_auto_assign, operator_id, now):
     """
@@ -3293,26 +3335,40 @@ def delete_training_binding(binding_id):
     """解除绑定（硬删除）"""
     db = get_supabase_admin()
     
-    # 先获取绑定信息（用于清除缓存）
-    binding_res = db.table("training_exam_bindings").select("training_id").eq("id", binding_id).maybe_single().execute()
-    training_id = binding_res.data.get('training_id') if binding_res.data else None
+    # ========== 先获取绑定信息（用于缓存清除和日志） ==========
+    binding_res = db.table("training_exam_bindings").select("training_id, exam_id").eq("id", binding_id).maybe_single().execute()
+    if not binding_res.data:
+        return jsonify({"success": False, "message": "绑定关系不存在"}), 404
     
-    # 硬删除记录
+    training_id = binding_res.data.get('training_id')
+    exam_id = binding_res.data.get('exam_id')
+    
+    # ========== 权限验证 ==========
+    training_check = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
+    if training_check.data:
+        allowed_countries = get_admin_allowed_countries()
+        training_country = training_check.data.get('country')
+        if allowed_countries is not None and training_country and training_country not in allowed_countries:
+            return jsonify({"success": False, "message": "无权操作此培训"}), 403
+    
+    # ========== 硬删除记录 ==========
     result = db.table("training_exam_bindings").delete().eq("id", binding_id).execute()
     
     if result.data:
-        # ✅ 清除绑定列表缓存
+        # ========== 使用统一的缓存清除函数 ==========
         if training_id:
-            # 清除该培训的绑定缓存
-            from utils.cache_manager import training_cache
-            training_cache.clear(f'training_bindings_{training_id}')
-            # 也清除通用的绑定缓存
-            training_cache.clear('training_bindings')
-            logger.info(f"✅ 已清除培训 {training_id} 的绑定缓存")
+            clear_training_related_cache(training_id)
+            if exam_id:
+                clear_all_assignment_caches(training_id=training_id, exam_id=exam_id)
+            else:
+                clear_all_assignment_caches(training_id=training_id)
+            logger.info(f"🧹 已清除培训 {training_id} 的相关缓存")
         
+        logger.info(f"✅ 解除绑定成功: binding_id={binding_id}")
         return jsonify({"success": True})
     else:
         return jsonify({"success": False, "message": "解除绑定失败"}), 500
+
 # ==================== 培训学员分配管理 API ====================
 
 @admin_training_bp.route('/api/admin/training/<int:training_id>/assign', methods=['POST'])
