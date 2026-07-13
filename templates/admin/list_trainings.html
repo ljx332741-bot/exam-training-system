@@ -656,28 +656,6 @@
         });
     }
     
-    /*
-    function renderPagination(current, totalPages) {
-        const pagination = document.getElementById('pagination');
-        if (totalPages <= 1) {
-            pagination.innerHTML = '';
-            return;
-        }
-        let html = '';
-        for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === current ? 'active' : ''}"><a class="page-link" href="#" data-page="${i}">${i}</a></li>`;
-        }
-        pagination.innerHTML = html;
-        pagination.querySelectorAll('.page-link').forEach(link => {
-            link.addEventListener('click', (e) => {
-                e.preventDefault();
-                currentPage = parseInt(link.dataset.page);
-                loadTrainings();
-            });
-        });
-    }
-    */
-
     // ---------- 行内编辑名称 ----------
     function attachRowEvents() {
         // 编辑名称按钮事件
@@ -2012,7 +1990,9 @@
     });
 
     // ==================== 培训-考试绑定管理 ====================
-    // 加载培训绑定的考试列表
+    /**
+    * 重写 loadTrainingBindings - 更稳健的加载
+    */
     async function loadTrainingBindings(trainingId, rowElement, iconElement = null) {
         const detailRowId = `binding-detail-${trainingId}`;
         
@@ -2021,10 +2001,8 @@
         if (detailRow) {
             // 存在：删除行
             detailRow.remove();
-            // 同步更新图标状态
             if (iconElement) {
                 iconElement.classList.remove('expanded');
-                // 根据是否有绑定决定显示什么
                 const hasBindings = iconElement.dataset.hasBindings === 'true';
                 iconElement.textContent = hasBindings ? '▶' : '➕';
                 iconElement.title = hasBindings ? safeT('click_view_exam_bindings') : safeT('click_add_binding_exam');
@@ -2044,32 +2022,27 @@
             <td colspan="10" class="p-0">
                 <div class="binding-content">
                     <div class="text-center py-3">
-                        <div class="spinner-border spinner-border-sm me-2">
-                            </div>
-                                ${t('loading')}
-                            </div>
-                        </div>
-                    </td>
-                `;
-        
-        // 定义变量用于存储结果
-        let bindings = [];
-        let hasBindings = false;
+                        <div class="spinner-border spinner-border-sm me-2"></div>
+                        ${t('loading')}
+                    </div>
+                </div>
+            </td>
+        `;
         
         try {
             const res = await fetch(url);
             const data = await res.json();
-            bindings = data.bindings || [];
+            const bindings = data.bindings || [];
             const availableExams = data.available_exams || [];
-            hasBindings = bindings.length > 0;
+            const hasBindings = bindings.length > 0;
             
-            // 再次检查行是否已被其他操作删除（防止竞态）
+            // 再次检查行是否已被其他操作删除
             const existingRow = document.getElementById(detailRowId);
             if (!existingRow) {
-                return;
+                return { bindings: [], action: 'closed' };
             }
 
-            // 先清除加载内容
+            // 清除加载内容
             newRow.innerHTML = '';
             
             if (bindings.length === 0) {
@@ -2108,42 +2081,52 @@
                             </thead>
                             <tbody>
                                 ${bindings.map(b => `
-                                    <tr>
+                                    <tr data-exam-id="${b.exam_id}" data-binding-id="${b.id}">
                                         <td>${b.exam_countries ? b.exam_countries.join(', ') : '-'}</td>
                                         <td><strong>${b.exam_id}</strong></td>
                                         <td>
                                             <a href="/admin/exam/${b.exam_id}/scores?from=training" 
-                                            class="exam-binding-link" 
-                                            target="_blank"
-                                            onclick="sessionStorage.setItem('from_training_binding', 'true');"
-                                            style="color: #0d6efd; text-decoration: none; font-weight: 600;"
-                                            onmouseover="this.style.color='#0a58ca'; this.style.textDecoration='underline';"
-                                            onmouseout="this.style.color='#0d6efd'; this.style.textDecoration='none';"
-                                            data-i18n-title="click_to_view_details"
-                                            title="点击查看考试详情">
+                                                class="exam-binding-link" 
+                                                target="_blank"
+                                                onclick="sessionStorage.setItem('from_training_binding', 'true');"
+                                                style="color: #0d6efd; text-decoration: none; font-weight: 600;">
                                                 ${escapeHtml(b.exam_title)}
-                                                <span class="badge bg-secondary ms-1" style="font-size: 0.6rem; cursor: default;">↗</span>
+                                                <span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">↗</span>
                                             </a>
                                         </td>
-                                        <td>${b.exam_status ? b.exam_status  : '-'}</td>
-                                        <td>${b.completed_count ? b.completed_count  : '-'}</td>
-                                        <td><input type="number" class="form-control form-control-sm pass-score-input" style="width: 70px;" value="${b.pass_score}" data-binding-id="${b.id}" data-field="pass_score" min="0" max="100"></td>
-                                        <td><input type="checkbox" class="form-check-input auto-assign-checkbox" ${b.is_auto_assign ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_auto_assign"></td>
-                                        <td><input type="checkbox" class="form-check-input required-checkbox" ${b.is_required ? 'checked' : ''} data-binding-id="${b.id}" data-field="is_required"></td>
+                                        <td>${b.exam_status || '-'}</td>
+                                        <td>${b.completed_count || 0}</td>
+                                        <td>
+                                            <input type="number" class="form-control form-control-sm pass-score-input" 
+                                                style="width: 70px;" value="${b.pass_score}" 
+                                                data-binding-id="${b.id}" 
+                                                data-field="pass_score" min="0" max="100">
+                                        </td>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input auto-assign-checkbox" 
+                                                ${b.is_auto_assign ? 'checked' : ''} 
+                                                data-binding-id="${b.id}" 
+                                                data-field="is_auto_assign">
+                                        </td>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input required-checkbox" 
+                                                ${b.is_required ? 'checked' : ''} 
+                                                data-binding-id="${b.id}" 
+                                                data-field="is_required">
+                                        </td>
                                         <td>
                                             <button class="btn btn-sm btn-outline-success reassign-btn me-1" 
                                                     data-binding-id="${b.id}" 
                                                     data-training-id="${trainingId}"
                                                     data-exam-title="${escapeHtml(b.exam_title)}"
-                                                    data-i18n-title="reassign_exam_to_checked_in_trainees"
-                                                    title="为已签到学员补分配此考试">
-                                                <i class="bi bi-arrow-repeat"></i> ${safeT('reassign')}
+                                                    title="${safeT('reassign_exam_to_checked_in_trainees') || '为已签到学员补分配此考试'}">
+                                                <i class="bi bi-arrow-repeat"></i> ${safeT('reassign') || '补分配'}
                                             </button>
                                             <button class="btn btn-sm btn-outline-danger unbind-btn" 
-                                                data-binding-id="${b.id}"  
-                                                data-training-id="${trainingId}"
-                                                data-exam-title="${escapeHtml(b.exam_title)}">
-                                                ${safeT('unbind')}
+                                                    data-binding-id="${b.id}" 
+                                                    data-training-id="${trainingId}"
+                                                    data-exam-title="${escapeHtml(b.exam_title)}">
+                                                ${safeT('unbind') || '解除'}
                                             </button>
                                         </td>
                                     </tr>
@@ -2152,39 +2135,56 @@
                         </table>
                     </div>
                 `;
-                newRow.innerHTML = `<td colspan="8" class="p-0">${bindingsHtml}</td>`;
+                newRow.innerHTML = `<td colspan="10" class="p-0">${bindingsHtml}</td>`;
             }
             
             // 成功加载后更新图标状态
             if (iconElement) {
-                const hasBindings = bindings.length > 0;
                 iconElement.dataset.hasBindings = String(hasBindings);
                 iconElement.classList.add('expanded');
-                iconElement.textContent = '▼';  // 展开时显示下箭头
+                iconElement.textContent = '▼';
                 iconElement.style.color = hasBindings ? '#0d6efd' : '#fd7e14';
-                iconElement.style.cursor = hasBindings ? 'pointer' : 'pointer';
+                iconElement.style.cursor = 'pointer';
                 iconElement.title = hasBindings ? safeT('click_collapse_binding_list') : safeT('click_add_binding_exam');
             }
+            
+            // 更新徽章计数
+            const badgeCount = rowElement.querySelector('.badge-count');
+            if (badgeCount) {
+                badgeCount.textContent = bindings.length;
+                if (bindings.length > 0) {
+                    badgeCount.style.display = 'inline';
+                    badgeCount.style.background = '#198754';
+                } else {
+                    badgeCount.style.display = 'none';
+                }
+            }
 
-            // 绑定修改事件
+            // 绑定事件
             attachBindingEvents(trainingId, newRow);
             return { bindings, availableExams, action: 'loaded' };
+            
         } catch (err) {
             console.error(t('bind_loading_failed'), err);
-            // 检查行是否还存在
             const errorRow = document.getElementById(detailRowId);
             if (errorRow) {
                 errorRow.innerHTML = `
-                    <td colspan="8" class="p-0">
+                    <td colspan="10" class="p-0">
                         <div class="binding-content">
                             <div class="text-danger text-center py-3">
                                 ${t('failed_to_load_try_again')}
+                                <button class="btn btn-sm btn-outline-primary ms-2 refresh-bindings-btn" data-training-id="${trainingId}">${t('retry')}</button>
                             </div>
                         </div>
                     </td>
                 `;
+                errorRow.querySelector('.refresh-bindings-btn')?.addEventListener('click', () => {
+                    const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                    if (row) {
+                        loadTrainingBindings(trainingId, row);
+                    }
+                });
             }
-            // 错误时也更新图标状态（恢复为未展开）
             if (iconElement) {
                 iconElement.classList.remove('expanded');
                 const hasBindings = iconElement.dataset.hasBindings === 'true';
@@ -2195,208 +2195,265 @@
         }
     }
 
-    // 绑定修改事件
+
+    /**
+    * 重写 attachBindingEvents - 增强事件绑定
+    */
     function attachBindingEvents(trainingId, rowElement) {
-        // 及格分数修改
-        rowElement.querySelectorAll('.pass-score-input').forEach(input => {
-            input.addEventListener('change', async (e) => {
-                const bindingId = input.dataset.bindingId;
-                const passScore = parseInt(input.value);
-                if (isNaN(passScore) || passScore < 0 || passScore > 100) {
-                    alert(t('pass_score_hint'));
-                    input.value = 85;
-                    return;
-                }
-                await updateBinding(bindingId, { pass_score: passScore });
-            });
-        });
-        
-        // 自动分配复选框
-        rowElement.querySelectorAll('.auto-assign-checkbox').forEach(cb => {
-            cb.addEventListener('change', async (e) => {
-                const bindingId = cb.dataset.bindingId;
-                await updateBinding(bindingId, { is_auto_assign: cb.checked });
-            });
-        });
-        
-        // 必考复选框
-        rowElement.querySelectorAll('.required-checkbox').forEach(cb => {
-            cb.addEventListener('change', async (e) => {
-                const bindingId = cb.dataset.bindingId;
-                await updateBinding(bindingId, { is_required: cb.checked });
-            });
-        });
-
-        // 补分配按钮
-        rowElement.querySelectorAll('.reassign-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const bindingId = btn.dataset.bindingId;
-                const trainingId = btn.dataset.trainingId;
-                const examTitle = btn.dataset.examTitle;
-                
-                // 使用 safeT 或直接硬编码
-                const confirmMsg = (typeof safeT === 'function') 
-                    ? safeT('confirm_reassign', examTitle) 
-                    : `确定要为考试「${examTitle}」补分配所有已签到学员吗？`;
-                
-                if (!confirm(confirmMsg)) return;
-                
-                // 显示加载状态
-                const originalText = btn.innerHTML;
-                btn.disabled = true;
-                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
-                
-                try {
-                    const res = await fetch(`/api/admin/training/${trainingId}/binding/${bindingId}/reassign`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' }
-                    });
-                    const data = await res.json();
-                    
-                    if (data.success) {
-                        const successMsg = (typeof safeT === 'function')
-                            ? safeT('reassign_success')
-                            : '补分配成功';
-                        
-                        if (data.assigned_count > 0) {
-                            showToast(`${successMsg}: ${data.assigned_count} 名学员`, 'success');
-                        } else {
-                            showToast(data.message || t('all_users_have_assigned'), 'info');
-                        }
-                        // 刷新绑定列表
-                        const row = document.querySelector(`tr[data-id="${trainingId}"]`);
-                        if (row) {
-                            await loadTrainingBindings(trainingId, row);
-                        }
-                    } else {
-                        const errorMsg = (typeof safeT === 'function')
-                            ? safeT('reassign_failed')
-                            : '补分配失败';
-                        showToast(errorMsg + ': ' + (data.message || ''), 'error');
+        // 使用事件委托，避免重复绑定
+        if (!rowElement._eventsAttached) {
+            rowElement._eventsAttached = true;
+            
+            // 及格分数修改
+            rowElement.querySelectorAll('.pass-score-input').forEach(input => {
+                input.removeEventListener('change', input._changeHandler);
+                input._changeHandler = async (e) => {
+                    const bindingId = input.dataset.bindingId;
+                    const passScore = parseInt(input.value);
+                    if (isNaN(passScore) || passScore < 0 || passScore > 100) {
+                        alert(t('pass_score_hint'));
+                        input.value = 85;
+                        return;
                     }
-                } catch (err) {
-                    console.error('补分配失败:', err);
-                    showToast(t('network_error_retry'), 'error');
-                } finally {
-                    btn.disabled = false;
-                    btn.innerHTML = originalText;
-                }
+                    await updateBinding(bindingId, { pass_score: passScore });
+                };
+                input.addEventListener('change', input._changeHandler);
             });
-        });
+            
+            // 自动分配复选框
+            rowElement.querySelectorAll('.auto-assign-checkbox').forEach(cb => {
+                cb.removeEventListener('change', cb._changeHandler);
+                cb._changeHandler = async (e) => {
+                    const bindingId = cb.dataset.bindingId;
+                    await updateBinding(bindingId, { is_auto_assign: cb.checked });
+                };
+                cb.addEventListener('change', cb._changeHandler);
+            });
+            
+            // 必考复选框
+            rowElement.querySelectorAll('.required-checkbox').forEach(cb => {
+                cb.removeEventListener('change', cb._changeHandler);
+                cb._changeHandler = async (e) => {
+                    const bindingId = cb.dataset.bindingId;
+                    await updateBinding(bindingId, { is_required: cb.checked });
+                };
+                cb.addEventListener('change', cb._changeHandler);
+            });
 
-        // 解除绑定
-        rowElement.querySelectorAll('.unbind-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const bindingId = btn.dataset.bindingId;
-                const examTitle = btn.dataset.examTitle;
-                const trainingId = btn.dataset.trainingId;
+            // 补分配按钮
+            rowElement.querySelectorAll('.reassign-btn').forEach(btn => {
+                btn.removeEventListener('click', btn._clickHandler);
+                btn._clickHandler = async (e) => {
+                    const bindingId = btn.dataset.bindingId;
+                    const trainingId = btn.dataset.trainingId;
+                    const examTitle = btn.dataset.examTitle;
+                    
+                    const confirmMsg = (typeof safeT === 'function') 
+                        ? safeT('confirm_reassign', examTitle) 
+                        : `确定要为考试「${examTitle}」补分配所有已签到学员吗？`;
+                    
+                    if (!confirm(confirmMsg)) return;
+                    
+                    const originalText = btn.innerHTML;
+                    btn.disabled = true;
+                    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
+                    
+                    try {
+                        const res = await fetch(`/api/admin/training/${trainingId}/binding/${bindingId}/reassign?_t=${Date.now()}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        });
+                        const data = await res.json();
+                        
+                        if (data.success) {
+                            const successMsg = (typeof safeT === 'function')
+                                ? safeT('reassign_success')
+                                : '补分配成功';
+                            
+                            if (data.assigned_count > 0) {
+                                showToast(`${successMsg}: ${data.assigned_count} 名学员`, 'success');
+                            } else {
+                                showToast(data.message || t('all_users_have_assigned'), 'info');
+                            }
+                            // 刷新绑定列表
+                            const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                            if (row) {
+                                await loadTrainingBindings(trainingId, row);
+                            }
+                        } else {
+                            const errorMsg = (typeof safeT === 'function')
+                                ? safeT('reassign_failed')
+                                : '补分配失败';
+                            showToast(errorMsg + ': ' + (data.message || ''), 'error');
+                        }
+                    } catch (err) {
+                        console.error('补分配失败:', err);
+                        showToast(t('network_error_retry'), 'error');
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerHTML = originalText;
+                    }
+                };
+                btn.addEventListener('click', btn._clickHandler);
+            });
 
-                if (!trainingId) {
-                    console.error('无法获取培训ID');
-                    showToast(t('Unable_retrieve_training_information'), 'error');
-                    return;
-                }
+            // 解除绑定 - 优化版
+            rowElement.querySelectorAll('.unbind-btn').forEach(btn => {
+                btn.removeEventListener('click', btn._clickHandler);
+                btn._clickHandler = async (e) => {
+                    const bindingId = btn.dataset.bindingId;
+                    const examTitle = btn.dataset.examTitle;
+                    const trainingId = btn.dataset.trainingId;
 
-                if (confirm(t('confirm_unbind_exam', examTitle))) {
+                    if (!trainingId) {
+                        console.error('无法获取培训ID');
+                        if (typeof showToast === 'function') {
+                            showToast(t('Unable_retrieve_training_information'), 'error');
+                        }
+                        return;
+                    }
+
+                    // 确认对话框
+                    const confirmMsg = (typeof safeT === 'function') 
+                        ? safeT('confirm_unbind_exam', examTitle) 
+                        : `确定要解除考试「${examTitle}」的绑定吗？`;
+                    
+                    if (!confirm(confirmMsg)) return;
+
+                    // 显示加载状态
                     const originalText = btn.innerHTML;
                     btn.disabled = true;
                     btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
 
                     try {
-                        const res = await fetch(`/api/admin/training/binding/${bindingId}`, {
+                        // 添加时间戳防止缓存
+                        const res = await fetch(`/api/admin/training/binding/${bindingId}?_t=${Date.now()}`, {
                             method: 'DELETE',
                             headers: { 'Content-Type': 'application/json' }
                         });
                         const result = await res.json();
 
                         if (result.success) {
-                            showToast(t('unbind_success'), 'success');
+                            if (typeof showToast === 'function') {
+                                showToast(t('unbind_success'), 'success');
+                            }
 
-                            // 找到该行所在的 tr 并移除
+                            // 1. 从DOM中移除该行
                             const rowToRemove = btn.closest('tr');
                             if (rowToRemove) {
                                 rowToRemove.remove();
-                                
-                                // 更新绑定计数徽章
-                                const detailRow = rowToRemove.closest('#binding-detail-' + trainingId);
-                                if (detailRow) {
-                                    const badgeCount = detailRow.closest('tr')?.querySelector('.badge-count');
+                            }
+
+                            // 2. 检查是否还有剩余绑定
+                            const detailRow = document.getElementById(`binding-detail-${trainingId}`);
+                            const remainingRows = detailRow ? detailRow.querySelectorAll('.binding-table tbody tr') : [];
+
+                            if (remainingRows.length === 0) {
+                                // 没有绑定了：更新为无绑定状态
+                                const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                                if (row) {
+                                    const icon = row.querySelector('.expand-icon');
+                                    const badgeCount = row.querySelector('.badge-count');
+                                    
+                                    if (icon) {
+                                        icon.dataset.hasBindings = 'false';
+                                        icon.textContent = '➕';
+                                        icon.style.color = '#fd7e14';
+                                        icon.style.cursor = 'pointer';
+                                        icon.title = typeof safeT === 'function' ? safeT('click_add_binding_exam') : '点击添加绑定考试';
+                                        icon.classList.remove('expanded');
+                                    }
+                                    
                                     if (badgeCount) {
-                                        const currentCount = parseInt(badgeCount.textContent) || 0;
-                                        const newCount = Math.max(0, currentCount - 1);
-                                        badgeCount.textContent = newCount;
-                                        if (newCount === 0) {
-                                            badgeCount.style.display = 'none';
-                                        }
+                                        badgeCount.style.display = 'none';
+                                        badgeCount.textContent = '0';
                                     }
                                 }
-                                
-                                // 检查是否还有绑定记录
-                                const remainingRows = detailRow?.querySelectorAll('.binding-table tbody tr') || [];
-                                if (remainingRows.length === 0) {
-                                    // 没有绑定了，更新图标状态
-                                    const row = document.querySelector(`tr[data-id="${trainingId}"]`);
-                                    if (row) {
-                                        const icon = row.querySelector('.expand-icon');
-                                        if (icon) {
-                                            icon.dataset.hasBindings = 'false';
-                                            icon.textContent = '➕';
-                                            icon.style.color = '#fd7e14';
-                                            icon.title = safeT('click_add_binding_exam');
-                                            icon.classList.remove('expanded');
-                                        }
-                                    }
-                                    // 显示"暂无绑定考试"
-                                    if (detailRow) {
-                                        detailRow.innerHTML = `
-                                            <td colspan="8" class="p-0">
-                                                <div class="binding-content">
-                                                    <div class="text-muted text-center py-3">
-                                                        ${t('no_related_exam')}
-                                                        <button class="btn btn-sm btn-outline-primary ms-2 add-binding-btn" 
-                                                                data-training-id="${trainingId}">
-                                                            + ${t('binding_exam')}
-                                                        </button>
-                                                    </div>
+
+                                // 显示"暂无绑定考试"
+                                if (detailRow) {
+                                    detailRow.innerHTML = `
+                                        <td colspan="10" class="p-0">
+                                            <div class="binding-content">
+                                                <div class="text-muted text-center py-3">
+                                                    ${typeof t === 'function' ? t('no_related_exam') : '暂无绑定考试'}
+                                                    <button class="btn btn-sm btn-outline-primary ms-2 add-binding-btn" 
+                                                            data-training-id="${trainingId}">
+                                                        + ${typeof t === 'function' ? t('binding_exam') : '绑定考试'}
+                                                    </button>
                                                 </div>
-                                            </td>
-                                        `;
-                                        // 重新绑定添加按钮
-                                        detailRow.querySelector('.add-binding-btn')?.addEventListener('click', () => {
-                                            showAddExamModal(trainingId);
+                                            </div>
+                                        </td>
+                                    `;
+                                    // 重新绑定添加按钮
+                                    const addBtn = detailRow.querySelector('.add-binding-btn');
+                                    if (addBtn) {
+                                        addBtn.addEventListener('click', () => {
+                                            if (typeof showAddExamModal === 'function') {
+                                                showAddExamModal(trainingId);
+                                            }
                                         });
                                     }
                                 }
+                            } else {
+                                // 还有绑定：更新徽章数量
+                                const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                                if (row) {
+                                    const badgeCount = row.querySelector('.badge-count');
+                                    if (badgeCount) {
+                                        badgeCount.textContent = remainingRows.length;
+                                        badgeCount.style.display = 'inline';
+                                    }
+                                }
                             }
-                            
+
+                            // 3. 清除前端缓存
+                            if (typeof clearTrainingCache === 'function') {
+                                clearTrainingCache();
+                            }
+                            sessionStorage.removeItem(`training_bindings_${trainingId}`);
+
                         } else {
-                            showToast(result.message || t('unbind_failed'), 'error');
+                            if (typeof showToast === 'function') {
+                                showToast(result.message || t('unbind_failed'), 'error');
+                            } else {
+                                alert(result.message || t('unbind_failed'));
+                            }
                         }
                     } catch (err) {
                         console.error('解除失败:', err);
-                        showToast(t('network_error_retry'), 'error');
+                        if (typeof showToast === 'function') {
+                            showToast(t('network_error_retry'), 'error');
+                        } else {
+                            alert(t('network_error_retry'));
+                        }
                     } finally {
                         btn.disabled = false;
                         btn.innerHTML = originalText;
                     }
-                }
+                };
+                btn.addEventListener('click', btn._clickHandler);
             });
-        });
-        
-        // 添加考试按钮
-        rowElement.querySelectorAll('.add-binding-btn').forEach(btn => {
-            btn.addEventListener('click', () => showAddExamModal(trainingId));
-        });
-        
-        // 刷新按钮
-        rowElement.querySelectorAll('.refresh-bindings-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const row = document.querySelector(`tr[data-id="${trainingId}"]`);
-                if (row) {
-                    loadTrainingBindings(trainingId, row);
-                }
+            
+            // 添加考试按钮
+            rowElement.querySelectorAll('.add-binding-btn').forEach(btn => {
+                btn.removeEventListener('click', btn._clickHandler);
+                btn._clickHandler = () => showAddExamModal(trainingId);
+                btn.addEventListener('click', btn._clickHandler);
             });
-        });
+            
+            // 刷新按钮
+            rowElement.querySelectorAll('.refresh-bindings-btn').forEach(btn => {
+                btn.removeEventListener('click', btn._clickHandler);
+                btn._clickHandler = () => {
+                    const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                    if (row) {
+                        loadTrainingBindings(trainingId, row);
+                    }
+                };
+                btn.addEventListener('click', btn._clickHandler);
+            });
+        }
     }
 
     // 更新绑定配置
@@ -2432,11 +2489,237 @@
         }
     }
 
-    // 显示添加考试模态框（改造版）
+
+    /**
+    * 统一的绑定状态更新函数
+    */
+    async function updateBindingUI(trainingId, action, bindingData = null) {
+        console.log(`🔄 更新绑定UI: trainingId=${trainingId}, action=${action}`);
+        
+        const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+        if (!row) {
+            console.warn('未找到培训行:', trainingId);
+            return;
+        }
+        
+        const expandIcon = row.querySelector('.expand-icon');
+        const badgeCount = row.querySelector('.badge-count');
+        
+        if (!expandIcon) {
+            console.warn('未找到展开图标');
+            return;
+        }
+        
+        if (action === 'bind') {
+            // 绑定成功
+            expandIcon.dataset.hasBindings = 'true';
+            expandIcon.textContent = '▶';
+            expandIcon.style.color = '#0d6efd';
+            expandIcon.style.cursor = 'pointer';
+            expandIcon.title = typeof safeT === 'function' ? safeT('click_view_exam_bindings') : '点击查看绑定考试';
+            expandIcon.classList.remove('expanded');
+            
+            if (badgeCount) {
+                const currentCount = parseInt(badgeCount.textContent) || 0;
+                badgeCount.textContent = currentCount + 1;
+                badgeCount.style.display = 'inline';
+                badgeCount.style.background = '#198754';
+            }
+            
+            if (bindingData && bindingData.exam_id) {
+                await addBindingRowToTable(trainingId, bindingData);
+            } else {
+                const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                if (row) {
+                    await loadTrainingBindings(trainingId, row, expandIcon);
+                }
+            }
+            
+        } else if (action === 'unbind') {
+            // 解除绑定：检查是否还有剩余绑定
+            const detailRow = document.getElementById(`binding-detail-${trainingId}`);
+            if (detailRow) {
+                const remainingRows = detailRow.querySelectorAll('.binding-table tbody tr');
+                const newCount = remainingRows.length;
+                
+                if (newCount === 0) {
+                    // 没有绑定了
+                    expandIcon.dataset.hasBindings = 'false';
+                    expandIcon.textContent = '➕';
+                    expandIcon.style.color = '#fd7e14';
+                    expandIcon.style.cursor = 'pointer';
+                    expandIcon.title = typeof safeT === 'function' ? safeT('click_add_binding_exam') : '点击添加绑定考试';
+                    expandIcon.classList.remove('expanded');
+                    
+                    if (badgeCount) {
+                        badgeCount.style.display = 'none';
+                        badgeCount.textContent = '0';
+                    }
+                    
+                    detailRow.innerHTML = `
+                        <td colspan="10" class="p-0">
+                            <div class="binding-content">
+                                <div class="text-muted text-center py-3">
+                                    ${typeof t === 'function' ? t('no_related_exam') : '暂无绑定考试'}
+                                    <button class="btn btn-sm btn-outline-primary ms-2 add-binding-btn" 
+                                            data-training-id="${trainingId}">
+                                        + ${typeof t === 'function' ? t('binding_exam') : '绑定考试'}
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    `;
+                    const addBtn = detailRow.querySelector('.add-binding-btn');
+                    if (addBtn) {
+                        addBtn.addEventListener('click', () => {
+                            if (typeof showAddExamModal === 'function') {
+                                showAddExamModal(trainingId);
+                            }
+                        });
+                    }
+                } else {
+                    if (badgeCount) {
+                        badgeCount.textContent = newCount;
+                        badgeCount.style.display = 'inline';
+                    }
+                }
+            }
+            
+        } else if (action === 'refresh') {
+            // 强制刷新
+            await loadTrainingBindings(trainingId, row, expandIcon);
+        }
+    }
+
+
+    /**
+    * 添加绑定行到表格（不刷新页面）
+    */
+    async function addBindingRowToTable(trainingId, bindingData) {
+        const detailRow = document.getElementById(`binding-detail-${trainingId}`);
+        if (!detailRow) {
+            const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+            if (row) {
+                await loadTrainingBindings(trainingId, row);
+            }
+            return;
+        }
+        
+        const bindingContent = detailRow.querySelector('.binding-content');
+        let bindingTable = bindingContent?.querySelector('.binding-table tbody');
+        
+        if (!bindingTable) {
+            const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+            if (row) {
+                await loadTrainingBindings(trainingId, row);
+            }
+            return;
+        }
+        
+        const examId = bindingData.exam_id;
+        const examTitle = bindingData.exam_title || `考试${examId}`;
+        const passScore = bindingData.pass_score || 85;
+        const isAutoAssign = bindingData.is_auto_assign !== undefined ? bindingData.is_auto_assign : true;
+        const isRequired = bindingData.is_required !== undefined ? bindingData.is_required : true;
+        const bindingId = bindingData.binding_id;
+        
+        // 检查是否已存在
+        const existingRow = bindingTable.querySelector(`tr[data-exam-id="${examId}"]`);
+        if (existingRow) {
+            console.warn('考试已存在，跳过添加');
+            return;
+        }
+        
+        // 获取考试国家
+        let examCountries = '-';
+        try {
+            const res = await fetch(`/api/admin/exams/${examId}`);
+            const data = await res.json();
+            if (data.countries) {
+                examCountries = Array.isArray(data.countries) ? data.countries.join(', ') : data.countries;
+            }
+        } catch(e) {
+            console.warn('获取考试国家失败:', e);
+        }
+        
+        const newRowHtml = `
+            <tr data-exam-id="${examId}" data-binding-id="${bindingId}">
+                <td>${escapeHtml(examCountries)}</td>
+                <td><strong>${examId}</strong></td>
+                <td>
+                    <a href="/admin/exam/${examId}/scores?from=training" 
+                        class="exam-binding-link" 
+                        target="_blank"
+                        style="color: #0d6efd; text-decoration: none; font-weight: 600;">
+                        ${escapeHtml(examTitle)}
+                        <span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">↗</span>
+                    </a>
+                </td>
+                <td>${typeof safeT === 'function' ? safeT('t_on_going') : '-'}</td>
+                <td>0</td>
+                <td>
+                    <input type="number" class="form-control form-control-sm pass-score-input" 
+                        style="width: 70px;" value="${passScore}" 
+                        data-binding-id="${bindingId}" 
+                        data-field="pass_score" min="0" max="100">
+                </td>
+                <td>
+                    <input type="checkbox" class="form-check-input auto-assign-checkbox" 
+                        ${isAutoAssign ? 'checked' : ''} 
+                        data-binding-id="${bindingId}" 
+                        data-field="is_auto_assign">
+                </td>
+                <td>
+                    <input type="checkbox" class="form-check-input required-checkbox" 
+                        ${isRequired ? 'checked' : ''} 
+                        data-binding-id="${bindingId}" 
+                        data-field="is_required">
+                </td>
+                <td>
+                    <button class="btn btn-sm btn-outline-success reassign-btn me-1" 
+                            data-binding-id="${bindingId}" 
+                            data-training-id="${trainingId}"
+                            data-exam-title="${escapeHtml(examTitle)}"
+                            title="${typeof safeT === 'function' ? safeT('reassign_exam_to_checked_in_trainees') : '为已签到学员补分配此考试'}">
+                        <i class="bi bi-arrow-repeat"></i> ${typeof safeT === 'function' ? safeT('reassign') : '补分配'}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger unbind-btn" 
+                            data-binding-id="${bindingId}" 
+                            data-training-id="${trainingId}"
+                            data-exam-title="${escapeHtml(examTitle)}">
+                        ${typeof safeT === 'function' ? safeT('unbind') : '解除'}
+                    </button>
+                </td>
+            </tr>
+        `;
+        
+        bindingTable.insertAdjacentHTML('beforeend', newRowHtml);
+        
+        // 重新绑定事件
+        if (typeof attachBindingEvents === 'function') {
+            attachBindingEvents(trainingId, detailRow);
+        }
+        
+        // 更新徽章
+        const badgeCount = detailRow.closest('tr')?.querySelector('.badge-count');
+        if (badgeCount) {
+            const currentCount = parseInt(badgeCount.textContent) || 0;
+            badgeCount.textContent = currentCount + 1;
+            badgeCount.style.display = 'inline';
+            badgeCount.style.background = '#198754';
+        }
+    }
+
+
+    /**
+    * 重写 showAddExamModal - 绑定成功后更新UI
+    */
     async function showAddExamModal(trainingId) {
         console.log('showAddExamModal 被调用, trainingId:', trainingId);
+        
         // 获取可用的考试列表
-        const res = await fetch(`/api/admin/training/${trainingId}/bindings`);
+        const timestamp = Date.now();
+        const res = await fetch(`/api/admin/training/${trainingId}/bindings?_t=${timestamp}`);
         const data = await res.json();
         const availableExams = data.available_exams || [];
         
@@ -2444,7 +2727,7 @@
         const trainingRow = document.querySelector(`tr[data-id="${trainingId}"]`);
         const trainingName = trainingRow ? trainingRow.querySelector('.name-cell')?.innerText || trainingId : trainingId;
         
-        // 创建模态框，增加"新建考试"选项
+        // 创建模态框
         const modalId = 'addExamModal_' + Date.now();
         const modalHtml = `
             <div class="modal fade" id="${modalId}" tabindex="-1" data-bs-backdrop="static">
@@ -2494,8 +2777,6 @@
             </div>
         `;
 
-        const trainingIdNum = parseInt(trainingId);
-        console.log('使用的 trainingId:', trainingIdNum);
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         const modalElement = document.getElementById(modalId);
         const modal = new bootstrap.Modal(modalElement);
@@ -2506,25 +2787,10 @@
         // 监听选择变化
         selectExam.addEventListener('change', async (e) => {
             if (e.target.value === '__NEW__') {
-                // 关闭当前模态框
                 modal.hide();
-                
-                // 打开新窗口创建考试（传入培训ID和国家信息用于预填）
                 const trainingCountry = trainingRow?.querySelector('.country-cell')?.innerText || '';
                 const createUrl = `/admin/import?training_id=${trainingId}&country=${trainingCountry}&from_binding=true`;
                 window.open(createUrl, '_blank');
-                
-                // 监听窗口关闭后刷新绑定列表
-                const checkInterval = setInterval(() => {
-                    if (window.opener && window.opener.closed) {
-                        clearInterval(checkInterval);
-                        // 重新加载绑定列表
-                        const row = document.querySelector(`tr[data-id="${trainingId}"]`);
-                        if (row && typeof loadTrainingBindings === 'function') {
-                            loadTrainingBindings(trainingId, row);
-                        }
-                    }
-                }, 500);
             }
         });
         
@@ -2548,7 +2814,8 @@
             confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${t('binding')}`;
 
             try {
-                const res = await fetch('/api/admin/training/bind_exam', {
+                // 添加时间戳防止缓存
+                const res = await fetch(`/api/admin/training/bind_exam?_t=${Date.now()}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -2562,123 +2829,75 @@
                 const result = await res.json();
 
                 if (result.success) {
-                    showToast(t('bind_success'), 'success');
-                    modal.hide();
-
-                    // 获取当前绑定的详情行
-                    const detailRow = document.getElementById(`binding-detail-${trainingId}`);
-                    if (detailRow) {
-                        // 获取当前绑定列表容器
-                        const bindingContent = detailRow.querySelector('.binding-content');
-                        const bindingTable = bindingContent?.querySelector('.binding-table tbody');
-                        
-                        if (bindingTable) {
-                            // 从选择的下拉框获取考试信息
-                            const selectedOption = selectExam.options[selectExam.selectedIndex];
-                            const examCountries = selectedOption.text.match(/\(([^)]+)\)/)?.[1] || '-';
-                            
-                            // 构建新行 HTML
-                            const newRowHtml = `
-                                <tr>
-                                    <td>${escapeHtml(examCountries)}</td>
-                                    <td><strong>${escapeHtml(examId)}</strong></td>
-                                    <td>
-                                        <a href="/admin/exam/${examId}/scores?from=training" 
-                                        class="exam-binding-link" 
-                                        target="_blank"
-                                        onclick="sessionStorage.setItem('from_training_binding', 'true');"
-                                        style="color: #0d6efd; text-decoration: none; font-weight: 600;">
-                                            ${escapeHtml(examTitle)}
-                                            <span class="badge bg-secondary ms-1" style="font-size: 0.6rem;">↗</span>
-                                        </a>
-                                    </td>
-                                    <td>${t('t_on_going') || '-'}</td>
-                                    <td>0</td>
-                                    <td>
-                                        <input type="number" class="form-control form-control-sm pass-score-input" 
-                                            style="width: 70px;" value="${passScore}" 
-                                            data-binding-id="${result.binding_id}" 
-                                            data-field="pass_score" min="0" max="100">
-                                    </td>
-                                    <td>
-                                        <input type="checkbox" class="form-check-input auto-assign-checkbox" 
-                                            ${isAutoAssign ? 'checked' : ''} 
-                                            data-binding-id="${result.binding_id}" 
-                                            data-field="is_auto_assign">
-                                    </td>
-                                    <td>
-                                        <input type="checkbox" class="form-check-input required-checkbox" 
-                                            ${isRequired ? 'checked' : ''} 
-                                            data-binding-id="${result.binding_id}" 
-                                            data-field="is_required">
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline-success reassign-btn me-1" 
-                                                data-binding-id="${result.binding_id}" 
-                                                data-training-id="${trainingId}"
-                                                data-exam-title="${escapeHtml(examTitle)}"
-                                                title="为已签到学员补分配此考试">
-                                            <i class="bi bi-arrow-repeat"></i> ${safeT('reassign')}
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger unbind-btn" 
-                                                data-binding-id="${result.binding_id}" 
-                                                data-training-id="${trainingId}"
-                                                data-exam-title="${escapeHtml(examTitle)}">
-                                            ${safeT('unbind')}
-                                        </button>
-                                    </td>
-                                </tr>
-                            `;
-                            
-                            // 追加新行
-                            bindingTable.insertAdjacentHTML('beforeend', newRowHtml);
-                            
-                            // 更新绑定计数徽章
-                            const badgeCount = detailRow.closest('tr')?.querySelector('.badge-count');
-                            if (badgeCount) {
-                                const currentCount = parseInt(badgeCount.textContent) || 0;
-                                badgeCount.textContent = currentCount + 1;
-                                // 确保徽章可见
-                                badgeCount.style.display = 'inline';
-                            }
-                            
-                            // ✅ 更新展开图标状态（有绑定了）
-                            const row = document.querySelector(`tr[data-id="${trainingId}"]`);
-                            if (row) {
-                                const icon = row.querySelector('.expand-icon');
-                                if (icon) {
-                                    icon.dataset.hasBindings = 'true';
-                                    icon.textContent = '▶';
-                                    icon.style.color = '#0d6efd';
-                                    icon.style.cursor = 'pointer';
-                                    icon.title = safeT('click_view_exam_bindings');
-                                    icon.classList.remove('expanded');
-                                }
-                            }
-                            
-                            // ✅ 重新绑定新元素的事件
-                            attachBindingEvents(trainingId, detailRow);
-                        }
+                    // 清除浏览器端缓存的培训列表数据
+                    clearTrainingCache();
+                    // 清除绑定数据缓存
+                    sessionStorage.removeItem('training_bindings_data');
+                    sessionStorage.removeItem(`training_bindings_${trainingId}`);
+                    // 显示成功消息
+                    if (typeof showToast === 'function') {
+                        showToast(t('bind_success'), 'success');
                     }
                     
+                    // 关闭模态框
+                    modal.hide();
+                    
+                    // 关键：更新UI而不刷新页面
+                    await updateBindingUI(trainingId, 'bind', {
+                        exam_id: parseInt(examId),
+                        exam_title: examTitle.replace(/\([^)]*\)/, '').trim(),
+                        binding_id: result.binding_id,
+                        pass_score: parseInt(passScore),
+                        is_auto_assign: isAutoAssign,
+                        is_required: isRequired
+                    });
+                    
+                    // 延迟移除模态框DOM
                     setTimeout(() => modalElement.remove(), 300);
+
+                    // 清除培训缓存函数
+                    function clearTrainingCache() {
+                        sessionStorage.removeItem('training_list_data');
+                        sessionStorage.removeItem('training_list_data_time');
+                    }
                 } else {
-                    showToast(result.message || t('bind_failed'), 'error');
+                    // 检查是否是已绑定的错误
+                    if (result.message && result.message.includes('已绑定')) {
+                        if (typeof showToast === 'function') {
+                            showToast('该考试已绑定到此培训', 'warning');
+                        } else {
+                            alert('该考试已绑定到此培训');
+                        }
+                        
+                        // 即使提示已绑定，也刷新UI状态
+                        await updateBindingUI(trainingId, 'refresh');
+                    } else {
+                        if (typeof showToast === 'function') {
+                            showToast(result.message || t('bind_failed'), 'error');
+                        } else {
+                            alert(result.message || t('bind_failed'));
+                        }
+                    }
                 }
             } catch (err) {
                 console.error(t('bind_failed'), err);
-                showToast(t('network_error_retry'), 'error');
+                if (typeof showToast === 'function') {
+                    showToast(t('network_error_retry'), 'error');
+                } else {
+                    alert(t('network_error_retry'));
+                }
             } finally {
                 confirmBtn.disabled = false;
                 confirmBtn.innerHTML = originalText;
             }
         };
-    
+        
         // 模态框关闭时移除DOM
         modalElement.addEventListener('hidden.bs.modal', () => {
-            modalElement.remove();
+            setTimeout(() => modalElement.remove(), 300);
         });
     }
+
 
     // Toast 提示函数（如果不存在）
     if (typeof showToast !== 'function') {
