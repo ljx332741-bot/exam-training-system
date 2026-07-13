@@ -2847,7 +2847,19 @@ def bind_exam_to_training():
     if not exam_id:
         logger.error("❌ exam_id 缺失")
         return jsonify({"success": False, "message": "考试ID不能为空"}), 400
-    
+ 
+    # ========== 检查考试状态 ==========
+    exam_check = db.table("exams").select("status, title").eq("id", exam_id).maybe_single().execute()
+    if exam_check.data:
+        exam_status = exam_check.data.get('status', 'draft')
+        exam_title = exam_check.data.get('title', f'考试{exam_id}')
+        
+        if exam_status == 'draft':
+            logger.warning(f"⚠️ 尝试绑定草稿考试: {exam_id}")
+            # ✅ 允许绑定，但记录警告（或者可以选择阻止绑定）
+            # 这里选择允许绑定，但在补分配时阻止
+            pass
+            
     # ========== 权限验证 ==========
     # 检查当前用户是否有权限操作此培训
     training_check = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
@@ -3591,36 +3603,114 @@ def reassign_training_binding(training_id, binding_id):
     logger.info(f"📌 补分配考试: training_id={training_id}, binding_id={binding_id}")
     
     try:
-        # 1. 获取绑定信息
-        binding_res = db.table("training_exam_bindings").select("*").eq("id", binding_id).eq("training_id", training_id).is_("deleted_at", "null").execute()
+        # ========== 1. 参数验证 ==========
+        if not training_id or not binding_id:
+            logger.error("❌ 参数缺失")
+            return jsonify({
+                "success": False, 
+                "message": "培训ID和绑定ID不能为空"
+            }), 400
+        
+        # ========== 2. 权限验证 ==========
+        training_check = db.table("trainings").select("country, name").eq("id", training_id).maybe_single().execute()
+        if not training_check.data:
+            logger.error(f"❌ 培训不存在: training_id={training_id}")
+            return jsonify({"success": False, "message": "培训不存在"}), 404
+        
+        allowed_countries = get_admin_allowed_countries()
+        training_country = training_check.data.get('country')
+        if allowed_countries is not None and training_country and training_country not in allowed_countries:
+            logger.warning(f"⚠️ 用户无权操作培训 {training_id}")
+            return jsonify({"success": False, "message": "无权操作此培训"}), 403
+        
+        # ========== 3. 获取绑定信息 ==========
+        binding_res = db.table("training_exam_bindings").select("*")\
+            .eq("id", binding_id)\
+            .eq("training_id", training_id)\
+            .is_("deleted_at", "null")\
+            .maybe_single()\
+            .execute()
+        
         if not binding_res.data:
+            logger.error(f"❌ 绑定关系不存在: binding_id={binding_id}")
             return jsonify({"success": False, "message": "绑定关系不存在"}), 404
         
-        binding = binding_res.data[0]
+        binding = binding_res.data
         exam_id = binding.get('exam_id')
         is_auto_assign = binding.get('is_auto_assign', True)
         
+        # ========== 4. 检查自动分配开关 ==========
         if not is_auto_assign:
+            logger.info(f"⚠️ 考试未启用自动分配: exam_id={exam_id}")
             return jsonify({
                 "success": False, 
                 "message": "该考试未启用自动分配，无需补分配"
             }), 400
         
-        # 2. 获取该培训下所有已签到的学员（排除离职人员）
-        signed_res = db.table("training_attendances").select("user_id").eq("training_id", training_id).execute()
+        # ========== 5. 核心新增：检查考试状态 ==========
+        exam_res = db.table("exams").select("title, status, start_time, end_time, countries")\
+            .eq("id", exam_id)\
+            .maybe_single()\
+            .execute()
+        
+        if not exam_res.data:
+            logger.error(f"❌ 考试不存在: exam_id={exam_id}")
+            return jsonify({
+                "success": False, 
+                "message": f"考试 (ID: {exam_id}) 不存在"
+            }), 404
+        
+        exam = exam_res.data
+        exam_title = exam.get('title', f'考试{exam_id}')
+        exam_status = exam.get('status', 'draft')
+        
+        # 检查考试状态 - 只有非草稿状态才允许补分配
+        if exam_status == 'draft':
+            logger.warning(f"⚠️ 考试 {exam_id} 是草稿状态，不允许补分配")
+            return jsonify({
+                "success": False,
+                "message": f"考试「{exam_title}」当前为草稿状态，请先发布考试后再进行补分配",
+                "exam_status": "draft",
+                "exam_id": exam_id,
+                "exam_title": exam_title
+            }), 400
+        
+        # 检查考试是否已结束（可选，但建议允许补分配已结束的考试）
+        # 如果考试已结束，可以允许补分配，但给出提示
+        now_dt = datetime.now(timezone.utc)
+        end_time = exam.get('end_time')
+        is_closed = False
+        if end_time:
+            try:
+                end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                if now_dt > end_dt:
+                    is_closed = True
+            except:
+                pass
+        
+        # ========== 6. 获取已签到学员 ==========
+        signed_res = db.table("training_attendances").select("user_id")\
+            .eq("training_id", training_id)\
+            .is_("deleted_at", "null")\
+            .execute()
         signed_user_ids = [u['user_id'] for u in (signed_res.data or [])]
         
         if not signed_user_ids:
+            logger.info(f"ℹ️ 该培训暂无已签到学员: training_id={training_id}")
             return jsonify({
-                "success": False,
-                "message": "该培训暂无已签到学员"
-            }), 400
-
-        # ========== ✅ 获取完整的用户信息并过滤 ==========
-        users_res = db.table("users").select("id, name_en, role, country").in_("id", signed_user_ids).execute()
+                "success": True,
+                "message": "该培训暂无已签到学员",
+                "assigned_count": 0
+            })
+        
+        # ========== 7. 获取完整的用户信息并过滤 ==========
+        users_res = db.table("users").select("id, name_en, role, country, is_resign")\
+            .in_("id", signed_user_ids)\
+            .eq("is_resign", False)\
+            .eq("user_status", "registered")\
+            .execute()
         users = users_res.data or []
         
-        # ✅ 使用权限过滤
         filtered_users = filter_users_by_permission(
             users,
             allowed_countries=get_admin_allowed_countries(),
@@ -3628,47 +3718,120 @@ def reassign_training_binding(training_id, binding_id):
         )
         
         filtered_user_ids = [u['id'] for u in filtered_users]
-        logger.info(f"补分配：原始 {len(signed_user_ids)} 人，权限过滤后 {len(filtered_user_ids)} 人")
+        logger.info(f"✅ 补分配：原始 {len(signed_user_ids)} 人，权限过滤后 {len(filtered_user_ids)} 人")
         
-        # 3. 过滤掉已分配该考试的学员
-        assigned_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).in_("user_id", filtered_user_ids).is_("deleted_at", "null").execute()
+        if not filtered_user_ids:
+            return jsonify({
+                "success": True,
+                "message": "没有符合权限条件的已签到学员",
+                "assigned_count": 0
+            })
+        
+        # ========== 8. 过滤掉已分配的学员 ==========
+        assigned_res = db.table("exam_assignments").select("user_id")\
+            .eq("exam_id", exam_id)\
+            .in_("user_id", filtered_user_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
         assigned_set = {a['user_id'] for a in (assigned_res.data or [])}
         
         to_assign = [uid for uid in filtered_user_ids if uid not in assigned_set]
+        logger.info(f"📊 需要补分配: {len(to_assign)} 人 (已分配: {len(assigned_set)} 人)")
         
         if not to_assign:
             return jsonify({
                 "success": True,
                 "message": "所有已签到学员已分配该考试",
-                "assigned_count": 0
+                "assigned_count": 0,
+                "total_signed": len(filtered_user_ids)
             })
         
-        # 4. 构建插入数据（使用正确的字段名）
-        assignments = [{
-            "exam_id": exam_id, 
-            "user_id": uid,
-            "created_by": current_user_id,  # ✅ 现在有这个字段了
-            "assigned_at": now              # ✅ 使用现有的 assigned_at
-        } for uid in to_assign]
+        # ========== 9. 批量插入考试分配 ==========
+        BATCH_SIZE = 50
+        inserted_count = 0
+        total_batches = (len(to_assign) + BATCH_SIZE - 1) // BATCH_SIZE
         
-        # 5. 批量插入考试分配
-        result = db.table("exam_assignments").insert(assignments).execute()
+        for i in range(0, len(to_assign), BATCH_SIZE):
+            batch = to_assign[i:i + BATCH_SIZE]
+            assignments = [{
+                "exam_id": exam_id, 
+                "user_id": uid,
+                "created_by": current_user_id,
+                "assigned_at": now
+            } for uid in batch]
+            
+            try:
+                result = db.table("exam_assignments").insert(assignments).execute()
+                inserted_count += len(result.data or [])
+                logger.info(f"✅ 批次 {i//BATCH_SIZE + 1}/{total_batches} 插入成功")
+            except Exception as batch_error:
+                logger.warning(f"⚠️ 批次插入失败，尝试逐条: {batch_error}")
+                for item in assignments:
+                    try:
+                        check_res = db.table("exam_assignments").select("id")\
+                            .eq("exam_id", item["exam_id"])\
+                            .eq("user_id", item["user_id"])\
+                            .is_("deleted_at", "null")\
+                            .maybe_single()\
+                            .execute()
+                        if not check_res.data:
+                            db.table("exam_assignments").insert(item).execute()
+                            inserted_count += 1
+                    except Exception as single_error:
+                        if '23505' in str(single_error) or 'duplicate' in str(single_error).lower():
+                            logger.warning(f"⚠️ 用户 {item['user_id']} 已有分配记录，跳过")
+                            continue
+                        logger.error(f"❌ 逐条插入失败: {single_error}")
         
-        inserted_count = len(result.data or [])
         logger.info(f"✅ 补分配成功: {inserted_count} 名学员")
+        
+        # ========== 10. 清除缓存 ==========
+        clear_training_related_cache(training_id)
+        clear_all_assignment_caches(training_id=training_id, exam_id=exam_id)
+        
+        # ========== 11. 构建响应消息 ==========
+        status_msg = ""
+        if is_closed:
+            status_msg = "（注意：该考试已结束）"
         
         return jsonify({
             "success": True,
-            "message": f"补分配成功，共 {inserted_count} 名学员",
-            "assigned_count": inserted_count
+            "message": f"补分配成功，共 {inserted_count} 名学员{status_msg}",
+            "assigned_count": inserted_count,
+            "requested_count": len(to_assign),
+            "total_signed": len(filtered_user_ids),
+            "exam_status": exam_status,
+            "is_closed": is_closed
         })
         
     except Exception as e:
-        logger.error(f"补分配失败: {e}", exc_info=True)
+        logger.error(f"❌ 补分配失败: {e}", exc_info=True)
         return jsonify({
             "success": False,
-            "message": "补分配失败: " + str(e)
+            "message": f"补分配失败: {str(e)}"
         }), 500
+
+@admin_training_bp.route('/api/admin/exams/status', methods=['GET'])
+@login_required
+@admin_required
+def get_exam_status_for_reassign():
+    """获取考试状态（用于补分配前的检查）"""
+    exam_id = request.args.get('exam_id')
+    if not exam_id:
+        return jsonify({"error": "缺少 exam_id 参数"}), 400
+    
+    db = get_supabase()
+    try:
+        exam_res = db.table("exams").select("status, title").eq("id", int(exam_id)).maybe_single().execute()
+        if not exam_res.data:
+            return jsonify({"error": "考试不存在"}), 404
+        
+        return jsonify({
+            "status": exam_res.data.get('status', 'draft'),
+            "title": exam_res.data.get('title', '')
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @admin_training_bp.route('/api/admin/training/assign', methods=['POST'])
 @login_required

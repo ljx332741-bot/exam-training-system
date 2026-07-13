@@ -527,10 +527,63 @@
             });
         }
 
-        function safeT(key, fallback = '') {
-            if (window.i18n && typeof window.i18n.t === 'function') {
-                return window.i18n.t(key) || fallback || key;
+        /**
+         * 安全翻译函数（支持参数替换，兼容旧代码）
+         * 用法：
+         *   safeT('key')                    -> 简单翻译
+         *   safeT('key', 'value')           -> 替换 {0} 为 'value'
+         *   safeT('key', 'v1', 'v2')        -> 替换 {0}, {1}
+         *   safeT('key', { 0: 'v1' })       -> 对象参数
+         *   safeT('key', 'value', '备用')   -> 带备用文本
+         */
+        function safeT(key, ...args) {
+            // 检查是否有备用文本（最后一个参数是字符串且不是 {0} 格式）
+            let fallback = '';
+            let translateArgs = args;
+            
+            if (args.length > 0) {
+                const lastArg = args[args.length - 1];
+                // 如果最后一个参数是普通字符串（不是对象，也不是 {0} 格式），作为 fallback
+                if (typeof lastArg === 'string' && 
+                    !lastArg.includes('{') && 
+                    !lastArg.includes('}') && 
+                    args.length > 1) {
+                    fallback = lastArg;
+                    translateArgs = args.slice(0, -1);
+                }
             }
+            
+            // 优先使用 t 函数
+            if (typeof t === 'function') {
+                try {
+                    const result = translateArgs.length > 0 ? t(key, ...translateArgs) : t(key);
+                    return result || fallback || key;
+                } catch (e) {
+                    // 降级处理
+                }
+            }
+            
+            // 降级：直接使用 i18n
+            if (window.i18n && typeof window.i18n.t === 'function') {
+                let result = window.i18n.t(key) || key;
+                // 手动替换参数
+                if (translateArgs.length > 0) {
+                    const firstArg = translateArgs[0];
+                    if (typeof firstArg === 'object' && !Array.isArray(firstArg)) {
+                        Object.keys(firstArg).forEach(k => {
+                            result = result.replace(new RegExp(`\\{${k}\\}`, 'g'), firstArg[k]);
+                        });
+                    } else {
+                        translateArgs.forEach((arg, index) => {
+                            if (arg !== undefined && arg !== null) {
+                                result = result.replace(new RegExp(`\\{${index}\\}`, 'g'), String(arg));
+                            }
+                        });
+                    }
+                }
+                return result || fallback || key;
+            }
+            
             return fallback || key;
         }
 
