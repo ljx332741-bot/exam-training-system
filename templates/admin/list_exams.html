@@ -1028,19 +1028,39 @@
         }
         
         tbody.innerHTML = users.map((u, idx) => {
-            const statusBadge = u.is_assigned 
-                ? `<span class="badge bg-warning text-dark">${t('assigned')}</span>`
-                : `<span class="badge bg-success">${t('eligible')}</span>`;
+            // 显示更详细的状态标签
+            let statusBadge = '';
+            if (u.is_assigned) {
+                statusBadge = `<span class="badge bg-warning text-dark">${t('assigned')}</span>`;
+            }
+            
+            // 如果有分数信息，显示分数状态
+            let scoreInfo = '';
+            if (u.score !== undefined && u.score !== null) {
+                const passScore = u.pass_score || 85;
+                const isPassed = u.score >= passScore;
+                scoreInfo = `<span class="badge ${isPassed ? 'bg-success' : 'bg-danger'} ms-1">${u.score}</span>`;
+            }
+            
+            // 状态标签
+            let statusLabel = '';
+            if (u.is_completed && u.score !== undefined && u.score !== null && u.score >= (u.pass_score || 85)) {
+                statusLabel = `<span class="badge bg-success">${t('passed')}</span>`;
+            } else if (u.is_completed) {
+                statusLabel = `<span class="badge bg-danger">${t('failed')}</span>`;
+            } else {
+                statusLabel = `<span class="badge bg-success">${t('eligible')}</span>`;
+            }
             
             return `
                 <tr>
                     <td><input type="checkbox" class="reopen-user-checkbox" data-user-id="${u.id}"></td>
                     <td>${(reopenCurrentPage-1)*20 + idx + 1}</td>
-                    <td>${escapeHtml(u.name)}</td>
+                    <td>${escapeHtml(u.name)} ${scoreInfo}</td>
                     <td>${escapeHtml(u.email)}</td>
                     <td>${escapeHtml(u.country)}</td>
                     <td>${escapeHtml(u.wh_id || '-')}</td>
-                    <td>${statusBadge}</td>
+                    <td>${statusLabel} ${statusBadge}</td>
                 </tr>
             `;
         }).join('');
