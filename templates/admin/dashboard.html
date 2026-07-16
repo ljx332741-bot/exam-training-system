@@ -642,6 +642,12 @@
                         <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
                     </a>
                 </li>
+                <!-- 在更多信息下拉菜单中添加 -->
+                <li>
+                    <a class="dropdown-item" href="{{ url_for('admin_cms.admin_cms_page') }}" target="_blank">
+                        <i class="bi bi-file-text me-2"></i> <span data-i18n="cms_management">首页宣贯内容管理</span>
+                    </a>
+                </li>
                 <!-- 培训完成度报表 -->
                 <li>
                     <a class="dropdown-item" href="{{ url_for('admin_training.completion_report_page') }}" target="_blank">

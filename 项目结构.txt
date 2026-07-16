@@ -1,115 +1,117 @@
 exam-system/
-├── launcher.py                             # 桌面启动器
-├── app.py                                  # 主入口
-├── config.py                               # 环境变量 & 配置
-├── requirements.txt                        # 依赖清单
-├── Procfile                                # Render 启动配置
-├── .env                                    # 重要依赖
-├── reviewer.txt                            # 阅卷人
-├── reviewers.json                          # 阅卷人static
+├── launcher.py                                 # 桌面启动器
+├── app.py                                      # 主入口
+├── config.py                                   # 环境变量 & 配置
+├── requirements.txt                            # 依赖清单
+├── Procfile                                    # Render 启动配置
+├── .env                                        # 重要依赖
+├── reviewer.txt                                # 阅卷人
+├── reviewers.json                              # 阅卷人static
 ├── static/
 │   ├── i18n/ 
-│   │   ├── en.json                         # 词典英文
-│   │   ├── zh.json                         # 词典中文
-│   │   └── i18n.js                         # 翻译文件
+│   │   ├── en.json                             # 词典英文
+│   │   ├── zh.json                             # 词典中文
+│   │   └── i18n.js                             # 翻译文件
 │   │
 │   ├── js/
-│   │   ├── help.js                         # 前端交互
-│   │   ├── privacy.js                      # 前端交互
-│   │   ├── training_photos.js              # 前端交互逻辑
-│   │   └── timezone.js                     # 前端时区检测增强
+│   │   ├── help.js                             # 前端交互
+│   │   ├── privacy.js                          # 前端交互
+│   │   ├── training_photos.js                  # 前端交互逻辑
+│   │   └── timezone.js                         # 前端时区检测增强
 │   │
 │   ├── css/                          
-│   │   ├── list_trainings.js               # 培训管理页面样式
-│   │   ├── list_users.js                   # 用户管理页面样式
-│   │   ├── exam_dashboard.js               # 学员端仪表盘样式
-│   │   └── training_photos.css             # 照片墙样式
+│   │   ├── list_trainings.js                   # 培训管理页面样式
+│   │   ├── list_users.js                       # 用户管理页面样式
+│   │   ├── exam_dashboard.js                   # 学员端仪表盘样式
+│   │   └── training_photos.css                 # 照片墙样式
 │   │
 │   └── images/
 │
 ├── utils/
-│   ├── email_notifier.py                   # 邮件通知工具函数
-│   ├── permissions.py                      # 权限工具函数
-│   ├── timezone_utils.py                   # 统一的时区处理工具函数
-│   ├── i18n_messages.py                    # 统一的国际化消息模板
-│   ├── manage_messages.py                   # 统一的消息工具函数
-│   ├── common.py                           # 国家和季度处理逻辑的工具函数
-│   ├── cache_manager.py                    # 稳定、兼容、高性能的缓存优化工具函数
-│   ├── employment_history.py               # 完整的离复职历史记录工具管理函数
-│   ├── logger.py                           # 完整的日志管理方案
-│   ├── training_helpers.py                 # 培训信息获取的工具函数
-│   ├── import_helper.py                    # 用户和库房导入的工具函数
-│   └── status.py                           # 后端统一考试状态计算函数
+│   ├── email_notifier.py                       # 邮件通知工具函数
+│   ├── permissions.py                          # 权限工具函数
+│   ├── timezone_utils.py                       # 统一的时区处理工具函数
+│   ├── i18n_messages.py                        # 统一的国际化消息模板
+│   ├── manage_messages.py                      # 统一的消息工具函数
+│   ├── common.py                               # 国家和季度处理逻辑的工具函数
+│   ├── cache_manager.py                        # 稳定、兼容、高性能的缓存优化工具函数
+│   ├── employment_history.py                   # 完整的离复职历史记录工具管理函数
+│   ├── logger.py                               # 完整的日志管理方案
+│   ├── training_helpers.py                     # 培训信息获取的工具函数
+│   ├── import_helper.py                        # 用户和库房导入的工具函数
+│   └── status.py                               # 后端统一考试状态计算函数
 │
 ├── services/
-│   ├── __init__.py                         # 空文件，仅用于导入
-│   ├── privacy.py                          # 隐私声明服务层
-│   ├── auth.py                             # 邮箱验证码/密码哈希
-│   ├── db.py                               # get_supabase
-│   ├── exam.py                             # Word解析/自动判分/答题逻辑
-│   ├── cloudflare_r2.py                    # 创建 R2 cloudflare服务模块
-│   ├── scheduler.py                        # 定时任务
-│   └── export.py                           # PDF导出/Excel双Sheet动态导出
+│   ├── __init__.py                             # 空文件，仅用于导入
+│   ├── privacy.py                              # 隐私声明服务层
+│   ├── auth.py                                 # 邮箱验证码/密码哈希
+│   ├── db.py                                   # get_supabase
+│   ├── exam.py                                 # Word解析/自动判分/答题逻辑
+│   ├── cloudflare_r2.py                        # 创建 R2 cloudflare服务模块
+│   ├── scheduler.py                            # 定时任务
+│   └── export.py                               # PDF导出/Excel双Sheet动态导出
 │
 ├── templates/
-│   ├── base.html                           # 基础布局
-│   ├── index.html                          # 首页布局
+│   ├── base.html                               # 基础布局
+│   ├── index.html                              # 首页布局
 │   ├── auth/     
-│   │   ├── login.html                      # 登陆界面(旧)
-│   │   ├── login_standalone.html           # 登陆界面(新)
-│   │   ├── profile.html                    # 个人资料
-│   │   ├── register.html                   # 注册界面(旧)
-│   │   └── register_standalone.html        # 注册界面(新)
+│   │   ├── login.html                          # 登陆界面(旧)
+│   │   ├── login_standalone.html               # 登陆界面(新)
+│   │   ├── profile.html                        # 个人资料
+│   │   ├── register.html                       # 注册界面(旧)
+│   │   └── register_standalone.html            # 注册界面(新)
 │   │
 │   ├── components/               
-│   │   ├── help_modal.html                 # 隐私声明弹窗组件
-│   │   ├── privacy_modal.html              # 隐私声明弹窗组件
-│   │   └── delete_modal.html               # 全局删除模态框组件
+│   │   ├── help_modal.html                     # 隐私声明弹窗组件
+│   │   ├── privacy_modal.html                  # 隐私声明弹窗组件
+│   │   └── delete_modal.html                   # 全局删除模态框组件
 │   │
 │   ├── exam/
-│   │   ├── take.html                       # 考试界面utils
-│   │   ├── take_interview.html             # 访谈界面utils
-│   │   ├── result_detail.html              # 学员端考试结果详情查看
-│   │   ├── training_photos.html            # 学员端照片上传/查看页面
-│   │   └── dashboard.html                  # 学员面板
+│   │   ├── take.html                           # 考试界面utils
+│   │   ├── take_interview.html                 # 访谈界面utils
+│   │   ├── result_detail.html                  # 学员端考试结果详情查看
+│   │   ├── training_photos.html                # 学员端照片上传/查看页面
+│   │   └── dashboard.html                      # 学员面板
 │   │
 │   └── admin/
-│        ├── privacy_management.html        # 管理员：声明管理页面
-│        ├── import.html                    # Word导入界面
-│        ├── import_preview.html            # Word导入，拷贝，编辑预览
-│        ├── resigned_users.html            # 离职人员管理
-│        ├── result_detail.html             # 考试试题答题详情
-│        ├── list_users.html                # 用户注册统计卡片详情页
-│        ├── import.html                    # Word导入界面
-│        ├── list_exams.html                # 考试统计卡片一级菜单
-│        ├── list_exams_scores.html         # 考试统计卡片二级菜单
-│        ├── import_preview.html            # Word导入，拷贝，编辑预览
-│        ├── list_trainings.html            # 培训签到管理
-│        ├── list_training_attendance.html  # 培训签到详情页
-│        ├── attendance_pdf.html            # 培训签到详情专用PDF导出
-│        ├── list_inspection.html           # 访谈结果统计与管理一级菜单
-│        ├── list_inspection_details.html   # 访谈结果答题详情二级菜单
-│        ├── candidate_exam_status.html     # 考生考试状态查询独立页面
-│        ├── wh_info.html                   # 库房信息管理页面
-│        ├── admin_training_photos.html     # 管理员照片管理页面
-│        └── dashboard.html                 # 管理员面板
+│        ├── privacy_management.html            # 管理员：声明管理页面
+│        ├── import.html                        # Word导入界面
+│        ├── import_preview.html                # Word导入，拷贝，编辑预览
+│        ├── resigned_users.html                # 离职人员管理
+│        ├── result_detail.html                 # 考试试题答题详情
+│        ├── list_users.html                    # 用户注册统计卡片详情页
+│        ├── list_exams.html                    # 考试统计卡片一级菜单
+│        ├── list_exams_scores.html             # 考试统计卡片二级菜单
+│        ├── list_trainings.html                # 培训签到管理
+│        ├── list_training_status_view.html     # 培训签到状态查看页
+│        ├── list_training_attendance.html      # 培训签到详情页
+│        ├── attendance_pdf.html                # 培训签到详情专用PDF导出
+│        ├── list_inspection.html               # 访谈结果统计与管理一级菜单
+│        ├── list_inspection_details.html       # 访谈结果答题详情二级菜单
+│        ├── candidate_exam_status.html         # 考生考试状态查询独立页面
+│        ├── wh_info.html                       # 库房信息管理页面
+│        ├── admin_training_photos.html         # 管理员照片管理页面
+│        ├── cms_management.html                # 首页卡片管理页面
+│        ├── training_completion_report.html    # 首页卡片管理页面
+│        └── dashboard.html                     # 管理员面板
 │   
 ├── routes/
-│   ├── __init__.py                         # 蓝图注册中心
-│   ├── admin_privacy.py                    # 管理员：声明管理
-│   ├── api_privacy.py                      # 用户端：声明确认 API
-│   ├── helpers.py                          # 公共辅助函数 & 装饰器
-│   ├── api_auth.py                         # 认证模块
-│   ├── api_exam.py                         # 学员考试模块admin_training_photos.py
-│   ├── api_training.py                     # 学员培训模块
-│   ├── admin_training_photos.py            # 照片管理 API（管理员端 + 学员端）
-│   ├── admin_message.py                    # 消息 API 路由
-│   ├── admin_stats.py                      # 统计专用函数
-│   ├── admin_wh.py                         # 库房管理API模块
-│   ├── admin_exam.py                       # 管理员：考试 & 仪表盘
-│   ├── admin_user.py                       # 管理员：用户管理
-│   ├── admin_training.py                   # 管理员：培训管理
-│   ├── admin_inspection.py                 # 管理员：访谈管理
-│   └── admin_export.py                     # 管理员：导出模块
+│   ├── __init__.py                             # 蓝图注册中心
+│   ├── api_privacy.py                          # 用户端：声明确认 API
+│   ├── api_auth.py                             # 认证模块
+│   ├── api_exam.py                             # 学员考试模块admin_training_photos.py
+│   ├── api_training.py                         # 学员培训模块
+│   ├── admin_privacy.py                        # 管理员：声明管理
+│   ├── admin_training_photos.py                # 照片管理 API（管理员端 + 学员端）
+│   ├── admin_cms.py                            # 库房管理API模块
+│   ├── admin_message.py                        # 消息 API 路由
+│   ├── admin_stats.py                          # 统计专用函数
+│   ├── admin_wh.py                             # 库房管理API模块
+│   ├── admin_exam.py                           # 管理员：考试 & 仪表盘
+│   ├── admin_user.py                           # 管理员：用户管理
+│   ├── admin_training.py                       # 管理员：培训管理
+│   ├── admin_inspection.py                     # 管理员：访谈管理
+│   ├── admin_export.py                         # 管理员：导出模块
+│   └── helpers.py                              # 公共辅助函数 & 装饰器
 │   
 

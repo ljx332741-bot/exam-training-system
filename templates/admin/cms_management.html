@@ -1,0 +1,394 @@
+<!-- templates/admin/cms_management.html -->
+{% extends "base.html" %}
+{% block title %}首页宣贯内容管理{% endblock %}
+
+{% block extra_css %}
+<style>
+    .cms-editor-area {
+        min-height: 300px;
+    }
+    .cms-preview-area {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        min-height: 200px;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .cms-preview-area .cms-content {
+        font-size: 0.9rem;
+        line-height: 1.8;
+    }
+    .cms-preview-area .cms-content h1 { font-size: 1.4rem; color: #0d6efd; }
+    .cms-preview-area .cms-content h2 { font-size: 1.2rem; color: #0d6efd; border-bottom: 2px solid #e9ecef; padding-bottom: 0.5rem; }
+    .cms-preview-area .cms-content h3 { font-size: 1rem; color: #343a40; }
+    .cms-preview-area .cms-content ul, .cms-preview-area .cms-content ol { padding-left: 1.5rem; }
+    .cms-preview-area .cms-content .highlight-box {
+        background: #f8f9fa;
+        border-left: 4px solid #0d6efd;
+        padding: 12px 20px;
+        border-radius: 4px;
+        margin: 12px 0;
+    }
+    .cms-preview-area .cms-content .highlight-box.warning {
+        border-left-color: #ffc107;
+        background: #fff8e1;
+    }
+    .cms-preview-area .cms-content .highlight-box.danger {
+        border-left-color: #dc3545;
+        background: #fce4ec;
+    }
+    .cms-preview-area .cms-content .highlight-box.success {
+        border-left-color: #198754;
+        background: #e8f5e9;
+    }
+    .cms-preview-area .cms-content strong { color: #0d6efd; }
+    
+    .page-tab {
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    .page-tab:hover {
+        background: #e9ecef;
+    }
+    .page-tab.active {
+        background: #0d6efd;
+        color: #fff;
+        border-color: #0d6efd;
+    }
+    .page-tab.active .text-muted {
+        color: rgba(255,255,255,0.7) !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-file-text me-2"></i><span data-i18n="cms_management">首页宣贯内容管理</span></h2>
+        <div>
+            <button class="btn btn-secondary" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- 页面选择标签 -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex flex-wrap gap-2">
+                <div class="page-tab btn btn-outline-primary active" data-page="info_security" onclick="switchPage('info_security')">
+                    <i class="bi bi-shield-lock me-1"></i><span data-i18n="slogan2">信息安全制度</span>
+                </div>
+                <div class="page-tab btn btn-outline-primary" data-page="compliance_manual" onclick="switchPage('compliance_manual')">
+                    <i class="bi bi-journal-bookmark-fill me-1"></i><span data-i18n="slogan3">合规内控手册</span>
+                </div>
+                <div class="page-tab btn btn-outline-primary" data-page="culture_wall" onclick="switchPage('culture_wall')">
+                    <i class="bi bi-building me-1"></i><span data-i18n="slogan4">库房文化墙</span>
+                </div>
+            </div>
+            <div class="mt-2 small text-muted">
+                <i class="bi bi-info-circle me-1"></i>
+                <span data-i18n="cms_edit_hint">点击标签切换编辑页面。支持 Markdown 语法：**加粗**、*斜体*、- 列表、1. 有序列表、> 引用</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- 编辑表单 -->
+    <div class="row g-4">
+        <!-- 左侧：编辑区域 -->
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-pencil me-2"></i><span data-i18n="editor">编辑器</span></span>
+                    <span class="badge bg-secondary" id="pageVersion">版本: 1.0</span>
+                </div>
+                <div class="card-body">
+                    <form id="cmsForm">
+                        <input type="hidden" id="editPageKey" value="info_security">
+                        
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">标题 (中文) <span class="text-danger">*</span></label>
+                                <input type="text" id="editTitleZh" class="form-control" placeholder="请输入中文标题">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Title (English) <span class="text-danger">*</span></label>
+                                <input type="text" id="editTitleEn" class="form-control" placeholder="Enter English title">
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">内容 (中文) <span class="text-danger">*</span></label>
+                                <textarea id="editContentZh" class="form-control cms-editor-area" rows="18" placeholder="请输入中文内容，支持 Markdown 语法"></textarea>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Content (English) <span class="text-danger">*</span></label>
+                                <textarea id="editContentEn" class="form-control cms-editor-area" rows="18" placeholder="Enter English content, supports Markdown"></textarea>
+                            </div>
+                        </div>
+
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold"><span data-i18n="version">版本</span></label>
+                                <input type="text" id="editVersion" class="form-control" placeholder="1.0">
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label fw-bold"><span data-i18n="status">状态</span></label>
+                                <select id="editIsActive" class="form-select">
+                                    <option value="true" data-i18n="active">启用</option>
+                                    <option value="false" data-i18n="inactive">停用</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button type="button" class="btn btn-success w-100" id="saveCMSBtn">
+                                    <i class="bi bi-save me-1"></i> <span data-i18n="save">保存</span>
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧：预览区域 -->
+        <div class="col-lg-5">
+            <div class="card">
+                <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-eye me-2"></i><span data-i18n="preview">预览</span></span>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="previewCMS('zh')">中文</button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="previewCMS('en')">English</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="cms-preview-area" id="cmsPreview">
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-eye-slash fs-2 d-block mb-2"></i>
+                            <span data-i18n="preview_hint">点击「预览」查看效果</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 快捷操作提示 -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="fw-bold"><i class="bi bi-lightbulb me-1"></i> Markdown 语法参考</h6>
+                    <ul class="small text-muted mb-0">
+                        <li><code>**加粗**</code> → <strong>加粗</strong></li>
+                        <li><code>*斜体*</code> → <em>斜体</em></li>
+                        <li><code>- 列表项</code> → 无序列表</li>
+                        <li><code>1. 有序项</code> → 有序列表</li>
+                        <li><code>&gt; 引用内容</code> → 引用块</li>
+                        <li><code>[重要]内容[/重要]</code> → 高亮框（重要）</li>
+                        <li><code>[警告]内容[/警告]</code> → 高亮框（警告）</li>
+                        <li><code>[提示]内容[/提示]</code> → 高亮框（提示）</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // ============================================================
+    // CMS 管理页面逻辑
+    // ============================================================
+
+    let currentPage = 'info_security';
+
+    /**
+     * 切换编辑页面
+     */
+    function switchPage(pageKey) {
+        currentPage = pageKey;
+        
+        // 更新标签高亮
+        document.querySelectorAll('.page-tab').forEach(el => {
+            el.classList.remove('active');
+            if (el.dataset.page === pageKey) {
+                el.classList.add('active');
+            }
+        });
+        
+        // 加载页面数据
+        loadPageData(pageKey);
+    }
+
+    /**
+     * 加载页面数据
+     */
+    async function loadPageData(pageKey) {
+        document.getElementById('editPageKey').value = pageKey;
+        
+        try {
+            const response = await fetch(`/api/admin/cms/page/${pageKey}/detail`);
+            const result = await response.json();
+            
+            if (result.success && result.data) {
+                const data = result.data;
+                document.getElementById('editTitleZh').value = data.title_zh || '';
+                document.getElementById('editTitleEn').value = data.title_en || '';
+                document.getElementById('editContentZh').value = data.content_zh || '';
+                document.getElementById('editContentEn').value = data.content_en || '';
+                document.getElementById('editVersion').value = data.version || '1.0';
+                document.getElementById('editIsActive').value = data.is_active ? 'true' : 'false';
+                document.getElementById('pageVersion').textContent = `版本: ${data.version || '1.0'}`;
+            } else {
+                // 页面不存在，清空表单
+                document.getElementById('editTitleZh').value = '';
+                document.getElementById('editTitleEn').value = '';
+                document.getElementById('editContentZh').value = '';
+                document.getElementById('editContentEn').value = '';
+                document.getElementById('editVersion').value = '1.0';
+                document.getElementById('editIsActive').value = 'true';
+                document.getElementById('pageVersion').textContent = '版本: 1.0';
+            }
+        } catch (err) {
+            console.error('加载页面数据失败:', err);
+            alert('加载失败，请重试');
+        }
+    }
+
+    /**
+     * 预览 CMS 内容
+     */
+    function previewCMS(lang) {
+        const content = lang === 'zh' 
+            ? document.getElementById('editContentZh').value 
+            : document.getElementById('editContentEn').value;
+        
+        const preview = document.getElementById('cmsPreview');
+        if (content) {
+            preview.innerHTML = renderMarkdownPreview(content);
+        } else {
+            preview.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-file-text fs-2 d-block mb-2"></i>
+                    <span>暂无内容</span>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * 渲染 Markdown 预览（复用首页的渲染逻辑）
+     */
+    function renderMarkdownPreview(text) {
+        if (!text) return '';
+        
+        let html = text;
+        
+        // 段落处理
+        const paragraphs = html.split(/\n\n+/);
+        html = paragraphs.map(p => {
+            if (p.trim().startsWith('<') && !p.trim().startsWith('</')) {
+                return p;
+            }
+            return `<p>${p.trim()}</p>`;
+        }).join('\n');
+        
+        // 列表
+        html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
+        html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
+        html = html.replace(/(<li>.*?<\/li>\n?)+/gs, function(match) {
+            if (/<li>/.test(match) && match.match(/^\d+/m)) {
+                return `<ol>${match}</ol>`;
+            }
+            return `<ul>${match}</ul>`;
+        });
+        
+        // 加粗
+        html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        
+        // 斜体
+        html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+        
+        // 引用
+        html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
+        html = html.replace(/(<\/blockquote>\s*<blockquote>)/g, '<br>');
+        
+        // 高亮框
+        html = html.replace(/\[重要\]/g, '<div class="highlight-box warning"><strong>⚠️ 重要</strong><br>');
+        html = html.replace(/\[警告\]/g, '<div class="highlight-box danger"><strong>🚨 警告</strong><br>');
+        html = html.replace(/\[提示\]/g, '<div class="highlight-box success"><strong>💡 提示</strong><br>');
+        html = html.replace(/\[注意\]/g, '<div class="highlight-box"><strong>📌 注意</strong><br>');
+        html = html.replace(/<\/div>\s*<br\s*\/?>/g, '</div>');
+        
+        return html;
+    }
+
+    /**
+     * 保存 CMS 内容
+     */
+    document.getElementById('saveCMSBtn')?.addEventListener('click', async function() {
+        const pageKey = document.getElementById('editPageKey').value;
+        const titleZh = document.getElementById('editTitleZh').value.trim();
+        const titleEn = document.getElementById('editTitleEn').value.trim();
+        const contentZh = document.getElementById('editContentZh').value.trim();
+        const contentEn = document.getElementById('editContentEn').value.trim();
+        const version = document.getElementById('editVersion').value.trim() || '1.0';
+        const isActive = document.getElementById('editIsActive').value === 'true';
+        
+        // 验证必填
+        if (!titleZh || !titleEn || !contentZh || !contentEn) {
+            alert('请填写所有必填字段（标题和内容）');
+            return;
+        }
+        
+        // 显示加载状态
+        const btn = this;
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 保存中...';
+        
+        try {
+            const response = await fetch(`/api/admin/cms/page/${pageKey}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title_zh: titleZh,
+                    title_en: titleEn,
+                    content_zh: contentZh,
+                    content_en: contentEn,
+                    version: version,
+                    is_active: isActive
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                alert('✅ 保存成功！');
+                // 刷新版本显示
+                document.getElementById('pageVersion').textContent = `版本: ${version}`;
+                // 自动预览
+                previewCMS('zh');
+            } else {
+                alert('❌ 保存失败: ' + (result.message || '未知错误'));
+            }
+        } catch (err) {
+            console.error('保存失败:', err);
+            alert('❌ 保存失败: ' + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    });
+
+    // 页面加载时初始化
+    document.addEventListener('DOMContentLoaded', function() {
+        // 等待 i18n 就绪
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+        
+        // 加载默认页面
+        loadPageData('info_security');
+    });
+</script>
+{% endblock %}

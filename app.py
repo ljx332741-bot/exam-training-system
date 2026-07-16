@@ -357,8 +357,9 @@ with app.app_context():
     # 注册蓝图
     try:
         register_blueprints(app)
-        logger.info("Blueprints registered successfully")
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.error(f"Failed to register blueprints: {e}")
     
     # 启动调度器
