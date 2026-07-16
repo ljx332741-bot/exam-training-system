@@ -166,6 +166,12 @@ def register_blueprints(app):
 
     from .api_privacy import privacy_api_bp
     from .admin_privacy import admin_privacy_bp
+    try:
+        from .admin_cms import admin_cms_bp
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return
 
     # 注册 admin_bp 和 admin_message_bp
     app.register_blueprint(message_bp)
@@ -173,6 +179,7 @@ def register_blueprints(app):
     app.register_blueprint(privacy_api_bp)
     app.register_blueprint(admin_privacy_bp)
     app.register_blueprint(admin_bp)
+    app.register_blueprint(admin_cms_bp)
 
     # 注册 API 蓝图
     app.register_blueprint(api_auth.auth_bp)
