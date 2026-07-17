@@ -313,7 +313,7 @@ def api_register():
     })
     return jsonify({
         "success": True, 
-        "redirect": url_for('exam.dashboard'),
+        "redirect": url_for('auth.index'),
         "message": "register_success"  # 添加成功消息键
     })
 
@@ -373,12 +373,12 @@ def login():
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({
                     "success": True, 
-                    "redirect": url_for('exam.dashboard'),
+                    "redirect": url_for('auth.index'),
                     "needs_privacy": privacy_status["needs_acknowledgment"]
                 })
 
             flash({'msg': 'login_success', 'params': []}, 'success')
-            return redirect(url_for('exam.dashboard'))
+            return redirect(url_for('auth.index'))
         else:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return jsonify({"success": False, "message": "invalid_email_or_password"}), 401

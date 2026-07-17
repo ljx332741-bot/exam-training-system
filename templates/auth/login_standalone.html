@@ -1039,14 +1039,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 // 登录成功但需要确认隐私声明
                 showToast(t('privacy_policy_login_hint'), 'info');
                 // 保存登录状态，隐私声明弹窗会自动显示
-                // 延迟跳转到 dashboard，让隐私管理器处理
+                // 延迟跳转到 index，让隐私管理器处理
                 setTimeout(() => {
-                    window.location.href = data.redirect || '/dashboard';
+                    window.location.href = data.redirect || '/';
                 }, 500);
             } else {
                 showToast(t('loginSuccess'), 'success');
                 setTimeout(() => {
-                    window.location.href = data.redirect || '/dashboard';
+                    window.location.href = data.redirect || '/';
                 }, 1200);
             }
         } catch (err) {

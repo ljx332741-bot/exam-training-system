@@ -348,7 +348,8 @@ def auto_grade(answers: dict, exam_id: int) -> dict:
     
     return {"total": total, "details": details}
 
-def save_result(user_id, exam_id, answers, total_score, details, customs=None, submit_method='manual', time_used=None):
+def save_result(user_id, exam_id, answers, total_score, details, customs=None, 
+                submit_method='manual', time_used=None, retake_number=0, remark=''):
     """
     保存考试成绩
     """
@@ -418,6 +419,57 @@ def save_result(user_id, exam_id, answers, total_score, details, customs=None, s
             print(f"[save_result] 计算用时失败: {e}")
     else:
         print(f"[DEBUG] 使用传入的 time_used: {time_used}")
+
+    # 如果没有传入 retake_number，自动计算
+    if retake_number == 0:
+        # 查询该用户对该考试的已有成绩数量
+        existing_res = db.table("exam_results")\
+            .select("id", count="exact")\
+            .eq("user_id", user_id)\
+            .eq("exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        existing_count = existing_res.count if hasattr(existing_res, 'count') else len(existing_res.data or [])
+        retake_number = existing_count + 1  # 新记录的重考序号 = 已有数量 + 1
+    
+    # 如果没有传入 remark，自动生成
+    if not remark:
+        if retake_number == 1:
+            remark = '首次考试'
+        else:
+            remark = f'第{retake_number - 1}次重考'
+    
+    # 检查是否为强制重推
+    try:
+        force_res = db.table("user_exam_force_records")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .eq("original_exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        if force_res.data:
+            remark = f'🔥 强制推送 - {remark}'
+    except:
+        pass
+    
+    # 检查是否为管理员重置
+    try:
+        # 从 user_exam_status 检查 reset_at 是否在最近24小时内
+        status_res = db.table("user_exam_status")\
+            .select("reset_at")\
+            .eq("user_id", user_id)\
+            .eq("exam_id", exam_id)\
+            .maybe_single()\
+            .execute()
+        if status_res and status_res.data:
+            reset_at = status_res.data.get('reset_at')
+            if reset_at:
+                reset_dt = datetime.fromisoformat(reset_at.replace('Z', '+00:00'))
+                if (datetime.now(timezone.utc) - reset_dt).total_seconds() < 86400:
+                    if '强制' not in remark:
+                        remark = f'🔄 管理员重置 - {remark}'
+    except:
+        pass
     
     # 准备插入数据
     result_data = {
@@ -429,6 +481,8 @@ def save_result(user_id, exam_id, answers, total_score, details, customs=None, s
         "created_at": datetime.now(timezone.utc).isoformat(),
         "submit_method": submit_method,
         "time_used": time_used,
+        "retake_number": retake_number,
+        "remark": remark,
     }
 
     print(f"[DEBUG] 准备插入的数据: submit_method={submit_method}, time_used={time_used}")

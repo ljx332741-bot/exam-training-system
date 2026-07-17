@@ -17,6 +17,22 @@
             <h5>{{ result.exams.title }}</h5>
             <p class="mb-1"><strong><span data-i18n="examinee">考生:</span></strong>{{ result.users.name_en or result.users.email }} ({{ result.users.email }})</p>
             <p class="mb-1"><strong><span data-i18n="total_score">总分:</span></strong><span class="badge bg-primary fs-6">{{ result.total_score }}</span></p>
+            {% if result.retake_number %}
+                <p class="mb-1">
+                    <strong><span data-i18n="retake_number">考试次数:</span></strong>
+                    {% if result.retake_number == 1 %}
+                        <span class="badge bg-secondary">首次考试</span>
+                    {% else %}
+                        <span class="badge bg-info">第{{ result.retake_number - 1 }}次重考</span>
+                    {% endif %}
+                </p>
+            {% endif %}
+            {% if result.remark %}
+                <p class="mb-1">
+                    <strong><span data-i18n="remark">备注:</span></strong>
+                    <span class="badge bg-warning text-dark">{{ result.remark }}</span>
+                </p>
+            {% endif %}
             <p class="mb-0">
                 <strong><span data-i18n="submitted_at">提交时间</span>:</strong>
                 {{ result.created_at | local_time('%Y-%m-%d %H:%M') }}

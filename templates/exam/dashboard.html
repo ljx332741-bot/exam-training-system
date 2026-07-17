@@ -61,110 +61,176 @@
         </div>
     </div>
 
-  <!-- 📋 待考任务 -->
-  <div class="col-lg-6">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-header bg-white fw-bold"><i class="bi bi-pencil-square me-2"></i><span data-i18n="pending_exams">待参加考试</span></div>
-      <div class="card-body">
-        {% if exams %}
-        <div class="list-group list-group-flush">
-          {% for ex in exams %}
-            {% if not ex.user_status.is_submitted %}
-              {% set can_enter = ex.can_enter|default(false) %}
-              {% set already_started = ex.user_status.started|default(false) %}
-              {% if not can_enter and not already_started %}
-                {# 考试未开始，显示不可点击的“未开始”卡片 #}
-                <div class="list-group-item d-flex justify-content-between align-items-center py-3 bg-light text-muted" style="cursor: not-allowed;">
-                  <div>
-                    <span class="fw-semibold d-block">{{ ex.title }}</span>
-                    <small class="text-muted">
-                      {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
-                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }} | 
-                      {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
-                      <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
-                      →
-                      <span class="local-time" data-utc="{{ ex.end_time }}">{{ ex.end_time[:19].replace('T', ' ') if ex.end_time else '--' }}</span>
-                    </small>
-                  </div>
-                  <span class="badge rounded-pill bg-secondary" data-i18n="not_started">未开始</span>
-                </div>
-              {% else %}
-                {# 考试已开始或已进入，显示可点击链接 #}
-                <a href="{{ url_for('take_exam', exam_id=ex.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" data-exam-id="{{ ex.id }}">
-                  <div>
-                    <span class="fw-semibold d-block">{{ ex.title }}</span>
-                    <small class="text-muted">
-                      {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
-                      <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }} | 
-                      {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
-                      <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
-                      →
-                      <span class="local-time" data-utc="{{ ex.end_time }}">{{ ex.end_time[:19].replace('T', ' ') if ex.end_time else '--' }}</span>
-                    </small>
-                  </div>
-                  <span class="badge rounded-pill {% if already_started %}bg-warning{% else %}bg-primary{% endif %}">
-                    {% if already_started %}
-                      <span data-i18n="resume_exam">继续考试</span> 
-                      <span class="exam-timer" data-remaining="{{ ex.user_status.remaining }}">({{ (ex.user_status.remaining // 60) }}:{{ '%02d' % (ex.user_status.remaining % 60) }})</span>
-                    {% else %}
-                      <span data-i18n="start_exam">进入考试</span>
-                    {% endif %}
-                  </span>
-                </a>
-              {% endif %}
-            {% endif %}
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="text-center text-muted py-5"><i class="bi bi-inbox fs-1 d-block mb-2"></i><span data-i18n="no_pending">暂无待考任务</span></div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <!-- 📊 历史记录 -->
-  <div class="col-lg-6">
-    <div class="card shadow-sm border-0 h-100">
-      <div class="card-header bg-white fw-bold"><i class="bi bi-clock-history me-2"></i><span data-i18n="recent_scores">最近考试成绩</span></div>
-      <div class="card-body p-0">
-        <div class="table-responsive">
-          <table class="table table-hover align-middle mb-0">
-            <thead class="table-light">
-              <tr>
-                <th><span data-i18n="exam_name">考试名称</span></th>
-                <th><span data-i18n="get_score">得分</span></th>
-                <th><span data-i18n="submitted_at">提交时间</span></th>
-                <th><span data-i18n="actions">操作</span></th>
-              </tr>
-            </thead>
-            <tbody>
-                {% for r in results | default([]) %}
-                    <tr>
-                        <td>{{ r.exam_title }}</td>
-                        <td>
-                            <span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">{{ r.total_score }}</span>
-                            {% if r.total_score >= 60 %}
-                                <span class="badge bg-success ms-1" data-i18n="pass">通过</span>
-                            {% else %}
-                                <span class="badge bg-secondary ms-1" data-i18n="failed">未通过</span>
+    <!-- 📋 待考任务 -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-pencil-square me-2"></i>
+                <span data-i18n="pending_exams">待参加考试</span>
+            </div>
+            <div class="card-body">
+                {% if exams %}
+                    <div class="list-group list-group-flush">
+                        {% for ex in exams %}
+                            {% if not ex.user_status.is_submitted %}
+                                {% set can_enter = ex.can_enter|default(false) %}
+                                {% set already_started = ex.user_status.started|default(false) %}
+                                {% if not can_enter and not already_started %}
+                                    {# 考试未开始，显示不可点击的“未开始”卡片 #}
+                                    <div class="list-group-item d-flex justify-content-between align-items-center py-3 bg-light text-muted" style="cursor: not-allowed;">
+                                        <div>
+                                            <span class="fw-semibold d-block">{{ ex.title }}</span>
+                                            <small class="text-muted">
+                                            {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
+                                            <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }} | 
+                                            {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
+                                            <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
+                                            →
+                                            <span class="local-time" data-utc="{{ ex.end_time }}">{{ ex.end_time[:19].replace('T', ' ') if ex.end_time else '--' }}</span>
+                                            </small>
+                                        </div>
+                                        <span class="badge rounded-pill bg-secondary" data-i18n="not_started">未开始</span>
+                                    </div>
+                                {% else %}
+                                    {# 考试已开始或已进入，显示可点击链接 #}
+                                    <a href="{{ url_for('take_exam', exam_id=ex.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3" data-exam-id="{{ ex.id }}">
+                                        <div>
+                                            <span class="fw-semibold d-block">{{ ex.title }}</span>
+                                            <small class="text-muted">
+                                            {{ ex.duration }}<span data-i18n="minutes">分钟</span> | 
+                                            <span data-i18n="full_score">满分</span>{{ ex.total_score | default(100) }} | 
+                                            {{ ex.questions_count | default(0) }}<span data-i18n="question_unit">题</span> | 📅 
+                                            <span class="local-time" data-utc="{{ ex.start_time }}">{{ ex.start_time[:19].replace('T', ' ') if ex.start_time else '--' }}</span> 
+                                            →
+                                            <span class="local-time" data-utc="{{ ex.end_time }}">{{ ex.end_time[:19].replace('T', ' ') if ex.end_time else '--' }}</span>
+                                            </small>
+                                        </div>
+                                        <span class="badge rounded-pill {% if already_started %}bg-warning{% else %}bg-primary{% endif %}">
+                                            {% if already_started %}
+                                            <span data-i18n="resume_exam">继续考试</span> 
+                                            <span class="exam-timer" data-remaining="{{ ex.user_status.remaining }}">({{ (ex.user_status.remaining // 60) }}:{{ '%02d' % (ex.user_status.remaining % 60) }})</span>
+                                            {% else %}
+                                            <span data-i18n="start_exam">进入考试</span>
+                                            {% endif %}
+                                        </span>
+                                    </a>
+                                {% endif %}
                             {% endif %}
-                        </td>
-                        <td class="text-muted small">
-                        <span class="local-time" data-utc="{{ r.created_at }}">{{ r.created_at if r.created_at else '-' }}</span>
-                        </td>
-                        <td>
-                        <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" target="_blank" class="btn btn-sm btn-outline-info"><span data-i18n="details">详情</span></a>
-                        <a href="{{ url_for('exam_export_pdf', result_id=r.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-file-earmark-pdf me-1"></i>PDF</a></td>
-                    </tr>
+                        {% endfor %}
+                    </div>
                 {% else %}
-                    <tr><td colspan="4" class="text-center text-muted py-4"><span data-i18n="no_records">暂无考试记录</span></td></tr>
-                {% endfor %}
-            </tbody>
-          </table>
+                    <div class="text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        <span data-i18n="no_pending">暂无待考任务</span>
+                    </div>
+                {% endif %}
+            </div>
         </div>
-      </div>
     </div>
-  </div>
+
+    <!-- 📊 历史记录 -->
+    <div class="col-lg-6">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-clock-history me-2"></i>
+                <span data-i18n="recent_scores">最近考试成绩</span>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th><span data-i18n="exam_name">考试名称</span></th>
+                                <th><span data-i18n="get_score">得分</span></th>
+                                <th><span data-i18n="submitted_at">提交时间</span></th>
+                                <th><span data-i18n="actions">操作</span></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in results | default([]) %}
+                                <tr>
+                                    <td>
+                                        {{ r.exam_title }}
+                                        {% if r.retake_display %}
+                                            <span class="badge bg-info ms-1" style="font-size: 0.6rem;">
+                                                {{ r.retake_display }}
+                                            </span>
+                                        {% endif %}
+                                        {% if r.remark and '强制' in r.remark %}
+                                            <span class="badge bg-warning text-dark ms-1" style="font-size: 0.6rem;">
+                                                🔥 {{ r.remark }}
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">
+                                            {{ r.total_score }}
+                                        </span>
+                                        {% if r.total_score >= 60 %}
+                                            <span class="badge bg-success ms-1" data-i18n="pass">通过</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary ms-1" data-i18n="failed">未通过</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-muted small">
+                                        <span class="local-time" data-utc="{{ r.created_at }}">
+                                            {{ r.created_at if r.created_at else '-' }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {% if r.is_passed %}
+                                            <span class="badge bg-success">
+                                                <i class="bi bi-check-circle me-1"></i>
+                                                {% if r.retake_count > 0 %}
+                                                    已重考且通过
+                                                {% else %}
+                                                    已通过
+                                                {% endif %}
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-{{ r.retake_status_class }}">
+                                                <i class="bi bi-x-circle me-1"></i>
+                                                {{ r.retake_status_text }}
+                                            </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" target="_blank" class="btn btn-sm btn-outline-info">
+                                            <span data-i18n="details">详情</span>
+                                        </a>
+                                        <a href="{{ url_for('exam_export_pdf', result_id=r.id) }}" class="btn btn-sm btn-outline-secondary">
+                                            <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+                                        </a>
+                                        {% if not r.is_passed and r.can_retake %}
+                                            <button class="btn btn-outline-warning retake-from-history-btn" 
+                                                    data-exam-id="{{ r.exam_id }}" 
+                                                    data-result-id="{{ r.id }}"
+                                                    data-retake-count="{{ r.retake_count|default(0) }}"
+                                                    data-max-retake="{{ r.max_retake|default(3) }}">
+                                                <i class="bi bi-arrow-repeat me-1"></i> 
+                                                <span data-i18n="retake_exam">重考</span>
+                                            </button>
+                                        {% elif not r.is_passed and r.retake_count >= r.max_retake|default(3) %}
+                                            <button class="btn btn-outline-secondary" disabled>
+                                                <i class="bi bi-lock me-1"></i>
+                                                <span data-i18n="retake_exhausted">次数用完</span>
+                                            </button>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">
+                                        <span data-i18n="no_records">暂无考试记录</span>
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- 手写签名模态框 -->
@@ -191,13 +257,19 @@
                     </label>
                     <canvas id="signatureCanvas" style="width:100%; height:200px; border:1px solid #ccc; background:#fff; touch-action: none;"></canvas>
                     <div class="mt-2">
-                        <button type="button" class="btn btn-sm btn-secondary" id="clearSignatureBtn"><span data-i18n="clear_signature">清除重签</span></button>
+                        <button type="button" class="btn btn-sm btn-secondary" id="clearSignatureBtn">
+                            <span data-i18n="clear_signature">清除重签</span>
+                        </button>
                     </div>
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
-                <button type="button" class="btn btn-primary" id="submitSignatureBtn"><span data-i18n="submit_signature">提交签到</span></button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="cancel">取消</span>
+                </button>
+                <button type="button" class="btn btn-primary" id="submitSignatureBtn">
+                    <span data-i18n="submit_signature">提交签到</span>
+                </button>
             </div>
         </div>
     </div>
@@ -808,6 +880,59 @@
         }
     };
 
+    // ==================== 历史记录重考按钮事件 ====================
+    document.addEventListener('click', async function(e) {
+        const btn = e.target.closest('.retake-from-history-btn');
+        if (!btn) return;
+        
+        e.preventDefault();
+        const examId = btn.dataset.examId;
+        const retakeCount = parseInt(btn.dataset.retakeCount) || 0;
+        const maxRetake = parseInt(btn.dataset.maxRetake) || 3;
+        
+        if (!confirm(`确定要重考吗？\n已重考 ${retakeCount} 次，最多可重考 ${maxRetake} 次`)) return;
+        
+        btn.disabled = true;
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> ' + safeT('retaking');
+        
+        try {
+            const response = await fetch(`/exam/retake/${examId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+            const result = await response.json();
+            
+            if (result.success) {
+                if (typeof showToast === 'function') {
+                    showToast(result.message, 'success');
+                }
+                // 跳转到考试页面
+                window.location.href = `/exam/take/${examId}?t=${Date.now()}`;
+            } else {
+                if (typeof showToast === 'function') {
+                    showToast(result.message || safeT('retake_failed'), 'error');
+                } else {
+                    alert(result.message || safeT('retake_failed'));
+                }
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        } catch (err) {
+            console.error('重考失败:', err);
+            if (typeof showToast === 'function') {
+                showToast(safeT('network_error') + ': ' + err.message, 'error');
+            } else {
+                alert(safeT('network_error') + ': ' + err.message);
+            }
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    });
+
     // ==================== 我的签到记录 ====================
     async function loadMyAttendances() {
         const tbody = document.getElementById('myAttendancesBody');
@@ -1304,9 +1429,9 @@
                 const minutes = Math.floor(remaining / 60);
                 const seconds = remaining % 60;
                 timerSpan.textContent = `(${minutes}:${seconds.toString().padStart(2, '0')})`;
-                }
-            })
-        };
+            }
+        })
+    };
     // 每秒更新一次
     setInterval(updateAllTimers, 1000);
 </script>
