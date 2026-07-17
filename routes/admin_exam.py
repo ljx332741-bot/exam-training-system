@@ -273,7 +273,7 @@ def edit_exam_preview(exam_id):
             try: q['options'] = json.loads(q['options'])
             except: q['options'] = {}
 
-    # ✅ 使用辅助函数解析国家
+    # 使用辅助函数解析国家
     exam_countries = parse_exam_countries(exam)
     
     # 如果解析后为空，尝试使用 country 字段
@@ -286,6 +286,7 @@ def edit_exam_preview(exam_id):
     exam_duration = exam.get('duration', 60)
     exam_reviewer = exam.get('reviewer', '')
     exam_pass_score = exam.get('pass_score', 85)
+    exam_max_retake = exam.get('max_retake', 3)  # 新增
     
     # 获取有效期（可能为 None）
     start_time = exam.get('start_time')
@@ -322,6 +323,7 @@ def edit_exam_preview(exam_id):
         exam_duration=exam_duration,
         exam_reviewer=exam_reviewer,
         exam_pass_score=exam_pass_score,
+        exam_max_retake=exam_max_retake,  # 新增
         exam_start_time=start_time_local,
         exam_end_time=end_time_local,
         exam_countries=exam_countries
@@ -515,6 +517,7 @@ def admin_import_save():
             "duration": duration,
             "reviewer": reviewer,
             "pass_score": pass_score,
+            "max_retake": request.json.get('max_retake', 3),  # 新增
             "is_active": not is_draft,  # 正常创建时激活，草稿时不激活
             "status": "active" if (not is_draft and start_time and end_time) else ("draft" if is_draft else "created"),
             "is_binding_exam": from_binding  # 标识这是绑定模式的考试
@@ -944,6 +947,8 @@ def update_exam_full(exam_id):
         update_data['country'] = data['country_code']
     if 'pass_score' in data:
         update_data['pass_score'] = data['pass_score']
+    if 'max_retake' in data:
+        update_data['max_retake'] = data['max_retake']
     # 有效期（只有草稿和未开始状态可更新）
     if current_status in ['draft', 'created']:
         if 'start_time' in data:

@@ -435,7 +435,8 @@
         
         // 更新内容（使用 innerHTML 渲染 Markdown/HTML）
         const content = lang === 'zh' ? cmsData.content_zh : cmsData.content_en;
-        document.getElementById('cmsContent').innerHTML = renderMarkdown(content);
+        const renderedHtml = renderMarkdown(content);
+        document.getElementById('cmsContent').innerHTML = renderedHtml;
         
         // 更新版本信息
         document.getElementById('cmsVersion').textContent = cmsData.version || '1.0';
@@ -472,10 +473,10 @@
         
         if (lang === 'zh') {
             indicator.textContent = '中';
-            text.textContent = '切换 / EN';
+            text.textContent = 'Switch / EN';
         } else {
             indicator.textContent = 'EN';
-            text.textContent = 'Switch / 中';
+            text.textContent = '切换 / 中';
         }
     }
 
@@ -488,55 +489,71 @@
         
         let html = text;
         
-        // 安全的换行处理（保留段落）
-        // 先将双换行转为段落分隔
+        // ========== 1. 处理标题 ==========
+        // # 标题1 → <h1>标题1</h1>
+        html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+        // ## 标题2 → <h2>标题2</h2>
+        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+        // ### 标题3 → <h3>标题3</h3>
+        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        
+        // ========== 2. 处理分隔线 ==========
+        // --- → <hr>
+        html = html.replace(/^---$/gm, '<hr>');
+        
+        // ========== 3. 处理段落 ==========
+        // 将双换行转为段落分隔
         const paragraphs = html.split(/\n\n+/);
         html = paragraphs.map(p => {
             // 如果已经是 HTML 标签开头，不包裹 p
-            if (p.trim().startsWith('<') && !p.trim().startsWith('</')) {
+            const trimmed = p.trim();
+            if (trimmed.startsWith('<') && !trimmed.startsWith('</')) {
                 return p;
             }
-            // 处理单行文本
-            return `<p>${p.trim()}</p>`;
+            // 跳过空行
+            if (!trimmed) return '';
+            return `<p>${trimmed}</p>`;
         }).join('\n');
         
-        // 处理列表
+        // ========== 4. 处理列表 ==========
         // 有序列表 (数字.)
         html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
         // 无序列表 (- 或 *)
         html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
-        // 如果有多行 li，包裹 ul/ol
+        // 包裹连续的 li 为 ul/ol
         html = html.replace(/(<li>.*?<\/li>\n?)+/gs, function(match) {
             // 检测是否包含数字（有序列表）
-            if (/<li>/.test(match) && match.match(/^\d+/m)) {
+            if (/^\d+/.test(match)) {
                 return `<ol>${match}</ol>`;
             }
             return `<ul>${match}</ul>`;
         });
         
-        // 加粗 **text** -> <strong>text</strong>
+        // ========== 5. 处理加粗 ==========
+        // **text** → <strong>text</strong>
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         
-        // 斜体 *text* -> <em>text</em>
+        // ========== 6. 处理斜体 ==========
+        // *text* → <em>text</em>
         html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
         
-        // 引用块 > text -> <blockquote>
+        // ========== 7. 处理引用 ==========
+        // > text → <blockquote>text</blockquote>
         html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
         // 合并连续的 blockquote
         html = html.replace(/(<\/blockquote>\s*<blockquote>)/g, '<br>');
         
-        // 高亮框（特殊标记）
-        // [重要] -> <div class="highlight-box warning">
+        // ========== 8. 处理高亮框 ==========
+        // [重要]内容[/重要] → 高亮框
         html = html.replace(/\[重要\]/g, '<div class="highlight-box warning"><strong>⚠️ 重要</strong><br>');
-        // [警告] -> <div class="highlight-box danger">
         html = html.replace(/\[警告\]/g, '<div class="highlight-box danger"><strong>🚨 警告</strong><br>');
-        // [提示] -> <div class="highlight-box success">
         html = html.replace(/\[提示\]/g, '<div class="highlight-box success"><strong>💡 提示</strong><br>');
-        // [注意] -> <div class="highlight-box">
         html = html.replace(/\[注意\]/g, '<div class="highlight-box"><strong>📌 注意</strong><br>');
-        
-        // 清理多余的 <br> 在 block 内
         html = html.replace(/<\/div>\s*<br\s*\/?>/g, '</div>');
+        
+        // ========== 9. 清理多余的空白行 ==========
+        html = html.replace(/\n{3,}/g, '\n\n');
+        html = html.replace(/<p>\s*<\/p>/g, '');
         
         return html;
     }

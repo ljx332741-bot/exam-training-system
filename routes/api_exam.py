@@ -216,15 +216,101 @@ def dashboard():
             
             exams.append(ex)
             
-        # 获取最近5条成绩记录
-        results_res = db.table("exam_results").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(5).execute()
+        # ============================================================
+        # 🔥 获取最近10条成绩记录（增强版：支持重考状态和备注）
+        # ============================================================
+        results_res = db.table("exam_results").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
         results = []
         if results_res.data:
-            valid_exams = db.table("exams").select("id, title").in_("id", [r['exam_id'] for r in results_res.data]).is_("deleted_at", "null").execute()
-            valid_map = {e['id']: e['title'] for e in valid_exams.data or []}
+            # 获取考试信息
+            valid_exams = db.table("exams").select("id, title, pass_score, max_retake, status").in_("id", [r['exam_id'] for r in results_res.data]).is_("deleted_at", "null").execute()
+            valid_map = {e['id']: e for e in valid_exams.data or []}
+            
             for r in results_res.data:
-                if r['exam_id'] in valid_map:
-                    r['exam_title'] = valid_map[r['exam_id']]
+                exam = valid_map.get(r['exam_id'])
+                if exam:
+                    r['exam_title'] = exam.get('title', '未知考试')
+                    
+                    pass_score = exam.get('pass_score', 85)
+                    max_retake = exam.get('max_retake', 3)
+                    total_score = r.get('total_score', 0)
+                    exam_status = exam.get('status', '')
+                    
+                    # ============================================================
+                    # 🔥 新增：计算重考状态
+                    # ============================================================
+                    
+                    # 1. 获取该考试的所有成绩记录（按时间升序）
+                    all_results_res = db.table("exam_results")\
+                        .select("id, total_score, retake_number, remark")\
+                        .eq("user_id", user_id)\
+                        .eq("exam_id", r['exam_id'])\
+                        .is_("deleted_at", "null")\
+                        .order("created_at", desc=False)\
+                        .execute()
+                    all_results = all_results_res.data or []
+                    
+                    # 2. 计算已提交次数
+                    submit_count = len(all_results)
+                    retake_count = max(0, submit_count - 1)
+                    
+                    # 3. 判断是否及格（用最新一条记录判断）
+                    latest_result = all_results[-1] if all_results else None
+                    is_passed = latest_result and latest_result.get('total_score', 0) >= pass_score
+                    
+                    # 4. 判断是否可以重考
+                    is_exam_available = exam_status in ['active', 'created']
+                    can_retake = not is_passed and retake_count < max_retake and is_exam_available
+                    
+                    # 5. 重考状态文本
+                    if is_passed and retake_count > 0:
+                        retake_status_text = '✅ 已重考且通过'
+                        retake_status_class = 'success'
+                    elif retake_count >= max_retake and not is_passed:
+                        retake_status_text = f'❌ 已重考{retake_count}次仍未通过'
+                        retake_status_class = 'danger'
+                    elif not is_passed and retake_count > 0:
+                        retake_status_text = f'🔄 第{retake_count}次重考未通过'
+                        retake_status_class = 'warning'
+                    elif not is_passed and retake_count == 0:
+                        retake_status_text = '📝 未通过'
+                        retake_status_class = 'danger'
+                    else:
+                        retake_status_text = '✅ 已通过'
+                        retake_status_class = 'success'
+                    
+                    # 6. 获取备注信息
+                    remark = r.get('remark', '')
+                    retake_number = r.get('retake_number', 0)
+                    
+                    # 如果备注为空，自动生成
+                    if not remark:
+                        if retake_number == 1:
+                            remark = '首次考试'
+                        elif retake_number > 1:
+                            remark = f'第{retake_number - 1}次重考'
+                    
+                    # 7. 构造重考序号显示（用于每条记录）
+                    retake_display = ''
+                    if retake_number == 1:
+                        retake_display = ''
+                    else:
+                        # 使用罗马数字或数字
+                        retake_display = f'重考{retake_number - 1}'
+                    
+                    r['is_passed'] = is_passed
+                    r['pass_score'] = pass_score
+                    r['max_retake'] = max_retake
+                    r['retake_count'] = retake_count
+                    r['can_retake'] = can_retake
+                    r['exam_status'] = exam_status
+                    r['exam_available'] = is_exam_available
+                    r['retake_status_text'] = retake_status_text
+                    r['retake_status_class'] = retake_status_class
+                    r['remark'] = remark
+                    r['retake_display'] = retake_display
+                    r['retake_number'] = retake_number
+                    
                     results.append(r)
         
         # 获取用户名称
@@ -257,7 +343,7 @@ def take_exam(exam_id):
         now = datetime.now(timezone.utc)
         
         # ========== 1. 获取考试基本信息 ==========
-        exam_info = db.table("exams").select("start_time, end_time, duration, title").eq("id", exam_id).maybe_single().execute()
+        exam_info = db.table("exams").select("start_time, end_time, duration, title, max_retake").eq("id", exam_id).maybe_single().execute()
         if not exam_info.data:
             flash("考试不存在", "danger")
             return redirect(url_for('exam.dashboard'))
@@ -469,13 +555,139 @@ def take_exam(exam_id):
             reset_token=reset_token,
             user_id=user_id,
             user_display_name=user_display_name,
-            saved_answers=json.dumps(saved_answers)
+            saved_answers=json.dumps(saved_answers),
+            max_retake=exam.get('max_retake', 3)
         )
         
     except Exception as e:
         logger.error(f"take_exam 发生异常: {e}", exc_info=True)
         flash({'msg': 'flash_loading_failed_try_later', 'params': []}, "danger")
         return redirect(url_for('exam.dashboard'))
+
+@exam_bp.route('/exam/retake/<int:exam_id>', methods=['POST'])
+@login_required
+def retake_exam(exam_id):
+    """
+    学员重考接口（仅限未通过的考试）
+    重置考试状态 + 自动延长有效期
+    """
+    db = get_supabase()
+    user_id = session['user_id']
+    now = datetime.now(timezone.utc)
+    
+    # 1. 检查用户是否有该考试的提交记录
+    result_res = db.table("exam_results")\
+        .select("*")\
+        .eq("user_id", user_id)\
+        .eq("exam_id", exam_id)\
+        .is_("deleted_at", "null")\
+        .order("created_at", desc=True)\
+        .limit(1)\
+        .execute()
+    
+    if not result_res.data:
+        return jsonify({
+            "success": False, 
+            "message": "没有找到考试成绩记录，无法重考"
+        }), 400
+    
+    last_result = result_res.data[0]
+    
+    # 2. 检查上次考试是否未通过
+    exam_info = db.table("exams").select("pass_score, max_retake, title, duration").eq("id", exam_id).maybe_single().execute()
+    if not exam_info.data:
+        return jsonify({"success": False, "message": "考试不存在"}), 404
+    
+    pass_score = exam_info.data.get('pass_score', 85)
+    max_retake = exam_info.data.get('max_retake', 3)
+    exam_title = exam_info.data.get('title', '考试')
+    duration = exam_info.data.get('duration', 60)
+    
+    if last_result.get('total_score', 0) >= pass_score:
+        return jsonify({
+            "success": False, 
+            "message": "该考试已通过，无需重考"
+        }), 400
+    
+    # 3. 检查重考次数是否超限
+    history_res = db.table("exam_results")\
+        .select("id", count="exact")\
+        .eq("user_id", user_id)\
+        .eq("exam_id", exam_id)\
+        .is_("deleted_at", "null")\
+        .execute()
+    
+    current_submit_count = history_res.count if hasattr(history_res, 'count') else len(history_res.data or [])
+    retake_count = current_submit_count - 1
+    
+    if retake_count >= max_retake:
+        return jsonify({
+            "success": False, 
+            "message": f"已达到最大重考次数（{max_retake}次），请联系管理员",
+            "retake_count": retake_count,
+            "max_retake": max_retake
+        }), 400
+    
+    # ============================================================
+    # 🔥 新增：自动延长考试有效期（当前时间 + 7天）
+    # ============================================================
+    new_start_time = now.isoformat()
+    new_end_time = (now + timedelta(days=7)).isoformat()
+    
+    # 更新考试有效期
+    db.table("exams").update({
+        "start_time": new_start_time,
+        "end_time": new_end_time,
+        "status": "active",      # 设置为进行中
+        "is_active": True
+    }).eq("id", exam_id).execute()
+    
+    logger.info(f"📅 重考自动延长有效期: exam={exam_id}, end={new_end_time}")
+    
+    # 4. 重置考试状态
+    status_res = db.table("user_exam_status")\
+        .select("id")\
+        .eq("user_id", user_id)\
+        .eq("exam_id", exam_id)\
+        .maybe_single()\
+        .execute()
+    
+    reset_at = now.isoformat()
+    
+    if status_res and status_res.data:
+        db.table("user_exam_status").update({
+            "is_submitted": False,
+            "started_at": None,
+            "submitted_at": None,
+            "reset_at": reset_at
+        }).eq("id", status_res.data['id']).execute()
+    else:
+        db.table("user_exam_status").insert({
+            "user_id": user_id,
+            "exam_id": exam_id,
+            "is_submitted": False,
+            "reset_at": reset_at
+        }).execute()
+    
+    # 5. 删除旧的草稿
+    db.table("user_exam_drafts")\
+        .delete()\
+        .eq("user_id", user_id)\
+        .eq("exam_id", exam_id)\
+        .execute()
+    
+    logger.info(f"🔄 学员重考: user={user_id}, exam={exam_id}, 第{retake_count + 1}次重考")
+    
+    return jsonify({
+        "success": True,
+        "message": f"已重置考试状态并延长有效期至 {new_end_time[:10]}，可以重新参加考试（第{retake_count + 1}次重考）",
+        "exam_id": exam_id,
+        "exam_title": exam_title,
+        "retake_count": retake_count + 1,
+        "max_retake": max_retake,
+        "reset_at": reset_at,
+        "new_end_time": new_end_time
+    })
 
 @exam_bp.route('/exam/submit/<int:exam_id>', methods=['POST'])
 @login_required
@@ -565,7 +777,51 @@ def submit_exam(exam_id):
 
     total_score = grade['total']
     is_passed = total_score >= pass_score
+
+    # ========== 新增：统计重考次数 ==========
+    # 查询该用户对该考试的历史成绩记录（排除刚提交的这条）
+    history_res = db.table("exam_results")\
+        .select("id", count="exact")\
+        .eq("user_id", user_id)\
+        .eq("exam_id", exam_id)\
+        .is_("deleted_at", "null")\
+        .execute()
     
+    # 当前已提交的次数（包括这次）
+    current_submit_count = history_res.count if hasattr(history_res, 'count') else len(history_res.data or [])
+    # 重考次数 = 已提交次数 - 1（第一次不算重考）
+    retake_count = max(0, current_submit_count - 1)
+    
+    # 最大重考次数（可配置，默认3次）
+    max_retake = exam_info.data.get('max_retake', 3) if exam_info.data else 3
+    can_retake = not is_passed and retake_count < max_retake
+
+    # ========== 计算重考序号和备注 ==========
+    # 重考序号 = 已有成绩数量 + 1（新记录）
+    retake_number = current_submit_count + 1
+    
+    # 生成备注
+    if retake_number == 1:
+        remark = '首次考试'
+    else:
+        remark = f'第{retake_number - 1}次重考'
+    
+    # 检查是否为强制重推
+    try:
+        force_res = db.table("user_exam_force_records")\
+            .select("id")\
+            .eq("user_id", user_id)\
+            .eq("original_exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        if force_res.data:
+            remark = f'🔥 强制推送 - {remark}'
+    except:
+        pass
+        
+    logger.info(f"📊 重考统计: 已提交={current_submit_count}, 重考次数={retake_count}, "
+                f"最大={max_retake}, 可重考={can_retake}, retake_number={retake_number}, remark={remark}")
+
     # 保存成绩
     customs = {f"c{i}": request.form.get(f"custom{i}", "") for i in range(1, 6)}
     try:
@@ -573,7 +829,9 @@ def submit_exam(exam_id):
             user_id, exam_id, answers, grade['total'], grade['details'], 
             customs, 
             submit_method='manual', 
-            time_used=time_used
+            time_used=time_used,
+            retake_number=retake_number,
+            remark=remark
         )
         logger.info(f"💾 成绩保存成功，用时: {time_used}秒")
     except Exception as e:
@@ -606,6 +864,9 @@ def submit_exam(exam_id):
             "is_passed": is_passed,
             "pass_score": pass_score,
             "exam_title": exam_title,
+            "retake_count": retake_count,
+            "max_retake": max_retake,
+            "can_retake": can_retake,
             "message": f'交卷成功！得分：{total_score}（{"及格" if is_passed else "不及格"}，及格线：{pass_score}分）'
         })
     else:

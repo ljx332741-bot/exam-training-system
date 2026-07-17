@@ -569,7 +569,15 @@
 						console.log('🗑️ 本地草稿已清除');
 						
 						// 显示结果弹窗
-						showResultModal(result.score, result.is_passed, result.pass_score, result.exam_title);
+						showResultModal(
+							result.score, 
+							result.is_passed, 
+							result.pass_score, 
+							result.exam_title,
+							result.retake_count || 0,
+							result.max_retake || 3,
+							result.can_retake || false
+						);
 					} else {
 						// 使用全局翻译函数显示错误
 						if (typeof apiAlert === 'function') {
@@ -617,8 +625,8 @@
 		startAutoSave();
 	});
 
-	// ==================== 新增：提交评分弹窗 ====================
-	function showResultModal(score, isPassed, passScore, examTitle) {
+	// ==================== 提交评分弹窗（增强版：支持重考） ====================
+	function showResultModal(score, isPassed, passScore, examTitle, retakeCount, maxRetake, canRetake) {
 		// 移除已存在的模态框
 		const existingModal = document.getElementById('resultModal');
 		if (existingModal) existingModal.remove();
@@ -626,6 +634,51 @@
 		const statusText = isPassed ? 
 			{ icon: '🎉', title: safeT('congratulations_passed'), message: safeT('you_passed_exam') } : 
 			{ icon: '📝', title: safeT('exam_not_passed'), message: safeT('you_did_not_pass') };
+		
+		// 重考相关文案
+		let retakeHtml = '';
+		if (!isPassed) {
+			if (canRetake) {
+				const remainingRetakes = maxRetake - retakeCount;
+				retakeHtml = `
+					<div class="mt-3">
+						<p class="text-muted small">
+							${safeT('retake_remaining')}：${remainingRetakes} ${safeT('retake_times')}
+							${retakeCount > 0 ? `（${safeT('already_retaken')} ${retakeCount} ${safeT('retake_times')}）` : ''}
+						</p>
+						<div class="d-flex justify-content-center gap-3">
+							<button class="btn btn-warning px-4" id="retakeBtn">
+								<i class="bi bi-arrow-repeat me-1"></i> ${safeT('retake_exam')}
+							</button>
+							<button class="btn btn-secondary px-4" data-bs-dismiss="modal">
+								${safeT('cancel')}
+							</button>
+						</div>
+					</div>
+				`;
+			} else {
+				// 已达到最大重考次数
+				retakeHtml = `
+					<div class="mt-3">
+						<p class="text-danger small">
+							<i class="bi bi-exclamation-triangle-fill me-1"></i>
+							${safeT('retake_limit_reached')}（${maxRetake} ${safeT('retake_times')}）
+							<br>${safeT('contact_admin_for_retake')}
+						</p>
+						<button class="btn btn-secondary px-4" data-bs-dismiss="modal">
+							${safeT('close')}
+						</button>
+					</div>
+				`;
+			}
+		} else {
+			// 通过考试
+			retakeHtml = `
+				<div class="mt-3">
+					<a href="/dashboard" class="btn btn-primary px-4">${safeT('back_to_dashboard')}</a>
+				</div>
+			`;
+		}
 		
 		const modalHtml = `
 			<div class="modal fade" id="resultModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
@@ -641,10 +694,8 @@
 							<div class="display-1 fw-bold mb-3 ${isPassed ? 'text-success' : 'text-danger'}">${score}</div>
 							<p class="lead mb-2">${statusText.message}</p>
 							<p class="text-muted">${safeT('passing_score')}：${passScore}${safeT('points')} | ${safeT('your_score')}：${score}${safeT('points')}</p>
-							${!isPassed ? `<p class="text-warning small mt-2">${safeT('contact_admin_retake')}</p>` : ''}
-						</div>
-						<div class="modal-footer justify-content-center">
-							<a href="/dashboard" class="btn btn-primary px-4">${safeT('back_to_dashboard')}</a>
+							${!isPassed ? `<p class="text-warning small mt-2">${safeT('exam_not_passed_hint')}</p>` : ''}
+							${retakeHtml}
 						</div>
 					</div>
 				</div>
@@ -654,11 +705,9 @@
 		document.body.insertAdjacentHTML('beforeend', modalHtml);
 		const resultModal = new bootstrap.Modal(document.getElementById('resultModal'));
 		resultModal.show();
-
-		// 从 DOM 属性获取 exam_id 和 user_id
-		const prefix = `exam_${window.USER_ID}_${window.EXAM_ID}`;
 		
 		// 清理本地存储
+		const prefix = `exam_${window.USER_ID}_${window.EXAM_ID}`;
 		const keysToRemove = [
 			`${prefix}_time_left`,
 			`${prefix}_ans`,
@@ -666,9 +715,58 @@
 			`${prefix}_curr`
 		];
 		keysToRemove.forEach(k => localStorage.removeItem(k));
-		
-		// 停止计时器
 		if (window.examTimer) clearInterval(window.examTimer);
+		
+		// ========== 绑定重考按钮事件 ==========
+		const retakeBtn = document.getElementById('retakeBtn');
+		if (retakeBtn) {
+			retakeBtn.addEventListener('click', async function() {
+				const examId = window.EXAM_ID;
+				
+				this.disabled = true;
+				this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span> ' + safeT('retaking');
+				
+				try {
+					const response = await fetch(`/exam/retake/${examId}`, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'X-Requested-With': 'XMLHttpRequest'
+						}
+					});
+					
+					const result = await response.json();
+					
+					if (result.success) {
+						const modal = bootstrap.Modal.getInstance(document.getElementById('resultModal'));
+						if (modal) modal.hide();
+						
+						if (typeof showToast === 'function') {
+							showToast(result.message, 'success');
+						}
+						
+						window.location.href = `/exam/take/${examId}?t=${Date.now()}`;
+					} else {
+						if (typeof showToast === 'function') {
+							showToast(result.message || safeT('retake_failed'), 'error');
+						} else {
+							alert(result.message || safeT('retake_failed'));
+						}
+						this.disabled = false;
+						this.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> ' + safeT('retake_exam');
+					}
+				} catch (err) {
+					console.error('重考失败:', err);
+					if (typeof showToast === 'function') {
+						showToast(safeT('network_error') + ': ' + err.message, 'error');
+					} else {
+						alert(safeT('network_error') + ': ' + err.message);
+					}
+					this.disabled = false;
+					this.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> ' + safeT('retake_exam');
+				}
+			});
+		}
 	}
 
 	// 恢复保存的答案（新增函数）
