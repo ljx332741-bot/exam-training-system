@@ -88,8 +88,8 @@ class I18n {
                 el.title = this.translations[key];
             }
         });
-
-        // 2. 翻译 data-i18n-title-key（支持参数）
+        
+        // 2. 翻译 data-i18n-title-key（支持参数）- ✅ 修复版
         document.querySelectorAll('[data-i18n-title-key]').forEach(el => {
             const key = el.getAttribute('data-i18n-title-key');
             if (!key) return;
@@ -105,6 +105,7 @@ class I18n {
                 }
             }
             
+            // ✅ 使用 t() 方法统一处理翻译和参数替换
             const translated = this.t(key, params);
             if (translated && translated !== key) {
                 el.title = translated;
@@ -139,8 +140,27 @@ class I18n {
             const key = el.getAttribute('data-i18n');
             if (key === undefined || key === null) return;
             
-            const translation = this.translations[key];
+            let translation = this.translations[key];
             if (translation === undefined) return;
+
+            // 🔥 检查是否有参数 - 优先检查 data-i18n-params
+            const paramsAttr = el.getAttribute('data-i18n-params');
+            if (paramsAttr) {
+                try {
+                    const params = JSON.parse(paramsAttr);
+                    // 替换 {key} 格式的参数
+                    if (typeof params === 'object' && params !== null) {
+                        Object.keys(params).forEach(k => {
+                            const value = params[k];
+                            if (value !== undefined && value !== null) {
+                                translation = translation.replace(new RegExp(`\\{${k}\\}`, 'g'), String(value));
+                            }
+                        });
+                    }
+                } catch(e) {
+                    console.warn('解析 data-i18n-params 失败:', e, '原始值:', paramsAttr);
+                }
+            }
             
             // 处理 TITLE 标签
             if (el.tagName === 'TITLE') {

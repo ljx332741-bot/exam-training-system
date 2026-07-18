@@ -229,7 +229,10 @@ def dashboard():
             for r in results_res.data:
                 exam = valid_map.get(r['exam_id'])
                 if exam:
-                    r['exam_title'] = exam.get('title', '未知考试')
+                    # ✅ 使用字符串标识符，前端翻译
+                    r['exam_title'] = exam.get('title', '')
+                    # 添加一个标识符，让前端知道使用哪个翻译键
+                    r['exam_title_key'] = 'exam_name_unknown' if not exam.get('title') else None
                     
                     pass_score = exam.get('pass_score', 85)
                     max_retake = exam.get('max_retake', 3)
@@ -237,7 +240,7 @@ def dashboard():
                     exam_status = exam.get('status', '')
                     
                     # ============================================================
-                    # 🔥 新增：计算重考状态
+                    # 🔥 计算重考状态（返回状态码 + 参数，前端翻译）
                     # ============================================================
                     
                     # 1. 获取该考试的所有成绩记录（按时间升序）
@@ -262,52 +265,64 @@ def dashboard():
                     is_exam_available = exam_status in ['active', 'created']
                     can_retake = not is_passed and retake_count < max_retake and is_exam_available
                     
-                    # 5. 重考状态文本
+                    # 5. ✅ 重考状态：使用状态码 + 参数（前端翻译）
                     if is_passed and retake_count > 0:
-                        retake_status_text = '✅ 已重考且通过'
                         retake_status_code = 'passed_after_retake'
                         retake_status_class = 'success'
+                        retake_params = {'count': retake_count}  # 用于前端显示 "重考{N}次"
                     elif retake_count >= max_retake and not is_passed:
-                        retake_status_text = f'❌ 已重考{retake_count}次仍未通过'
                         retake_status_code = 'exhausted_failed'
                         retake_status_class = 'danger'
+                        retake_params = {'count': retake_count, 'max': max_retake}
                     elif not is_passed and retake_count > 0:
-                        retake_status_text = f'🔄 第{retake_count}次重考未通过'
                         retake_status_code = 'retake_failed'
                         retake_status_class = 'warning'
+                        retake_params = {'count': retake_count}
                     elif not is_passed and retake_count == 0:
-                        retake_status_text = '📝 未通过'
                         retake_status_code = 'failed'
                         retake_status_class = 'danger'
+                        retake_params = {}
                     else:
-                        retake_status_text = '✅ 已通过'
                         retake_status_code = 'passed'
                         retake_status_class = 'success'
+                        retake_params = {}
 
                     # 6. 获取备注信息
                     remark = r.get('remark', '')
                     retake_number = r.get('retake_number', 0)
 
-                    # 备注类型（用于前端显示重考序号）
-                    remark_type = 'first' if retake_number == 1 else 'retake'
+                    # 7. ✅ 备注类型：使用标识符
+                    if retake_number == 1:
+                        remark_type = 'first'
+                    elif retake_number > 1:
+                        remark_type = 'retake'
+                    else:
+                        remark_type = 'unknown'
 
                     # 检查是否为强制推送（从 remark 字段判断）
                     is_force = r.get('remark', '').startswith('🔥') if r.get('remark') else False
 
-                    # 如果备注为空，自动生成
-                    if not remark:
-                        if retake_number == 1:
-                            remark = '首次考试'
-                        elif retake_number > 1:
-                            remark = f'第{retake_number - 1}次重考'
-                    
-                    # 7. 构造重考序号显示（用于每条记录）
+                    # 8. ✅ 构造重考序号显示（使用标识符 + 参数）
+                    # ✅ 初始化默认值，避免 UnboundLocalError
                     retake_display = ''
+                    retake_display_key = None
+                    retake_display_params = None
+                    
                     if retake_number == 1:
+                        # 首次考试，不需要显示
                         retake_display = ''
-                    else:
-                        # 使用罗马数字或数字
-                        retake_display = f'重考{retake_number - 1}'
+                        retake_display_key = None
+                        retake_display_params = None
+                    elif retake_number > 1:
+                        retake_display_key = 'retake_label'
+                        retake_display_params = {'count': retake_number - 1}
+                        retake_display = f'重考{retake_number - 1}'  # 保留向后兼容
+                    
+                    # 强制推送特殊处理
+                    if is_force and retake_number > 1:
+                        retake_display_key = 'force_retake_label'
+                        retake_display_params = {'count': retake_number - 1}
+                        retake_display = f'🔥 强制-重考{retake_number - 1}'  # 保留向后兼容
                     
                     r['is_passed'] = is_passed
                     r['pass_score'] = pass_score
@@ -316,14 +331,17 @@ def dashboard():
                     r['can_retake'] = can_retake
                     r['exam_status'] = exam_status
                     r['exam_available'] = is_exam_available
-                    r['retake_status_text'] = retake_status_text
                     r['retake_status_code'] = retake_status_code
                     r['retake_status_class'] = retake_status_class
+                    r['retake_params'] = retake_params if retake_params else None
                     r['remark_type'] = remark_type
                     r['retake_number'] = retake_number
                     r['is_force'] = is_force
                     r['remark'] = remark
                     r['retake_display'] = retake_display
+                    r['retake_display_key'] = retake_display_key
+                    r['retake_display_params'] = retake_display_params
+                    r['score_title_params'] = {'score': total_score, 'pass': pass_score}
                     
                     results.append(r)
         
