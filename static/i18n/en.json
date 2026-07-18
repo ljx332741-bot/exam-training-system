@@ -1401,9 +1401,7 @@
 "cms_management_title": "Homepage CMS Management",
 "inactive": "Inactive",
 "switch": "Switch",
-"retake_exam": "Retake",
 "retaking": "Retaking...",
-"retake_failed": "Retake failed, please try again",
 "retake_remaining": "Remaining retakes",
 "retake_times": "time(s)",
 "already_retaken": "Already retaken",
@@ -1413,5 +1411,14 @@
 "retake_success": "Exam status reset, you can retake the exam",
 "max_retake": "Max Retake Attempts",
 "max_retake_hint": "0=no retake allowed, default 3",
-"retake_from_history": "Retake from history"
+"retake_from_history": "Retake from history",
+    "exhausted_failed": "❌ Retake exhausted, still failed",
+    "first_exam": "First attempt",
+    "retake_exam": "Retake",
+    "passed": "Passed",
+    "passed_after_retake": "✅ Passed after retake",
+    "retake_exhausted": "❌ Retake limit exceeded, still failed",
+    "retake_failed": "🔄 Retake failed",
+    "retake_label": "Retake {count}",
+    "force_retake_label": "🔥 Forced - Retake {count}"
 }

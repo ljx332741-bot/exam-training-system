@@ -2136,9 +2136,7 @@
 "cms_management_title": "首页宣贯内容管理",
 "inactive": "停用",
 "switch": "切换",
-"retake_exam": "重考",
 "retaking": "重考中...",
-"retake_failed": "重考失败，请重试",
 "retake_remaining": "剩余重考次数",
 "retake_times": "次",
 "already_retaken": "已重考",
@@ -2148,5 +2146,14 @@
 "retake_success": "已重置考试状态，可以重新参加考试",
 "max_retake": "最大重考次数",
 "max_retake_hint": "0=不允许重考，默认3次",
-"retake_from_history": "从历史记录重考"
+"retake_from_history": "从历史记录重考",
+    "exhausted_failed": "❌ 重考次数用完仍未通过",
+    "first_exam": "首次考试",
+    "retake_exam": "重考",
+    "passed": "已通过",
+    "passed_after_retake": "✅ 已重考且通过",
+    "retake_exhausted": "❌ 重考次数用完仍未通过",
+    "retake_failed": "🔄 重考未通过",
+    "retake_label": "重考{count}",
+    "force_retake_label": "🔥 强制-重考{count}"
 }
