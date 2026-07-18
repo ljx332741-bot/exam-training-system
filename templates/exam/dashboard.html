@@ -151,20 +151,31 @@
                             {% for r in results | default([]) %}
                                 <tr>
                                     <td>
-                                        {{ r.exam_title }}
-                                        {% if r.retake_display %}
+                                        {{ r.exam_title if r.exam_title else '未知考试' }}
+                                        {% if r.retake_display_key %}
+                                            <span class="badge bg-info ms-1" style="font-size: 0.6rem;">
+                                                <span data-i18n="{{ r.retake_display_key }}"
+                                                    {% if r.retake_display_params %}
+                                                    data-i18n-params='{{ r.retake_display_params | tojson | safe }}'
+                                                    {% endif %}>
+                                                    {{ r.retake_display }}
+                                                </span>
+                                            </span>
+                                        {% elif r.retake_display %}
                                             <span class="badge bg-info ms-1" style="font-size: 0.6rem;">
                                                 {{ r.retake_display }}
                                             </span>
                                         {% endif %}
                                         {% if r.is_force %}
                                             <span class="badge bg-warning text-dark ms-1" style="font-size: 0.6rem;">
-                                                🔥 强制
+                                                🔥 <span data-i18n="force">强制</span>
                                             </span>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">
+                                        <span class="badge bg-{{ 'success' if r.total_score >= r.pass_score else 'danger' }}"
+                                            data-i18n-title-key="score_tooltip"
+                                            data-i18n-title-params='{{ {"pass": r.pass_score} | tojson | safe }}'>
                                             {{ r.total_score }}
                                         </span>
                                     </td>
@@ -175,7 +186,12 @@
                                     </td>
                                     <td>
                                         <span class="badge bg-{{ r.retake_status_class }}">
-                                            {{ r.retake_status_text }}
+                                            <span data-i18n="{{ r.retake_status_code }}"
+                                                {% if r.retake_params %}
+                                                data-i18n-params='{{ r.retake_params | tojson | safe }}'
+                                                {% endif %}>
+                                                {{ r.retake_status_text }}
+                                            </span>
                                         </span>
                                     </td>
                                     <td>
@@ -204,7 +220,7 @@
                                 </tr>
                             {% else %}
                                 <tr>
-                                    <td colspan="4" class="text-center text-muted py-4">
+                                    <td colspan="5" class="text-center text-muted py-4">
                                         <span data-i18n="no_records">暂无考试记录</span>
                                     </td>
                                 </tr>

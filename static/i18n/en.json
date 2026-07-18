@@ -1412,13 +1412,15 @@
 "max_retake": "Max Retake Attempts",
 "max_retake_hint": "0=no retake allowed, default 3",
 "retake_from_history": "Retake from history",
-    "exhausted_failed": "❌ Retake exhausted, still failed",
     "first_exam": "First attempt",
     "retake_exam": "Retake",
     "passed": "Passed",
-    "passed_after_retake": "✅ Passed after retake",
-    "retake_exhausted": "❌ Retake limit exceeded, still failed",
-    "retake_failed": "🔄 Retake failed",
+    "exam_name_unknown": "Unknown Exam",
+    "passed_after_retake": "✅ Passed after {count} retake(s)",
+    "exhausted_failed": "❌ Retake ({count} times), still failed",
+    "retake_failed": "🔄 Retake {count} failed",
     "retake_label": "Retake {count}",
-    "force_retake_label": "🔥 Forced - Retake {count}"
+    "force_retake_label": "🔥 Forced - Retake {count}",
+    "retake_exhausted": "Limit reached",
+    "score_tooltip": "Pass score: {pass}"
 }
