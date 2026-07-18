@@ -143,6 +143,7 @@
                                 <th><span data-i18n="exam_name">考试名称</span></th>
                                 <th><span data-i18n="get_score">得分</span></th>
                                 <th><span data-i18n="submitted_at">提交时间</span></th>
+                                <th><span data-i18n="status">状态</span></th>
                                 <th><span data-i18n="actions">操作</span></th>
                             </tr>
                         </thead>
@@ -156,9 +157,9 @@
                                                 {{ r.retake_display }}
                                             </span>
                                         {% endif %}
-                                        {% if r.remark and '强制' in r.remark %}
+                                        {% if r.is_force %}
                                             <span class="badge bg-warning text-dark ms-1" style="font-size: 0.6rem;">
-                                                🔥 {{ r.remark }}
+                                                🔥 强制
                                             </span>
                                         {% endif %}
                                     </td>
@@ -166,11 +167,6 @@
                                         <span class="badge bg-{{ 'success' if r.total_score >= 60 else 'danger' }}">
                                             {{ r.total_score }}
                                         </span>
-                                        {% if r.total_score >= 60 %}
-                                            <span class="badge bg-success ms-1" data-i18n="pass">通过</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary ms-1" data-i18n="failed">未通过</span>
-                                        {% endif %}
                                     </td>
                                     <td class="text-muted small">
                                         <span class="local-time" data-utc="{{ r.created_at }}">
@@ -178,21 +174,9 @@
                                         </span>
                                     </td>
                                     <td>
-                                        {% if r.is_passed %}
-                                            <span class="badge bg-success">
-                                                <i class="bi bi-check-circle me-1"></i>
-                                                {% if r.retake_count > 0 %}
-                                                    已重考且通过
-                                                {% else %}
-                                                    已通过
-                                                {% endif %}
-                                            </span>
-                                        {% else %}
-                                            <span class="badge bg-{{ r.retake_status_class }}">
-                                                <i class="bi bi-x-circle me-1"></i>
-                                                {{ r.retake_status_text }}
-                                            </span>
-                                        {% endif %}
+                                        <span class="badge bg-{{ r.retake_status_class }}">
+                                            {{ r.retake_status_text }}
+                                        </span>
                                     </td>
                                     <td>
                                         <a href="{{ url_for('exam_result_detail', result_id=r.id) }}" target="_blank" class="btn btn-sm btn-outline-info">

@@ -265,24 +265,35 @@ def dashboard():
                     # 5. 重考状态文本
                     if is_passed and retake_count > 0:
                         retake_status_text = '✅ 已重考且通过'
+                        retake_status_code = 'passed_after_retake'
                         retake_status_class = 'success'
                     elif retake_count >= max_retake and not is_passed:
                         retake_status_text = f'❌ 已重考{retake_count}次仍未通过'
+                        retake_status_code = 'exhausted_failed'
                         retake_status_class = 'danger'
                     elif not is_passed and retake_count > 0:
                         retake_status_text = f'🔄 第{retake_count}次重考未通过'
+                        retake_status_code = 'retake_failed'
                         retake_status_class = 'warning'
                     elif not is_passed and retake_count == 0:
                         retake_status_text = '📝 未通过'
+                        retake_status_code = 'failed'
                         retake_status_class = 'danger'
                     else:
                         retake_status_text = '✅ 已通过'
+                        retake_status_code = 'passed'
                         retake_status_class = 'success'
-                    
+
                     # 6. 获取备注信息
                     remark = r.get('remark', '')
                     retake_number = r.get('retake_number', 0)
-                    
+
+                    # 备注类型（用于前端显示重考序号）
+                    remark_type = 'first' if retake_number == 1 else 'retake'
+
+                    # 检查是否为强制推送（从 remark 字段判断）
+                    is_force = r.get('remark', '').startswith('🔥') if r.get('remark') else False
+
                     # 如果备注为空，自动生成
                     if not remark:
                         if retake_number == 1:
@@ -306,10 +317,13 @@ def dashboard():
                     r['exam_status'] = exam_status
                     r['exam_available'] = is_exam_available
                     r['retake_status_text'] = retake_status_text
+                    r['retake_status_code'] = retake_status_code
                     r['retake_status_class'] = retake_status_class
+                    r['remark_type'] = remark_type
+                    r['retake_number'] = retake_number
+                    r['is_force'] = is_force
                     r['remark'] = remark
                     r['retake_display'] = retake_display
-                    r['retake_number'] = retake_number
                     
                     results.append(r)
         
