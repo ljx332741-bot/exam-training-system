@@ -224,6 +224,12 @@
 {% endblock %}
 
 {% block content %}
+    <!-- 登录/仪表盘入口 -->
+    <div class="text-center">
+        <a href="{{ url_for('exam.dashboard') }}" class="btn btn-primary btn-lg px-5">
+            <span data-i18n="url_for_exam_dashboard">进入我的仪表盘</span>
+        </a>
+    </div>
 <div class="container py-5">
     <!-- 企业标语 -->
     <div class="text-center mb-5">
@@ -302,12 +308,9 @@
 
     <!-- 登录/仪表盘入口 -->
     <div class="text-center">
-        {% if session.user_id %}
-            <a href="{{ url_for('exam.dashboard') }}" class="btn btn-primary btn-lg px-5"><span data-i18n="url_for_exam_dashboard">进入我的仪表盘</span></a>
-        {% else %}
-            <a href="{{ url_for('auth.login') }}" class="btn btn-success btn-lg px-5"><span data-i18n="login_system">登录系统</span></a>
-            <a href="{{ url_for('auth.register') }}" class="btn btn-outline-primary btn-lg px-5 ms-3"><span data-i18n="register_new">注册新帐号</span></a>
-        {% endif %}
+        <a href="{{ url_for('exam.dashboard') }}" class="btn btn-primary btn-lg px-5">
+            <span data-i18n="url_for_exam_dashboard">进入我的仪表盘</span>
+        </a>
     </div>
 </div>
 
