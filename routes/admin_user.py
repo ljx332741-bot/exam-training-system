@@ -176,7 +176,7 @@ def api_admin_users():
     
     if not final_countries and allowed_countries is not None and allowed_countries and not is_dev:
         final_countries = allowed_countries
-    
+    '''
     print(f"用户列表请求 - 最终国家过滤: {final_countries}")
 
     print(f"=== 调试国家过滤 ===")
@@ -184,7 +184,7 @@ def api_admin_users():
     print(f"exam_countries: {exam_countries}")
     print(f"training_countries: {training_countries}")
     print(f"final_countries: {final_countries}")
-    
+    '''
     # ========== 4. 基础查询 ==========
     query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
 
