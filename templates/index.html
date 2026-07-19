@@ -399,7 +399,8 @@
         document.getElementById('cmsLoading').style.display = 'flex';
         document.getElementById('cmsContentArea').style.display = 'none';
         document.getElementById('cmsEmpty').style.display = 'none';
-        document.getElementById('cmsTitle').textContent = '加载中...';
+        // document.getElementById('cmsTitle').textContent = '加载中...';
+        document.getElementById('cmsTitle').textContent = `${t("loading")}`;
         
         modal.show();
         
@@ -409,8 +410,12 @@
             
             if (result.success && result.data) {
                 cmsData = result.data;
-                // 使用当前语言渲染
-                renderCMSContent('zh');
+                // 🔥 关键修改：根据当前系统语言决定显示语言
+                // 获取当前系统语言 (从 i18n 或 localStorage)
+                const systemLang = getCurrentLanguage();
+                
+                // 使用系统语言渲染
+                renderCMSContent(systemLang);
             } else {
                 // 显示空状态
                 document.getElementById('cmsLoading').style.display = 'none';
@@ -421,6 +426,29 @@
             document.getElementById('cmsLoading').style.display = 'none';
             document.getElementById('cmsEmpty').style.display = 'block';
         }
+    }
+
+    /**
+    * 获取当前系统语言
+    * @returns {string} 'zh' 或 'en'
+    */
+    function getCurrentLanguage() {
+        // 1. 优先从 i18n 实例获取
+        if (window.i18n && window.i18n.currentLang) {
+            return window.i18n.currentLang;
+        }
+        // 2. 从 localStorage 获取
+        const savedLang = localStorage.getItem('app_lang');
+        if (savedLang && ['zh', 'en'].includes(savedLang)) {
+            return savedLang;
+        }
+        // 3. 从浏览器语言获取
+        const browserLang = navigator.language || navigator.languages?.[0] || 'zh';
+        if (browserLang.startsWith('en')) {
+            return 'en';
+        }
+        // 4. 默认中文
+        return 'zh';
     }
 
     /**
@@ -569,10 +597,25 @@
             // 如果模态框打开且数据已加载，刷新内容
             const modal = document.getElementById('cmsModal');
             if (modal && modal.classList.contains('show') && cmsData) {
-                renderCMSContent(currentCMSLang);
+                const newLang = getCurrentLanguage();
+                // 如果语言变化，自动切换
+                if (newLang !== currentCMSLang) {
+                    renderCMSContent(newLang);
+                }
             }
         });
     }
+
+    // 也监听自定义事件
+    window.addEventListener('app:languageChanged', function(e) {
+        const modal = document.getElementById('cmsModal');
+        if (modal && modal.classList.contains('show') && cmsData) {
+            const newLang = e?.detail?.lang || getCurrentLanguage();
+            if (newLang !== currentCMSLang) {
+                renderCMSContent(newLang);
+            }
+        }
+    });
 
     // ============================================================
     // 键盘快捷键：ESC 关闭
