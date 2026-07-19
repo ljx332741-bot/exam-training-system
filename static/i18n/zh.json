@@ -1413,10 +1413,11 @@
     "passed": "已通过",
     "retake_label": "重考{count}",
         "exam_name_unknown": "未知考试",
-    "passed_after_retake": "✅ 已重考{count}次且通过",
-    "exhausted_failed": "❌ 已重考{count}次仍未通过",
-    "retake_failed": "🔄 第{count}次重考未通过",
+    "passed_after_retake": "已重考{count}次且通过",
+    "exhausted_failed": "已重考{count}次仍未通过",
+    "retake_failed": "第{count}次重考未通过",
     "force_retake_label": "🔥 强制-重考{count}",
     "retake_exhausted": "次数用完",
-    "score_tooltip": "及格线: {pass}"
+    "score_tooltip": "及格线: {pass}",
+    "confirm_retake_hint": "确定要重考吗？\n已重考 {0} 次，最多可重考 {1} 次"
 }
