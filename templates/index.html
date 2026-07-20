@@ -330,7 +330,7 @@
                     <!-- 语言切换按钮 -->
                     <button class="cms-lang-switch" id="cmsLangSwitch" onclick="toggleCMSLanguage()">
                         <span class="lang-indicator" id="cmsLangIndicator">中</span>
-                        <span class="lang-text" id="cmsLangText"><span data-i18n="switch">切换</span> / EN</span>
+                        <span class="lang-text" id="cmsLangText">Switch / EN</span>
                     </button>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                 </div>
@@ -491,8 +491,15 @@
      * 切换模态框语言
      */
     function toggleCMSLanguage() {
-        const newLang = currentCMSLang === 'zh' ? 'en' : 'zh';
-        renderCMSContent(newLang);
+        // ✅ 使用系统 i18n 切换语言
+        if (window.i18n) {
+            const newLang = window.i18n.currentLang === 'zh' ? 'en' : 'zh';
+            window.i18n.setLanguage(newLang);
+        } else {
+            // 降级方案
+            const newLang = currentCMSLang === 'zh' ? 'en' : 'zh';
+            renderCMSContent(newLang);
+        }
     }
 
     /**
@@ -510,6 +517,49 @@
             text.textContent = '切换 / 中';
         }
     }
+
+
+    // ============================================================
+    // ✅ 监听系统语言切换事件
+    // ============================================================
+    
+    // 方式1：通过 i18n 的 subscribe 方法
+    if (window.i18n) {
+        window.i18n.subscribe(function(lang) {
+            // 如果模态框打开且数据已加载，刷新内容
+            const modal = document.getElementById('cmsModal');
+            if (modal && modal.classList.contains('show') && cmsData) {
+                renderCMSContent(lang);
+            }
+            // ✅ 更新 CMS 模态框内的语言切换按钮状态
+            updateCMSLangButton(lang);
+        });
+    }
+
+    // 方式2：监听自定义事件（作为补充）
+    window.addEventListener('app:languageChanged', function(e) {
+        const modal = document.getElementById('cmsModal');
+        const newLang = e?.detail?.lang || getCurrentLanguage();
+        
+        // 更新 CMS 语言按钮
+        updateCMSLangButton(newLang);
+        
+        if (modal && modal.classList.contains('show') && cmsData) {
+            if (newLang !== currentCMSLang) {
+                renderCMSContent(newLang);
+            }
+        }
+    });
+
+    // ============================================================
+    // ✅ 页面加载完成后，同步语言状态
+    // ============================================================
+    document.addEventListener('DOMContentLoaded', function() {
+        // 确保 CMS 语言按钮与系统语言同步
+        const systemLang = getCurrentLanguage();
+        updateCMSLangButton(systemLang);
+        currentCMSLang = systemLang;
+    });
 
     /**
      * 简单的 Markdown/HTML 渲染
@@ -588,34 +638,6 @@
         
         return html;
     }
-
-    // ============================================================
-    // 监听语言切换事件（复用系统 i18n）
-    // ============================================================
-    if (window.i18n) {
-        window.i18n.subscribe(() => {
-            // 如果模态框打开且数据已加载，刷新内容
-            const modal = document.getElementById('cmsModal');
-            if (modal && modal.classList.contains('show') && cmsData) {
-                const newLang = getCurrentLanguage();
-                // 如果语言变化，自动切换
-                if (newLang !== currentCMSLang) {
-                    renderCMSContent(newLang);
-                }
-            }
-        });
-    }
-
-    // 也监听自定义事件
-    window.addEventListener('app:languageChanged', function(e) {
-        const modal = document.getElementById('cmsModal');
-        if (modal && modal.classList.contains('show') && cmsData) {
-            const newLang = e?.detail?.lang || getCurrentLanguage();
-            if (newLang !== currentCMSLang) {
-                renderCMSContent(newLang);
-            }
-        }
-    });
 
     // ============================================================
     // 键盘快捷键：ESC 关闭
