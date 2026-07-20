@@ -1254,7 +1254,6 @@
 "help_export_report": "支持两种导出模式：",
 "help_export_exact": "<strong>精确筛选</strong>：通过国家、培训、考试、日期等条件精确筛选数据导出。",
 "help_export_multi": "<strong>综合筛选</strong>：支持多选培训和考试，一次性导出多份报告。",
-
 "training_management_help_title": "培训管理",
 "create_edit_training": "创建与编辑培训",
 "help_create_training": "点击「新增培训」按钮创建培训，填写名称、国家和有效期。",
@@ -1283,7 +1282,6 @@
 "help_binding_add": "<strong>绑定考试</strong>：选择考试绑定到培训，学员签到后将自动分配绑定考试。",
 "help_binding_config": "<strong>配置</strong>：设置及格分数、是否自动分配、是否必修。",
 "help_binding_reassign": "<strong>补分配</strong>：为已签到但尚未分配的学员补分配考试。",
-
 "exam_management_help_title": "考试管理",
 "create_exam": "创建与编辑考试",
 "help_create_exam": "有两种方式创建考试：",
@@ -1308,7 +1306,6 @@
 "help_deleted_exams": "点击「已删除考试」按钮查看软删除的考试记录。",
 "help_restore_exam": "<strong>恢复</strong>：将软删除的考试恢复为正常状态。",
 "help_permanent_delete_exam": "<strong>永久删除</strong>：彻底删除考试（仅当无关联成绩记录时）。",
-
 "user_management_help_title": "用户管理",
 "add_edit_user": "添加与编辑用户",
 "help_add_user": "支持两种方式添加用户：",
@@ -1327,7 +1324,6 @@
 "help_deleted_users": "点击「已删除人员」按钮查看软删除的用户记录。",
 "help_restore_user": "<strong>恢复</strong>：将用户恢复为正常状态。",
 "help_permanent_delete_user": "<strong>永久删除</strong>：彻底删除用户（不可恢复）。",
-
 "interview_management_help_title": "访谈管理",
 "create_interview": "创建访谈",
 "help_create_interview": "创建访谈的步骤：",
@@ -1346,7 +1342,6 @@
 "help_interview_answer_detail": "<strong>答题详情</strong>：查看每位学员的答题情况。",
 "help_interview_stats": "<strong>统计</strong>：显示答题数量和正确率。",
 "help_interview_resample": "<strong>重新抽题</strong>：为学员重新生成访谈题目。",
-
 "warehouse_management_help_title": "库房管理",
 "warehouse_crud": "库房操作",
 "help_wh_add": "<strong>添加库房</strong>：输入库房编码、名称和类型。国家代码会自动从库房ID提取。",
@@ -1355,7 +1350,6 @@
 "help_wh_import": "<strong>批量导入</strong>：下载模板，填写后导入库房信息。",
 "warehouse_country_relation": "国家关联",
 "help_wh_country": "库房编码的前2位自动识别为国家代码（如 NP001 → 尼泊尔）。系统会根据库房的国家自动分配用户。",
-
 "privacy_management_help_title": "隐私声明管理",
 "privacy_versions": "版本管理",
 "help_privacy_new": "<strong>创建版本</strong>：输入版本号、标题、内容和更新日志。",
@@ -1367,7 +1361,6 @@
 "help_privacy_confirmed": "<strong>已确认</strong>：已确认当前隐私声明的用户。",
 "help_privacy_unconfirmed": "<strong>未确认</strong>：尚未确认当前隐私声明的用户。",
 "help_privacy_rate": "<strong>确认率</strong>：显示当前版本的确认百分比。",
-
 "photo_management_help_title": "培训照片管理",
 "photo_upload": "上传照片",
 "help_photo_select_training": "<strong>选择培训</strong>：从下拉列表中选择要上传照片的培训。",
