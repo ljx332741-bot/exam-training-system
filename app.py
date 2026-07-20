@@ -121,6 +121,7 @@ def utility_processor():
         'is_super_admin': session.get('role') == 'super_admin',
         'is_developer': is_developer(),
         'has_permission': has_permission,
+        'app_version': Config.APP_VERSION,
     }
 
 
