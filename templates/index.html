@@ -378,31 +378,61 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- templates/index.html - 修改 CMS 模态框相关脚本 -->
+
 <script>
     // ============================================================
-    // CMS 模态框管理
+    // CMS 模态框管理 - 完全同步主翻译系统
     // ============================================================
 
-    let currentCMSLang = 'zh';      // 当前模态框语言
-    let currentCMSPageKey = '';     // 当前页面Key
-    let cmsData = null;             // 当前页面数据
+    let currentCMSPageKey = '';
+    let cmsData = null;
+    let isCmsModalOpen = false;
+    let _cmsInitialized = false;
+
+    // ✅ 获取当前语言直接从主系统
+    function getCurrentLanguage() {
+        if (window.i18n && window.i18n.currentLang) {
+            return window.i18n.currentLang;
+        }
+        const savedLang = localStorage.getItem('app_lang');
+        if (savedLang && ['zh', 'en'].includes(savedLang)) {
+            return savedLang;
+        }
+        return 'zh';
+    }
+
+    /**
+     * 安全翻译函数
+     */
+    function safeT(key, params = {}) {
+        if (window.i18n && window.i18n._initialized) {
+            return window.i18n.t(key, params) || key;
+        }
+        return key;
+    }
 
     /**
      * 打开 CMS 页面模态框
-     * @param {string} pageKey - 页面标识 (info_security, compliance_manual, culture_wall)
      */
     async function openCMSPage(pageKey) {
+        // 等待 i18n 就绪
+        if (window.waitForI18n) {
+            await window.waitForI18n();
+        }
+        
         currentCMSPageKey = pageKey;
-        const modal = new bootstrap.Modal(document.getElementById('cmsModal'));
+        const modalElement = document.getElementById('cmsModal');
+        const modal = new bootstrap.Modal(modalElement);
         
         // 重置状态
         document.getElementById('cmsLoading').style.display = 'flex';
         document.getElementById('cmsContentArea').style.display = 'none';
         document.getElementById('cmsEmpty').style.display = 'none';
-        // document.getElementById('cmsTitle').textContent = '加载中...';
-        document.getElementById('cmsTitle').textContent = `${t("loading")}`;
+        document.getElementById('cmsTitle').textContent = safeT('loading');
         
         modal.show();
+        isCmsModalOpen = true;
         
         try {
             const response = await fetch(`/api/cms/page/${pageKey}`);
@@ -410,14 +440,10 @@
             
             if (result.success && result.data) {
                 cmsData = result.data;
-                // 🔥 关键修改：根据当前系统语言决定显示语言
-                // 获取当前系统语言 (从 i18n 或 localStorage)
+                // ✅ 使用主系统的语言
                 const systemLang = getCurrentLanguage();
-                
-                // 使用系统语言渲染
                 renderCMSContent(systemLang);
             } else {
-                // 显示空状态
                 document.getElementById('cmsLoading').style.display = 'none';
                 document.getElementById('cmsEmpty').style.display = 'block';
             }
@@ -429,76 +455,51 @@
     }
 
     /**
-    * 获取当前系统语言
-    * @returns {string} 'zh' 或 'en'
-    */
-    function getCurrentLanguage() {
-        // 1. 优先从 i18n 实例获取
-        if (window.i18n && window.i18n.currentLang) {
-            return window.i18n.currentLang;
-        }
-        // 2. 从 localStorage 获取
-        const savedLang = localStorage.getItem('app_lang');
-        if (savedLang && ['zh', 'en'].includes(savedLang)) {
-            return savedLang;
-        }
-        // 3. 从浏览器语言获取
-        const browserLang = navigator.language || navigator.languages?.[0] || 'zh';
-        if (browserLang.startsWith('en')) {
-            return 'en';
-        }
-        // 4. 默认中文
-        return 'zh';
-    }
-
-    /**
      * 渲染 CMS 内容
-     * @param {string} lang - 'zh' 或 'en'
      */
     function renderCMSContent(lang) {
         if (!cmsData) return;
         
-        currentCMSLang = lang;
-        
-        // 更新标题
         const title = lang === 'zh' ? cmsData.title_zh : cmsData.title_en;
         document.getElementById('cmsTitle').textContent = title;
         
-        // 更新内容（使用 innerHTML 渲染 Markdown/HTML）
         const content = lang === 'zh' ? cmsData.content_zh : cmsData.content_en;
-        const renderedHtml = renderMarkdown(content);
-        document.getElementById('cmsContent').innerHTML = renderedHtml;
+        document.getElementById('cmsContent').innerHTML = renderMarkdown(content);
         
-        // 更新版本信息
         document.getElementById('cmsVersion').textContent = cmsData.version || '1.0';
         if (cmsData.updated_at) {
-            const updateTime = new Date(cmsData.updated_at).toLocaleString();
-            document.getElementById('cmsUpdatedAt').textContent = updateTime;
+            document.getElementById('cmsUpdatedAt').textContent = new Date(cmsData.updated_at).toLocaleString();
         } else {
             document.getElementById('cmsUpdatedAt').textContent = '-';
         }
         
-        // 更新语言切换按钮
         updateCMSLangButton(lang);
         
-        // 切换显示
         document.getElementById('cmsLoading').style.display = 'none';
         document.getElementById('cmsContentArea').style.display = 'block';
         document.getElementById('cmsEmpty').style.display = 'none';
     }
 
     /**
-     * 切换模态框语言
+     * ✅ 切换模态框语言 - 直接调用主系统
      */
     function toggleCMSLanguage() {
-        // ✅ 使用系统 i18n 切换语言
-        if (window.i18n) {
-            const newLang = window.i18n.currentLang === 'zh' ? 'en' : 'zh';
-            window.i18n.setLanguage(newLang);
-        } else {
-            // 降级方案
-            const newLang = currentCMSLang === 'zh' ? 'en' : 'zh';
-            renderCMSContent(newLang);
+        if (cmsData && isCmsModalOpen && window.i18n) {
+            const newLang = getCurrentLanguage() === 'zh' ? 'en' : 'zh';
+            // ✅ 直接调用主系统的 setLanguage，这样所有状态都会同步
+            if (typeof window.i18n.setLanguage === 'function') {
+                window.i18n.setLanguage(newLang).then(() => {
+                    // 渲染完成后更新状态
+                    const systemLang = getCurrentLanguage();
+                    updateCMSLangButton(systemLang);
+                }).catch(err => {
+                    console.warn('语言切换失败:', err);
+                });
+            } else {
+                // 降级：直接切换
+                const newLang = getCurrentLanguage() === 'zh' ? 'en' : 'zh';
+                renderCMSContent(newLang);
+            }
         }
     }
 
@@ -508,6 +509,7 @@
     function updateCMSLangButton(lang) {
         const indicator = document.getElementById('cmsLangIndicator');
         const text = document.getElementById('cmsLangText');
+        if (!indicator || !text) return;
         
         if (lang === 'zh') {
             indicator.textContent = '中';
@@ -518,121 +520,44 @@
         }
     }
 
-
-    // ============================================================
-    // ✅ 监听系统语言切换事件
-    // ============================================================
-    
-    // 方式1：通过 i18n 的 subscribe 方法
-    if (window.i18n) {
-        window.i18n.subscribe(function(lang) {
-            // 如果模态框打开且数据已加载，刷新内容
-            const modal = document.getElementById('cmsModal');
-            if (modal && modal.classList.contains('show') && cmsData) {
-                renderCMSContent(lang);
-            }
-            // ✅ 更新 CMS 模态框内的语言切换按钮状态
-            updateCMSLangButton(lang);
-        });
-    }
-
-    // 方式2：监听自定义事件（作为补充）
-    window.addEventListener('app:languageChanged', function(e) {
-        const modal = document.getElementById('cmsModal');
-        const newLang = e?.detail?.lang || getCurrentLanguage();
-        
-        // 更新 CMS 语言按钮
-        updateCMSLangButton(newLang);
-        
-        if (modal && modal.classList.contains('show') && cmsData) {
-            if (newLang !== currentCMSLang) {
-                renderCMSContent(newLang);
-            }
-        }
-    });
-
-    // ============================================================
-    // ✅ 页面加载完成后，同步语言状态
-    // ============================================================
-    document.addEventListener('DOMContentLoaded', function() {
-        // 确保 CMS 语言按钮与系统语言同步
-        const systemLang = getCurrentLanguage();
-        updateCMSLangButton(systemLang);
-        currentCMSLang = systemLang;
-    });
-
     /**
-     * 简单的 Markdown/HTML 渲染
-     * 支持：标题、列表、加粗、引用块、换行
+     * 简单的 Markdown 渲染
      */
     function renderMarkdown(text) {
         if (!text) return '';
         
         let html = text;
-        
-        // ========== 1. 处理标题 ==========
-        // # 标题1 → <h1>标题1</h1>
         html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-        // ## 标题2 → <h2>标题2</h2>
         html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-        // ### 标题3 → <h3>标题3</h3>
         html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-        
-        // ========== 2. 处理分隔线 ==========
-        // --- → <hr>
         html = html.replace(/^---$/gm, '<hr>');
         
-        // ========== 3. 处理段落 ==========
-        // 将双换行转为段落分隔
         const paragraphs = html.split(/\n\n+/);
         html = paragraphs.map(p => {
-            // 如果已经是 HTML 标签开头，不包裹 p
             const trimmed = p.trim();
-            if (trimmed.startsWith('<') && !trimmed.startsWith('</')) {
-                return p;
-            }
-            // 跳过空行
+            if (trimmed.startsWith('<') && !trimmed.startsWith('</')) return p;
             if (!trimmed) return '';
             return `<p>${trimmed}</p>`;
         }).join('\n');
         
-        // ========== 4. 处理列表 ==========
-        // 有序列表 (数字.)
         html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
-        // 无序列表 (- 或 *)
         html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
-        // 包裹连续的 li 为 ul/ol
         html = html.replace(/(<li>.*?<\/li>\n?)+/gs, function(match) {
-            // 检测是否包含数字（有序列表）
-            if (/^\d+/.test(match)) {
-                return `<ol>${match}</ol>`;
-            }
+            if (/^\d+/.test(match)) return `<ol>${match}</ol>`;
             return `<ul>${match}</ul>`;
         });
         
-        // ========== 5. 处理加粗 ==========
-        // **text** → <strong>text</strong>
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-        
-        // ========== 6. 处理斜体 ==========
-        // *text* → <em>text</em>
         html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-        
-        // ========== 7. 处理引用 ==========
-        // > text → <blockquote>text</blockquote>
         html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
-        // 合并连续的 blockquote
         html = html.replace(/(<\/blockquote>\s*<blockquote>)/g, '<br>');
         
-        // ========== 8. 处理高亮框 ==========
-        // [重要]内容[/重要] → 高亮框
         html = html.replace(/\[重要\]/g, '<div class="highlight-box warning"><strong>⚠️ 重要</strong><br>');
         html = html.replace(/\[警告\]/g, '<div class="highlight-box danger"><strong>🚨 警告</strong><br>');
         html = html.replace(/\[提示\]/g, '<div class="highlight-box success"><strong>💡 提示</strong><br>');
         html = html.replace(/\[注意\]/g, '<div class="highlight-box"><strong>📌 注意</strong><br>');
         html = html.replace(/<\/div>\s*<br\s*\/?>/g, '</div>');
         
-        // ========== 9. 清理多余的空白行 ==========
         html = html.replace(/\n{3,}/g, '\n\n');
         html = html.replace(/<p>\s*<\/p>/g, '');
         
@@ -640,8 +565,100 @@
     }
 
     // ============================================================
-    // 键盘快捷键：ESC 关闭
+    // 页面初始化
     // ============================================================
+    
+    async function initCMS() {
+        if (_cmsInitialized) return;
+        _cmsInitialized = true;
+        
+        // 等待 i18n 就绪
+        if (window.waitForI18n) {
+            await window.waitForI18n();
+        }
+        
+        const systemLang = getCurrentLanguage();
+        updateCMSLangButton(systemLang);
+        
+        // 模态框事件监听
+        const modalElement = document.getElementById('cmsModal');
+        if (modalElement) {
+            modalElement.addEventListener('hidden.bs.modal', function() {
+                isCmsModalOpen = false;
+                // ✅ 从主系统获取最新语言
+                const systemLang = getCurrentLanguage();
+                updateCMSLangButton(systemLang);
+            });
+            
+            modalElement.addEventListener('shown.bs.modal', function() {
+                isCmsModalOpen = true;
+            });
+        }
+    }
+
+    // ============================================================
+    // ✅ 监听语言切换事件 - 自动更新模态框
+    // ============================================================
+    
+    // 通过 i18n subscribe
+    if (window.i18n) {
+        if (!window._cms_i18n_subscribed) {
+            window._cms_i18n_subscribed = true;
+            window.i18n.subscribe(function(lang) {
+                // 更新按钮状态
+                updateCMSLangButton(lang);
+                // 如果模态框打开且有数据，重新渲染
+                if (isCmsModalOpen && cmsData) {
+                    renderCMSContent(lang);
+                }
+            });
+        }
+    }
+
+    // 监听自定义事件
+    window.addEventListener('app:languageChanged', function(e) {
+        const newLang = e?.detail?.lang || getCurrentLanguage();
+        updateCMSLangButton(newLang);
+        if (isCmsModalOpen && cmsData) {
+            renderCMSContent(newLang);
+        }
+    });
+
+    // ============================================================
+    // DOM 加载完成
+    // ============================================================
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        initCMS();
+    });
+
+    // ============================================================
+    // 处理页面恢复（bfcache）
+    // ============================================================
+    
+    window.addEventListener('pageshow', async function(event) {
+        if (event.persisted) {
+            // 等待 i18n 就绪
+            if (window.waitForI18n) {
+                await window.waitForI18n();
+            }
+            const systemLang = getCurrentLanguage();
+            updateCMSLangButton(systemLang);
+            if (window.i18n) {
+                window.i18n.applyTranslations();
+                window.i18n.translateAttributes();
+            }
+            // 如果模态框是打开的，重新渲染
+            if (isCmsModalOpen && cmsData) {
+                renderCMSContent(systemLang);
+            }
+        }
+    });
+
+    // ============================================================
+    // 键盘快捷键
+    // ============================================================
+    
     document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             const modal = document.getElementById('cmsModal');

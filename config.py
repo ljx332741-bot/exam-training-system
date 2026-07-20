@@ -1,6 +1,7 @@
 # config.py
 import os
 from pathlib import Path
+from datetime import datetime
 from dotenv import load_dotenv, set_key
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -10,6 +11,12 @@ load_dotenv(ENV_FILE, override=True)
 class Config:
     # 🔑 Flask
     SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-change-this-now")
+    
+    # ============================================================
+    # 应用版本号（启动时生成一次，零运行时开销）
+    # ============================================================
+    # 优先使用环境变量，否则使用启动时间
+    APP_VERSION = os.environ.get('APP_VERSION') or datetime.now().strftime('%Y%m%d%H%M%S')
     
     # ============================================================
     # 环境识别

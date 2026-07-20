@@ -1,22 +1,83 @@
-// static/i18n/i18n.js
+// static/i18n/i18n.js - 完整修复版
+
 class I18n {
     constructor() {
         this.currentLang = 'zh';
         this.translations = {};
         this.observers = [];
+        this._initialized = false;
+        this._initPromise = null;
+        this._initCallbacks = [];
         this.init();
     }
 
     async init() {
-        const savedLang = localStorage.getItem('app_lang');
-        if (savedLang && ['zh', 'en'].includes(savedLang)) {
-            this.currentLang = savedLang;
+        // 防止重复初始化
+        if (this._initPromise) {
+            return this._initPromise;
         }
-        await this.loadTranslations(this.currentLang);
-        this.applyTranslations();
-        this.updateSwitchButton();
-        this.notifyObservers();
-        this.bindSwitchButton();
+        
+        this._initPromise = (async () => {
+            try {
+                const savedLang = localStorage.getItem('app_lang');
+                if (savedLang && ['zh', 'en'].includes(savedLang)) {
+                    this.currentLang = savedLang;
+                }
+                await this.loadTranslations(this.currentLang);
+                this._initialized = true;
+                
+                // ✅ 执行所有等待初始化的回调
+                this._initCallbacks.forEach(cb => {
+                    try { cb(); } catch(e) { console.warn('Init callback error:', e); }
+                });
+                this._initCallbacks = [];
+                
+                this.applyTranslations();
+                this.translateAttributes();
+                this.updateSwitchButton();
+                this.notifyObservers();
+                this.bindSwitchButton();
+                
+                // 触发就绪事件
+                window.dispatchEvent(new CustomEvent('i18n:ready', { 
+                    detail: { lang: this.currentLang } 
+                }));
+            } catch (e) {
+                console.error('i18n 初始化失败:', e);
+                // 即使失败也标记为已初始化，避免死锁
+                this._initialized = true;
+            }
+        })();
+        
+        return this._initPromise;
+    }
+
+    // ✅ 新增：等待初始化完成的 Promise
+    waitForInit() {
+        if (this._initialized) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve) => {
+            if (this._initialized) {
+                resolve();
+                return;
+            }
+            // 如果已经初始化完成，直接 resolve
+            if (this._initPromise) {
+                this._initPromise.then(resolve).catch(resolve);
+                return;
+            }
+            // 否则加入回调队列
+            this._initCallbacks.push(resolve);
+        });
+    }
+
+    // 等待初始化完成（兼容旧接口）
+    async waitForReady() {
+        if (this._initialized) return;
+        if (this._initPromise) {
+            await this._initPromise;
+        }
     }
 
     async loadTranslations(lang) {
@@ -24,6 +85,7 @@ class I18n {
             const response = await fetch(`/static/i18n/${lang}.json`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             this.translations = await response.json();
+            console.log(`✅ 翻译文件加载成功: ${lang}`, Object.keys(this.translations).length, '条');
         } catch (e) {
             console.error('加载翻译文件失败', e);
             this.translations = {};
@@ -31,18 +93,32 @@ class I18n {
     }
 
     async setLanguage(lang) {
+        // ✅ 等待初始化完成
+        await this.waitForInit();
+        
         if (lang === this.currentLang) {
+            // 语言相同，只重新应用翻译
             this.applyTranslations();
+            this.translateAttributes();
+            this.updateSwitchButton();
+            this.notifyObservers();
             return;
         }
+        
+        console.log(`🔄 切换语言: ${this.currentLang} -> ${lang}`);
         this.currentLang = lang;
         localStorage.setItem('app_lang', lang);
         await this.loadTranslations(lang);
         this.applyTranslations();
+        this.translateAttributes();
         this.updateSwitchButton();
         this.notifyObservers();
-        // 触发自定义事件，便于监听
         window.dispatchEvent(new CustomEvent('app:languageChanged', { detail: { lang } }));
+    }
+
+    // ✅ 兼容旧接口
+    setLang(lang) {
+        return this.setLanguage(lang);
     }
 
     updateSwitchButton() {
@@ -54,7 +130,6 @@ class I18n {
     bindSwitchButton() {
         const btn = document.getElementById('langSwitchBtn');
         if (!btn) return;
-        // 移除旧监听器
         if (btn._langHandler) btn.removeEventListener('click', btn._langHandler);
         const handler = async () => {
             const newLang = this.currentLang === 'zh' ? 'en' : 'zh';
@@ -78,10 +153,10 @@ class I18n {
     }
 
     // ============================================================
-    // 统一的属性翻译方法（支持带参数标题）
+    // 统一的属性翻译方法
     // ============================================================
     translateAttributes() {
-        // 1. 翻译 data-i18n-title（简单文本，无参数）
+        // 1. 翻译 data-i18n-title
         document.querySelectorAll('[data-i18n-title]').forEach(el => {
             const key = el.getAttribute('data-i18n-title');
             if (this.translations[key]) {
@@ -89,12 +164,11 @@ class I18n {
             }
         });
         
-        // 2. 翻译 data-i18n-title-key（支持参数）- ✅ 修复版
+        // 2. 翻译 data-i18n-title-key（支持参数）
         document.querySelectorAll('[data-i18n-title-key]').forEach(el => {
             const key = el.getAttribute('data-i18n-title-key');
             if (!key) return;
             
-            // 解析参数
             let params = {};
             const paramsAttr = el.getAttribute('data-i18n-title-params');
             if (paramsAttr) {
@@ -105,7 +179,6 @@ class I18n {
                 }
             }
             
-            // ✅ 使用 t() 方法统一处理翻译和参数替换
             const translated = this.t(key, params);
             if (translated && translated !== key) {
                 el.title = translated;
@@ -130,25 +203,23 @@ class I18n {
     }
 
     // ============================================================
-    // ✅ 扩展 applyTranslations，支持 data-i18n-html
+    // 应用翻译到页面
     // ============================================================
     applyTranslations() {
-        // ============================================================
-        // 🔥 关键修改：处理 data-i18n 属性，支持 HTML 渲染
-        // ============================================================
         document.querySelectorAll('[data-i18n]').forEach(el => {
             const key = el.getAttribute('data-i18n');
-            if (key === undefined || key === null) return;
+            if (key === undefined || key === null || key === '') return;
             
             let translation = this.translations[key];
-            if (translation === undefined) return;
+            if (translation === undefined) {
+                translation = key;
+            }
 
-            // 🔥 检查是否有参数 - 优先检查 data-i18n-params
+            // 检查是否有参数
             const paramsAttr = el.getAttribute('data-i18n-params');
             if (paramsAttr) {
                 try {
                     const params = JSON.parse(paramsAttr);
-                    // 替换 {key} 格式的参数
                     if (typeof params === 'object' && params !== null) {
                         Object.keys(params).forEach(k => {
                             const value = params[k];
@@ -158,7 +229,7 @@ class I18n {
                         });
                     }
                 } catch(e) {
-                    console.warn('解析 data-i18n-params 失败:', e, '原始值:', paramsAttr);
+                    console.warn('解析 data-i18n-params 失败:', e);
                 }
             }
             
@@ -168,35 +239,33 @@ class I18n {
                 return;
             }
             
-            // 🔥 核心逻辑：检查是否需要 HTML 渲染
-            // 条件1：元素有 data-i18n-html 属性
-            // 条件2：元素在帮助模态框内（.help-section 或 .help-item）
+            // 检查是否需要 HTML 渲染
             const useHtml = el.hasAttribute('data-i18n-html') || 
                            el.closest('.help-section') !== null ||
                            el.closest('.help-item') !== null ||
                            el.classList.contains('help-html');
             
             if (useHtml) {
-                // ✅ 使用 innerHTML 渲染 HTML 标签（如 <strong>）
                 el.innerHTML = translation;
             } else {
-                // ✅ 纯文本渲染
-                // 如果元素有子节点，保留子节点，只替换文本节点
                 if (el.children.length === 0) {
                     el.textContent = translation;
                 } else {
-                    // 有子节点时，只替换第一个文本节点
+                    let replaced = false;
                     for (let node of el.childNodes) {
-                        if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() !== '') {
+                        if (node.nodeType === Node.TEXT_NODE) {
                             node.textContent = translation;
+                            replaced = true;
                             break;
                         }
+                    }
+                    if (!replaced) {
+                        el.appendChild(document.createTextNode(translation));
                     }
                 }
             }
         });
 
-        // 调用统一的属性翻译方法
         this.translateAttributes();
     }
 
@@ -209,9 +278,47 @@ class I18n {
     }
 }
 
-window.i18n = new I18n();
+// ============================================================
+// 全局初始化 - 使用单例模式
+// ============================================================
+if (!window.i18n) {
+    window.i18n = new I18n();
+}
 
-// 兼容全局 t() 函数（支持参数）
+// 兼容全局 t() 函数
 window.t = function(key, params = {}) {
+    if (!window.i18n || !window.i18n._initialized) {
+        return key;
+    }
     return window.i18n.t(key, params);
+};
+
+// ============================================================
+// 等待 i18n 就绪的工具函数
+// ============================================================
+window.waitForI18n = function() {
+    return new Promise((resolve) => {
+        if (window.i18n && window.i18n._initialized) {
+            resolve();
+            return;
+        }
+        // 使用 waitForInit 方法
+        if (window.i18n && typeof window.i18n.waitForInit === 'function') {
+            window.i18n.waitForInit().then(resolve);
+            return;
+        }
+        // 降级方案：监听事件
+        const handler = function(e) {
+            document.removeEventListener('i18n:ready', handler);
+            resolve();
+        };
+        document.addEventListener('i18n:ready', handler);
+        
+        // 超时保护
+        setTimeout(() => {
+            document.removeEventListener('i18n:ready', handler);
+            console.warn('i18n 加载超时，强制继续');
+            resolve();
+        }, 3000);
+    });
 };
