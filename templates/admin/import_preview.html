@@ -219,7 +219,12 @@
 		</span>
 		{% endif %}
 		
-		<button class="btn btn-sm btn-outline-secondary ms-2" onclick="history.back();">✖ <span data-i18n="close">关闭</span></button>
+        <!-- 🔥 返回/关闭按钮（由 JavaScript 控制） -->
+        <button class="btn btn-sm btn-outline-secondary ms-2" id="closeOrBackBtn">
+            <span id="closeOrBackIcon">←</span> 
+            <span id="closeOrBackText" data-i18n="back">返回</span>
+        </button>
+
 		{% if edit_mode %}
 			<button type="button" class="btn btn-primary" id="updateBtn">💾 <span data-i18n="Save_modifications">保存修改</span></button>
 		{% else %}
@@ -296,43 +301,51 @@
 
 		<!-- ✅ 紧凑型状态提示 - 整行显示，不占用太多空间 -->
 		{% if edit_mode %}
-		{% if exam_status == 'active' %}
-		<div class="status-hint-bar status-hint-warning">
-			<i class="bi bi-exclamation-triangle-fill"></i>
-			<span class="hint-text"><span data-i18n="active_exam_hint">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span></span>
-			{% if not can_edit_questions %}
-			<span class="hint-action"><span data-i18n="need_reset_status">如需修改题目，请先重置考试状态</span></span>
-			{% endif %} 
-		</div>
-		{% endif %}
+			{% if exam_status == 'active' %}
+			<div class="status-hint-bar status-hint-warning">
+				<i class="bi bi-exclamation-triangle-fill"></i>
+				<span class="hint-text"><span data-i18n="active_exam_hint">考试正在进行中，只能修改考试名称、时长和阅卷人，题目不可修改。</span></span>
+				{% if not can_edit_questions %}
+				<span class="hint-action"><span data-i18n="need_reset_status">如需修改题目，请先重置考试状态</span></span>
+				{% endif %} 
+			</div>
+			{% endif %}
 		
-		{% if exam_status == 'created' and not can_edit_questions %}
-		<div class="status-hint-bar status-hint-warning">
-			<i class="bi bi-exclamation-triangle-fill"></i>
-			<span class="hint-text"><span data-i18n="created_exam_hint">考试尚未开始，除题目外其他信息均可编辑。如需修改题目，请先重置考试状态。</span></span>
-		</div>
-		{% endif %}
+			{% if exam_status == 'created' and not can_edit_questions %}
+			<div class="status-hint-bar status-hint-warning">
+				<i class="bi bi-exclamation-triangle-fill"></i>
+				<span class="hint-text"><span data-i18n="created_exam_hint">考试尚未开始，除题目外其他信息均可编辑。如需修改题目，请先重置考试状态。</span></span>
+			</div>
+			{% endif %}
+			
+			{% if exam_status == 'draft' %}
+			<div class="status-hint-bar status-hint-info">
+				<i class="bi bi-pencil-square"></i>
+				<span class="hint-text">📝 <span data-i18n="draft_exam_hint">考试为草稿状态，所有内容均可编辑。</span></span>
+				<span class="hint-action"><span data-i18n="can_set_time">可设置开始/结束时间</span></span>
+			</div>
+			{% endif %}
 		
-		{% if exam_status == 'draft' %}
-		<div class="status-hint-bar status-hint-info">
-			<i class="bi bi-pencil-square"></i>
-			<span class="hint-text">📝 <span data-i18n="draft_exam_hint">考试为草稿状态，所有内容均可编辑。</span></span>
-			<span class="hint-action"><span data-i18n="can_set_time">可设置开始/结束时间</span></span>
-		</div>
-		{% endif %}
-		
-		{% if exam_status == 'closed' %}
-		<div class="status-hint-bar status-hint-secondary">
-			<i class="bi bi-lock-fill"></i>
-			<span class="hint-text">🔒 <span data-i18n="closed_exam_hint">考试已结束，所有内容均为只读状态，无法修改。</span></span>
-		</div>
-		{% endif %}
+			{% if exam_status == 'closed' %}
+			<div class="status-hint-bar status-hint-secondary">
+				<i class="bi bi-lock-fill"></i>
+				<span class="hint-text">🔒 <span data-i18n="closed_exam_hint">考试已结束，所有内容均为只读状态，无法修改。</span></span>
+			</div>
+			{% endif %}
 		{% else %}
 		<!-- 导入模式提示 -->
 		<div class="status-hint-bar status-hint-info">
 			<i class="bi bi-info-circle-fill"></i>
 			<span class="hint-text">📋 <span data-i18n="import_mode_hint">导入模式：可编辑考试名称、时长、阅卷人、国家及所有题目。</span></span>
-			<span class="hint-action"><span data-i18n="save_hint">点击"保存草稿"或"确认导入"完成</span></span>
+			{% if from_binding %}
+			<span class="hint-action">
+					<span data-i18n="binding_hint">新建绑定考试，点击保存并绑定返回培训管理页面</span>
+				</span>
+			{% else %}
+			<span class="hint-action">
+					<span data-i18n="save_hint">点击"保存草稿"或"确认导入"完成</span>
+				</span>
+			{% endif %}
 		</div>
 		{% endif %}
 	</div>
@@ -930,6 +943,8 @@
 	document.addEventListener('DOMContentLoaded', async () => {
 		// 1. 先初始化国家选择器（加载国家列表）
 		await initCountrySelector([]);  // 先初始化空列表
+		// 设置返回/关闭按钮
+		setupCloseOrBackButton();
 		
 		// ✅ 2. 如果是新建考试（非编辑、非复制模式），使用默认值
 		const copyConfigStr = sessionStorage.getItem('copy_exam_config');
@@ -1116,5 +1131,57 @@
 		}
 		sessionStorage.removeItem('copy_exam_config');
 	});
+
+	/**
+	 * 根据 URL 参数设置返回/关闭按钮
+	 */
+	function setupCloseOrBackButton() {
+		const btn = document.getElementById('closeOrBackBtn');
+		if (!btn) return;
+		
+		const urlParams = new URLSearchParams(window.location.search);
+		const fromBinding = urlParams.get('from_binding') === 'true';
+		const trainingId = urlParams.get('training_id');
+		
+		const icon = document.getElementById('closeOrBackIcon');
+		const text = document.getElementById('closeOrBackText');
+		
+		if (fromBinding && trainingId) {
+			// 从绑定进入：显示「关闭」按钮
+			if (icon) icon.textContent = '✖';
+			if (text) {
+				text.textContent = t('close') || '关闭';
+				text.setAttribute('data-i18n', 'close');
+			}
+			btn.onclick = function(e) {
+				e.preventDefault();
+				// 尝试关闭窗口
+				if (window.opener) {
+					window.close();
+				} else {
+					// 如果无法关闭，跳转到培训管理页面
+					window.location.href = '/admin/trainings';
+				}
+			};
+			// 添加样式提示
+			btn.title = t('close_window') || '关闭窗口';
+		} else {
+			// 正常进入：显示「返回」按钮
+			if (icon) icon.textContent = '←';
+			if (text) {
+				text.textContent = t('back') || '返回';
+				text.setAttribute('data-i18n', 'back');
+			}
+			btn.onclick = function(e) {
+				e.preventDefault();
+				if (document.referrer && document.referrer.includes('/admin/')) {
+					history.back();
+				} else {
+					window.location.href = returnUrl || '/admin/dashboard';
+				}
+			};
+			btn.title = t('go_back') || '返回上一页';
+		}
+	}
 </script>
 {% endblock %}

@@ -27,8 +27,16 @@ from utils.logger import setup_logging, clean_old_logs, init_default_logging
 # ========== 1. 日志配置 ==========
 # 方法一：使用默认初始化（兼容旧方式）
 IS_PRODUCTION = Config.is_production()
-logger = logging.getLogger(__name__)
 
+# 配置日志（统一入口）
+logger = setup_logging(
+    app=None,  # 稍后绑定到 app
+    log_dir='logs',
+    keep_days=2,
+    # 可选：通过环境变量控制日志级别
+    console_level=os.environ.get('LOG_CONSOLE_LEVEL', None),
+    file_level=os.environ.get('LOG_FILE_LEVEL', None)
+)
 
 # 手动清理一次旧日志（启动时清理）
 clean_old_logs('logs', 2)
@@ -61,21 +69,6 @@ else:
     app.debug = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
 
 logger.info(f"App debug mode: {app.debug}")
-
-
-#=====调试代码====
-@app.route('/debug/developer_check')
-@login_required
-def debug_developer_check():
-    """检查开发者状态"""
-    from utils.permissions import is_developer
-    return jsonify({
-        "session_user_id": session.get('user_id'),
-        "env_developer_id": os.environ.get('DEVELOPER_USER_ID'),
-        "is_developer": is_developer(),
-        "session_role": session.get('role')
-    })
-#=====调试结束=====
 
 # ========== 3. 请求日志（脱敏版本）==========
 @app.before_request

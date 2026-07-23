@@ -202,7 +202,10 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">📢 <span data-i18n="push_sign_in_notify">推送培训签到</span></h5>
+                <h5 class="modal-title">
+                    📢 <span data-i18n="push_sign_in_notify">推送培训签到</span>
+                    <span id="pushModalTrainingName" class="ms-2 text-muted" style="font-size: 0.85rem; color: rgba(255,255,255,0.7) !important;"></span>
+                </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -253,7 +256,7 @@
                         <tbody id="pushUserListBody"></tbody>
                     </table>
                 </div>
-                <small class="text-muted">不选择则推送至所有用户（仅发送通知）</small>
+                <small class="text-muted"><span data-i18n="training_push_hint">不选择则推送至所有用户（仅发送通知）</span></small>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
@@ -781,10 +784,22 @@
         // 推送按钮事件（在 attachRowEvents 或初始化中）
         document.querySelectorAll('.push-btn').forEach(btn => {
             btn.onclick = (e) => {
-                currentTrainingId = btn.dataset.id;  // ✅ 设置当前培训ID
+                currentTrainingId = btn.dataset.id;  // 设置当前培训ID
                 // 填充已有有效期（本地时间）
                 const startTime = btn.dataset.start;
-                const endTime = btn.dataset.end;
+                const endTime = btn.dataset.end; 
+                 
+                // 🔥 获取培训名称
+                const row = btn.closest('tr');
+                const nameLink = row?.querySelector('.training-name-link');
+                const trainingName = nameLink ? nameLink.textContent.trim() : '';
+                
+                // 🔥 设置培训名称到模态框
+                const nameSpan = document.getElementById('pushModalTrainingName');
+                if (nameSpan) {
+                    nameSpan.textContent = trainingName ? `- ${escapeHtml(trainingName)}` : '';
+                }
+
                 document.getElementById('start_time').value = startTime ? utcToLocalDatetimeLocal(startTime) : '';
                 document.getElementById('end_time').value = endTime ? utcToLocalDatetimeLocal(endTime) : '';
                 
@@ -895,6 +910,10 @@
             const trainingId = icon.dataset.trainingId;
             const hasBindings = icon.dataset.hasBindings === 'true';
             const row = icon.closest('tr');
+
+            // 🔥 新增：点击时添加旋转动画
+            icon.style.transition = 'transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+            icon.style.transform = 'rotate(90deg)';
             
             // 无绑定时：直接打开添加考试模态框
             if (!hasBindings) {
@@ -902,8 +921,11 @@
                 if (typeof showToast === 'function') {
                     showToast(t('no_binding_exam_pls_add'), 'info');
                 }
-                // 直接打开添加考试模态框
-                await showAddExamModal(trainingId);
+                // 400ms 后恢复旋转，然后打开模态框
+                setTimeout(async () => {
+                    icon.style.transform = 'rotate(0deg)';
+                    await showAddExamModal(trainingId);
+                }, 400);
                 return;
             }
             
@@ -916,15 +938,30 @@
                 }
                 icon.classList.remove('expanded');
                 icon.textContent = '▶';
+                icon.style.transform = 'rotate(0deg)';
+                icon.style.color = '#0d6efd';
                 icon.title = safeT('click_view_exam_bindings');
             } else {
                 // 展开：加载详情
                 if (icon._isLoading) return;
                 icon._isLoading = true;
+                // 🔥 添加旋转动画：从 ▶ 到 ▼（顺时针旋转90度）
+                icon.style.transition = 'transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                icon.style.transform = 'rotate(90deg)';
+                
                 try {
                     await loadTrainingBindings(trainingId, row, icon);
-                    // icon.classList.add('expanded');
-                    // icon.textContent = '▼';
+                    if (document.getElementById(`binding-detail-${trainingId}`)) {
+                        icon.classList.add('expanded');
+                        // 🔥 关键：保持向下的状态，但内容是 ▶ 旋转90度 = ▼
+                        // 所以 content 保持 ▶，通过 transform 旋转
+                        icon.textContent = '▶';
+                        icon.style.transform = 'rotate(90deg)';
+                        icon.style.color = '#0d6efd';
+                    } else {
+                        // 加载失败，恢复
+                        icon.style.transform = 'rotate(0deg)';
+                    }
                 } finally {
                     icon._isLoading = false;
                 }
@@ -1637,6 +1674,13 @@
         // 移除已存在的模态框
         const existingModal = document.getElementById('pushTargetDialog');
         if (existingModal) existingModal.remove();
+
+        // 确保 trainingName 有值
+        const displayName = trainingName || '未知培训';
+        const displayCountry = countryCode || '未知';
+        
+        // 获取翻译文本
+        const titleText = t('push_sign_in_notify') || '推送培训签到';
         
         const modalHtml = `
             <div class="modal fade" id="pushTargetDialog" tabindex="-1" data-bs-backdrop="static">
@@ -1644,39 +1688,40 @@
                     <div class="modal-content">
                         <div class="modal-header bg-primary text-white">
                             <h5 class="modal-title">
-                                <i class="bi bi-bell"></i> ${t('push_sign_in_notify')} - ${escapeHtml(trainingName)}
+                                <i class="bi bi-bell"></i> 
+                                ${titleText} - ${escapeHtml(trainingName)}
                             </h5>
                             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
                         </div>
                         <div class="modal-body">
                             <div class="mb-3">
-                                <label class="form-label fw-bold">${t('select_push_recipient')}</label>
+                                <label class="form-label fw-bold">${t('select_push_recipient') || '选择推送对象'}</label>
                                 <div class="form-check mb-2">
                                     <input type="radio" name="pushTarget" id="pushAllRadio" class="form-check-input" value="all" checked>
                                     <label class="form-check-label" for="pushAllRadio">
-                                        📢 ${t('push_to_all_user')} (${escapeHtml(countryCode || '未知')})
+                                        📢 ${t('push_to_all_user') || '推送给全部用户'} (${escapeHtml(displayCountry)})
                                     </label>
-                                    <div class="text-muted small mt-1 ms-4">${t('notify_sing_in_hint')}</div>
+                                    <div class="text-muted small mt-1 ms-4">${t('notify_sing_in_hint') || '所有用户将收到签到通知'}</div>
                                 </div>
                                 <div class="form-check">
                                     <input type="radio" name="pushTarget" id="pushCustomRadio" class="form-check-input" value="custom">
                                     <label class="form-check-label" for="pushCustomRadio">
-                                        🎯 ${t('target_push')}
+                                        🎯 ${t('target_push') || '定点推送'}
                                     </label>
-                                    <div class="text-muted small mt-1 ms-4">${t('target_any_aim')}</div>
+                                    <div class="text-muted small mt-1 ms-4">${t('target_any_aim') || '选择特定用户进行推送'}</div>
                                 </div>
                             </div>
                             <div id="customPushPanel" style="display: none;">
                                 <hr>
                                 <div class="alert alert-info">
                                     <i class="bi bi-info-circle"></i> 
-                                    ${t('custom_push_hint')}
+                                    ${t('custom_push_hint') || '点击"确认并推送"后将打开推送设置窗口，您可以选择特定的库房、服务商或具体人员。'}
                                 </div>
                             </div>
                         </div>
                         <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${t('push_later')}</button>
-                            <button type="button" class="btn btn-primary" id="confirmPushTargetBtn">${t('confirm_push')}</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${t('push_later') || '稍后推送'}</button>
+                            <button type="button" class="btn btn-primary" id="confirmPushTargetBtn">${t('confirm_push') || '确认推送'}</button>
                         </div>
                     </div>
                 </div>
@@ -2890,9 +2935,8 @@
         }
     }
 
-
     /**
-    * 重写 showAddExamModal - 绑定成功后更新UI
+    * 重写 showAddExamModal - 增强考试下拉选项显示（修复版）
     */
     async function showAddExamModal(trainingId) {
         console.log('showAddExamModal 被调用, trainingId:', trainingId);
@@ -2903,7 +2947,7 @@
         const data = await res.json();
         const availableExams = data.available_exams || [];
         
-        // 获取培训名称
+        // 🔥 获取培训名称
         const trainingRow = document.querySelector(`tr[data-id="${trainingId}"]`);
         const trainingName = trainingRow ? trainingRow.querySelector('.name-cell')?.innerText || trainingId : trainingId;
         
@@ -2919,24 +2963,38 @@
                         </div>
                         <div class="modal-body">
                             <div class="mb-3">
-                                <label class="form-label">${t('select_exam')}</label>
-                                <div class="input-group">
-                                    <select id="selectExam_${modalId}" class="form-select">
-                                        <option value="">${t('please_select')}...</option>
-                                        ${availableExams.map(e => `<option value="${e.id}">${escapeHtml(e.title)} (${e.countries ? e.countries.join(', ') : '-'})</option>`).join('')}
-                                        <option value="__NEW__" style="background-color: #e7f3ff; font-weight: bold;">➕ ${t('creat_new_exam')}...</option>
-                                    </select>
+                                <label class="form-label fw-bold">${t('select_exam')}</label>
+                                <div class="position-relative">
+                                    <input type="text" 
+                                        id="examSearchInput_${modalId}" 
+                                        class="form-control" 
+                                        placeholder="${t('placeholder_search_exam') || '搜索考试...'}" 
+                                        autocomplete="off"
+                                        style="cursor: pointer;">
+                                    <div id="examDropdown_${modalId}" class="exam-dropdown-panel" 
+                                        style="display: none; position: absolute; top: 100%; left: 0; right: 0; 
+                                        max-height: 300px; overflow-y: auto; background: white; 
+                                        border: 1px solid #ddd; border-radius: 4px; 
+                                        box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1060;">
+                                        <div class="dropdown-header" style="position: sticky; top: 0; background: #f8f9fa; 
+                                            padding: 8px 12px; font-weight: 600; font-size: 0.8rem; 
+                                            border-bottom: 1px solid #eee; z-index: 1;">
+                                            <span data-i18n="select_exam"> ${t('select_exam') || '选择考试'}</span>
+                                            <span class="text-muted ms-2" style="font-weight: 400; font-size: 0.7rem;">
+                                                (${availableExams.length} ${t('count') || '个'})
+                                            </span>
+                                        </div>
+                                        <div id="examListContainer_${modalId}">
+                                            <!-- 由 JavaScript 动态渲染 -->
+                                        </div>
+                                    </div>
                                 </div>
-                                <div class="form-text">${t('creat_new_exam_prompt')}</div>
+                                <input type="hidden" id="selectedExamId_${modalId}" value="">
+                                <div id="selectedExamInfo_${modalId}" class="mt-1 small text-muted"></div>
                             </div>
-                            <div id="newExamFields_${modalId}" style="display: none;">
-                                <hr>
-                                <div class="alert alert-info">
-                                    <i class="bi bi-info-circle"></i> ${t('open_creat_exam_page_prompt')}
-                                </div>
-                            </div>
+                            
                             <div class="mb-3">
-                                <label class="form-label">及格分数</label>
+                                <label class="form-label fw-bold">${t('passing_grade') || '及格分数'}</label>
                                 <input type="number" id="passScore_${modalId}" class="form-control" value="85" min="0" max="100">
                             </div>
                             <div class="form-check mb-2">
@@ -2947,10 +3005,18 @@
                                 <input type="checkbox" id="isRequired_${modalId}" class="form-check-input" checked>
                                 <label class="form-check-label">${t('required')}</label>
                             </div>
+                            <div class="mt-3">
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="createNewExamBtn_${modalId}">
+                                    <i class="bi bi-plus-circle"></i> ${t('creat_new_exam') || '新建考试'}
+                                </button>
+                            </div>
                         </div>
                         <div class="modal-footer">
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">${t('cancel')}</button>
-                            <button type="button" class="btn btn-primary confirm-add-btn" data-modal-id="${modalId}" data-training-id="${trainingId}">${t('confirm_bind')}</button>
+                            <button type="button" class="btn btn-primary confirm-add-btn" 
+                                data-modal-id="${modalId}" data-training-id="${trainingId}">
+                                ${t('confirm_bind')}
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2962,39 +3028,235 @@
         const modal = new bootstrap.Modal(modalElement);
         modal.show();
         
-        const selectExam = document.getElementById(`selectExam_${modalId}`);
+        // ========== 获取考试状态 ==========
+        function getExamStatus(exam) {
+            // 🔥 1. 优先使用后端返回的 status
+            if (exam.status) return exam.status;
+            
+            // 2. 如果有 is_active 字段
+            if (exam.is_active === true) return 'active';
+            if (exam.is_active === false) {
+                if (exam.start_time && exam.end_time) {
+                    const now = new Date();
+                    const endTime = new Date(exam.end_time);
+                    if (now > endTime) return 'closed';
+                }
+                return 'draft';
+            }
+            
+            // 3. 根据时间计算
+            const now = new Date();
+            const startTime = exam.start_time ? new Date(exam.start_time) : null;
+            const endTime = exam.end_time ? new Date(exam.end_time) : null;
+            
+            if (!startTime || !endTime) return 'draft';
+            if (now < startTime) return 'created';
+            if (now > endTime) return 'closed';
+            return 'active';
+        }
         
-        // 监听选择变化
-        selectExam.addEventListener('change', async (e) => {
-            if (e.target.value === '__NEW__') {
-                modal.hide();
-                const trainingCountry = trainingRow?.querySelector('.country-cell')?.innerText || '';
-                const createUrl = `/admin/import?training_id=${trainingId}&country=${trainingCountry}&from_binding=true`;
-                window.open(createUrl, '_blank');
+        // ========== 获取状态徽章 ==========
+        function getExamStatusBadge(status) {
+            const statusMap = {
+                'draft': `<span class="badge bg-secondary">${t('draft') || '草稿'}</span>`,
+                'created': `<span class="badge bg-info">${t('not_started') || '未开始'}</span>`,
+                'active': `<span class="badge bg-success">${t('t_on_going') || '进行中'}</span>`,
+                'closed': `<span class="badge bg-danger">${t('closed') || '已关闭'}</span>`
+            };
+            return statusMap[status] || `<span class="badge bg-secondary">${status}</span>`;
+        }
+        
+        // ========== 格式化创建时间 ==========
+        function formatCreatedTime(exam) {
+            // 🔥 尝试多个可能的字段名
+            const createdAt = exam.created_at || exam.create_time || exam.createdAt || exam.creation_date;
+            if (!createdAt) {
+                // 如果没有创建时间，显示 ID 作为备选
+                return `ID: ${exam.id}`;
+            }
+            try {
+                const date = new Date(createdAt);
+                if (isNaN(date.getTime())) return '-';
+                return date.toLocaleString();
+            } catch(e) {
+                return '-';
+            }
+        }
+        
+        // ========== 渲染考试列表 ==========
+        function renderExamList(filterText = '') {
+            const container = document.getElementById(`examListContainer_${modalId}`);
+            if (!container) return;
+            
+            let filtered = availableExams;
+            if (filterText) {
+                const keyword = filterText.toLowerCase().trim();
+                filtered = availableExams.filter(e => 
+                    (e.title || '').toLowerCase().includes(keyword) ||
+                    (e.countries && e.countries.some(c => c.toLowerCase().includes(keyword)))
+                );
+            }
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center text-muted py-3" style="font-size: 0.85rem;">
+                        <i class="bi bi-inbox me-1"></i>
+                        ${t('no_matching_exam_was_found') || '未找到匹配的考试'}
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = filtered.map(e => {
+                // 🔥 计算状态
+                const status = getExamStatus(e);
+                const statusBadge = getExamStatusBadge(status);
+                
+                // 🔥 格式化创建时间
+                const createdDate = formatCreatedTime(e);
+                
+                // 国家显示
+                const countriesDisplay = e.countries ? e.countries.join(', ') : '-';
+                
+                // 题目数量
+                const questionCount = e.question_count || e.questions_count || 0;
+                
+                // 时长
+                const duration = e.duration || '-';
+                
+                return `
+                    <div class="exam-dropdown-item" data-exam-id="${e.id}" 
+                        style="padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f0f0f0; 
+                            transition: background 0.2s ease;"
+                        onmouseover="this.style.background='#f0f7ff'" 
+                        onmouseout="this.style.background=''">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="fw-semibold" style="font-size: 0.9rem;">${escapeHtml(e.title || '未命名考试')}</span>
+                                <span class="ms-2">${statusBadge}</span>
+                            </div>
+                            <span class="text-muted small">ID: ${e.id}</span>
+                        </div>
+                        <div class="d-flex flex-wrap gap-3 mt-1" style="font-size: 0.75rem; color: #6c757d;">
+                            <span><i class="bi bi-globe2 me-1"></i>${escapeHtml(countriesDisplay)}</span>
+                            <span><i class="bi bi-calendar3 me-1"></i>${t('created_at') || '创建时间'}: ${createdDate}</span>
+                            ${questionCount > 0 ? `<span><i class="bi bi-question-circle me-1"></i>${questionCount}${t('question_unit') || '题'}</span>` : ''}
+                            ${duration !== '-' ? `<span><i class="bi bi-clock me-1"></i>${duration}${t('minutes') || '分钟'}</span>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // 绑定点击事件
+            container.querySelectorAll('.exam-dropdown-item').forEach(item => {
+                item.addEventListener('click', function() {
+                    const examId = this.dataset.examId;
+                    const exam = availableExams.find(e => e.id == examId);
+                    if (exam) {
+                        selectExam(exam);
+                    }
+                    document.getElementById(`examDropdown_${modalId}`).style.display = 'none';
+                });
+            });
+        }
+        
+        // ========== 选择考试 ==========
+        function selectExam(exam) {
+            document.getElementById(`selectedExamId_${modalId}`).value = exam.id;
+            document.getElementById(`examSearchInput_${modalId}`).value = exam.title || '';
+            
+            // 🔥 显示选中信息
+            const status = getExamStatus(exam);
+            const statusBadge = getExamStatusBadge(status);
+            const createdDate = formatCreatedTime(exam);
+            const countriesDisplay = exam.countries ? exam.countries.join(', ') : '-';
+            
+            document.getElementById(`selectedExamInfo_${modalId}`).innerHTML = `
+                <i class="bi bi-check-circle-fill text-success me-1"></i>
+                <span class="ms-2">${t('selected') || '已选'}</span>: <strong>${escapeHtml(exam.title || '未命名考试')}</strong>
+                <span class="ms-2">${statusBadge}</span>
+                <span class="ms-2 text-muted">| ${t('country') || '国家'}: ${escapeHtml(countriesDisplay)}</span>
+                <span class="ms-2 text-muted">| ${t('created_at') || '创建时间'}: ${createdDate}</span>
+            `;
+        }
+        
+        // ========== 初始化下拉选择器 ==========
+        const searchInput = document.getElementById(`examSearchInput_${modalId}`);
+        const dropdown = document.getElementById(`examDropdown_${modalId}`);
+        
+        // 渲染初始列表
+        renderExamList();
+        
+        // 搜索输入事件
+        searchInput.addEventListener('input', function() {
+            const val = this.value.trim();
+            renderExamList(val);
+            dropdown.style.display = 'block';
+        });
+        
+        // 点击输入框显示下拉
+        searchInput.addEventListener('click', function(e) {
+            e.stopPropagation();
+            dropdown.style.display = 'block';
+            renderExamList(this.value.trim());
+        });
+        
+        // 🔥 修复：使用模态框内部的事件监听，而不是全局
+        // 点击模态框其他地方关闭下拉
+        modalElement.addEventListener('click', function(e) {
+            // 如果点击的不是输入框和下拉框本身，关闭下拉
+            if (!searchInput.contains(e.target) && !dropdown.contains(e.target)) {
+                dropdown.style.display = 'none';
             }
         });
         
-        // 绑定确认按钮事件
-        modalElement.querySelector('.confirm-add-btn').onclick = async () => {
+        // 🔥 键盘事件
+        searchInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const firstItem = dropdown.querySelector('.exam-dropdown-item');
+                if (firstItem) {
+                    firstItem.click();
+                }
+            }
+            if (e.key === 'Escape') {
+                dropdown.style.display = 'none';
+                this.blur();
+            }
+        });
+        
+        // 🔥 点击下拉项时关闭下拉（由 item 的 click 事件处理）
+        
+        // ========== 新建考试按钮 ==========
+        document.getElementById(`createNewExamBtn_${modalId}`).addEventListener('click', function() {
+            modal.hide();
+            const trainingCountry = trainingRow?.querySelector('.country-cell')?.innerText || '';
+            const createUrl = `/admin/import?training_id=${trainingId}&country=${trainingCountry}&from_binding=true`;
+            window.open(createUrl, '_blank');
+        });
+        
+        // ========== 确认绑定按钮 ==========
+        modalElement.querySelector('.confirm-add-btn').onclick = async function() {
+            const examId = document.getElementById(`selectedExamId_${modalId}`).value;
             const passScore = document.getElementById(`passScore_${modalId}`).value;
             const isAutoAssign = document.getElementById(`isAutoAssign_${modalId}`).checked;
             const isRequired = document.getElementById(`isRequired_${modalId}`).checked;
-            const examId = selectExam.value;
-            const examTitle = selectExam.options[selectExam.selectedIndex]?.text || '';
             
-            if (!examId || examId === '__NEW__') {
-                alert(t('choice_exam'));
+            // 获取选中的考试标题
+            const selectedExam = availableExams.find(e => e.id == examId);
+            const examTitle = selectedExam ? selectedExam.title : '';
+            
+            if (!examId) {
+                alert(t('choice_exam') || '请选择考试');
                 return;
             }
             
             // 显示加载状态
-            const confirmBtn = modalElement.querySelector('.confirm-add-btn');
+            const confirmBtn = this;
             const originalText = confirmBtn.innerHTML;
             confirmBtn.disabled = true;
-            confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${t('binding')}`;
+            confirmBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>${t('binding') || '绑定中...'}`;
 
             try {
-                // 添加时间戳防止缓存
                 const res = await fetch(`/api/admin/training/bind_exam?_t=${Date.now()}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3009,62 +3271,45 @@
                 const result = await res.json();
 
                 if (result.success) {
-                    // 清除浏览器端缓存的培训列表数据
-                    clearTrainingCache();
-                    // 清除绑定数据缓存
+                    // 清除缓存
+                    if (typeof clearTrainingCache === 'function') {
+                        clearTrainingCache();
+                    }
                     sessionStorage.removeItem('training_bindings_data');
                     sessionStorage.removeItem(`training_bindings_${trainingId}`);
-                    // 显示成功消息
+                    
                     if (typeof showToast === 'function') {
-                        showToast(t('bind_success'), 'success');
+                        showToast(t('bind_success') || '绑定成功', 'success');
                     }
                     
-                    // 关闭模态框
                     modal.hide();
                     
-                    // 关键：更新UI而不刷新页面
-                    await updateBindingUI(trainingId, 'bind', {
-                        exam_id: parseInt(examId),
-                        exam_title: examTitle.replace(/\([^)]*\)/, '').trim(),
-                        binding_id: result.binding_id,
-                        pass_score: parseInt(passScore),
-                        is_auto_assign: isAutoAssign,
-                        is_required: isRequired
-                    });
-                    
-                    // 延迟移除模态框DOM
-                    setTimeout(() => modalElement.remove(), 300);
-
-                    // 清除培训缓存函数
-                    function clearTrainingCache() {
-                        sessionStorage.removeItem('training_list_data');
-                        sessionStorage.removeItem('training_list_data_time');
+                    // 更新UI
+                    if (typeof updateBindingUI === 'function') {
+                        await updateBindingUI(trainingId, 'bind', {
+                            exam_id: parseInt(examId),
+                            exam_title: examTitle,
+                            binding_id: result.binding_id,
+                            pass_score: parseInt(passScore),
+                            is_auto_assign: isAutoAssign,
+                            is_required: isRequired
+                        });
                     }
+                    
+                    setTimeout(() => modalElement.remove(), 300);
                 } else {
-                    // 检查是否是已绑定的错误
-                    if (result.message && result.message.includes('已绑定')) {
-                        if (typeof showToast === 'function') {
-                            showToast('该考试已绑定到此培训', 'warning');
-                        } else {
-                            alert('该考试已绑定到此培训');
-                        }
-                        
-                        // 即使提示已绑定，也刷新UI状态
-                        await updateBindingUI(trainingId, 'refresh');
+                    if (typeof showToast === 'function') {
+                        showToast(result.message || t('bind_failed') || '绑定失败', 'error');
                     } else {
-                        if (typeof showToast === 'function') {
-                            showToast(result.message || t('bind_failed'), 'error');
-                        } else {
-                            alert(result.message || t('bind_failed'));
-                        }
+                        alert(result.message || t('bind_failed') || '绑定失败');
                     }
                 }
             } catch (err) {
-                console.error(t('bind_failed'), err);
+                console.error('绑定失败:', err);
                 if (typeof showToast === 'function') {
-                    showToast(t('network_error_retry'), 'error');
+                    showToast(t('network_error_retry') || '网络错误，请重试', 'error');
                 } else {
-                    alert(t('network_error_retry'));
+                    alert(t('network_error_retry') || '网络错误，请重试');
                 }
             } finally {
                 confirmBtn.disabled = false;
@@ -3077,7 +3322,6 @@
             setTimeout(() => modalElement.remove(), 300);
         });
     }
-
 
     // Toast 提示函数（如果不存在）
     if (typeof showToast !== 'function') {

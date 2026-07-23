@@ -1184,7 +1184,7 @@ document.getElementById('regForm').addEventListener('submit', async function(e) 
     const submitBtn = document.getElementById('registerBtn');
     const originalText = submitBtn.innerHTML;
     submitBtn.disabled = true;
-    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" style="width:18px;height:18px;"></span> 注册中...';
+    submitBtn.innerHTML = `<span class="spinner-border spinner-border-sm" style="width:18px;height:18px;"></span> ${t('registering')}`;
     
     const data = {
         email: email.value,

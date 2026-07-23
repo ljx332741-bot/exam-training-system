@@ -64,7 +64,15 @@ class Config:
     @classmethod
     def is_development_env(cls):
         return cls.is_development()
-    
+
+    # ============================================================
+    # 日志配置
+    # ============================================================
+    LOG_LEVEL = os.environ.get('LOG_LEVEL', 'DEBUG' if not is_production else 'WARNING')
+    LOG_CONSOLE_LEVEL = os.environ.get('LOG_CONSOLE_LEVEL', LOG_LEVEL)
+    LOG_FILE_LEVEL = os.environ.get('LOG_FILE_LEVEL', LOG_LEVEL)
+    LOG_KEEP_DAYS = int(os.environ.get('LOG_KEEP_DAYS', 2))
+
     # ============================================================
     # Supabase 配置
     # ============================================================
