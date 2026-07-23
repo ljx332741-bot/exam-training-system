@@ -1,5 +1,5 @@
 # routes/admin_exam.py
-import os
+import tempfile, os
 import json
 import logging
 import traceback
@@ -335,6 +335,11 @@ def edit_exam_preview(exam_id):
 def admin_import():
     """Word 题库导入页面"""
     print(f"\n🔥🔥🔥 admin_import 被调用！method={request.method} 🔥🔥🔥\n", flush=True)
+
+    # 获取 from_binding 参数（GET 和 POST 都需要） 0722新增
+    from_binding = request.args.get('from_binding') == 'true'
+    training_id = request.args.get('training_id')
+    training_country = request.args.get('country')
     
     if request.method == 'POST' and 'docx_file' in request.files:
         file = request.files['docx_file']
@@ -345,7 +350,6 @@ def admin_import():
             flash({'msg': 'only_docx', 'params': []}, 'danger')
             return redirect(request.url)
         
-        import tempfile, os
         tmp_path = None
         
         try:
@@ -369,9 +373,10 @@ def admin_import():
             
             logger.info("🔄 跳转预览页")
             
-            # ✅ 获取默认值
+            # 获取默认值
             defaults = get_default_exam_values(request)
-            
+            can_edit_questions = True # 0722 新增
+
             return render_template('admin/import_preview.html', 
                 questions=qs, 
                 exam_title=exam_title,
@@ -379,17 +384,18 @@ def admin_import():
                 copy_mode=False,
                 original_exam_id=0,
                 exam_status='draft',
+                can_edit_questions=can_edit_questions,  # 0722 新增
                 exam_duration=60,
                 exam_reviewer='',
                 exam_start_time=defaults['exam_start_time'],
                 exam_end_time=defaults['exam_end_time'],
                 exam_countries=defaults['exam_countries'],
-                from_binding=defaults['from_binding'],
-                training_id=defaults['training_id'],
-                training_country=defaults['training_country'],
-                exam_pass_score=85  # ✅ 新增
+                from_binding=from_binding,
+                training_id=training_id,
+                training_country=training_country,
+                exam_pass_score=85
             )
-            
+
         except AttributeError as e:
             logger.error(f"❌ AttributeError: {e}")
             flash({'msg': 'parse_func_missing', 'params': []}, 'danger')
@@ -897,18 +903,24 @@ def copy_exam_preview(exam_id):
     # 获取用户输入的新考试名称（从 query 参数）
     new_title = request.args.get('new_title', exam['title'] + '_copy')
     countries = parse_exam_countries(exam)
+
+    # 🔥 复制考试：允许编辑（因为是新建）0722新增
+    can_edit_questions = True
+    copy_mode = True
+    
     return render_template('admin/import_preview.html', 
         questions=questions,
         exam_title=new_title,
         original_exam_id=exam_id,
         return_url=url_for('admin_exam.admin_dashboard'),
         exam_country=exam.get('country', ''),
-        copy_mode=True,
+        copy_mode=copy_mode,
         exam_status='draft',
+        can_edit_questions=can_edit_questions,
         exam_duration=exam.get('duration', 60),
         exam_reviewer=exam.get('reviewer', ''),
         exam_countries=countries,
-        exam_pass_score=exam.get('pass_score', 85)  # ✅ 新增
+        exam_pass_score=exam.get('pass_score', 85)
     )
 
 

@@ -2697,7 +2697,7 @@ def get_training_bindings(training_id):
     # 获取考试信息
     result = []
     for b in (bindings.data or []):
-        exam = db.table("exams").select("id, title, countries, duration, start_time, end_time")\
+        exam = db.table("exams").select("id, title, countries, created_at, duration, start_time, end_time")\
             .eq("id", b['exam_id'])\
             .maybe_single()\
             .execute()
@@ -2753,7 +2753,7 @@ def get_training_bindings(training_id):
         })
     
     # 获取可选考试列表（未绑定的）- 根据角色过滤
-    all_exams = db.table("exams").select("id, title, countries")\
+    all_exams = db.table("exams").select("id, title, created_at, countries, start_time, end_time")\
         .is_("deleted_at", "null")\
         .execute()
     
@@ -2810,7 +2810,11 @@ def get_training_bindings(training_id):
             available_exams.append({
                 "id": e['id'],
                 "title": e['title'],
-                "countries": exam_countries
+                "countries": exam_countries,
+                "status": get_exam_status(e),  # 🔥 添加状态
+                "created_at": e.get('created_at'),  # 🔥 添加创建时间
+                "duration": e.get('duration'),  # 🔥 添加时长
+                "question_count": 0  # 可选，可以计算或保留
             })
     
     return jsonify({

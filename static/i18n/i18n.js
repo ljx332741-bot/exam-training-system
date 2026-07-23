@@ -85,7 +85,6 @@ class I18n {
             const response = await fetch(`/static/i18n/${lang}.json`);
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             this.translations = await response.json();
-            console.log(`✅ 翻译文件加载成功: ${lang}`, Object.keys(this.translations).length, '条');
         } catch (e) {
             console.error('加载翻译文件失败', e);
             this.translations = {};
@@ -93,7 +92,6 @@ class I18n {
     }
 
     async setLanguage(lang) {
-        // ✅ 等待初始化完成
         await this.waitForInit();
         
         if (lang === this.currentLang) {
@@ -105,7 +103,6 @@ class I18n {
             return;
         }
         
-        console.log(`🔄 切换语言: ${this.currentLang} -> ${lang}`);
         this.currentLang = lang;
         localStorage.setItem('app_lang', lang);
         await this.loadTranslations(lang);
@@ -116,7 +113,7 @@ class I18n {
         window.dispatchEvent(new CustomEvent('app:languageChanged', { detail: { lang } }));
     }
 
-    // ✅ 兼容旧接口
+    // 兼容旧接口
     setLang(lang) {
         return this.setLanguage(lang);
     }

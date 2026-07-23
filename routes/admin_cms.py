@@ -33,7 +33,7 @@ def safe_get_data(result):
 @admin_cms_bp.route('/api/cms/page/<page_key>', methods=['GET'])
 def get_cms_page(page_key):
     """获取指定页面的内容（公开接口）"""
-    db = get_supabase_admin()
+    db = get_supabase()
     
     try:
         res = db.table("cms_pages") \

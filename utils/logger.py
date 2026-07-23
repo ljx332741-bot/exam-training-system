@@ -1,4 +1,5 @@
-# utils/logger.py
+# utils/logger.py - 修复版
+
 import os
 import sys
 import logging
@@ -6,15 +7,16 @@ import logging.handlers
 import re
 import glob
 from datetime import datetime, timedelta
+import atexit
+import signal
 
 
 # ============================================================
-# 1. 敏感数据脱敏过滤器（保留您的原有逻辑）
+# 1. 敏感数据脱敏过滤器（保留原有逻辑）
 # ============================================================
 class SensitiveDataFilter(logging.Filter):
     """过滤日志中的敏感信息"""
     
-    # 敏感信息模式
     PATTERNS = {
         'uuid': re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', re.I),
         'email': re.compile(r'\b[\w\.-]+@[\w\.-]+\.\w+\b'),
@@ -22,7 +24,6 @@ class SensitiveDataFilter(logging.Filter):
         'email_eq': re.compile(r'email=eq\.[^&]+', re.I),
         'supabase_ref': re.compile(r'mrkukgnkrefhruoxuflz|hhupzorgxzwoxrrqaqjq', re.I),
         'api_key': re.compile(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+', re.I),
-        # 额外增加一些常见敏感字段
         'password': re.compile(r'"password":\s*"[^"]*"', re.I),
         'token': re.compile(r'"token":\s*"[^"]*"', re.I),
         'secret': re.compile(r'"secret":\s*"[^"]*"', re.I),
@@ -53,41 +54,47 @@ class SensitiveDataFilter(logging.Filter):
 
 
 # ============================================================
-# 2. 带自动清理功能的日志轮转处理器
+# 2. 改进的日志轮转处理器 - 每次写入时检查清理
 # ============================================================
 class TimedRotatingFileHandlerWithCleanup(logging.handlers.TimedRotatingFileHandler):
     """
     带自动清理功能的日志轮转处理器
     - 每天轮转一次
     - 自动删除超过指定天数的旧日志文件
+    - 每次写入时检查是否需要清理（增强健壮性）
     """
     
     def __init__(self, filename, when='midnight', interval=1, backup_count=2, 
                  encoding=None, delay=False, utc=False, at_time=None):
-        """
-        Args:
-            filename: 日志文件路径
-            when: 轮转周期 ('midnight'=每天午夜, 'H'=每小时, 'D'=每天)
-            interval: 轮转间隔
-            backup_count: 保留的日志文件数量（对应天数）
-            encoding: 文件编码
-        """
         super().__init__(filename, when, interval, backup_count, encoding, delay, utc, at_time)
         self.backup_count = backup_count
         self.log_dir = os.path.dirname(filename)
         self.log_basename = os.path.basename(filename)
+        self._last_cleanup_time = datetime.now()
+        self._cleanup_interval = timedelta(hours=1)  # 每小时检查一次
+    
+    def emit(self, record):
+        """重写 emit 方法，在写入日志前检查是否需要清理"""
+        try:
+            # 定期检查清理（每小时一次）
+            now = datetime.now()
+            if now - self._last_cleanup_time > self._cleanup_interval:
+                self._cleanup_old_logs()
+                self._last_cleanup_time = now
+            
+            # 调用父类的 emit
+            super().emit(record)
+        except Exception:
+            self.handleError(record)
     
     def doRollover(self):
         """轮转日志并清理旧文件"""
-        # 执行父类的轮转逻辑
         super().doRollover()
-        
-        # 清理旧的日志文件
         self._cleanup_old_logs()
     
     def _cleanup_old_logs(self):
         """删除超过指定天数的日志文件"""
-        if not self.log_dir:
+        if not self.log_dir or not os.path.exists(self.log_dir):
             return
         
         # 获取所有相关日志文件
@@ -105,68 +112,74 @@ class TimedRotatingFileHandlerWithCleanup(logging.handlers.TimedRotatingFileHand
                 continue
             
             try:
-                # 获取文件修改时间
                 file_mtime = os.path.getmtime(file_path)
-                
-                # 如果文件修改时间早于截止时间，删除它
                 if file_mtime < cutoff_timestamp:
                     os.remove(file_path)
                     deleted_count += 1
-                    print(f"[LOG] 已删除旧日志: {os.path.basename(file_path)}")
             except (OSError, FileNotFoundError):
-                # 文件可能已被删除或权限问题
                 pass
         
         if deleted_count > 0:
-            print(f"[LOG] 共删除 {deleted_count} 个旧日志文件")
+            print(f"[LOG] 已清理 {deleted_count} 个旧日志文件")
 
 
 # ============================================================
-# 3. 兼容原有配置的统一日志设置函数
+# 3. 统一的日志设置函数（增强版）
 # ============================================================
-def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2):
+def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2, 
+                   console_level=None, file_level=None, is_production=None):
     """
     配置日志系统（支持自动清理和脱敏）
     
     Args:
         app: Flask app 实例（可选）
-        log_level: 日志级别，None表示自动判断
+        log_level: 全局日志级别
         log_dir: 日志目录
         keep_days: 保留日志天数（默认2天）
+        console_level: 控制台日志级别（默认根据环境自动设置）
+        file_level: 文件日志级别（默认根据环境自动设置）
     
     Returns:
         logger: 应用日志器
     """
-    # 判断环境（保持与原有逻辑一致）
-    is_production = os.environ.get('FLASK_ENV') == 'production' or \
-                    os.environ.get('RENDER', '') == 'true'
+    # 判断环境（优先使用传入的参数）
+    if is_production is None:
+        is_production = (
+            os.environ.get('FLASK_ENV') == 'production' or
+            os.environ.get('RENDER', '') == 'true' or
+            os.environ.get('APP_ENV') in ['production', 'prod']
+        )
     
     # 确定日志级别
     if log_level is None:
-        if is_production:
-            base_level = logging.WARNING
-        else:
-            base_level = logging.DEBUG
+        base_level = logging.WARNING if is_production else logging.DEBUG
     else:
         base_level = log_level
+    
+    # 控制台级别（默认：生产 WARNING，开发 DEBUG）
+    if console_level is None:
+        console_level = base_level
+    
+    # 文件级别（默认：生产 WARNING，开发 DEBUG）
+    if file_level is None:
+        file_level = base_level
     
     # 确保日志目录存在
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
     
-    # 日志文件路径
     log_file = os.path.join(log_dir, 'exam_app.log')
     
-    # 清除已有的处理器（避免重复）
+    # 清除已有的处理器
     root_logger = logging.getLogger()
     for handler in root_logger.handlers[:]:
         root_logger.removeHandler(handler)
     
     # ========== 创建处理器 ==========
     
-    # 1. 控制台处理器（所有环境都有）
+    # 1. 控制台处理器（输出到 stdout）
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(base_level)
+    console_handler.setLevel(console_level)
     console_formatter = logging.Formatter(
         '[%(asctime)s] %(levelname)s: %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
@@ -176,11 +189,6 @@ def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2):
     root_logger.addHandler(console_handler)
     
     # 2. 文件处理器（带自动清理和脱敏）
-    # 生产环境：只记录 WARNING 及以上
-    # 开发环境：记录 DEBUG 及以上
-    file_level = logging.WARNING if is_production else logging.DEBUG
-    
-    # 使用自定义的轮转处理器（每天轮转，保留指定天数）
     file_handler = TimedRotatingFileHandlerWithCleanup(
         filename=log_file,
         when='midnight',
@@ -198,7 +206,6 @@ def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2):
     root_logger.addHandler(file_handler)
     
     # ========== 配置第三方库日志级别 ==========
-    # 生产环境降低第三方库日志级别
     if is_production:
         logging.getLogger('supabase').setLevel(logging.ERROR)
         logging.getLogger('httpx').setLevel(logging.WARNING)
@@ -210,57 +217,31 @@ def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2):
     app_logger = logging.getLogger(__name__)
     
     # ========== 启动日志 ==========
-    if is_production:
-        app_logger.warning("=" * 60)
-        app_logger.warning("PRODUCTION MODE - Sensitive data will be redacted")
-        app_logger.warning(f"Log level: {logging.getLevelName(base_level)}")
-        app_logger.warning(f"Log file: {log_file}")
-        app_logger.warning(f"Logs will be kept for {keep_days} days")
-        app_logger.warning("=" * 60)
-    else:
-        app_logger.info("Development mode - Log level: DEBUG")
-        app_logger.info(f"Log file: {log_file}")
-        app_logger.info(f"Logs will be kept for {keep_days} days")
+    env_name = "PRODUCTION" if is_production else "DEVELOPMENT"
+    app_logger.info("=" * 60)
+    app_logger.info(f"🔧 环境: {env_name}")
+    app_logger.info(f"   Console level: {logging.getLevelName(console_level)}")
+    app_logger.info(f"   File level: {logging.getLevelName(file_level)}")
+    app_logger.info(f"   Log file: {log_file}")
+    app_logger.info(f"   Keep logs: {keep_days} days")
+    app_logger.info("=" * 60)
     
     # ========== Flask App 集成 ==========
     if app:
         app.logger = app_logger
-        
-        # 将 Flask 的日志也重定向到我们的处理器
         werkzeug_logger = logging.getLogger('werkzeug')
         werkzeug_logger.handlers = root_logger.handlers
         werkzeug_logger.setLevel(base_level)
+    
+    # ========== 启动时立即清理旧日志 ==========
+    clean_old_logs(log_dir, keep_days)
     
     return app_logger
 
 
 # ============================================================
-# 4. 兼容原有接口的快捷函数
+# 4. 清理旧日志函数（修复版）
 # ============================================================
-def setup_production_logging():
-    """
-    兼容原有代码的函数
-    返回: is_production (布尔值)
-    """
-    # 判断环境
-    is_production = os.environ.get('FLASK_ENV') == 'production' or \
-                    os.environ.get('RENDER', '') == 'true'
-    
-    # 配置日志
-    setup_logging(
-        app=None,
-        log_dir='logs',
-        keep_days=2
-    )
-    
-    return is_production
-
-
-def get_logger(name):
-    """获取日志器"""
-    return logging.getLogger(name)
-
-
 def clean_old_logs(log_dir='logs', keep_days=2):
     """
     手动清理旧的日志文件
@@ -275,53 +256,56 @@ def clean_old_logs(log_dir='logs', keep_days=2):
     cutoff_time = datetime.now() - timedelta(days=keep_days)
     cutoff_timestamp = cutoff_time.timestamp()
     
-    # 查找所有日志文件
+    # 匹配所有 .log 文件及其轮转文件
     pattern = os.path.join(log_dir, '*.log*')
     log_files = glob.glob(pattern)
     
     deleted_count = 0
     for file_path in log_files:
         try:
+            # 获取文件修改时间
             file_mtime = os.path.getmtime(file_path)
             if file_mtime < cutoff_timestamp:
                 os.remove(file_path)
                 deleted_count += 1
-                print(f"[LOG] 已清理: {os.path.basename(file_path)}")
         except (OSError, FileNotFoundError):
             pass
     
     if deleted_count > 0:
-        print(f"[LOG] 共清理 {deleted_count} 个旧日志文件")
+        print(f"[LOG] 启动时清理了 {deleted_count} 个旧日志文件")
     else:
         print(f"[LOG] 没有需要清理的日志文件（保留最近 {keep_days} 天）")
 
 
 # ============================================================
-# 5. 自动执行（兼容原 app.py 的调用方式）
+# 5. 兼容接口
 # ============================================================
-# 当直接导入时，自动执行日志配置
-# 注意：为了避免在 app.py 中重复配置，这里使用延迟初始化
-_is_production = None
-_logger = None
-
-
 def init_default_logging():
     """初始化默认日志配置（供 app.py 调用）"""
-    global _is_production, _logger
-    
-    _is_production = os.environ.get('FLASK_ENV') == 'production' or \
-                     os.environ.get('RENDER', '') == 'true'
-    
-    _logger = setup_logging(
+    return setup_logging(
         app=None,
         log_dir='logs',
         keep_days=2
     )
-    
-    return _is_production
 
 
-# 为了兼容旧的 app.py，保留 IS_PRODUCTION 和 logger 的导出方式
-# 但建议在 app.py 中显式调用 setup_logging()
-IS_PRODUCTION = None
-logger = None
+def get_logger(name):
+    """获取日志器"""
+    return logging.getLogger(name)
+
+
+# ============================================================
+# 6. 环境变量控制
+# ============================================================
+# 允许通过环境变量调整日志级别
+def get_log_level_from_env():
+    """从环境变量获取日志级别"""
+    level_map = {
+        'DEBUG': logging.DEBUG,
+        'INFO': logging.INFO,
+        'WARNING': logging.WARNING,
+        'ERROR': logging.ERROR,
+        'CRITICAL': logging.CRITICAL
+    }
+    env_level = os.environ.get('LOG_LEVEL', '').upper()
+    return level_map.get(env_level, None)
