@@ -151,3 +151,105 @@
         opacity: 0.85;
         font-weight: normal;
     }
+    
+    /* ==================== 操作列响应式折叠菜单 ==================== */
+    /* 操作列单元格 - 使用相对定位 */
+    .action-cell {
+        position: relative;
+        overflow: visible !important;
+        min-width: 60px;
+    }
+
+    /* 完整按钮组 - 默认显示 */
+    .action-buttons-full {
+        display: flex !important;
+        flex-wrap: nowrap;
+        gap: 4px;
+        align-items: center;
+        white-space: nowrap;
+    }
+
+    .action-buttons-full .btn {
+        flex-shrink: 0;
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    /* 折叠菜单 - 默认隐藏 */
+    .action-dropdown-wrapper {
+        display: none !important;
+    }
+
+    .action-dropdown-btn {
+        padding: 0.2rem 0.5rem;
+        font-size: 0.75rem;
+        border: 1px solid #dee2e6;
+        background: #f8f9fa;
+        color: #333;
+    }
+
+    .action-dropdown-btn:hover {
+        background: #e9ecef;
+    }
+
+    /* 下拉菜单样式 */
+    .action-dropdown-wrapper .dropdown-menu {
+        min-width: 130px;
+        padding: 4px 0;
+    }
+
+    .action-dropdown-wrapper .dropdown-item {
+        padding: 6px 16px;
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        cursor: pointer;
+    }
+
+    .action-dropdown-wrapper .dropdown-item:hover {
+        background-color: #f0f0f0;
+    }
+
+    .action-dropdown-wrapper .dropdown-item i {
+        font-size: 0.9rem;
+        width: 1.1rem;
+        text-align: center;
+    }
+
+    .action-dropdown-wrapper .dropdown-item.text-danger:hover {
+        background-color: #fbe9e9;
+    }
+
+    .action-dropdown-wrapper .dropdown-item.text-success:hover {
+        background-color: #e8f5e9;
+    }
+
+    /* 折叠状态（由 JS 控制） */
+    .action-cell.is-collapsed .action-buttons-full {
+        display: none !important;
+    }
+
+    .action-cell.is-collapsed .action-dropdown-wrapper {
+        display: block !important;
+    }
+
+    /* ==================== 操作列自适应宽度优化 ==================== */
+    /* 操作列使用 auto 宽度，但保留限制 */
+    #userTable col:last-child {
+        width: auto !important;
+        min-width: 80px;
+        max-width: 320px;
+    }
+
+    #userTable thead th:last-child {
+        width: auto !important;
+        min-width: 80px;
+        max-width: 320px;
+    }
+
+    /* 确保操作列单元格内容不被截断 */
+    .action-cell td {
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }

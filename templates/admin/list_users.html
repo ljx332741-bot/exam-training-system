@@ -870,6 +870,22 @@
             currentUsersData = users;
             renderUserTable(currentUsersData);
 
+            // 初始化操作列响应式（延迟执行确保 DOM 已更新）
+            setTimeout(() => {
+                initActionColumnResponsive();
+            }, 100);
+
+            // 如果使用了 Container Queries，还需要在列宽调整后重新处理
+            // ✅ 在列宽调整后重新检查
+            const table = document.getElementById('userTable');
+            if (table) {
+                table.addEventListener('columnResized', function() {
+                    setTimeout(() => {
+                        refreshActionColumns();
+                    }, 50);
+                });
+            }
+
             const total = data.total || users.length;
             document.getElementById('totalCount').innerText = total;
             const totalPages = Math.ceil(total / 20);
@@ -1039,6 +1055,246 @@
                 }
             });
             loadUsers();
+        });
+    }
+
+    // ==================== 操作列响应式渲染函数 ====================
+    /**
+    * 生成操作列的 HTML（支持响应式折叠）
+    * @param {Object} user - 用户对象
+    * @param {string} currentUserId - 当前用户ID
+    * @param {string} currentUserRole - 当前用户角色
+    * @param {boolean} isDev - 是否开发者
+    * @returns {string} HTML 字符串
+    */
+    function renderActionColumn(user, currentUserId, currentUserRole, isDev) {
+        const isActive = !user.is_resign && user.user_status === 'registered';
+        const isResigned = user.is_resign && !user.is_rehire && user.user_status === 'registered';
+        const canResign = canResignUser(user, currentUserId, currentUserRole, isDev);
+        const canRehire = canRehireUser(user, currentUserId, currentUserRole, isDev);
+        
+        // 构建按钮配置数组
+        const buttons = [];
+        
+        // 编辑按钮
+        if (canEditUser(user)) {
+            buttons.push({
+                type: 'edit',
+                label: t('t_edit'),
+                icon: 'bi-pencil',
+                className: 'btn-outline-primary',
+                btnClass: 'edit-btn',
+                action: `data-id="${user.id}"`
+            });
+        }
+        
+        // 重置密码按钮
+        if (canResetPwd(user)) {
+            buttons.push({
+                type: 'reset',
+                label: t('t_reset_password'),
+                icon: 'bi-key',
+                className: 'btn-outline-warning',
+                btnClass: 'reset-pwd-btn',
+                action: `data-id="${user.id}"`
+            });
+        }
+        
+        // 删除按钮
+        if (canDeleteUser(user)) {
+            buttons.push({
+                type: 'delete',
+                label: t('t_delete'),
+                icon: 'bi-trash',
+                className: 'btn-outline-danger',
+                btnClass: 'delete-btn',
+                action: `data-id="${user.id}"`
+            });
+        }
+        
+        // 离职按钮
+        if (isActive && canResign) {
+            buttons.push({
+                type: 'resign',
+                label: t('resign'),
+                icon: 'bi-person-x',
+                className: 'btn-outline-warning',
+                btnClass: 'resign-btn',
+                action: `data-id="${user.id}" data-name="${escapeHtml(user.name_en || '')}"`
+            });
+        }
+        
+        // 复职按钮
+        if (isResigned && canRehire) {
+            buttons.push({
+                type: 'rehire',
+                label: t('rehire'),
+                icon: 'bi-person-check',
+                className: 'btn-outline-success',
+                btnClass: 'rehire-btn',
+                action: `data-id="${user.id}" data-name="${escapeHtml(user.name_en || '')}"`
+            });
+        }
+        
+        // 如果没有按钮，返回空
+        if (buttons.length === 0) {
+            return '<span class="text-muted">-</span>';
+        }
+        
+        // 生成完整按钮组 HTML
+        const fullButtonsHtml = buttons.map(btn => `
+            <button class="btn btn-sm ${btn.className} ${btn.btnClass}" ${btn.action}>
+                <i class="bi ${btn.icon}"></i> ${btn.label}
+            </button>
+        `).join('');
+        
+        // 生成下拉菜单 HTML
+        const dropdownItemsHtml = buttons.map(btn => {
+            // 根据按钮类型添加颜色类
+            let textClass = '';
+            if (btn.type === 'delete') textClass = 'text-danger';
+            else if (btn.type === 'resign') textClass = 'text-warning';
+            else if (btn.type === 'rehire') textClass = 'text-success';
+            
+            return `
+                <li>
+                    <button class="dropdown-item ${btn.btnClass} ${textClass}" ${btn.action}>
+                        <i class="bi ${btn.icon}"></i> ${btn.label}
+                    </button>
+                </li>
+            `;
+        }).join('');
+        
+        return `
+            <!-- 完整按钮组（列宽充足时显示） -->
+            <div class="action-buttons-full">
+                ${fullButtonsHtml}
+            </div>
+            
+            <!-- 折叠菜单（列宽不足时显示） -->
+            <div class="action-dropdown-wrapper">
+                <div class="btn-group dropstart">
+                    <button class="btn btn-sm btn-secondary dropdown-toggle action-dropdown-btn" 
+                            data-bs-toggle="dropdown" 
+                            aria-expanded="false"
+                            title="${t('more_actions') || '更多操作'}">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        ${dropdownItemsHtml}
+                    </ul>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+    * 对操作列应用 ResizeObserver 实现响应式折叠
+    * 使用 !important 和类名控制，确保样式生效
+    */
+    function initActionColumnResponsive() {
+        console.log('🔄 初始化操作列响应式...');
+        
+        // 获取所有操作列单元格
+        const cells = document.querySelectorAll('.action-cell');
+        if (!cells.length) {
+            console.warn('⚠️ 未找到 .action-cell 元素');
+            return;
+        }
+        
+        console.log(`✅ 找到 ${cells.length} 个操作列`);
+        
+        // 为每个单元格设置初始状态
+        cells.forEach((cell, index) => {
+            // 获取单元格的实际宽度
+            const cellWidth = cell.offsetWidth || cell.getBoundingClientRect().width || 0;
+            const fullButtons = cell.querySelector('.action-buttons-full');
+            const dropdownWrapper = cell.querySelector('.action-dropdown-wrapper');
+            
+            if (!fullButtons || !dropdownWrapper) {
+                console.warn(`⚠️ 单元格 ${index} 缺少按钮结构`);
+                return;
+            }
+            
+            console.log(`📏 单元格 ${index} 宽度: ${cellWidth}px`);
+            
+            // 应用初始状态
+            if (cellWidth < 180) {
+                cell.classList.add('is-collapsed');
+                console.log(`📎 单元格 ${index} 折叠状态 (宽度: ${cellWidth}px)`);
+            } else {
+                cell.classList.remove('is-collapsed');
+                console.log(`📎 单元格 ${index} 展开状态 (宽度: ${cellWidth}px)`);
+            }
+        });
+        
+        // 使用 ResizeObserver 监听列宽变化
+        if (typeof ResizeObserver === 'undefined') {
+            console.warn('⚠️ ResizeObserver 不支持，使用备用方案');
+            // 备用方案：监听窗口变化
+            window.addEventListener('resize', function() {
+                setTimeout(initActionColumnResponsive, 100);
+            });
+            return;
+        }
+        
+        // 如果已有 observer，先断开
+        if (window._actionCellObserver) {
+            window._actionCellObserver.disconnect();
+        }
+        
+        // 创建新的 observer
+        const observer = new ResizeObserver(entries => {
+            for (const entry of entries) {
+                const cell = entry.target;
+                const cellWidth = entry.contentRect.width || cell.offsetWidth || 0;
+                const fullButtons = cell.querySelector('.action-buttons-full');
+                const dropdownWrapper = cell.querySelector('.action-dropdown-wrapper');
+                
+                if (!fullButtons || !dropdownWrapper) continue;
+                
+                // 阈值：小于 180px 时折叠
+                if (cellWidth < 180 && cellWidth > 0) {
+                    if (!cell.classList.contains('is-collapsed')) {
+                        cell.classList.add('is-collapsed');
+                        console.log(`📎 折叠单元格 (宽度: ${cellWidth}px)`);
+                    }
+                } else {
+                    if (cell.classList.contains('is-collapsed')) {
+                        cell.classList.remove('is-collapsed');
+                        console.log(`📎 展开单元格 (宽度: ${cellWidth}px)`);
+                    }
+                }
+            }
+        });
+        
+        // 观察所有操作列
+        cells.forEach(cell => {
+            observer.observe(cell);
+        });
+        
+        // 保存 observer 以便后续清理
+        window._actionCellObserver = observer;
+        
+        console.log('✅ 操作列响应式初始化完成');
+    }
+
+    // ==================== 强制重新检查操作列状态 ====================
+    function refreshActionColumns() {
+        console.log('🔄 刷新操作列状态...');
+        const cells = document.querySelectorAll('.action-cell');
+        cells.forEach((cell, index) => {
+            const cellWidth = cell.offsetWidth || cell.getBoundingClientRect().width || 0;
+            const fullButtons = cell.querySelector('.action-buttons-full');
+            const dropdownWrapper = cell.querySelector('.action-dropdown-wrapper');
+            
+            if (!fullButtons || !dropdownWrapper) return;
+            
+            if (cellWidth < 180 && cellWidth > 0) {
+                cell.classList.add('is-collapsed');
+            } else {
+                cell.classList.remove('is-collapsed');
+            }
         });
     }
 
@@ -1307,13 +1563,9 @@
                             </button>`;
             }
             
-            bodyHtml += `<td>
-                ${canEditUser(u) ? `<button class="btn btn-sm btn-outline-primary edit-btn" data-id="${u.id}">${t('t_edit')}</button>` : ''}
-                ${canResetPwd(u) ? `<button class="btn btn-sm btn-outline-warning reset-pwd-btn" data-id="${u.id}">${t('t_reset_password')}</button>` : ''}
-                ${canDeleteUser(u) ? `<button class="btn btn-sm btn-outline-danger delete-btn" data-id="${u.id}">${t('t_delete')}</button>` : ''}
-                ${resignBtn}
-                ${rehireBtn}
-            </td></tr>`;
+            // 操作列 - 使用响应式折叠方案
+            const actionHtml = renderActionColumn(u, currentUserId, currentUserRole, isDev);
+            bodyHtml += `<td class="action-cell">${actionHtml}</td>`;
             
             rowIndex++;
         }
@@ -1335,10 +1587,10 @@
             table.insertAdjacentHTML('afterbegin', `<thead>${headerHtml}</thead>`);
         }
         
-        // 设置表体
-        const tbody = document.getElementById('userTableBody');
-        if (tbody) {
-            tbody.innerHTML = bodyHtml;
+        // ✅ 修改：设置表体时直接操作，不定义新变量
+        const tbodyElement = document.getElementById('userTableBody');
+        if (tbodyElement) {
+            tbodyElement.innerHTML = bodyHtml;
         }
         
         // ==================== 重新初始化列宽调整 ====================
@@ -1357,23 +1609,14 @@
             });
         }
         
-        // ==================== 绑定事件 ====================
-        // 编辑按钮
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.removeEventListener('click', handleEditClick);
-            btn.addEventListener('click', handleEditClick);
-        });
-        // 重置密码按钮
-        document.querySelectorAll('.reset-pwd-btn').forEach(btn => {
-            btn.removeEventListener('click', handleResetPwdClick);
-            btn.addEventListener('click', handleResetPwdClick);
-        });
-        // 删除按钮
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDeleteClick);
-            btn.addEventListener('click', handleDeleteClick);
-        });
-        // 复选框
+        // ==================== 绑定事件（使用事件委托） ====================
+        const tbody = document.getElementById('userTableBody');
+        if (tbody) {
+            tbody.removeEventListener('click', handleTableClick);
+            tbody.addEventListener('click', handleTableClick);
+        }
+        
+        // 复选框单独处理（因为它们是 change 事件，不是 click）
         document.querySelectorAll('.user-checkbox').forEach(cb => {
             cb.removeEventListener('change', handleCheckboxChange);
             cb.addEventListener('change', handleCheckboxChange);
@@ -1384,6 +1627,55 @@
         if (selectAllCheckbox) {
             selectAllCheckbox.removeEventListener('change', handleSelectAll);
             selectAllCheckbox.addEventListener('change', handleSelectAll);
+        }
+
+        // ✅ 触发表格渲染完成事件，通知列宽需要重新计算
+        if (table) {
+            const event = new CustomEvent('tableRendered', { detail: { tableId: 'userTable' } });
+            table.dispatchEvent(event);
+        }
+    }
+
+    // ==================== 表格点击事件委托 ====================
+    function handleTableClick(e) {
+        const target = e.target.closest('button');
+        if (!target) return;
+        
+        // 编辑按钮
+        if (target.classList.contains('edit-btn')) {
+            const userId = target.dataset.id;
+            if (userId) openEditModal(userId);
+            return;
+        }
+        
+        // 重置密码按钮
+        if (target.classList.contains('reset-pwd-btn')) {
+            const userId = target.dataset.id;
+            if (userId) openResetPwd(userId);
+            return;
+        }
+        
+        // 删除按钮
+        if (target.classList.contains('delete-btn')) {
+            const userId = target.dataset.id;
+            if (userId) deleteUser(userId);
+            return;
+        }
+        
+        // 离职按钮
+        if (target.classList.contains('resign-btn')) {
+            const userId = target.dataset.id;
+            const userName = target.dataset.name;
+            if (userId) handleResignClick(userId, userName);
+            return;
+        }
+        
+        // 复职按钮
+        if (target.classList.contains('rehire-btn')) {
+            const userId = target.dataset.id;
+            const userName = target.dataset.name;
+            if (userId) handleRehireClick(userId, userName);
+            return;
         }
     }
 
@@ -3111,6 +3403,25 @@
         // 批量恢复和批量永久删除
         document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
         document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
+        
+        // ✅ 监听表格渲染完成事件
+        const table = document.getElementById('userTable');
+        if (table) {
+            table.addEventListener('tableRendered', function() {
+                setTimeout(() => {
+                    initActionColumnResponsive();
+                }, 100);
+            });
+        }
+        
+        // ✅ 也监听窗口变化
+        let resizeTimer;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                refreshActionColumns();
+            }, 300);
+        });
     });
 </script>
 {% endblock %}
