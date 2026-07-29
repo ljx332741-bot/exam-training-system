@@ -91,6 +91,23 @@
         display: none;
     }
     
+    /* ========== 🔥 关键修复：表头和表格作为一个整体不分页 ========== */
+    #printArea {
+        page-break-inside: avoid !important;
+    }
+    
+    /* 🔥 修复：表头信息与表格保持在一起 */
+    #headerInfo {
+        page-break-after: avoid !important;
+        page-break-inside: avoid !important;
+    }
+    
+    /* 🔥 表格容器不分页 */
+    .table-responsive {
+        page-break-inside: avoid !important;
+        page-break-before: avoid !important;
+    }
+    
     /* ========== 签到表格样式 ========== */
     .table-responsive {
         overflow: visible !important;
@@ -191,11 +208,11 @@
         margin: 1.5cm;
     }
     
-    /* 避免分页在表格中间断开 */
-    .sign-table tr,
+    /* ========== 🔥 分页控制 ========== */
+    /* 表格行尽量不分页 */
     .table tr {
-        page-break-inside: avoid;
-        page-break-after: avoid;
+        page-break-inside: avoid !important;
+        page-break-after: auto !important;
     }
     
     /* 表格头部重复打印 */
@@ -203,14 +220,29 @@
         display: table-header-group;
     }
     
-    /* 保证表格完整显示 */
-    .table {
-        page-break-inside: avoid;
+    /* 🔥 强制将表头和表格保持在同一页，如果放不下则一起到下一页 */
+    #printArea {
+        page-break-inside: avoid !important;
+    }
+    
+    /* 🔥 表头信息块不要单独分页 */
+    #headerInfo {
+        page-break-after: avoid !important;
+    }
+    
+    /* 🔥 表格容器不要单独分页 */
+    .table-responsive {
+        page-break-before: avoid !important;
     }
     
     /* 标题和表头不分页 */
     h2, #headerInfo {
         page-break-after: avoid;
+    }
+    
+    /* 🔥 整个打印区域作为一个整体 */
+    #printArea .card-body {
+        page-break-inside: avoid !important;
     }
 </style>
 
@@ -295,7 +327,8 @@
         // ✅ 动态设置标题为培训名称
         const titleElement = document.getElementById('attendanceTitle');
         if (titleElement && data.training.name) {
-            titleElement.innerHTML = `<i class="bi bi-people-fill"></i> 签到表Attendance Record - ${escapeHtml(data.training.name)}`;
+            // titleElement.innerHTML = `<i class="bi bi-people-fill"></i> 签到表Attendance Record - ${escapeHtml(data.training.name)}`;
+            titleElement.innerHTML = '<i class="bi bi-people-fill"> 签到表Attendance Record</i>' + `<i class="print-hide">- ${escapeHtml(data.training.name)}</i>`;
         }
 
         // 使用后端返回的 header_template（已考虑国家模板）
