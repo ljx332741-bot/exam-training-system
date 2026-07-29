@@ -237,7 +237,7 @@
                 document.getElementById('editContentEn').value = data.content_en || '';
                 document.getElementById('editVersion').value = data.version || '1.0';
                 document.getElementById('editIsActive').value = data.is_active ? 'true' : 'false';
-                document.getElementById('pageVersion').textContent = `版本: ${data.version || '1.0'}`;
+                document.getElementById('pageVersion').textContent = `${t('version')}: ${data.version || '1.0'}`;
             } else {
                 // 页面不存在，清空表单
                 document.getElementById('editTitleZh').value = '';
@@ -344,7 +344,7 @@
         const btn = this;
         const originalText = btn.innerHTML;
         btn.disabled = true;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> 保存中...';
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('saving')}`;
         
         try {
             const response = await fetch(`/api/admin/cms/page/${pageKey}`, {
@@ -363,9 +363,9 @@
             const result = await response.json();
             
             if (result.success) {
-                alert('✅ 保存成功！');
+                alert(t('save_successful'));
                 // 刷新版本显示
-                document.getElementById('pageVersion').textContent = `版本: ${version}`;
+                document.getElementById('pageVersion').textContent = `${t('version')}: ${version}`;
                 // 自动预览
                 previewCMS('zh');
             } else {

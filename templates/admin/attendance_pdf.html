@@ -1,89 +1,88 @@
 ﻿<!-- templates/admin/attendance_pdf.html -->
 <!DOCTYPE html>
 <html>
-<head>
-<meta charset="utf-8">
-<style>
+    <head>
+        <meta charset="utf-8">
+        <style>
+        body { font-family: 'Microsoft YaHei', sans-serif; font-size: 11px; margin: 0; padding: 20px; }
+        h2 { text-align: center; font-size: 16px; margin-bottom: 10px; }
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #000;          /* 整个表头表格外边框 */
+            margin-bottom: 15px;
+            table-layout: fixed;            /* 固定列宽，避免内容撑破布局 */
+        }
+        .header-table td {
+            border: 1px solid #000;         /* 单元格边框 */
+            padding: 4px 6px;
+            font-size: 10px;                /* 适当缩小字体以容纳长文本 */
+            vertical-align: top;
+            word-break: break-word;         /* 长英文单词允许断词 */
+        }
+        .col-label { width: 50%; }         /* 标签+字段值所在列略宽 */
+        .col-value { width: 50%; }
 
-  body { font-family: 'Microsoft YaHei', sans-serif; font-size: 11px; margin: 0; padding: 20px; }
-  h2 { text-align: center; font-size: 16px; margin-bottom: 10px; }
-  .header-table {
-      width: 100%;
-      border-collapse: collapse;
-      border: 1px solid #000;          /* 整个表头表格外边框 */
-      margin-bottom: 15px;
-      table-layout: fixed;            /* 固定列宽，避免内容撑破布局 */
-  }
-  .header-table td {
-      border: 1px solid #000;         /* 单元格边框 */
-      padding: 4px 6px;
-      font-size: 10px;                /* 适当缩小字体以容纳长文本 */
-      vertical-align: top;
-      word-break: break-word;         /* 长英文单词允许断词 */
-  }
-  .col-label { width: 50%; }         /* 标签+字段值所在列略宽 */
-  .col-value { width: 50%; }
-
-  .sign-table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  .sign-table th, .sign-table td { border: 1px solid #000; padding: 4px 5px; text-align: left; }
-  .sign-table th { background-color: #f2f2f2; }
-  .col-seq { width: 30px; }
-  .col-dept { width: 160px; }
-  .col-name { width: 170px; }
-  .col-sign { width: 180px; }
-  img { max-width: 100%; max-height: 50px; }
-</style>
-</head>
-<body>
-  <h2>签到表Attendance Record</h2>
-  <h2>{{ training.name }}</h2>
-  <table class="header-table">
-    <tr>
-      <td class="col-label"><strong>培训课程名称（双语）Training Course Name：</strong>{{ header.course_name or '' }}</td>
-      <td class="col-value"><strong>项目编号 Training Project NO.：</strong>{{ header.project_no or '' }}</td>
-    </tr>
-    <tr>
-      <td class="col-label"><strong>培训地点（双语）Training Venue：</strong>{{ header.venue or '' }}</td>
-      <td class="col-value"><strong>培训语言 Language：</strong>{{ header.language or '' }}</td>
-    </tr>
-    <tr>
-      <td class="col-label"><strong>培训对象（双语）Target Trainees：</strong>{{ header.target or '' }}</td>
-      <td class="col-value"><strong>组织部门（双语）Training Organizing Dept.：</strong>{{ header.dept or '' }}</td>
-    </tr>
-    <tr>
-      <td class="col-label"><strong>组织者 Training Organizer：</strong>{{ header.organizer or '' }}</td>
-      <td class="col-value"><strong>培训日期 Training Date：</strong>{{ header.training_date or '' }}</td>
-    </tr>
-    <tr>
-      <td class="col-label"><strong>主讲人 Course Lecturer：</strong>{{ header.lecturer or '' }}</td>
-      <td class="col-value"><strong>翻译员 Translator：</strong>{{ header.translator or '' }}</td>
-    </tr>
-  </table>
-  <table class="sign-table">
-    <thead>
-      <tr>
-        <th class="col-seq">序号No.</th>
-        <th class="col-dept">部门/合作伙伴Department/Partner</th>
-        <th class="col-name">姓名+工号Name + Employee ID </th>
-        <th class="col-sign">签名Signature </th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for item in attendances %}
-      <tr>
-        <td>{{ loop.index }}</td>
-        <td>{{ item.company }}</td>
-        <td>{{ item.signed_name or item.name_cn }}{% if item.employee_id %}({{ item.employee_id }}){% endif %}</td>
-        <td>
-          {% if item.signature_url %}
-          <img src="{{ item.signature_url }}" alt="签名">
-          {% else %}
-          <span style="color: orange;" data-i18n="pending_re_signature">待重新签字</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</body>
+        .sign-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+        .sign-table th, .sign-table td { border: 1px solid #000; padding: 4px 5px; text-align: left; }
+        .sign-table th { background-color: #f2f2f2; }
+        .col-seq { width: 30px; }
+        .col-dept { width: 160px; }
+        .col-name { width: 170px; }
+        .col-sign { width: 180px; }
+        img { max-width: 100%; max-height: 50px; }
+        </style>
+    </head>
+    <body>
+        <h2>签到表Attendance Record</h2>
+        <!-- <h2>{{ training.name }}</h2> -->
+        <table class="header-table">
+            <tr>
+            <td class="col-label"><strong>培训课程名称（双语）Training Course Name：</strong>{{ header.course_name or '' }}</td>
+            <td class="col-value"><strong>项目编号 Training Project NO.：</strong>{{ header.project_no or '' }}</td>
+            </tr>
+            <tr>
+            <td class="col-label"><strong>培训地点（双语）Training Venue：</strong>{{ header.venue or '' }}</td>
+            <td class="col-value"><strong>培训语言 Language：</strong>{{ header.language or '' }}</td>
+            </tr>
+            <tr>
+            <td class="col-label"><strong>培训对象（双语）Target Trainees：</strong>{{ header.target or '' }}</td>
+            <td class="col-value"><strong>组织部门（双语）Training Organizing Dept.：</strong>{{ header.dept or '' }}</td>
+            </tr>
+            <tr>
+            <td class="col-label"><strong>组织者 Training Organizer：</strong>{{ header.organizer or '' }}</td>
+            <td class="col-value"><strong>培训日期 Training Date：</strong>{{ header.training_date or '' }}</td>
+            </tr>
+            <tr>
+            <td class="col-label"><strong>主讲人 Course Lecturer：</strong>{{ header.lecturer or '' }}</td>
+            <td class="col-value"><strong>翻译员 Translator：</strong>{{ header.translator or '' }}</td>
+            </tr>
+        </table>
+        <table class="sign-table">
+            <thead>
+                <tr>
+                    <th class="col-seq">序号No.</th>
+                    <th class="col-dept">部门/合作伙伴Department/Partner</th>
+                    <th class="col-name">姓名+工号Name + Employee ID </th>
+                    <th class="col-sign">签名Signature </th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in attendances %}
+                    <tr>
+                        <td>{{ loop.index }}</td>
+                        <td>{{ item.company }}</td>
+                        <td>{{ item.signed_name or item.name_cn }}{% if item.employee_id %}({{ item.employee_id }}){% endif %}</td>
+                        <td>
+                            {% if item.signature_url %}
+                            <img src="{{ item.signature_url }}" alt="签名">
+                            {% else %}
+                            <span style="color: orange;" data-i18n="pending_re_signature">待重新签字</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </body>
 </html>
