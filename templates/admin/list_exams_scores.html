@@ -554,7 +554,7 @@
             return;
         }
         
-        showLoading('导出中...');
+        showLoading(t('exporting'));
         try {
             const response = await fetch(`/api/admin/exam/batch_export_by_result`, {
                 method: 'POST',
@@ -573,13 +573,13 @@
                 a.click();
                 document.body.removeChild(a);
                 URL.revokeObjectURL(url);
-                showToast('导出成功', 'success');
+                showToast(t('export_success'), 'success');
             } else {
-                showToast('导出失败', 'error');
+                showToast(t('export_failed'), 'error');
             }
         } catch (err) {
             hideLoading();
-            showToast('导出失败: ' + err.message, 'error');
+            showToast(t('export_failed') + err.message, 'error');
         }
     }
 
@@ -599,12 +599,14 @@
         }
     
         window.showDeleteConfirm({
-            title: '删除考试成绩',
-            message: `确定要删除选中的 ${selectedResultIds.length} 条成绩记录吗？`,
+            //title: `删除考试成绩`,
+            title: `${t('delete_exam_result')}`,
+            //message: `确定要删除选中的 ${selectedResultIds.length} 条成绩记录吗？`,
+            message: `${t('confirm_delete_count_exam', {count : selectedResultIds.length})}`,
             ids: selectedResultIds,
             type: 'soft',
             onConfirm: async (deleteType, ids) => {
-                showLoading('删除中...');
+                showLoading(t('deleting'));
                 try {
                     const response = await fetch('/api/admin/exam/result/batch_delete', {
                         method: 'POST',
@@ -615,7 +617,8 @@
                     hideLoading();
                     
                     if (data.success) {
-                        showToast(`成功删除 ${data.success_count} 条记录`, 'success');
+                        //showToast(`成功删除 ${data.success_count} 条记录`, 'success');
+                        showToast(`${t('delete_success_tip', { count: data.success_count })}`, 'success');
                         // 清空缓存重新加载
                         allData = [];
                         loadScores();
