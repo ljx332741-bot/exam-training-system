@@ -250,7 +250,7 @@
     <div class="mb-4">
         <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_record">培训签到表</span></h2>
         <div class="d-flex justify-content-end gap-2 no-print">
-            <button class="btn btn-success" onclick="window.print();"><i class="bi bi-printer"></i> <span data-i18n="brower_export_pdf">打印</span></button>
+            <button class="btn btn-primary" onclick="window.print();"><i class="bi bi-printer"></i> <span data-i18n="print">打印</span></button>
             <a id="pdfExportBtn" class="btn btn-success" href="#" target="_blank">
                 <i class="bi bi-download"></i> <span data-i18n="expert_pdf">PDF专用</span>
             </a>
@@ -320,15 +320,19 @@
         const data = await res.json();
 
         if (!data.training) {
-            document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="5">${t('t_no_training_exist')}</td></tr>`;
+            document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="5">${t('no_training_exist')}</td></tr>`;
             return;
         }
 
-        // ✅ 动态设置标题为培训名称
+        // 动态设置标题为培训名称 
         const titleElement = document.getElementById('attendanceTitle');
         if (titleElement && data.training.name) {
-            // titleElement.innerHTML = `<i class="bi bi-people-fill"></i> 签到表Attendance Record - ${escapeHtml(data.training.name)}`;
-            titleElement.innerHTML = '<i class="bi bi-people-fill"> 签到表Attendance Record</i>' + `<i class="print-hide">- ${escapeHtml(data.training.name)}</i>`;
+            titleElement.innerHTML = 
+            '<i class="bi bi-people-fill"> 签到表Attendance Record</i>' 
+            + 
+            `<span><i class="print-hide badge bg-info ms-2" style="font-size: 0.85rem; margin-top: -4px;">- 
+                ${escapeHtml(data.training.name)}
+            </i></span>`;
         }
 
         // 使用后端返回的 header_template（已考虑国家模板）
@@ -356,7 +360,7 @@
         const tbody = document.getElementById('attendanceTbody');
         const records = data.attendances || [];
         if (records.length === 0) {
-            tbody.innerHTML = `<td><td colspan="8">${t('t_no_sign_in_record_available')}</td></tr>`;
+            tbody.innerHTML = `<td><td colspan="8">${t('no_sign_in_record_available')}</td></tr>`;
             return;
         }
         tbody.innerHTML = '';
@@ -366,7 +370,7 @@
             // 签名单元格：有签名显示图片，无签名显示提示文字
             const signatureCell = r.signature_url
                 ? `<img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'">`
-                : `<span class="text-warning fw-bold">${t('t_pending_re_signature')}</span>`;
+                : `<span class="text-warning fw-bold">${t('pending_re_signature')}</span>`;
 
             const row = tbody.insertRow();
             row.innerHTML = `
@@ -379,7 +383,7 @@
                 <td class="country-cell no-print" title="${escapeHtml(r.country )}">${escapeHtml(r.country )}</td>
                 <td class="print-hide">
                     <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
-                        <i class="bi bi-pencil-square"></i> ${t('t_re_signature')}
+                        <i class="bi bi-pencil-square"></i> ${t('re_signature')}
                     </button>
                     <button class="btn btn-sm btn-outline-danger delete-attendance-btn" data-id="${r.id}" data-name="${escapeHtml(nameDisplay)}">
                         <i class="bi bi-trash"></i> ${t('t_delete')}
@@ -531,7 +535,7 @@
             batchDeleteBtn.innerHTML = `<i class="bi bi-trash no-print"></i> ${t('batch_delete')}`;
             batchDeleteBtn.onclick = batchDeleteAttendances;
 
-            // ✅ 关键修复：手动触发翻译
+            // 手动触发翻译
             if (typeof window.i18n !== 'undefined' && window.i18n.currentLang) {
                 const span = batchDeleteBtn.querySelector('[data-i18n="batch_delete"]');
                 if (span && typeof t === 'function') {
@@ -551,7 +555,6 @@
     // 初始化
     document.addEventListener('DOMContentLoaded', async () => {
         await waitForI18n(); // 等待国际化资源加载完成
-        //await populateCountryFilter();  // ✅ 限制国家筛选选项
         loadDetail();
         addBatchDeleteButton();
     });
@@ -572,7 +575,7 @@
     window.addEventListener('app:languageChanged', () => {
         currentPage = 1;
         loadDetail();
-        // ✅ 更新批量删除按钮的文本
+        // 更新批量删除按钮的文本
         updateBatchDeleteButtonText();
         // 更新 PDF 导出按钮文本（如果有需要）
         const pdfExportBtn = document.getElementById('pdfExportBtn');

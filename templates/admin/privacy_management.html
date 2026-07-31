@@ -367,7 +367,7 @@
                         <div class="col-12">
                             <label class="form-label fw-bold"><span data-i18n="content">内容</span> <span class="text-danger">*</span></label>
                             <textarea id="createContent" class="form-control" rows="10" placeholder="输入HTML格式的隐私声明内容..." required></textarea>
-                            <div class="form-text">支持 HTML 标签（h4, p, ul, li 等）</div>
+                            <div class="form-text">支持 HTML 标签（h4, p, ul, li 等）/Support HTML lables (h4, p, ul, li and so on...)</div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-bold"><span data-i18n="changelog">更新日志</span></label>
@@ -407,7 +407,7 @@
                         <div class="col-12">
                             <label class="form-label fw-bold"><span data-i18n="content">内容</span> <span class="text-danger">*</span></label>
                             <textarea id="editContent" class="form-control" rows="10" required></textarea>
-                            <div class="form-text">支持 HTML 标签（h4, p, ul, li 等）</div>
+                            <div class="form-text">支持 HTML 标签（h4, p, ul, li 等）/Support HTML lables (h4, p, ul, li and so on...)</div>
                         </div>
                         <div class="col-12">
                             <label class="form-label fw-bold"><span data-i18n="changelog">更新日志</span></label>
@@ -573,7 +573,7 @@
     function renderAgreements(agreements) {
         const tbody = document.getElementById('agreementList');
         if (!agreements || agreements.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">暂无版本记录</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3">${t('no_have_version_record')}</td></tr>`;
             return;
         }
 
@@ -773,7 +773,7 @@
             const result = await res.json();
 
             if (result.success) {
-                showToast(safeT('activated_needs_to_reconfirm.'), 'success');
+                showToast(safeT('activated_needs_to_reconfirm'), 'success');
                 loadAgreements(currentPage);
                 loadStats();
             } else {
@@ -786,7 +786,7 @@
     }
 
     async function deleteAgreement(id) {
-        if (!confirm('确定要删除此版本吗？')) return;
+        if (!confirm(safeT('confirm_to_delete_version'))) return;
 
         try {
             const res = await fetch(`/api/admin/privacy/agreements/${id}`, {
@@ -795,14 +795,14 @@
             const result = await res.json();
 
             if (result.success) {
-                showToast('删除成功', 'success');
+                showToast(safeT('delete_success'), 'success');
                 loadAgreements(currentPage);
             } else {
-                showToast(result.message || '删除失败', 'error');
+                showToast(result.message || safeT('delete_failed'), 'error');
             }
         } catch (err) {
             console.error('删除失败:', err);
-            showToast('删除失败', 'error');
+            showToast(safeT('delete_failed'), 'error');
         }
     }
 
@@ -1167,7 +1167,7 @@
         loadStats();
         loadAgreements(1);
 
-        // ✅ 复用 base.html 中的全局国家筛选函数
+        // 复用 base.html 中的全局国家筛选函数
         // 注意：setupCountryAutocomplete 在 base.html 中定义，参数为 (inputId, datalistId, hiddenId)
         if (typeof setupCountryAutocomplete === 'function') {
             await setupCountryAutocomplete('userListCountry', 'userListCountryDatalist');

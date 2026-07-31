@@ -7,10 +7,10 @@
         <h2><i class="bi bi-chat-dots"></i> 
             <span data-i18n="interview_detail">访谈详情</span> 
             - 
-            <span id="examTitle" data-i18n="loading">加载中...</span> 
+            <span class="badge bg-info ms-2 fs-5" id="examTitle" data-i18n="loading">加载中...</span> 
             <span class="fs-6 text-muted">
-                iid:<span id="interViewID" class="ms-2"></span>
-                eid:<span id="examID" class="ms-2"></span>
+                <span style="color: #1e1e1f;">eid:</span><span id="examID" class="ms-2" style="color: #1e1e1f;"></span>
+                <span style="color: #117cda;">iid:</span><span id="interViewID" class="ms-2" style="color: #0d6efd;"></span>
             </span>
         </h2>
     </div>
@@ -123,7 +123,7 @@
         document.getElementById('interViewID').innerText = data.interview?.interview_id || data.interview?.id || '-';
         document.getElementById('examID').innerText = data.interview?.exam_id || '-';
 
-        // ✅ 更新访谈级别的检查人员和反馈人
+        // 更新访谈级别的检查人员和反馈人
         const reviewerSpan = document.getElementById('interviewReviewer');
         const feedbackSpan = document.getElementById('interviewFeedback');
         if (reviewerSpan) reviewerSpan.innerText = data.interview?.reviewer || '-';
