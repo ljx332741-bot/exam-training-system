@@ -8,21 +8,79 @@
         min-height: 300px;
     }
     .cms-preview-area {
-        background: #f8f9fa;
+        background: #ffffff;  /* 🔥 改为白色，更接近实际显示 */
         border-radius: 8px;
         padding: 20px;
         min-height: 200px;
         max-height: 500px;
         overflow-y: auto;
+        border: 1px solid #e9ecef;
     }
+
+    /* 🔥 核心样式：预览内容的实际显示 */
     .cms-preview-area .cms-content {
         font-size: 0.9rem;
         line-height: 1.8;
+        color: #212529;
     }
-    .cms-preview-area .cms-content h1 { font-size: 1.4rem; color: #0d6efd; }
-    .cms-preview-area .cms-content h2 { font-size: 1.2rem; color: #0d6efd; border-bottom: 2px solid #e9ecef; padding-bottom: 0.5rem; }
-    .cms-preview-area .cms-content h3 { font-size: 1rem; color: #343a40; }
-    .cms-preview-area .cms-content ul, .cms-preview-area .cms-content ol { padding-left: 1.5rem; }
+
+    .cms-preview-area .cms-content h1 {
+        font-size: 1.4rem;
+        color: #0d6efd;
+        font-weight: 700;
+        margin-top: 1.2rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .cms-preview-area .cms-content h2 {
+        font-size: 1.2rem;
+        color: #0d6efd;
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 0.5rem;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .cms-preview-area .cms-content h3 {
+        font-size: 1rem;
+        color: #343a40;
+        font-weight: 600;
+        margin-top: 0.8rem;
+        margin-bottom: 0.4rem;
+    }
+
+    .cms-preview-area .cms-content p {
+        margin-bottom: 0.8rem;
+    }
+
+    .cms-preview-area .cms-content ul,
+    .cms-preview-area .cms-content ol {
+        padding-left: 1.5rem;
+        margin-bottom: 0.8rem;
+    }
+
+    .cms-preview-area .cms-content li {
+        margin-bottom: 0.3rem;
+    }
+
+    .cms-preview-area .cms-content strong {
+        color: #0d6efd;
+    }
+
+    .cms-preview-area .cms-content blockquote {
+        border-left: 4px solid #0d6efd;
+        padding: 8px 16px;
+        margin: 12px 0;
+        background: #f1f3f5;
+        border-radius: 4px;
+    }
+
+    .cms-preview-area .cms-content hr {
+        border: none;
+        border-top: 2px solid #e9ecef;
+        margin: 16px 0;
+    }
+
     .cms-preview-area .cms-content .highlight-box {
         background: #f8f9fa;
         border-left: 4px solid #0d6efd;
@@ -30,19 +88,21 @@
         border-radius: 4px;
         margin: 12px 0;
     }
+
     .cms-preview-area .cms-content .highlight-box.warning {
         border-left-color: #ffc107;
         background: #fff8e1;
     }
+
     .cms-preview-area .cms-content .highlight-box.danger {
         border-left-color: #dc3545;
         background: #fce4ec;
     }
+
     .cms-preview-area .cms-content .highlight-box.success {
         border-left-color: #198754;
         background: #e8f5e9;
     }
-    .cms-preview-area .cms-content strong { color: #0d6efd; }
     
     .page-tab {
         cursor: pointer;
@@ -264,7 +324,7 @@
         
         const preview = document.getElementById('cmsPreview');
         if (content) {
-            preview.innerHTML = renderMarkdownPreview(content);
+            preview.innerHTML = `<div class="cms-content">${renderMarkdownPreview(content)}</div>`;
         } else {
             preview.innerHTML = `
                 <div class="text-center text-muted py-5">
@@ -283,41 +343,55 @@
         
         let html = text;
         
-        // 段落处理
+        // ========== 1. 标题处理（必须在段落处理之前） ==========
+        html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+        html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+        html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+        
+        // ========== 2. 分隔线 ==========
+        html = html.replace(/^---$/gm, '<hr>');
+        
+        // ========== 3. 段落处理 ==========
         const paragraphs = html.split(/\n\n+/);
         html = paragraphs.map(p => {
-            if (p.trim().startsWith('<') && !p.trim().startsWith('</')) {
+            const trimmed = p.trim();
+            if (!trimmed) return '';
+            if (trimmed.startsWith('<') && !trimmed.startsWith('</')) {
                 return p;
             }
-            return `<p>${p.trim()}</p>`;
+            return `<p>${trimmed}</p>`;
         }).join('\n');
         
-        // 列表
+        // ========== 4. 列表处理 ==========
         html = html.replace(/^(\d+)\.\s+(.+)$/gm, '<li>$2</li>');
         html = html.replace(/^[-*]\s+(.+)$/gm, '<li>$1</li>');
         html = html.replace(/(<li>.*?<\/li>\n?)+/gs, function(match) {
-            if (/<li>/.test(match) && match.match(/^\d+/m)) {
+            if (/^\d+/.test(match)) {
                 return `<ol>${match}</ol>`;
             }
             return `<ul>${match}</ul>`;
         });
         
-        // 加粗
+        // ========== 5. 加粗 ==========
         html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
         
-        // 斜体
+        // ========== 6. 斜体 ==========
         html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
         
-        // 引用
+        // ========== 7. 引用 ==========
         html = html.replace(/^&gt;\s+(.+)$/gm, '<blockquote>$1</blockquote>');
         html = html.replace(/(<\/blockquote>\s*<blockquote>)/g, '<br>');
         
-        // 高亮框
+        // ========== 8. 高亮框 ==========
         html = html.replace(/\[重要\]/g, '<div class="highlight-box warning"><strong>⚠️ 重要</strong><br>');
         html = html.replace(/\[警告\]/g, '<div class="highlight-box danger"><strong>🚨 警告</strong><br>');
         html = html.replace(/\[提示\]/g, '<div class="highlight-box success"><strong>💡 提示</strong><br>');
         html = html.replace(/\[注意\]/g, '<div class="highlight-box"><strong>📌 注意</strong><br>');
         html = html.replace(/<\/div>\s*<br\s*\/?>/g, '</div>');
+        
+        // ========== 9. 清理 ==========
+        html = html.replace(/\n{3,}/g, '\n\n');
+        html = html.replace(/<p>\s*<\/p>/g, '');
         
         return html;
     }
