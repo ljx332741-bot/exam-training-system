@@ -239,6 +239,7 @@
 "import_successful": "导入成功！",
 "t_save_successful": "保存成功！",
 "save_successful": "保存成功！",
+"save_success": "保存成功！",
 "t_update_failed": "更新失败: ",
 "wh_id_name": "库房编码/名称",
 "placeholder_fuzzy_match_whidname": "模糊匹配库房编码或名称",

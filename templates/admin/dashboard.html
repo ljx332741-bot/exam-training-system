@@ -924,7 +924,10 @@
 												<!-- 重置考生状态（需配合用户选择，示例中简化） -->
 												<button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}"><span data-i18n="setting">推送</span></button>
 												{% if ex.dynamic_status == 'draft' %}
-													<button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}">✏️ <span data-i18n="edit">编辑</span></button>
+													<button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}"
+                                                        onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
+                                                        ✏️ <span data-i18n="edit">编辑</span>
+                                                    </button>
 												{% endif %}
 												<button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}"><span data-i18n="copy">拷贝</span></button>
 												<!-- 删除考试（危险操作） -->
