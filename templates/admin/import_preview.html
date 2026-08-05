@@ -427,12 +427,37 @@
 
 {% block extra_js %}
 <script>
+    // ==================== 回源 URL 管理 ====================
+    // 优先使用后端传递的 return_url
+    let returnUrl = "{{ return_url | default('') }}";
+    
+    // 如果后端没有传递，尝试从 sessionStorage 或 referer 获取
+    if (!returnUrl) {
+        // 1. 尝试从 sessionStorage 获取
+        const savedReturnUrl = sessionStorage.getItem('exam_editor_return_url');
+        if (savedReturnUrl) {
+            returnUrl = savedReturnUrl;
+            sessionStorage.removeItem('exam_editor_return_url');
+        }
+        // 2. 尝试从 document.referrer 获取
+        else if (document.referrer && document.referrer.includes('/admin/')) {
+            returnUrl = document.referrer;
+        }
+        // 3. 使用默认值
+        else {
+            returnUrl = "{{ url_for('admin_exam.admin_dashboard') }}";
+        }
+    }
+    
+    // ✅ 在页面加载时，将 returnUrl 存储到 sessionStorage（供其他页面使用）
+    sessionStorage.setItem('exam_editor_return_url', returnUrl);
+    console.log('📍 回源 URL:', returnUrl);
+
 	// ==================== 获取模板变量 ====================
 	const isEditMode = {{ edit_mode | default(false) | tojson }};
 	const examId = {{ original_exam_id | default(0) }};
 	const canEditQuestions = {{ can_edit_questions | default(true) | tojson }};
 	const examStatus = '{{ exam_status | default("") }}';
-	let returnUrl = "{{ return_url | default(url_for('admin_dashboard')) }}";
 
     // ✅ 新增：接收默认值
     const defaultStartTime = "{{ exam_start_time | default('') }}";
@@ -743,7 +768,7 @@
 			if (endTime) requestData.end_time = endTime;
 		}
 		
-		const url = `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=${isDraft}&from_binding=${fromBinding}`;
+		const url = `/admin/import/save?title=${encodeURIComponent(examTitle)}&draft=${isDraft}&from_binding=${fromBinding}&return_url=${encodeURIComponent(returnUrl)}`;
 		const res = await fetch(url, { 
 			method: 'POST', 
 			headers: { 'Content-Type': 'application/json' }, 
@@ -812,8 +837,8 @@
 			sessionStorage.setItem('new_exam_country', selectedCountries[0] || '');
 			sessionStorage.setItem('pending_exam_push', 'true');
 			
-			// 跳转到仪表盘
-			window.location.href = returnUrl;
+			// 跳转
+			window.location.href = returnUrl; // ✅ 使用动态回源 URL
         	return;
 		} else {// 成功提示
 			const successMsg = isDraft ? (t('draft_saved') || '草稿保存成功') : (t('import_success') || '导入成功');
@@ -863,7 +888,7 @@
 			updateData.skip_questions = true;
 		}
 		
-		const res = await fetch(`/admin/exam/${examId}/update_full`, { 
+		const res = await fetch(`/admin/exam/${examId}/update_full?return_url=${encodeURIComponent(returnUrl)}`, { 
 			method: 'PUT', 
 			headers: { 'Content-Type': 'application/json' }, 
 			body: JSON.stringify(updateData) 

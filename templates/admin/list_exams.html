@@ -895,7 +895,9 @@
                         ${t('reopen') || '重新打开'}
                     </button>` : ''}
                 <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
-                ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}">${t('t_edit')}</button>` : ''}
+                ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}"
+                    onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
+                    ${t('t_edit')}</button>` : ''}
                 ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
                 ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
             `;

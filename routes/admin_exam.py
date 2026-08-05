@@ -308,6 +308,12 @@ def edit_exam_preview(exam_id):
             end_time_local = dt.strftime('%Y-%m-%dT%H:%M')
         except:
             end_time_local = ''
+
+    # ✅ 获取来源 URL（优先从 referer 获取，否则使用默认值）
+    return_url = request.referrer or url_for('admin_exam.admin_exams_page')
+    # 如果 referer 是当前页面自身，使用默认值
+    if return_url and '/admin/exam/edit/' in return_url:
+        return_url = url_for('admin_exam.admin_exams_page')
     
     return render_template(
         'admin/import_preview.html',
@@ -315,7 +321,7 @@ def edit_exam_preview(exam_id):
         exam_title=exam['title'],
         edit_mode=True,
         original_exam_id=exam_id,
-        return_url=url_for('admin_exam.admin_exams_page'),
+        return_url=return_url,
         exam_country=exam_country,
         exam_country_name=exam_country_name,
         exam_status=status,
@@ -370,7 +376,13 @@ def admin_import():
                 logger.warning("⚠️ 解析结果为空")
                 flash({'msg': 'no_valid_question', 'params': []}, 'warning')
                 return render_template('admin/import.html')
-            
+
+            if qs:
+                # ✅ 获取来源 URL
+                return_url = request.referrer or url_for('admin_exam.admin_dashboard')
+                if return_url and '/admin/import' in return_url:
+                    return_url = url_for('admin_exam.admin_dashboard')
+                
             logger.info("🔄 跳转预览页")
             
             # 获取默认值
@@ -393,6 +405,7 @@ def admin_import():
                 from_binding=from_binding,
                 training_id=training_id,
                 training_country=training_country,
+                return_url=return_url,  # ✅ 传递动态来源 URL
                 exam_pass_score=85
             )
 
@@ -489,6 +502,9 @@ def admin_import_save():
     from_binding = request.args.get('from_binding') == 'true'
     is_draft = request.args.get('draft', 'false').lower() == 'true'
 
+    # ✅ 获取 return_url 参数
+    return_url = request.args.get('return_url', url_for('admin_exam.admin_dashboard'))
+    
     # 权限检查：管理员创建的所有国家必须在允许范围内
     # 权限检查：developer 和 super_admin（无权限范围）可以创建任何国家
     if allowed is not None:
@@ -549,7 +565,7 @@ def admin_import_save():
 
         res = db.table("questions").insert(data).execute()
         logger.info(f"✅ 成功创建考试「{exam_title}」ID={new_exam_id}，插入 {len(res.data)} 道题目，国家: {countries}")
-        return jsonify({"success": True, "exam_id": new_exam_id})
+        return jsonify({"success": True, "exam_id": new_exam_id, "return_url": return_url})
     except Exception as e:
         logger.error(f"❌ 导入保存失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -907,12 +923,17 @@ def copy_exam_preview(exam_id):
     # 🔥 复制考试：允许编辑（因为是新建）0722新增
     can_edit_questions = True
     copy_mode = True
+
+    # ✅ 获取来源 URL
+    return_url = request.referrer or url_for('admin_exam.admin_dashboard')
+    if return_url and '/admin/exam/copy_preview/' in return_url:
+        return_url = url_for('admin_exam.admin_dashboard')
     
     return render_template('admin/import_preview.html', 
         questions=questions,
         exam_title=new_title,
         original_exam_id=exam_id,
-        return_url=url_for('admin_exam.admin_dashboard'),
+        return_url=return_url,
         exam_country=exam.get('country', ''),
         copy_mode=copy_mode,
         exam_status='draft',
@@ -939,7 +960,10 @@ def update_exam_full(exam_id):
     
     original = exam_res.data
     current_status = get_exam_status(original)
-    
+
+    # ✅ 获取 return_url 参数
+    return_url = request.args.get('return_url', url_for('admin_exam.admin_exams_page'))
+
     # 已关闭的考试不能编辑
     if current_status == 'closed':
         return jsonify({"success": False, "message": "jsonify_closed_exams_cannot_edited", "params": []}), 403
@@ -955,6 +979,15 @@ def update_exam_full(exam_id):
     if 'reviewer' in data:
         update_data['reviewer'] = data['reviewer']
         logger.info(f"更新考试阅卷人: {data['reviewer']}")
+        
+    # ========== 新增：处理 countries 字段 ==========
+    if 'countries' in data:
+        # 确保传入的是列表，如果不是则设为空列表
+        countries_list = data['countries'] if isinstance(data['countries'], list) else []
+        # 将列表转换为 JSON 字符串存储
+        update_data['countries'] = json.dumps(countries_list) if countries_list else None
+    # ==========================================
+
     if 'country_code' in data:
         update_data['country'] = data['country_code']
     if 'pass_score' in data:
@@ -1015,7 +1048,7 @@ def update_exam_full(exam_id):
         except ValueError as e:
             logger.error(f"时间格式解析错误: {e}, start={start_str}, end={end_str}")
     
-    return jsonify({"success": True, "exam_id": exam_id})
+    return jsonify({"success": True, "exam_id": exam_id, "return_url": return_url})
 
 @admin_exam_bp.route('/api/admin/exam/<int:exam_id>/settings', methods=['POST'])
 @login_required

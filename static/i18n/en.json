@@ -240,6 +240,7 @@
 "import_successful": "Import successful!",
 "t_save_successful": "Save successful!",
 "save_successful": "Save successful!",
+"save_success": "Save success!",
 "t_update_failed": "Update failed: ",
 "wh_id_name": "WH ID/Name",
 "placeholder_fuzzy_match_whidname": "fuzzy match WHID/Name",
