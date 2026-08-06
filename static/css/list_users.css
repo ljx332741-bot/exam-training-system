@@ -253,3 +253,12 @@
         overflow: visible !important;
         text-overflow: clip !important;
     }
+    
+    /* 方式1：使用 ID 选择器（优先级高） */
+    #resetFiltersBtn.btn-half,
+    #deletedResetBtn.btn-half {
+        width: 50% !important;
+        display: block !important;
+        margin: 0 auto !important;
+        flex: none !important;
+    }

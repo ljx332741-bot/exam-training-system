@@ -2092,7 +2092,23 @@ def get_completion_report():
                         continue
                     if status == 'not_exam' and (is_completed or not is_signed):
                         continue
-                
+
+                # 计算分配状态
+                if training_status_display == 'not_assigned' and exam_status_display == 'not_assigned':
+                    allocation_status = '未分配'
+                elif training_status_display == 'signed' and exam_status_display in ['pending', 'completed']:
+                    allocation_status = '已分配'
+                else:
+                    allocation_status = '部分分配'
+
+                # 计算完成度
+                if training_status_display == 'not_assigned' and exam_status_display == 'not_assigned':
+                    completion_level = '未参与'
+                elif training_status_display == 'signed' and exam_status_display == 'completed':
+                    completion_level = '整体完成'
+                else:
+                    completion_level = '部分完成'
+                    
                 all_data.append({
                     "training_id": training_id_val,
                     "training_name": training.get('name', ''),
@@ -2100,6 +2116,8 @@ def get_completion_report():
                     "training_start": training.get('start_time'),
                     "training_end": training.get('end_time'),
                     "training_status_global": training_status_global,
+                    "allocation_status": allocation_status,      # 新增
+                    "completion_level": completion_level,        # 新增
                     "exam_id": exam_id,
                     "exam_name": exam.get('title', ''),
                     "exam_status_global": exam_status_global,
@@ -2514,6 +2532,22 @@ def export_completion_report():
                         continue
                     if status == 'not_exam' and (is_completed or not is_signed):
                         continue
+
+                # ✅ 新增：计算分配状态
+                if training_status_display == 'not_assigned' and exam_status_display == 'not_assigned':
+                    allocation_status = '未分配'
+                elif training_status_display == 'signed' and exam_status_display in ['pending', 'completed']:
+                    allocation_status = '已分配'
+                else:
+                    allocation_status = '部分分配'
+                
+                # ✅ 新增：计算完成度
+                if training_status_display == 'not_assigned' and exam_status_display == 'not_assigned':
+                    completion_level = '未参与'
+                elif training_status_display == 'signed' and exam_status_display == 'completed':
+                    completion_level = '整体完成'
+                else:
+                    completion_level = '部分完成'
                 
                 all_data.append({
                     "training_name": training.get('name', ''),
@@ -2523,6 +2557,8 @@ def export_completion_report():
                     "training_status_global": training_status_global,
                     "exam_name": exam.get('title', ''),
                     "exam_status_global": exam_status_global,
+                    "allocation_status": allocation_status,
+                    "completion_level": completion_level,
                     "pass_score": pass_score,
                     "user_name": user.get('name_cn') or user.get('name_en', ''),
                     "user_email": user.get('email', ''),
@@ -2530,10 +2566,10 @@ def export_completion_report():
                     "wh_id": user.get('wh_id', ''),
                     "is_signed": is_signed_completed,
                     "is_completed": is_completed,
-                    "is_passed": is_passed,
-                    "score": score if score is not None else '-',
                     "training_status_display": training_status_display,
                     "exam_status_display": exam_status_display,
+                    "is_passed": is_passed,
+                    "score": score if score is not None else '-',
                     "signed_at": sign_time,
                     "completed_at": exam_result.get('submitted_at')
                 })
@@ -2545,7 +2581,8 @@ def export_completion_report():
         
         headers = ['序号', '培训名称', '培训国家', '培训开始日期', '培训结束日期', '培训状态(全局)',
                    '考试名称', '考试状态(全局)', '及格分数', '学员姓名', '学员邮箱', '学员国家', 
-                   '库房编码', '签到状态', '考试完成状态', '得分', '是否及格', '签到时间', '完成时间']
+                   '库房编码', '签到状态', '考试完成状态', '得分', 
+                   '是否及格', '签到时间', '完成时间', '分配状态', '完成度']
         
         # 表头样式
         from openpyxl.styles import Font, PatternFill, Alignment
@@ -2572,6 +2609,8 @@ def export_completion_report():
             ws.cell(row=row_idx, column=13, value=item.get('wh_id', ''))
             ws.cell(row=row_idx, column=14, value='已签到' if item.get('is_signed') else '未签到')
             ws.cell(row=row_idx, column=15, value='已完成' if item.get('is_completed') else '未完成')
+            ws.cell(row=row_idx, column=20, value=item.get('allocation_status', ''))  # ✅ 新增
+            ws.cell(row=row_idx, column=21, value=item.get('completion_level', ''))    # ✅ 新增
             ws.cell(row=row_idx, column=16, value=item.get('score', '-'))
             ws.cell(row=row_idx, column=17, value='及格' if item.get('is_passed') else ('不及格' if item.get('is_completed') else '-'))
             ws.cell(row=row_idx, column=18, value=convert_time_for_export(item.get('signed_at'), timezone_param))

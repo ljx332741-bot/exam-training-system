@@ -655,7 +655,7 @@
         const tbody = document.getElementById('trainingHistoryBody');
         
         if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="4" class="text-center">${t('no_training_records')}<\/td><\/tr>`;
+            tbody.innerHTML = `<tr><td colspan="4" class="text-center">${safeT('no_training_records')}<\/td><\/tr>`;
             return;
         }
         
@@ -672,7 +672,7 @@
                         `<span class="text-muted">${t('no_signature')}</span>`}
                 <\/td>
                 <td>
-                    ${t.signature_url ? `<button class="btn btn-sm btn-outline-info view-signature-btn" data-signature-url="${t.signature_url}">${t('view_signature')}</button>` : ''}
+                    ${t.signature_url ? `<button class="btn btn-sm btn-outline-info view-signature-btn" data-signature-url="${t.signature_url}">${safeT('view_signature')}</button>` : ''}
                 <\/td>
             </tr>
         `).join('');
@@ -735,7 +735,7 @@
             const data = await res.json();
             
             if (!data.answers || data.answers.length === 0) {
-                showToast(t('t_no_answer_record_available'), 'warning');
+                showToast(t('no_answer_record_available'), 'warning');
                 return;
             }
             
@@ -770,7 +770,7 @@
                                 ${optionsHtml}
                                 <div class="mt-2">
                                     <span class="text-muted">${t('candidate_answer')}：</span>
-                                    <strong>${item.user_answer || t('t_no_answer')}</strong>
+                                    <strong>${item.user_answer || t('no_answer')}</strong>
                                     <span class="ms-3 ${statusColor}">${statusIcon}</span>
                                 </div>
                             </div>

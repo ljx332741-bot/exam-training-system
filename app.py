@@ -6,7 +6,7 @@ import sys
 import traceback
 import pytz
 import re
-import string
+import string, time
 from routes import register_blueprints
 from datetime import datetime, timezone, date
 from flask import Flask, request, jsonify, session, make_response, redirect, url_for
@@ -90,8 +90,6 @@ def inject_translation():
 
 @app.context_processor
 def utility_processor():
-    from utils.permissions import is_developer
-    
     def has_permission(permission):
         """检查特定权限"""
         role = session.get('role', 'user')
@@ -115,6 +113,7 @@ def utility_processor():
         'is_developer': is_developer(),
         'has_permission': has_permission,
         'app_version': Config.APP_VERSION,
+        'now': time,
     }
 
 

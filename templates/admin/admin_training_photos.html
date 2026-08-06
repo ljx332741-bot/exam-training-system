@@ -757,15 +757,20 @@
             const res = await fetch(`/api/admin/training/photos/${photoId}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.success) {
-                showToast(safeT('photo_deleted'), 'success');
+                showToast(safeT('photo_deleted'), '成功', 'success');
                 selectedIds.delete(photoId);
+
+                // ✅ 设置刷新标记，通知培训管理页面需要刷新
+                sessionStorage.setItem('training_photos_changed', 'true');
+                sessionStorage.setItem('training_photos_training_id', document.getElementById('pageTrainingId').value);
+                
                 loadPhotos(currentPage);
             } else {
-                showToast(data.message || safeT('delete_failed'), 'error');
+                showToast(data.message || safeT('delete_failed'), '错误', 'error');
             }
         } catch (err) {
             console.error('删除失败:', err);
-            showToast(safeT('delete_failed'), 'error');
+            showToast(safeT('delete_failed'), '错误', 'error');
         }
     }
 
@@ -783,15 +788,20 @@
             });
             const data = await res.json();
             if (data.success) {
-                showToast(safeT('batch_delete_success', data.success_count), 'success');
+                showToast(safeT('batch_delete_success', { count: data.success_count}), 'success');
                 selectedIds.clear();
+
+                // ✅ 设置刷新标记
+                sessionStorage.setItem('training_photos_changed', 'true');
+                sessionStorage.setItem('training_photos_training_id', document.getElementById('pageTrainingId').value);
+                
                 loadPhotos(currentPage);
             } else {
                 showToast(data.message || safeT('delete_failed'), 'error');
             }
         } catch (err) {
             console.error('批量删除失败:', err);
-            showToast(safeT('delete_failed'), 'error');
+            showToast(safeT('delete_failed'), '错误', 'error');
         }
     });
 
@@ -803,10 +813,22 @@
 
     // ---------- Toast ----------
     function showToast(message, type = 'info') {
-        if (typeof window.showToast === 'function') {
-            window.showToast(message, type);
+        // 检查 base.html 中的 showToast 是否存在且不是自身
+        if (typeof window.showToast === 'function' && window.showToast !== showToast) {
+            // base.html 的 showToast 签名: (message, title, type)
+            const titleMap = {
+                'success': '成功',
+                'error': '错误',
+                'warning': '警告',
+                'info': '提示'
+            };
+            const title = titleMap[type] || '提示';
+            window.showToast(message, title, type);
             return;
         }
+        
+        // 降级方案：使用 alert
+        console.warn('Toast 不可用，使用 alert 代替');
         alert(message);
     }
 
