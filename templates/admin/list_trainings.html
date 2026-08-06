@@ -1948,9 +1948,52 @@
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await loadQuarterOptions();
         setupQuarterInput();
-        loadTrainings(false);
+
+        // ✅ 新增：检查照片变更标记
+        const photosChanged = sessionStorage.getItem('training_photos_changed') === 'true';
+        const photosTrainingId = sessionStorage.getItem('training_photos_training_id');
+        
+        if (photosChanged) {
+            console.log('📸 检测到照片变更，刷新培训数据');
+            // 清除缓存
+            clearTrainingCache();
+            // 清除标记
+            sessionStorage.removeItem('training_photos_changed');
+            sessionStorage.removeItem('training_photos_training_id');
+            // 强制刷新
+            await loadTrainings(true);
+        } else {
+            // 正常加载
+            loadTrainings(false);
+        }
     });
 
+    // ✅ 新增：监听 pageshow 事件（处理 bfcache 恢复）
+    window.addEventListener('pageshow', function(event) {
+        const photosChanged = sessionStorage.getItem('training_photos_changed') === 'true';
+        if (photosChanged) {
+            console.log('📸 从 bfcache 恢复，检测到照片变更');
+            clearTrainingCache();
+            sessionStorage.removeItem('training_photos_changed');
+            sessionStorage.removeItem('training_photos_training_id');
+            loadTrainings(true);
+        }
+    });
+
+    // ✅ 新增：监听 visibilitychange（用户切换标签页回来时检查）
+    document.addEventListener('visibilitychange', function() {
+        if (document.visibilityState === 'visible') {
+            const photosChanged = sessionStorage.getItem('training_photos_changed') === 'true';
+            if (photosChanged) {
+                console.log('📸 页面可见性恢复，检测到照片变更');
+                clearTrainingCache();
+                sessionStorage.removeItem('training_photos_changed');
+                sessionStorage.removeItem('training_photos_training_id');
+                loadTrainings(true);
+            }
+        }
+    });
+    
     // 监听国家分组模态框中的“表头录入”按钮（动态元素使用事件委托）
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('.country-header-btn');

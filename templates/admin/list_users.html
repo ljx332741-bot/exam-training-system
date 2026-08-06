@@ -52,7 +52,7 @@
                                 placeholder="库房编码/名称" autocomplete="off">
                         </div>
                         <div class="col-12 col-sm-6 col-lg-3">
-                            <button id="resetFiltersBtn" class="btn btn-outline-secondary w-100">
+                            <button id="resetFiltersBtn" class="btn btn-outline-secondary btn-half">
                                 <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
                             </button>
                         </div>
@@ -301,7 +301,7 @@
                         placeholder="库房编码/名称" autocomplete="off">
                     </div>
                     <div class="col-md-2">
-                        <button id="deletedResetBtn" class="btn btn-outline-secondary w-100">
+                        <button id="deletedResetBtn" class="btn btn-outline-danger btn-half">
                             <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
                         </button>
                     </div>
@@ -886,7 +886,8 @@
                 });
             }
 
-            const total = data.total || users.length;
+            // const total = data.total || users.length;
+            const total = users.length;
             document.getElementById('totalCount').innerText = total;
             const totalPages = Math.ceil(total / 20);
             const current = data.page || 1;
