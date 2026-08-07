@@ -7,8 +7,8 @@ import httpx
 from functools import lru_cache
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
-from routes.helpers import login_required, admin_required, format_datetime
-from utils.timezone_utils import utc_string_to_local
+from routes.helpers import login_required, admin_required
+from utils.timezone_utils import get_user_timezone, utc_string_to_local
 from services.db import get_supabase, get_supabase_admin
 from utils.permissions import is_developer
 from utils.manage_messages import (
@@ -85,24 +85,21 @@ def get_admin_messages():
                 user_names[u['id']] = u.get('name_cn') or u.get('name_en') or u.get('id')
         
         # 获取用户时区
-        user_timezone = session.get('user_timezone', 'Asia/Shanghai')
+        user_timezone = get_user_timezone()
         
         # 附加用户姓名并转换时间
         for m in messages:
             m['created_by_name'] = user_names.get(m.get('created_by'), '系统')
             if m.get('created_at'):
-                try:
-                    m['created_at_local'] = utc_string_to_local(
-                        m['created_at'], 
-                        user_timezone, 
-                        '%Y-%m-%d %H:%M'  # 消息列表显示到分钟
-                    )
-                except Exception as e:
-                    logger.warning(f"时间转换失败: {e}")
-                    m['created_at_local'] = m['created_at'][:16].replace('T', ' ') if m['created_at'] else '-'
+                # ✅ 使用 utc_string_to_local，它本身就支持3个参数
+                m['created_at_local'] = utc_string_to_local(
+                    m['created_at'], 
+                    user_timezone, 
+                    '%Y-%m-%d %H:%M'
+                )
             else:
                 m['created_at_local'] = '-'
-
+                
             # 如果是登录消息，增强显示
             if m.get('category') == 'user_login' and m.get('metadata'):
                 meta = m.get('metadata', {})
