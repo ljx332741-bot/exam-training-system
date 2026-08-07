@@ -103,6 +103,30 @@ def get_admin_messages():
             else:
                 m['created_at_local'] = '-'
 
+            # 如果是登录消息，增强显示
+            if m.get('category') == 'user_login' and m.get('metadata'):
+                meta = m.get('metadata', {})
+                device = meta.get('device', {})
+                location = meta.get('location', {})
+                
+                # 构建增强的标题
+                location_text = ''
+                if location and location.get('country'):
+                    location_text = f"📍{location.get('country')}"
+                    if location.get('city'):
+                        location_text += f" {location.get('city')}"
+                
+                device_text = ''
+                if device and device.get('os'):
+                    device_text = f"💻 {device.get('os')}"
+                    if device.get('browser'):
+                        device_text += f" / {device.get('browser')}"
+                
+                # 如果有增强信息，更新显示
+                if location_text or device_text:
+                    m['title'] = f"🔑 用户 {meta.get('user_name', '')} 已登录"
+                    m['content'] = f"📍 {location_text or '未知位置'} | 💻 {device_text or '未知设备'}"
+                    
         return jsonify({
             "success": True,
             "data": messages,

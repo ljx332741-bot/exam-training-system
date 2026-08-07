@@ -39,6 +39,8 @@ exam-system/
 │   ├── logger.py                               # 完整的日志管理方案
 │   ├── training_helpers.py                     # 培训信息获取的工具函数
 │   ├── import_helper.py                        # 用户和库房导入的工具函数
+│   ├── ip_location.py                          # 用户IP 归属地查询
+│   ├── device_detector.py                      # 用户设备检测工具
 │   └── status.py                               # 后端统一考试状态计算函数
 │
 ├── services/

@@ -7,6 +7,8 @@ import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from services.db import get_supabase_admin
+from utils.device_detector import detect_device, format_device_info
+from utils.ip_location import get_ip_location, format_ip_location, mask_ip
 
 logger = logging.getLogger(__name__)
 
@@ -88,20 +90,54 @@ def log_admin_message(
 # ==================== 用户相关 ====================
 
 def log_user_login(user_id: str, user_name: str, email: str, ip: str = None, user_agent: str = None):
-    """记录用户登录"""
+    """
+    记录用户登录（增强版）
+    """
+    # 解析设备信息
+    device_info = detect_device(user_agent)
+    device_display = format_device_info(device_info)
+
+    # 查询 IP 归属地（可选，如果担心隐私可以跳过）
+    location = None
+    location_display = '未知位置'
+    if ip:
+        try:
+            location = get_ip_location(ip)
+            location_display = format_ip_location(location)
+        except:
+            pass
+    
+    # 构建显示内容
+    content_parts = []
+    if location_display and location_display != '未知位置':
+        content_parts.append(f"📍 {location_display}")
+    if device_display and device_display != '未知设备':
+        content_parts.append(f"💻 {device_display}")
+    if ip:
+        content_parts.append(f"🔗 {mask_ip(ip)}")
+    
+    content = f"用户从 {', '.join(content_parts)} 登录系统" if content_parts else f"用户 {email} 已登录"
+    
+    # 构建元数据（用于详细查看）
+    metadata = {
+        "user_name": user_name,
+        "email": email,
+        "ip": ip,
+        "ip_masked": mask_ip(ip) if ip else None,
+        "user_agent": user_agent[:200] if user_agent else None,
+        "device": device_info,
+        "location": location,
+        "login_time": datetime.now(timezone.utc).isoformat()
+    }
+    
     return log_admin_message(
         level="info",
         category="user_login",
         title=f"🔑 用户 {user_name} 已登录",
-        content=f"用户从 {ip or '未知IP'} 登录系统" if ip else f"用户 {email} 已登录",
+        content=content,
         related_type="user",
         created_by=user_id,
-        metadata={
-            "user_name": user_name,
-            "email": email,
-            "ip": ip,
-            "user_agent": user_agent[:200] if user_agent else None
-        }
+        metadata=metadata
     )
 
 def log_user_logout(user_id: str, user_name: str, email: str):
