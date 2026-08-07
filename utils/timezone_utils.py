@@ -13,9 +13,42 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# ✅ 删除任何硬编码时区常量
-# 不再定义 DEFAULT_TIMEZONE
-
+def _parse_isostring(s):
+    """
+    健壮地解析 ISO 时间字符串
+    支持多种格式：
+    - 2026-08-07T06:01:17.18458+00:00 (5位微秒)
+    - 2026-08-07T06:01:17.184580+00:00 (6位微秒)
+    - 2026-08-07T06:01:17+00:00 (无微秒)
+    - 2026-08-07T06:01:17.18458Z (Z结尾)
+    """
+    if not s:
+        return None
+    
+    s = s.strip()
+    
+    # 处理 Z 结尾
+    if s.endswith('Z'):
+        s = s.replace('Z', '+00:00')
+    
+    # 匹配并修复微秒格式
+    # 分组: (日期时间) . (微秒) (时区)
+    match = re.match(
+        r'^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})\.(\d+)([+-]\d{2}:\d{2})?$',
+        s
+    )
+    if match:
+        base, microseconds, tz = match.groups()
+        # 确保微秒是6位（补零或截断）
+        if len(microseconds) < 6:
+            microseconds = microseconds.ljust(6, '0')
+        elif len(microseconds) > 6:
+            microseconds = microseconds[:6]
+        tz_suffix = tz or '+00:00'
+        s = f"{base}.{microseconds}{tz_suffix}"
+    
+    # 如果没有微秒部分，直接返回
+    return datetime.fromisoformat(s)
 
 def get_user_timezone():
     """
@@ -110,13 +143,10 @@ def utc_string_to_local(utc_string, user_timezone=None, format_str='%Y-%m-%d %H:
         return ''
     
     try:
-        # 解析时间字符串
-        if utc_string.endswith('Z'):
-            s = utc_string.replace('Z', '+00:00')
-        else:
-            s = utc_string
-        
-        dt = datetime.fromisoformat(s)
+        # ✅ 使用 _parse_isostring 解析时间
+        dt = _parse_isostring(utc_string)
+        if dt is None:
+            return utc_string
         
         # 转换为本地时间
         local_dt = utc_to_local(dt, user_timezone)
@@ -124,7 +154,18 @@ def utc_string_to_local(utc_string, user_timezone=None, format_str='%Y-%m-%d %H:
         return local_dt.strftime(format_str)
     except Exception as e:
         logger.error(f"时间转换失败: {utc_string}, {e}")
-        return utc_string
+        # 降级方案：简单字符串处理
+        try:
+            # 去掉微秒部分
+            if '.' in utc_string:
+                parts = utc_string.split('.')
+                base = parts[0]
+                if 'T' in base:
+                    return base.replace('T', ' ')
+                return base
+            return utc_string[:19].replace('T', ' ') if 'T' in utc_string else utc_string[:19]
+        except:
+            return utc_string[:19] if utc_string else ''
 
 
 def format_datetime(utc_string, user_timezone=None):
