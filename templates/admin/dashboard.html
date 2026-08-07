@@ -3951,7 +3951,7 @@
         async exportMultiReport() {
             if (this.selectedTrainings.size === 0 && this.selectedExams.size === 0) {
                 if (typeof showToast === 'function') {
-                    showToast('请至少选择一个培训或考试', 'warning');
+                    showToast(t('select_at_least_one_training_or_exam'), 'warning');
                 }
                 return;
             }
