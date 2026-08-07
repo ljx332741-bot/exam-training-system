@@ -93,7 +93,7 @@
                             <th>Sqn</th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="training_name">培训名称</span></th>
-                            <th><span data-i18n="training_id">tid</span></th>
+                            <th>tid</th>
                             <th><span data-i18n="quarter">季度</span></th>
                             <th><span data-i18n="sign_count">签到人数</span></th>
                             <th><span data-i18n="created_at">创建时间</span></th>
@@ -480,7 +480,7 @@
             let statusText = '', statusClass = '';
             switch (t.dynamic_status) {
                 case 'draft':
-                    statusText = safeT('t_draft');
+                    statusText = safeT('draft');
                     statusClass = 'bg-secondary';
                     break;
                 case 'pending':

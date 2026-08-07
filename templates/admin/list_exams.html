@@ -70,10 +70,10 @@
                 <div class="col-md-2">
                     <select id="filterStatus" class="form-select">
                         <option value="" data-i18n="all_status">全部状态</option>
-                        <option value="draft" data-i18n="draft">草稿</option>
-                        <option value="created" data-i18n="not_started">未开始</option>
-                        <option value="active" data-i18n="ongoing">进行中</option>
-                        <option value="closed" data-i18n="closed">已关闭</option>
+                        <option value="draft" data-i18n="draft">📄 草稿</option>
+                        <option value="created" data-i18n="not_started">⏳ 未开始</option>
+                        <option value="active" data-i18n="ongoing">▶️ 进行中</option>
+                        <option value="closed" data-i18n="closed">🔒 已关闭</option>
                     </select>
                 </div>
                 <div class="col-md-2">
@@ -881,6 +881,9 @@
         const showEdit = ['draft', 'created', 'active'].includes(ex.status);
         const showDelete = ['super_admin', 'developer'].includes(CURRENT_USER_ROLE);
         const showReopenBtn = ex.can_show_reopen_button === true;
+
+        // 使用 getStatusBadge 生成状态徽章
+        const statusBadge = getStatusBadge(ex.status);
         
         let actionButtons = '';
         if (isDeleted) {
@@ -910,7 +913,7 @@
             <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
             <td>${ex.id}</td>
             <td>${quarter}</td>
-            <td>${getStatusText(ex.status)}</td>
+            <td>${statusBadge}</td>  <!-- ✅ 使用状态徽章 -->
             <td>${formatLocalTime(ex.created_at)}</td>
             <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
             <td>${ex.question_count}</td>
@@ -1330,15 +1333,36 @@
         return `${year}-${month}-${day}T${hours}:${minutes}`;
     }
 
-    function getStatusText(status) {
-        const map = { 
-            'draft': t('t_draft'), 
-            'created': t('t_not_started'), 
-            'active': t('t_on_going'), 
-            'closed': t('t_closed'), 
-            'deleted': t('t_deleted')
+    function getStatusBadge(status) {
+        const statusMap = {
+            'draft': {
+                text: t('draft') || '草稿',
+                class: 'bg-secondary'
+            },
+            'created': {
+                text: t('t_not_started') || '未开始',
+                class: 'bg-info'
+            },
+            'active': {
+                text: t('t_on_going') || '进行中',
+                class: 'bg-success'
+            },
+            'closed': {
+                text: t('t_closed') || '已关闭',
+                class: 'bg-danger'
+            },
+            'deleted': {
+                text: t('t_deleted') || '已删除',
+                class: 'bg-dark'
+            }
         };
-        return map[status] || status;
+        
+        const config = statusMap[status] || {
+            text: status || '未知',
+            class: 'bg-light text-dark'
+        };
+        
+        return `<span class="badge ${config.class}">${config.text}</span>`;
     }
 
     function escapeHtml(str) {
