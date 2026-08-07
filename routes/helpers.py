@@ -10,7 +10,7 @@ from functools import wraps
 from flask import session, redirect, url_for, flash, jsonify
 from services.db import get_supabase
 from utils.permissions import get_allowed_countries, get_admin_allowed_countries, is_developer
-from utils.timezone_utils import get_current_local_time, format_datetime_24h_short
+from utils.timezone_utils import get_current_local_time, format_datetime_24h_short, format_datetime
 
 logger = logging.getLogger(__name__)
 

@@ -7,7 +7,8 @@ import httpx
 from functools import lru_cache
 from datetime import datetime, timedelta
 from flask import Blueprint, request, jsonify, session
-from routes.helpers import login_required, admin_required
+from routes.helpers import login_required, admin_required, format_datetime
+from utils.timezone_utils import utc_string_to_local
 from services.db import get_supabase, get_supabase_admin
 from utils.permissions import is_developer
 from utils.manage_messages import (
@@ -83,18 +84,25 @@ def get_admin_messages():
             for u in (users_res.data or []):
                 user_names[u['id']] = u.get('name_cn') or u.get('name_en') or u.get('id')
         
-        # 附加用户姓名
+        # 获取用户时区
+        user_timezone = session.get('user_timezone', 'Asia/Shanghai')
+        
+        # 附加用户姓名并转换时间
         for m in messages:
             m['created_by_name'] = user_names.get(m.get('created_by'), '系统')
-            # 格式化时间
             if m.get('created_at'):
                 try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(m['created_at'].replace('Z', '+00:00'))
-                    m['created_at_local'] = dt.strftime('%Y-%m-%d %H:%M')
-                except:
-                    m['created_at_local'] = m['created_at']
-        
+                    m['created_at_local'] = utc_string_to_local(
+                        m['created_at'], 
+                        user_timezone, 
+                        '%Y-%m-%d %H:%M'  # 消息列表显示到分钟
+                    )
+                except Exception as e:
+                    logger.warning(f"时间转换失败: {e}")
+                    m['created_at_local'] = m['created_at'][:16].replace('T', ' ') if m['created_at'] else '-'
+            else:
+                m['created_at_local'] = '-'
+
         return jsonify({
             "success": True,
             "data": messages,
