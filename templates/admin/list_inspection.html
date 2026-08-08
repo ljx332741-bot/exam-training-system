@@ -86,7 +86,19 @@
                     <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
                 <div class="col-md-5 d-flex justify-content-end">
-                    <button class="btn btn-success me-2" id="newInterviewBtn">➕ <span data-i18n="add_new_interviewee">新增访谈</span></button>
+                    <!-- excel批量导出按钮 -->
+                    <button class="btn btn-outline-success me-2" id="exportInterviewReportBtn">
+                        <i class="bi bi-file-earmark-excel me-1"></i> 
+                        <span data-i18n="export_interview_report">导出访谈报告</span>
+                    </button>
+                    <!-- PDF批量导出按钮 -->
+                    <button class="btn btn-outline-primary me-2" id="exportInterviewPdfBtn">
+                        <i class="bi bi-file-earmark-excel me-1"></i> 
+                        <span data-i18n="export_interview_pdf">导出访谈PDF</span>
+                    </button>
+                    <button class="btn btn-success me-2" id="newInterviewBtn">
+                        ➕ <span data-i18n="add_new_interviewee">新增访谈</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -99,6 +111,10 @@
                 <table class="table table-hover align-middle mb-0" style="min-width: 1000px; white-space: nowrap;">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;">
+                                <input type="checkbox" id="selectAllInterviews" 
+                                    onchange="toggleAllCheckboxes(this)">
+                            </th>
                             <th>SQN</th>
                             <th><span data-i18n="country">国家</span></th>
                             <th><span data-i18n="interview_title">访谈名称</span></th>
@@ -687,7 +703,7 @@
                 if (savePublishBtn) {
                     savePublishBtn.removeEventListener('click', savePublishBtn._forceHandler);
                     savePublishBtn._forceHandler = null;
-                    savePublishBtn.innerHTML = `<span data-i18n="save_public">保存并发布</span>`;
+                    savePublishBtn.innerHTML = `<span data-i18n="save_public">${('save_public')}</span>`;
                     savePublishBtn.className = 'btn btn-success';
                     savePublishBtn.style.display = 'inline-block';
                 }
@@ -761,26 +777,60 @@
         if (status === 'draft' || status === 'created') {
             actionButtons = `
                 <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
-                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
+                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>
+            `;
         } else if (status === 'active') {
             actionButtons = `
                 <button class="btn btn-sm btn-outline-primary edit-interview-btn" data-id="${inv.id}">${t('t_edit')}</button>
                 <button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>
-                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
+                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>
+                <!-- 导出excel按钮 -->
+                <button class="btn btn-sm btn-outline-success export-interview-excel-btn" 
+                        data-id="${inv.id}" 
+                        data-title="${escapeHtml(inv.title)}">
+                    <i class="bi bi-file-earmark-excel"></i> ${t('export')}
+                </button>
+                <!-- PDF导出按钮 -->
+                <button class="btn btn-sm btn-outline-success export-interview-pdf-btn" 
+                        data-id="${inv.id}" 
+                        data-title="${escapeHtml(inv.title)}">
+                    <i class="bi bi-filetype-pdf"></i> PDF
+                </button>
+            `;
         } else if (status === 'closed') {
-            // ✅ 已关闭：详情 + 强制新增（超管/开发者可见）
-            actionButtons = `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>`;
+            actionButtons = `
+                <button class="btn btn-sm btn-outline-info detail-btn" data-id="${inv.id}">${t('t_details')}</button>
+                <!-- excel导出按钮 -->
+                <button class="btn btn-sm btn-outline-success export-interview-excel-btn" 
+                        data-id="${inv.id}" 
+                        data-title="${escapeHtml(inv.title)}">
+                    <i class="bi bi-file-earmark-excel"></i> ${t('export')}
+                </button>
+                <!-- PDF导出按钮 -->
+                <button class="btn btn-sm btn-outline-success export-interview-pdf-btn" 
+                        data-id="${inv.id}" 
+                        data-title="${escapeHtml(inv.title)}">
+                    <i class="bi bi-filetype-pdf"></i> PDF
+                </button>
+            `;
+            // 已关闭：详情 + 强制新增（超管/开发者可见）
             if (isSuperAdmin || isDeveloper) {
                 actionButtons += `
-                <button class="btn btn-sm btn-outline-warning edit-interview-btn" data-id="${inv.id}" title="为已关闭访谈新增学员（创建强制访谈）">
-                    <i class="bi bi-lightning-charge"></i> ${t('force_add_users') || '强制新增'}
-                </button>
-                <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>`;
+                    <button class="btn btn-sm btn-outline-warning edit-interview-btn" data-id="${inv.id}" title="为已关闭访谈新增学员（创建强制访谈）">
+                        <i class="bi bi-lightning-charge"></i> ${t('force_add_users') || '强制新增'}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger delete-interview-btn" data-id="${inv.id}">${t('t_delete')}</button>
+                `;
             }
         }
 
         return `
             <tr>
+                <td>
+                    <input type="checkbox" class="interview-checkbox" 
+                        data-id="${inv.id}" 
+                        data-title="${escapeHtml(inv.title)}">
+                </td>
                 <td>${(currentPage-1)*20 + idx + 1}</td>
                 <td>${escapeHtml(inv.country || '-')}</td>
                 <td><a href="/admin/interview/${inv.id}" target = "_blank" class="text-decoration-none">${escapeHtml(inv.title)}</a></td>
@@ -804,6 +854,33 @@
         document.querySelectorAll('.edit-interview-btn').forEach(btn => {
             btn.addEventListener('click', () => openEditInterviewModal(btn.dataset.id));
         });
+        
+        // 绑定导出按钮事件
+        document.querySelectorAll('.export-interview-excel-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const interviewId = this.dataset.id;
+                const title = this.dataset.title || '访谈';
+                // 直接导出，无需选中
+                if (confirm(`确定要导出访谈「${title}」的报告吗？`)) {
+                    window.open(`/api/admin/interview/${interviewId}/export_excel`, '_blank');
+                }
+            });
+        });
+        
+        // 绑定导出按钮事件
+        document.querySelectorAll('.export-interview-pdf-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const interviewId = this.dataset.id;
+                const title = this.dataset.title || '访谈';
+                // 直接导出，无需选中
+                if (confirm(`确定要导出访谈「${title}」的报告吗？`)) {
+                    window.open(`/api/admin/interview/${interviewId}/export_pdf`, '_blank');
+                }
+            });
+        });
+        
         document.querySelectorAll('.delete-interview-btn').forEach(btn => {
             btn.addEventListener('click', async () => {
                 if (confirm(t('t_interveiw_delete_confirm'))) {
@@ -811,6 +888,13 @@
                     loadInterviews();
                 }
             });
+        });
+    }
+
+    // 全选功能
+    function toggleAllCheckboxes(selectAll) {
+        document.querySelectorAll('.interview-checkbox').forEach(cb => {
+            cb.checked = selectAll.checked;
         });
     }
 
@@ -869,6 +953,75 @@
                 document.querySelectorAll('.user-checkbox').forEach(cb => cb.disabled = false);
             });
         }
+    });
+
+    // ========== 全选功能 ==========
+    document.getElementById('selectAllInterviews')?.addEventListener('change', function() {
+        document.querySelectorAll('.interview-checkbox').forEach(cb => {
+            cb.checked = this.checked;
+        });
+    });
+
+    // 方式1：顶部导出按钮（需要选中一个访谈）
+    document.getElementById('exportInterviewReportBtn')?.addEventListener('click', function() {
+        const selectedCheckboxes = document.querySelectorAll('.interview-checkbox:checked');
+        
+        if (selectedCheckboxes.length === 0) {
+            // 如果没有选中任何访谈，提示用户
+            if (typeof showToast === 'function') {
+                showToast(t('please_select_one_interview_to_export'), 'warning');
+            } else {
+                alert(t('please_select_one_interview_to_export'));
+            }
+            return;
+        }
+        
+        if (selectedCheckboxes.length > 1) {
+            // 如果选中了多个，提示只能选择一个
+            if (typeof showToast === 'function') {
+                showToast(t('please_select_only_one_interview'), 'warning');
+            } else {
+                alert(t('please_select_only_one_interview'));
+            }
+            return;
+        }
+        
+        // 获取选中的访谈ID
+        const checkbox = selectedCheckboxes[0];
+        const interviewId = checkbox.dataset.id;
+        const title = checkbox.dataset.title || '访谈';
+        
+        // 确认导出
+        if (confirm(`确定要导出访谈「${title}」的报告吗？`)) {
+            window.open(`/api/admin/interview/${interviewId}/export_excel`, '_blank');
+        }
+    });
+
+    // 导出 PDF
+    document.getElementById('exportInterviewPdfBtn')?.addEventListener('click', function() {
+        // 获取当前选中的访谈ID
+        const selectedCheckboxes = document.querySelectorAll('.interview-checkbox:checked');
+        let interviewId = null;
+        
+        if (selectedCheckboxes.length === 1) {
+            const row = selectedCheckboxes[0].closest('tr');
+            if (row) {
+                const detailBtn = row.querySelector('.btn-outline-info');
+                if (detailBtn) {
+                    interviewId = detailBtn.dataset.id;
+                }
+            }
+        }
+        
+        if (!interviewId) {
+            if (typeof showToast === 'function') {
+                showToast(t('please_select_one_interview_to_export'), 'warning');
+            }
+            return;
+        }
+        
+        // 导出 PDF
+        window.open(`/api/admin/interview/${interviewId}/export_pdf`, '_blank');
     });
 
     // 先显示模态框，再异步加载数据
@@ -1554,7 +1707,7 @@
                 previewBtn.style.display = 'inline-block';
             }
             if (savePublishBtn) {
-                savePublishBtn.innerHTML = `<span data-i18n="save_public">保存并发布</span>`;
+                savePublishBtn.innerHTML = `<span data-i18n="save_public">${('save_public')}</span>`;
                 savePublishBtn.className = 'btn btn-success';
                 // 移除强制事件，恢复原有事件
                 savePublishBtn.removeEventListener('click', savePublishBtn._forceHandler);

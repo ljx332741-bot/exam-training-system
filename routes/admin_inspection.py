@@ -1,8 +1,12 @@
 # routes/admin_inspection.py
 import logging
 import json
+import openpyxl, pdfkit, os, zipfile
+from io import BytesIO
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 from datetime import datetime, timezone, timedelta
-from flask import request, jsonify, render_template, session, flash, redirect, url_for
+from flask import request, jsonify, render_template, session, flash, redirect, url_for, send_file
 from . import admin_inspection_bp
 from services.db import get_supabase, get_supabase_admin
 from utils.common import get_reviewer_by_country
@@ -1376,7 +1380,8 @@ def force_resample_interview(interview_id):
                 "user_id": user_id,
                 "original_interview_id": interview_id,
                 "exam_id": exam_id,
-                "title": f"{title} (强制访谈)",
+                # "title": f"{title} (强制访谈)",
+                "title": title,
                 "question_count": question_count,
                 "reviewer": reviewer,
                 "feedback": feedback,
@@ -1669,7 +1674,8 @@ def force_add_users_for_closed_interview(interview_id):
                 inserted_question_ids = [r.get('question_id') for r in (verify_insert_res.data or [])]
             
             # 7d. 创建强制访谈记录
-            force_title = f"{title} (强制访谈)"
+            # force_title = f"{title} (强制访谈)"
+            force_title = title
             admin_db.table("user_interview_force_records").insert({
                 "user_id": user_id,
                 "original_interview_id": interview_id,
@@ -1727,3 +1733,1312 @@ def force_add_users_for_closed_interview(interview_id):
             "params": [],
             "failed_users": failed_users[:10]
         }), 500
+
+# 访谈结果导出接口[Excel和PDF]
+
+@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/export_excel')
+@login_required
+@admin_required
+def export_interview_report_excel(interview_id):
+    """导出访谈结果为 Excel（包含所有学员答题详情）- 带权限隔离"""
+    from utils.permissions import get_admin_allowed_countries, is_developer
+    from routes.helpers import parse_exam_countries
+    
+    db = get_supabase()
+    
+    # ========== 1. 获取访谈基本信息 ==========
+    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"error": "访谈不存在"}), 404
+    
+    interview = inv_res.data
+    
+    # ========== 2. 权限检查 ==========
+    is_dev = is_developer()
+    current_role = session.get('role')
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取访谈关联的考试信息
+    exam_id = interview.get('exam_id')
+    exam_countries = []
+    
+    if exam_id:
+        exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_countries = parse_exam_countries(exam_res.data)
+    
+    # 检查当前用户是否有权限导出此访谈
+    if not is_dev:
+        # 超管逻辑
+        if current_role == 'super_admin':
+            if allowed_countries is not None and allowed_countries:
+                # 检查访谈的国家是否在权限范围内
+                if not any(c in allowed_countries for c in exam_countries):
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+        # 管理员逻辑
+        elif current_role == 'admin':
+            if allowed_countries is not None and allowed_countries:
+                if not any(c in allowed_countries for c in exam_countries):
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+            else:
+                # 无权限范围，使用用户注册国家
+                user_country = session.get('user_country')
+                if user_country not in exam_countries:
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+        else:
+            return jsonify({"error": "无权导出此访谈数据"}), 403
+    
+    # ========== 3. 获取考试信息 ==========
+    exam_title = ''
+    if exam_id:
+        exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_title = exam_res.data['title']
+    
+    # ========== 4. 获取所有学员的访谈答题记录 ==========
+    results_res = db.table("interview_results").select("*").eq("interview_id", interview_id).execute()
+    
+    if not results_res.data:
+        return jsonify({"error": "该访谈暂无数据"}), 404
+    
+    # ========== 5. 获取用户信息（带权限过滤） ==========
+    user_ids = list(set([r['user_id'] for r in results_res.data]))
+    
+    # 获取用户信息（包括国家字段）
+    users_map = {}
+    if user_ids:
+        users_res = db.table("users").select("id, name_cn, name_en, email, country, wh_id, department").in_("id", user_ids).execute()
+        users_map = {u['id']: u for u in (users_res.data or [])}
+    
+    # ========== 6. 根据权限过滤用户 ==========
+    filtered_user_ids = []
+    
+    if not is_dev:
+        # 超管/管理员：只保留权限范围内的用户
+        if allowed_countries is not None and allowed_countries:
+            for uid, u in users_map.items():
+                user_country = u.get('country', '')
+                if user_country in allowed_countries:
+                    filtered_user_ids.append(uid)
+        else:
+            # 没有权限范围限制（但超管可能有权限范围）
+            if current_role == 'super_admin':
+                # 超管无权限范围时，可以查看所有
+                filtered_user_ids = user_ids
+            else:
+                # 管理员无权限范围时，只能查看自己国家的用户
+                user_session_country = session.get('user_country')
+                for uid, u in users_map.items():
+                    if u.get('country') == user_session_country:
+                        filtered_user_ids.append(uid)
+    else:
+        # 开发者：可以查看所有
+        filtered_user_ids = user_ids
+    
+    # 过滤答题记录
+    filtered_results = [r for r in results_res.data if r['user_id'] in filtered_user_ids]
+    
+    if not filtered_results:
+        return jsonify({"error": "您权限范围内没有可导出的数据"}), 404
+    
+    # ========== 7. 获取题目信息 ==========
+    question_ids = list(set([r['question_id'] for r in filtered_results if r.get('question_id')]))
+    questions_map = {}
+    if question_ids:
+        q_res = db.table("questions").select("*").in_("id", question_ids).execute()
+        for q in (q_res.data or []):
+            opts = q.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    opts = json.loads(opts)
+                except:
+                    opts = {}
+            q['options_parsed'] = opts
+            questions_map[q['id']] = q
+    
+    # ========== 8. 按用户聚合答题数据 ==========
+    user_answers = {}
+    for r in filtered_results:
+        uid = r['user_id']
+        if uid not in user_answers:
+            user_answers[uid] = {
+                'user_id': uid,
+                'answers': [],
+                'correct_count': 0,
+                'total_questions': 0,
+                'submitted_at': r.get('submitted_at')
+            }
+        
+        q = questions_map.get(r['question_id'], {})
+        is_correct = r.get('is_correct', False)
+        if is_correct:
+            user_answers[uid]['correct_count'] += 1
+        user_answers[uid]['total_questions'] += 1
+        
+        user_answers[uid]['answers'].append({
+            'question_num': q.get('num', 0),
+            'question_content': q.get('content_cn') or q.get('content') or q.get('content_raw', ''),
+            'question_type': q.get('type', 'single'),
+            'options': q.get('options_parsed', {}),
+            'correct_answer': q.get('answer', ''),
+            'user_answer': r.get('answer', '未作答'),
+            'is_correct': is_correct
+        })
+    
+    # ========== 9. 创建 Excel 工作簿 ==========
+    wb = openpyxl.Workbook()
+    
+    # 表头样式
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    border = Border(
+        left=Side(style="thin"),
+        right=Side(style="thin"),
+        top=Side(style="thin"),
+        bottom=Side(style="thin")
+    )
+    
+    # ========== Sheet 1: 汇总表 ==========
+    ws1 = wb.active
+    ws1.title = "访谈汇总"
+    
+    # 写入标题信息
+    ws1.merge_cells('A1:H1')
+    title_cell = ws1.cell(row=1, column=1, value=f"访谈结果汇总 - {interview.get('title', '')}")
+    title_cell.font = Font(bold=True, size=14)
+    title_cell.alignment = Alignment(horizontal="center")
+    
+    # 添加权限范围说明
+    ws1.cell(row=2, column=1, value="导出范围:").font = Font(bold=True)
+    if is_dev:
+        ws1.cell(row=2, column=2, value="全部（开发者）")
+    elif allowed_countries:
+        ws1.cell(row=2, column=2, value=f"权限范围: {', '.join(allowed_countries)}")
+    else:
+        ws1.cell(row=2, column=2, value=session.get('user_country', '全部'))
+    
+    ws1.cell(row=3, column=1, value="访谈ID:").font = Font(bold=True)
+    ws1.cell(row=3, column=2, value=interview_id)
+    ws1.cell(row=3, column=3, value="考试名称:").font = Font(bold=True)
+    ws1.cell(row=3, column=4, value=exam_title)
+    ws1.cell(row=3, column=5, value="阅卷人:").font = Font(bold=True)
+    ws1.cell(row=3, column=6, value=interview.get('reviewer', ''))
+    ws1.cell(row=3, column=7, value="反馈人:").font = Font(bold=True)
+    ws1.cell(row=3, column=8, value=interview.get('feedback', ''))
+    
+    # 汇总表头
+    headers1 = ['序号', '学员姓名', '邮箱', '国家', '库房编码', '部门', '答对数量', '总题数', '正确率', '提交时间']
+    for col, header in enumerate(headers1, 1):
+        cell = ws1.cell(row=5, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+    
+    # 写入汇总数据
+    row_idx = 6
+    for idx, (uid, data) in enumerate(user_answers.items(), 1):
+        user_info = users_map.get(uid, {})
+        correct_rate = f"{data['correct_count']/data['total_questions']*100:.1f}%" if data['total_questions'] > 0 else "0%"
+        
+        ws1.cell(row=row_idx, column=1, value=idx).border = border
+        ws1.cell(row=row_idx, column=2, value=user_info.get('name_cn') or user_info.get('name_en', '')).border = border
+        ws1.cell(row=row_idx, column=3, value=user_info.get('email', '')).border = border
+        ws1.cell(row=row_idx, column=4, value=user_info.get('country', '')).border = border
+        ws1.cell(row=row_idx, column=5, value=user_info.get('wh_id', '')).border = border
+        ws1.cell(row=row_idx, column=6, value=user_info.get('department', '')).border = border
+        ws1.cell(row=row_idx, column=7, value=data['correct_count']).border = border
+        ws1.cell(row=row_idx, column=8, value=data['total_questions']).border = border
+        ws1.cell(row=row_idx, column=9, value=correct_rate).border = border
+        ws1.cell(row=row_idx, column=10, value=data.get('submitted_at', '')[:16] if data.get('submitted_at') else '-').border = border
+        
+        # 正确率高亮
+        if data['correct_count'] == data['total_questions']:
+            ws1.cell(row=row_idx, column=9).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+        
+        row_idx += 1
+    
+    # 调整列宽
+    for col in range(1, len(headers1) + 1):
+        ws1.column_dimensions[get_column_letter(col)].width = 16
+    
+    # ========== Sheet 2: 答题详情 ==========
+    ws2 = wb.create_sheet("答题详情")
+    
+    # 答题详情表头
+    headers2 = ['学员姓名', '邮箱', '国家', '题号', '题目内容', '题型', '选项', '正确答案', '学员答案', '是否正确']
+    for col, header in enumerate(headers2, 1):
+        cell = ws2.cell(row=1, column=col, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = header_alignment
+        cell.border = border
+    
+    # 写入答题详情数据
+    row_idx = 2
+    for uid, data in user_answers.items():
+        user_info = users_map.get(uid, {})
+        user_name = user_info.get('name_cn') or user_info.get('name_en', '')
+        user_email = user_info.get('email', '')
+        user_country = user_info.get('country', '')
+        
+        # 按题号排序
+        sorted_answers = sorted(data['answers'], key=lambda x: x.get('question_num', 0))
+        
+        for ans in sorted_answers:
+            # 格式化选项
+            options_str = ''
+            if ans.get('options'):
+                opts = ans['options']
+                options_str = '; '.join([f"{k}: {v}" for k, v in opts.items() if v])
+            
+            ws2.cell(row=row_idx, column=1, value=user_name).border = border
+            ws2.cell(row=row_idx, column=2, value=user_email).border = border
+            ws2.cell(row=row_idx, column=3, value=user_country).border = border
+            ws2.cell(row=row_idx, column=4, value=ans.get('question_num', 0)).border = border
+            ws2.cell(row=row_idx, column=5, value=ans.get('question_content', '')).border = border
+            ws2.cell(row=row_idx, column=6, value=ans.get('question_type', '')).border = border
+            ws2.cell(row=row_idx, column=7, value=options_str).border = border
+            ws2.cell(row=row_idx, column=8, value=ans.get('correct_answer', '')).border = border
+            ws2.cell(row=row_idx, column=9, value=ans.get('user_answer', '')).border = border
+            ws2.cell(row=row_idx, column=10, value='正确' if ans.get('is_correct') else '错误').border = border
+            
+            # 正确/错误高亮
+            if ans.get('is_correct'):
+                ws2.cell(row=row_idx, column=10).fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+            else:
+                ws2.cell(row=row_idx, column=10).fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+            
+            row_idx += 1
+    
+    # 调整列宽
+    for col in range(1, len(headers2) + 1):
+        ws2.column_dimensions[get_column_letter(col)].width = 18
+    ws2.column_dimensions[get_column_letter(5)].width = 40
+    
+    # ========== 保存文件 ==========
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"访谈结果_{interview.get('title', 'interview')}_{timestamp}.xlsx"
+    
+    return send_file(
+        buffer,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/export_pdf')
+@login_required
+@admin_required
+def export_interview_pdf(interview_id):
+    """导出访谈结果为 PDF（带权限隔离）"""
+    db = get_supabase()
+    
+    # ========== 1. 获取访谈基本信息 ==========
+    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"error": "访谈不存在"}), 404
+    
+    interview = inv_res.data
+    
+    # ========== 2. 权限检查 ==========
+    is_dev = is_developer()
+    current_role = session.get('role')
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 获取访谈关联的考试信息
+    exam_id = interview.get('exam_id')
+    exam_countries = []
+    
+    if exam_id:
+        exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_countries = parse_exam_countries(exam_res.data)
+    
+    # 检查当前用户是否有权限导出此访谈
+    if not is_dev:
+        if current_role == 'super_admin':
+            if allowed_countries is not None and allowed_countries:
+                if not any(c in allowed_countries for c in exam_countries):
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+        elif current_role == 'admin':
+            if allowed_countries is not None and allowed_countries:
+                if not any(c in allowed_countries for c in exam_countries):
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+            else:
+                user_country = session.get('user_country')
+                if user_country not in exam_countries:
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+        else:
+            return jsonify({"error": "无权导出此访谈数据"}), 403
+    
+    # ========== 3. 获取关联考试信息 ==========
+    exam_title = ''
+    if exam_id:
+        exam_res = db.table("exams").select("title").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_title = exam_res.data['title']
+    
+    # ========== 4. 获取所有学员的访谈答题记录 ==========
+    results_res = db.table("interview_results").select("*").eq("interview_id", interview_id).execute()
+    
+    if not results_res.data:
+        return jsonify({"error": "该访谈暂无数据"}), 404
+    
+    # ========== 5. 获取用户信息 ==========
+    user_ids = list(set([r['user_id'] for r in results_res.data]))
+    
+    users_map = {}
+    if user_ids:
+        users_res = db.table("users").select("id, name_cn, name_en, email, country, wh_id, department").in_("id", user_ids).execute()
+        users_map = {u['id']: u for u in (users_res.data or [])}
+    
+    # ========== 6. 根据权限过滤用户 ==========
+    filtered_user_ids = []
+    
+    if not is_dev:
+        if allowed_countries is not None and allowed_countries:
+            for uid, u in users_map.items():
+                user_country = u.get('country', '')
+                if user_country in allowed_countries:
+                    filtered_user_ids.append(uid)
+        else:
+            if current_role == 'super_admin':
+                filtered_user_ids = user_ids
+            else:
+                user_session_country = session.get('user_country')
+                for uid, u in users_map.items():
+                    if u.get('country') == user_session_country:
+                        filtered_user_ids.append(uid)
+    else:
+        filtered_user_ids = user_ids
+    
+    # 过滤答题记录
+    filtered_results = [r for r in results_res.data if r['user_id'] in filtered_user_ids]
+    
+    if not filtered_results:
+        return jsonify({"error": "您权限范围内没有可导出的数据"}), 404
+    
+    # ========== 7. 获取题目信息 ==========
+    question_ids = list(set([r['question_id'] for r in filtered_results if r.get('question_id')]))
+    questions_map = {}
+    if question_ids:
+        q_res = db.table("questions").select("*").in_("id", question_ids).execute()
+        for q in (q_res.data or []):
+            opts = q.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    opts = json.loads(opts)
+                except:
+                    opts = {}
+            q['options_parsed'] = opts
+            questions_map[q['id']] = q
+    
+    # ========== 8. 按用户聚合答题数据 ==========
+    user_answers = {}
+    for r in filtered_results:
+        uid = r['user_id']
+        if uid not in user_answers:
+            user_answers[uid] = {
+                'user_id': uid,
+                'answers': [],
+                'correct_count': 0,
+                'total_questions': 0,
+                'submitted_at': r.get('submitted_at')
+            }
+        
+        q = questions_map.get(r['question_id'], {})
+        is_correct = r.get('is_correct', False)
+        if is_correct:
+            user_answers[uid]['correct_count'] += 1
+        user_answers[uid]['total_questions'] += 1
+        
+        user_answers[uid]['answers'].append({
+            'question_num': q.get('num', 0),
+            'question_content': q.get('content_cn') or q.get('content') or q.get('content_raw', ''),
+            'question_type': q.get('type', 'single'),
+            'options': q.get('options_parsed', {}),
+            'correct_answer': q.get('answer', ''),
+            'user_answer': r.get('answer', '未作答'),
+            'is_correct': is_correct
+        })
+    
+    # ========== 9. 生成 HTML 内容 ==========
+    html_content = generate_interview_pdf_html(
+        interview, 
+        exam_title, 
+        users_map, 
+        user_answers,
+        interview_id,
+        is_dev,
+        allowed_countries
+    )
+    
+    # ========== 10. 配置 wkhtmltopdf 选项 ==========
+    options = {
+        'page-size': 'A4',
+        'margin-top': '15mm',
+        'margin-right': '15mm',
+        'margin-bottom': '20mm',
+        'margin-left': '15mm',
+        'encoding': 'UTF-8',
+        'footer-right': '第 [page] 页 / 共 [topage] 页',
+        'footer-font-size': '8',
+        'footer-spacing': '5',
+    }
+    
+    try:
+        wkhtmltopdf_path = os.environ.get('WKHTMLTOPDF_PATH')
+        
+        if not wkhtmltopdf_path or not os.path.exists(wkhtmltopdf_path):
+            common_paths = [
+                r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe',
+                r'C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe',
+                '/usr/local/bin/wkhtmltopdf',
+                '/usr/bin/wkhtmltopdf',
+            ]
+            for path in common_paths:
+                if os.path.exists(path):
+                    wkhtmltopdf_path = path
+                    break
+        
+        config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path) if wkhtmltopdf_path else None
+        pdf_bytes = pdfkit.from_string(html_content, False, options=options, configuration=config)
+        
+        from io import BytesIO
+        buffer = BytesIO(pdf_bytes)
+        buffer.seek(0)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"访谈结果_{interview.get('title', 'interview')}_{timestamp}.pdf"
+        
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"PDF 生成失败: {e}")
+        return jsonify({"error": f"PDF 生成失败: {str(e)}"}), 500
+
+def generate_interview_pdf_html(interview, exam_title, users_map, user_answers, interview_id, is_dev=False, allowed_countries=None):
+    """生成访谈报告的 HTML 内容"""
+    
+    # 计算统计信息
+    total_users = len(user_answers)
+    total_completed = sum(1 for u in user_answers.values() if u.get('submitted_at'))
+    total_correct = sum(u['correct_count'] for u in user_answers.values())
+    total_questions = sum(u['total_questions'] for u in user_answers.values())
+    avg_correct_rate = f"{(total_correct / total_questions * 100):.1f}%" if total_questions > 0 else "0%"
+
+    # 构建权限范围显示
+    scope_display = '全部（开发者）' if is_dev else (', '.join(allowed_countries) if allowed_countries else session.get('user_country', '全部'))
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>访谈结果报告 - {interview.get('title', '')}</title>
+        <style>
+            /* ==================== 全局样式 ==================== */
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            body {{
+                font-family: 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
+                font-size: 12px;
+                line-height: 1.6;
+                color: #333;
+                padding: 20px;
+                background: #fff;
+            }}
+            
+            /* ==================== 封面样式 ==================== */
+            .cover-page {{
+                page-break-after: always;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                text-align: center;
+                padding: 40px;
+            }}
+            .cover-page .logo {{
+                font-size: 48px;
+                margin-bottom: 30px;
+            }}
+            .cover-page h1 {{
+                font-size: 28px;
+                color: #1a1a2e;
+                margin-bottom: 10px;
+            }}
+            .cover-page .subtitle {{
+                font-size: 16px;
+                color: #666;
+                margin-bottom: 40px;
+            }}
+            .cover-page .info-grid {{
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 10px 40px;
+                text-align: left;
+                font-size: 14px;
+                background: #f8f9fa;
+                padding: 20px 40px;
+                border-radius: 8px;
+                border: 1px solid #e9ecef;
+            }}
+            .cover-page .info-grid .label {{
+                font-weight: 600;
+                color: #555;
+            }}
+            .cover-page .footer {{
+                margin-top: 60px;
+                color: #999;
+                font-size: 12px;
+                border-top: 1px solid #eee;
+                padding-top: 20px;
+                width: 100%;
+            }}
+            
+            /* ==================== 报告内容样式 ==================== */
+            .report-page {{
+                page-break-after: always;
+                padding: 20px 0;
+            }}
+            
+            /* 摘要卡片 */
+            .summary-cards {{
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
+                gap: 15px;
+                margin-bottom: 25px;
+            }}
+            .summary-card {{
+                background: #f8f9fa;
+                border-radius: 8px;
+                padding: 15px 20px;
+                text-align: center;
+                border: 1px solid #e9ecef;
+            }}
+            .summary-card .number {{
+                font-size: 28px;
+                font-weight: 700;
+                color: #1a1a2e;
+            }}
+            .summary-card .label {{
+                font-size: 12px;
+                color: #888;
+                margin-top: 4px;
+            }}
+            .summary-card.blue .number {{ color: #0d6efd; }}
+            .summary-card.green .number {{ color: #198754; }}
+            .summary-card.orange .number {{ color: #fd7e14; }}
+            .summary-card.purple .number {{ color: #6f42c1; }}
+            
+            /* 表格样式 */
+            .table-container {{
+                margin-top: 20px;
+            }}
+            .table-title {{
+                font-size: 16px;
+                font-weight: 600;
+                margin-bottom: 10px;
+                color: #1a1a2e;
+                border-left: 4px solid #0d6efd;
+                padding-left: 10px;
+            }}
+            table {{
+                width: 100%;
+                border-collapse: collapse;
+                font-size: 11px;
+            }}
+            table thead th {{
+                background: #0d6efd;
+                color: #fff;
+                padding: 8px 10px;
+                text-align: left;
+                border: 1px solid #0d6efd;
+            }}
+            table tbody td {{
+                padding: 6px 10px;
+                border: 1px solid #dee2e6;
+            }}
+            table tbody tr:nth-child(even) {{
+                background: #f8f9fa;
+            }}
+            table tbody tr:hover {{
+                background: #e7f3ff;
+            }}
+            
+            .text-success {{ color: #198754; }}
+            .text-danger {{ color: #dc3545; }}
+            .text-center {{ text-align: center; }}
+            
+            /* 答题详情 */
+            .answer-detail {{
+                margin-top: 20px;
+                border: 1px solid #e9ecef;
+                border-radius: 8px;
+                overflow: hidden;
+            }}
+            .answer-detail .user-header {{
+                background: #e7f3ff;
+                padding: 10px 15px;
+                font-weight: 600;
+                display: flex;
+                justify-content: space-between;
+                border-bottom: 1px solid #dee2e6;
+            }}
+            .answer-detail .user-header .score {{
+                color: #0d6efd;
+            }}
+            .answer-item {{
+                padding: 8px 15px;
+                border-bottom: 1px solid #f0f0f0;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }}
+            .answer-item:last-child {{
+                border-bottom: none;
+            }}
+            .answer-item .question {{
+                flex: 1;
+            }}
+            .answer-item .result {{
+                font-weight: 600;
+                margin-left: 15px;
+            }}
+            
+            /* 页脚 */
+            .page-footer {{
+                text-align: center;
+                color: #999;
+                font-size: 10px;
+                margin-top: 20px;
+                padding-top: 10px;
+                border-top: 1px solid #eee;
+            }}
+            
+            /* 打印分页 */
+            @media print {{
+                .cover-page {{
+                    height: 100vh;
+                }}
+                .no-print {{
+                    display: none;
+                }}
+            }}
+        </style>
+    </head>
+    <body>
+        
+        <!-- ==================== 封面页 ==================== -->
+        <div class="cover-page">
+            <div class="logo">📋</div>
+            <h1>访谈结果报告</h1>
+            <div class="subtitle">{interview.get('title', '')}</div>
+            <div class="info-grid">
+                <span><span class="label">访谈ID</span> {interview_id}</span>
+                <span><span class="label">关联考试</span> {exam_title or '-'}</span>
+                <span><span class="label">阅卷人</span> {interview.get('reviewer', '-')}</span>
+                <span><span class="label">反馈人</span> {interview.get('feedback', '-')}</span>
+                <span><span class="label">创建时间</span> {interview.get('created_at', '')[:16] if interview.get('created_at') else '-'}</span>
+                <span><span class="label">报告生成</span> {datetime.now().strftime('%Y-%m-%d %H:%M')}</span>
+            </div>
+            <div class="footer">
+                <span>培训考试系统 · 访谈报告</span>
+            </div>
+        </div>
+        
+        <!-- ==================== 第二页：摘要统计 ==================== -->
+        <div class="report-page">
+            <h2 style="margin-bottom: 20px;">📊 统计摘要</h2>
+            
+            <div class="summary-cards">
+                <div class="summary-card blue">
+                    <div class="number">{total_users}</div>
+                    <div class="label">参访人数</div>
+                </div>
+                <div class="summary-card green">
+                    <div class="number">{total_completed}</div>
+                    <div class="label">已完成</div>
+                </div>
+                <div class="summary-card orange">
+                    <div class="number">{total_questions}</div>
+                    <div class="label">答题总数</div>
+                </div>
+                <div class="summary-card purple">
+                    <div class="number">{avg_correct_rate}</div>
+                    <div class="label">平均正确率</div>
+                </div>
+            </div>
+            
+            <!-- 学员汇总表 -->
+            <div class="table-container">
+                <div class="table-title">📋 学员答题汇总</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;">序号</th>
+                            <th>姓名</th>
+                            <th>邮箱</th>
+                            <th>国家</th>
+                            <th>答对/总题</th>
+                            <th style="width: 80px;">正确率</th>
+                            <th>提交时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+    """
+    
+    # 按正确率排序
+    sorted_users = sorted(
+        user_answers.items(),
+        key=lambda x: x[1]['correct_count'] / x[1]['total_questions'] if x[1]['total_questions'] > 0 else 0,
+        reverse=True
+    )
+    
+    for idx, (uid, data) in enumerate(sorted_users, 1):
+        user_info = users_map.get(uid, {})
+        correct_rate = f"{(data['correct_count'] / data['total_questions'] * 100):.1f}%" if data['total_questions'] > 0 else "0%"
+        is_completed = bool(data.get('submitted_at'))
+        submitted_display = data.get('submitted_at', '')[:16] if data.get('submitted_at') else ('未提交' if not is_completed else '-')
+        
+        html += f"""
+                        <tr>
+                            <td class="text-center">{idx}</td>
+                            <td>{user_info.get('name_cn') or user_info.get('name_en', '')}</td>
+                            <td>{user_info.get('email', '')}</td>
+                            <td>{user_info.get('country', '')}</td>
+                            <td>{data['correct_count']} / {data['total_questions']}</td>
+                            <td class="text-center"><strong>{correct_rate}</strong></td>
+                            <td>{submitted_display}</td>
+                        </tr>
+        """
+    
+    html += f"""
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- ==================== 后续页面：答题详情 ==================== -->
+        <div class="report-page">
+            <h2 style="margin-bottom: 20px;">📝 答题详情</h2>
+    """
+    
+    # 按用户显示答题详情
+    for uid, data in sorted_users:
+        user_info = users_map.get(uid, {})
+        user_name = user_info.get('name_cn') or user_info.get('name_en', '')
+        correct_rate = f"{(data['correct_count'] / data['total_questions'] * 100):.1f}%" if data['total_questions'] > 0 else "0%"
+        
+        html += f"""
+            <div class="answer-detail">
+                <div class="user-header">
+                    <span>👤 {user_name}</span>
+                    <span class="score">正确率: {correct_rate} ({data['correct_count']}/{data['total_questions']})</span>
+                </div>
+        """
+        
+        # 按题号排序
+        sorted_answers = sorted(data['answers'], key=lambda x: x.get('question_num', 0))
+        
+        for ans in sorted_answers:
+            status_icon = '✅' if ans.get('is_correct') else '❌'
+            status_color = 'text-success' if ans.get('is_correct') else 'text-danger'
+            
+            # 限制题目内容长度
+            content = ans.get('question_content', '')
+            if len(content) > 60:
+                content = content[:60] + '...'
+            
+            html += f"""
+                <div class="answer-item">
+                    <span class="question">
+                        <strong>Q{ans.get('question_num', 0)}.</strong> {content}
+                        <span style="color: #999; font-size: 11px; margin-left: 8px;">[{ans.get('question_type', '')}]</span>
+                        <span style="color: #666; font-size: 11px; margin-left: 8px;">
+                            答案: {ans.get('user_answer', '未作答')}
+                        </span>
+                    </span>
+                    <span class="result {status_color}">{status_icon} {'正确' if ans.get('is_correct') else '错误'}</span>
+                </div>
+            """
+        
+        html += """
+            </div>
+        """
+    
+    html += f"""
+        </div>
+        
+        <!-- ==================== 页脚 ==================== -->
+        <div class="page-footer">
+            培训考试系统 · 访谈报告 · 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        </div>
+        
+    </body>
+    </html>
+    """
+    
+    return html
+
+@admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/export_batch_pdf', methods=['POST'])
+@login_required
+@admin_required
+def export_batch_interview_pdf(interview_id):
+    """
+    批量导出访谈结果为 PDF（支持全部或选定学员）
+    """
+    data = request.json or {}
+    user_ids = data.get('user_ids', [])  # 如果为空，则导出全部
+    
+    db = get_supabase()
+    
+    # 1. 获取访谈基本信息
+    inv_res = db.table("interviews").select("*").eq("id", interview_id).maybe_single().execute()
+    if not inv_res.data:
+        return jsonify({"error": "访谈不存在"}), 404
+    
+    interview = inv_res.data
+    
+    # 2. 权限检查
+    is_dev = is_developer()
+    current_role = session.get('role')
+    allowed_countries = get_admin_allowed_countries()
+    
+    exam_id = interview.get('exam_id')
+    exam_countries = []
+    if exam_id:
+        exam_res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if exam_res.data:
+            exam_countries = parse_exam_countries(exam_res.data)
+    
+    if not is_dev:
+        if current_role == 'super_admin':
+            if allowed_countries is not None and allowed_countries:
+                if not any(c in allowed_countries for c in exam_countries):
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+        elif current_role == 'admin':
+            if allowed_countries is not None and allowed_countries:
+                if not any(c in allowed_countries for c in exam_countries):
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+            else:
+                user_country = session.get('user_country')
+                if user_country not in exam_countries:
+                    return jsonify({"error": "无权导出此访谈数据"}), 403
+        else:
+            return jsonify({"error": "无权导出此访谈数据"}), 403
+    
+    # 3. 获取所有答题记录
+    results_res = db.table("interview_results").select("*").eq("interview_id", interview_id).execute()
+    if not results_res.data:
+        return jsonify({"error": "该访谈暂无数据"}), 404
+    
+    # 4. 获取用户信息
+    all_user_ids = list(set([r['user_id'] for r in results_res.data]))
+    users_map = {}
+    if all_user_ids:
+        users_res = db.table("users").select("id, name_cn, name_en, email, country, wh_id, department").in_("id", all_user_ids).execute()
+        users_map = {u['id']: u for u in (users_res.data or [])}
+    
+    # 5. 权限过滤
+    filtered_user_ids = []
+    if not is_dev:
+        if allowed_countries is not None and allowed_countries:
+            for uid, u in users_map.items():
+                if u.get('country', '') in allowed_countries:
+                    filtered_user_ids.append(uid)
+        else:
+            if current_role == 'super_admin':
+                filtered_user_ids = all_user_ids
+            else:
+                user_session_country = session.get('user_country')
+                for uid, u in users_map.items():
+                    if u.get('country') == user_session_country:
+                        filtered_user_ids.append(uid)
+    else:
+        filtered_user_ids = all_user_ids
+    
+    # 6. 确定要导出的用户
+    if user_ids:
+        # 只导出选中的用户（同时验证权限）
+        target_user_ids = [uid for uid in user_ids if uid in filtered_user_ids]
+    else:
+        target_user_ids = filtered_user_ids
+    
+    if not target_user_ids:
+        return jsonify({"error": "没有可导出的学员数据"}), 404
+    
+    # 7. 获取题目信息
+    question_ids = list(set([r['question_id'] for r in results_res.data if r.get('question_id')]))
+    questions_map = {}
+    if question_ids:
+        q_res = db.table("questions").select("*").in_("id", question_ids).execute()
+        for q in (q_res.data or []):
+            opts = q.get('options', {})
+            if isinstance(opts, str):
+                try:
+                    opts = json.loads(opts)
+                except:
+                    opts = {}
+            q['options_parsed'] = opts
+            questions_map[q['id']] = q
+    
+    # 8. 按用户聚合答题数据
+    user_answers = {}
+    for r in results_res.data:
+        uid = r['user_id']
+        if uid not in target_user_ids:
+            continue
+        if uid not in user_answers:
+            user_answers[uid] = {
+                'user_id': uid,
+                'answers': [],
+                'correct_count': 0,
+                'total_questions': 0,
+                'submitted_at': r.get('submitted_at')
+            }
+        
+        q = questions_map.get(r['question_id'], {})
+        is_correct = r.get('is_correct', False)
+        if is_correct:
+            user_answers[uid]['correct_count'] += 1
+        user_answers[uid]['total_questions'] += 1
+        
+        user_answers[uid]['answers'].append({
+            'question_num': q.get('num', 0),
+            'question_content': q.get('content_cn') or q.get('content') or q.get('content_raw', ''),
+            'question_type': q.get('type', 'single'),
+            'options': q.get('options_parsed', {}),
+            'correct_answer': q.get('answer', ''),
+            'user_answer': r.get('answer', '未作答'),
+            'is_correct': is_correct
+        })
+    
+    # 9. 配置 wkhtmltopdf
+    options = {
+        'page-size': 'A4',
+        'margin-top': '15mm',
+        'margin-right': '15mm',
+        'margin-bottom': '20mm',
+        'margin-left': '15mm',
+        'encoding': 'UTF-8',
+        'footer-right': '第 [page] 页 / 共 [topage] 页',
+        'footer-font-size': '8',
+        'footer-spacing': '5',
+    }
+    
+    wkhtmltopdf_path = os.environ.get('WKHTMLTOPDF_PATH')
+    if not wkhtmltopdf_path or not os.path.exists(wkhtmltopdf_path):
+        common_paths = [
+            r'C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe',
+            r'C:\Program Files (x86)\wkhtmltopdf\bin\wkhtmltopdf.exe',
+            '/usr/local/bin/wkhtmltopdf',
+            '/usr/bin/wkhtmltopdf',
+        ]
+        for path in common_paths:
+            if os.path.exists(path):
+                wkhtmltopdf_path = path
+                break
+    
+    config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path) if wkhtmltopdf_path else None
+    
+    # 10. 为每个用户生成 PDF
+    pdf_files = []
+    for uid, data in user_answers.items():
+        user_info = users_map.get(uid, {})
+        user_name = user_info.get('name_cn') or user_info.get('name_en', '未知')
+        
+        # 生成单个用户的 HTML
+        html_content = generate_interview_detail_pdf_html(
+            interview, 
+            user_info,
+            data,
+            exam_id,
+            interview_id
+        )
+        
+        try:
+            pdf_bytes = pdfkit.from_string(html_content, False, options=options, configuration=config)
+            pdf_files.append({
+                'user_name': user_name,
+                'user_id': uid,
+                'pdf_bytes': pdf_bytes
+            })
+        except Exception as e:
+            logger.error(f"为用户 {user_name} 生成 PDF 失败: {e}")
+            continue
+    
+    if not pdf_files:
+        return jsonify({"error": "PDF 生成失败"}), 500
+    
+    # 11. 如果只有一个用户，直接返回 PDF
+    if len(pdf_files) == 1:
+        buffer = BytesIO(pdf_files[0]['pdf_bytes'])
+        buffer.seek(0)
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"访谈_{interview.get('title', 'interview')}_{pdf_files[0]['user_name']}_{timestamp}.pdf"
+        return send_file(
+            buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+    
+    # 12. 多个用户，打包成 ZIP
+    zip_buffer = BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for pdf in pdf_files:
+            filename = f"{pdf['user_name']}_{pdf['user_id']}.pdf"
+            zip_file.writestr(filename, pdf['pdf_bytes'])
+    
+    zip_buffer.seek(0)
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    filename = f"访谈结果_{interview.get('title', 'interview')}_{timestamp}.zip"
+    
+    return send_file(
+        zip_buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+def generate_interview_detail_pdf_html(interview, user_info, user_data, exam_id, interview_id):
+    """
+    生成单个学员的访谈详情 PDF HTML（以查看详情布局为准）
+    """
+    user_name = user_info.get('name_cn') or user_info.get('name_en', '未知')
+    user_email = user_info.get('email', '')
+    user_country = user_info.get('country', '')
+    user_wh_id = user_info.get('wh_id', '')
+    
+    total_questions = user_data['total_questions']
+    correct_count = user_data['correct_count']
+    correct_rate = f"{(correct_count / total_questions * 100):.1f}%" if total_questions > 0 else "0%"
+    
+    # 生成答题详情 HTML（与模态框布局一致）
+    answers_html = ''
+    sorted_answers = sorted(user_data['answers'], key=lambda x: x.get('question_num', 0))
+    
+    for idx, ans in enumerate(sorted_answers, 1):
+        status_icon = '✅' if ans.get('is_correct') else '❌'
+        status_color = 'color: #198754;' if ans.get('is_correct') else 'color: #dc3545;'
+        status_text = '正确' if ans.get('is_correct') else '错误'
+        
+        # 题型标签
+        type_labels = {
+            'single': '单选题',
+            'multi': '多选题',
+            'judge': '判断题'
+        }
+        type_badge = type_labels.get(ans.get('question_type', ''), ans.get('question_type', ''))
+        
+        # 选项显示
+        options_html = ''
+        if ans.get('options') and ans.get('question_type') != 'judge':
+            opts = ans['options']
+            for k, v in opts.items():
+                if v:
+                    options_html += f'<div style="padding: 2px 0;">{k}. {v}</div>'
+        elif ans.get('question_type') == 'judge':
+            options_html = '<div>正确 True | 错误 False</div>'
+        
+        answers_html += f"""
+        <div style="border: 1px solid #e9ecef; border-radius: 6px; padding: 12px 15px; margin-bottom: 10px; page-break-inside: avoid;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 200px;">
+                    <div style="font-weight: 600; margin-bottom: 4px;">
+                        <span style="color: #0d6efd;">Q{ans.get('question_num', 0)}.</span> 
+                        {ans.get('question_content', '')}
+                        <span style="background: #e9ecef; padding: 1px 8px; border-radius: 10px; font-size: 11px; margin-left: 8px; color: #555;">{type_badge}</span>
+                    </div>
+                    <div style="margin-left: 20px; font-size: 13px; color: #555;">
+                        {options_html}
+                    </div>
+                    <div style="margin-top: 6px; font-size: 13px;">
+                        <span style="color: #0d6efd; font-weight: 500;">正确答案：</span>
+                        <span style="color: #198754;">{ans.get('correct_answer', '')}</span>
+                        <span style="margin-left: 15px; color: #0d6efd; font-weight: 500;">学员答案：</span>
+                        <span style="font-weight: 500;">{ans.get('user_answer', '未作答')}</span>
+                    </div>
+                </div>
+                <div style="font-weight: 700; font-size: 16px; {status_color} padding: 4px 12px; border-radius: 4px; white-space: nowrap;">
+                    {status_icon} {status_text}
+                </div>
+            </div>
+        </div>
+        """
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <title>访谈答题详情 - {user_name}</title>
+        <style>
+            * {{
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }}
+            body {{
+                font-family: 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif;
+                font-size: 12px;
+                line-height: 1.6;
+                color: #333;
+                padding: 20px;
+                background: #fff;
+            }}
+            .header {{
+                border-bottom: 2px solid #0d6efd;
+                padding-bottom: 15px;
+                margin-bottom: 20px;
+            }}
+            .header h1 {{
+                font-size: 20px;
+                color: #1a1a2e;
+            }}
+            .header .subtitle {{
+                color: #666;
+                font-size: 14px;
+                margin-top: 4px;
+            }}
+            .user-info {{
+                background: #f8f9fa;
+                padding: 12px 16px;
+                border-radius: 6px;
+                margin-bottom: 20px;
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr 1fr;
+                gap: 8px 20px;
+            }}
+            .user-info .label {{
+                color: #888;
+                font-size: 11px;
+            }}
+            .user-info .value {{
+                font-weight: 600;
+                font-size: 13px;
+            }}
+            .summary {{
+                display: flex;
+                gap: 20px;
+                margin-bottom: 20px;
+                flex-wrap: wrap;
+            }}
+            .summary-item {{
+                background: #e7f3ff;
+                padding: 8px 16px;
+                border-radius: 6px;
+                text-align: center;
+            }}
+            .summary-item .number {{
+                font-size: 20px;
+                font-weight: 700;
+                color: #0d6efd;
+            }}
+            .summary-item .label {{
+                font-size: 11px;
+                color: #666;
+                display: block;
+            }}
+            .summary-item.green .number {{ color: #198754; }}
+            .summary-item.orange .number {{ color: #fd7e14; }}
+            .answers-section {{
+                margin-top: 15px;
+            }}
+            .answers-section h3 {{
+                font-size: 15px;
+                color: #1a1a2e;
+                border-left: 3px solid #0d6efd;
+                padding-left: 10px;
+                margin-bottom: 12px;
+            }}
+            .page-footer {{
+                text-align: center;
+                color: #999;
+                font-size: 10px;
+                margin-top: 30px;
+                padding-top: 10px;
+                border-top: 1px solid #eee;
+            }}
+            @media print {{
+                body {{ padding: 15px; }}
+                .page-break {{ page-break-after: avoid; }}
+            }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>📋 访谈答题详情</h1>
+            <div class="subtitle">{interview.get('title', '')} (访谈ID: {interview_id})</div>
+        </div>
+        
+        <div class="user-info">
+            <div>
+                <div class="label">姓名</div>
+                <div class="value">{user_name}</div>
+            </div>
+            <div>
+                <div class="label">邮箱</div>
+                <div class="value">{user_email}</div>
+            </div>
+            <div>
+                <div class="label">国家</div>
+                <div class="value">{user_country}</div>
+            </div>
+            <div>
+                <div class="label">库房编码</div>
+                <div class="value">{user_wh_id or '-'}</div>
+            </div>
+        </div>
+        
+        <div class="summary">
+            <div class="summary-item">
+                <span class="number">{total_questions}</span>
+                <span class="label">总题数</span>
+            </div>
+            <div class="summary-item green">
+                <span class="number">{correct_count}</span>
+                <span class="label">答对数量</span>
+            </div>
+            <div class="summary-item orange">
+                <span class="number">{correct_rate}</span>
+                <span class="label">正确率</span>
+            </div>
+            <div class="summary-item">
+                <span class="number" style="font-size: 14px;">{user_data.get('submitted_at', '-')[:16] if user_data.get('submitted_at') else '未提交'}</span>
+                <span class="label">提交时间</span>
+            </div>
+        </div>
+        
+        <div class="answers-section">
+            <h3>📝 答题明细</h3>
+            {answers_html}
+        </div>
+        
+        <div class="page-footer">
+            培训考试系统 · 访谈详情 · 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html
+
