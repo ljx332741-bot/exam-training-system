@@ -46,6 +46,16 @@
                     <button id="searchBtn" class="btn btn-primary w-100"><span data-i18n="search">搜索</span></button>
                 </div>
                 <div class="col-md-5 d-flex justify-content-end gap-2">
+                    <!-- 导出选定行 PDF -->
+                    <button class="btn btn-outline-danger" id="exportSelectedPdfBtn">
+                        <i class="bi bi-file-earmark-pdf me-1"></i> 
+                        <span data-i18n="export_selected_pdf">导出选定PDF</span>
+                    </button>
+                    <!-- 导出全部 PDF -->
+                    <button class="btn btn-outline-danger" id="exportAllPdfBtn">
+                        <i class="bi bi-file-earmark-pdf me-1"></i> 
+                        <span data-i18n="export_all_pdf">导出全部PDF</span>
+                    </button>
                     <button id="batchForceInterviewBtn" class="btn btn-warning">
                         <i class="bi bi-lightning-charge"></i> <span data-i18n="batch_force_interview">批量强制访谈</span>
                     </button>
@@ -156,7 +166,7 @@
             // 只有已提交的才显示“重新访谈”（普通重抽），未提交的直接显示“强制访谈”
             const resampleBtn = r.has_submitted 
                 ? `<button class="btn btn-sm btn-outline-secondary resample-btn" data-user-id="${r.user_id}">
-                    ${t('t_re_interview') || '重新访谈'}
+                    ${t('re_interview') || '重新访谈'}
                    </button>`
                 : '';
 
@@ -368,7 +378,7 @@
             const res = await fetch(`/api/admin/interview/${interviewId}/user/${userId}/answers`);
             const data = await res.json();
             if (!data.answers || data.answers.length === 0) {
-                alert(t('t_no_answer_record_available'));
+                alert(t('no_answer_record_available'));
                 return;
             }
             document.getElementById('answersUserName').innerText = userName;
@@ -397,7 +407,7 @@
                                 <strong>${questionNum}-[${item.question_num}]. ${item.question_content} ${typeBadge}</strong>
                                 ${optionsHtml}
                                 <div class="mt-2">
-                                    <span>${t('t_answer')}：<strong>${item.user_answer || t('t_no_answer')}</strong></span>
+                                    <span>${t('t_answer')}：<strong>${item.user_answer || t('no_answer')}</strong></span>
                                     <span class="ms-3 ${statusColor}">${statusIcon}</span>
                                 </div>
                             </div>
@@ -410,7 +420,7 @@
             new bootstrap.Modal(document.getElementById('answersModal')).show();
         } catch (e) {
             console.error(e);
-            alert(t('t_load_answer_detail_failed'));
+            alert(t('load_answer_detail_failed'));
         }
     }
 
@@ -583,6 +593,150 @@
             if (span) {
                 span.textContent = t('batch_delete');
             }
+        }
+    }
+
+    // ==================== PDF 导出功能 ====================
+
+    // 导出全部学员 PDF
+    document.getElementById('exportAllPdfBtn')?.addEventListener('click', function() {
+        if (!confirm(t('confirm_export_all_pdf') || '确定要导出所有学员的访谈详情吗？')) {
+            return;
+        }
+        
+        showLoading(t('generating_pdf') || '正在生成PDF...');
+        
+        // 使用 fetch 发送 POST 请求（user_ids 为空表示导出全部）
+        fetch(`/api/admin/interview/${interviewId}/export_batch_pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ user_ids: [] })
+        })
+        .then(response => {
+            hideLoading();
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || '导出失败');
+                });
+            }
+            // 下载文件
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = '访谈详情.zip';
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (match && match[1]) {
+                    filename = match[1].replace(/['"]/g, '');
+                }
+            }
+            return response.blob().then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            });
+        })
+        .catch(err => {
+            hideLoading();
+            console.error('导出失败:', err);
+            if (typeof showToast === 'function') {
+                showToast(err.message || t('export_failed'), 'error');
+            } else {
+                alert(err.message || t('export_failed'));
+            }
+        });
+    });
+
+    // 导出选定学员 PDF
+    document.getElementById('exportSelectedPdfBtn')?.addEventListener('click', function() {
+        const selectedCheckboxes = document.querySelectorAll('.interview-checkbox:checked');
+        const selectedUserIds = Array.from(selectedCheckboxes).map(cb => cb.dataset.userId);
+        
+        if (selectedUserIds.length === 0) {
+            if (typeof showToast === 'function') {
+                showToast(t('please_select_at_least_one_user'), 'warning');
+            } else {
+                alert(t('please_select_at_least_one_user'));
+            }
+            return;
+        }
+        
+        const confirmMsg = t('confirm_export_selected_pdf', selectedUserIds.length) || `确定要导出选中的 ${selectedUserIds.length} 名学员的访谈详情吗？`;
+        if (!confirm(confirmMsg)) {
+            return;
+        }
+        
+        showLoading(t('generating_pdf') || '正在生成PDF...');
+        
+        fetch(`/api/admin/interview/${interviewId}/export_batch_pdf`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ user_ids: selectedUserIds })
+        })
+        .then(response => {
+            hideLoading();
+            if (!response.ok) {
+                return response.json().then(data => {
+                    throw new Error(data.error || '导出失败');
+                });
+            }
+            const contentDisposition = response.headers.get('Content-Disposition');
+            let filename = '访谈详情.zip';
+            if (contentDisposition) {
+                const match = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+                if (match && match[1]) {
+                    filename = match[1].replace(/['"]/g, '');
+                }
+            }
+            return response.blob().then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+            });
+        })
+        .catch(err => {
+            hideLoading();
+            console.error('导出失败:', err);
+            if (typeof showToast === 'function') {
+                showToast(err.message || t('export_failed'), 'error');
+            } else {
+                alert(err.message || t('export_failed'));
+            }
+        });
+    });
+
+    // 更新全选时联动显示选择数量
+    document.getElementById('selectAll')?.addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.interview-checkbox');
+        checkboxes.forEach(cb => cb.checked = this.checked);
+        updateExportButtonState();
+    });
+
+    // 单个复选框变化时更新按钮状态
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('interview-checkbox')) {
+            updateExportButtonState();
+        }
+    });
+
+    function updateExportButtonState() {
+        const selectedCount = document.querySelectorAll('.interview-checkbox:checked').length;
+        const exportBtn = document.getElementById('exportSelectedPdfBtn');
+        if (exportBtn) {
+            const text = selectedCount > 0 ? `导出选定PDF (${selectedCount})` : '导出选定PDF';
+            exportBtn.innerHTML = `<i class="bi bi-file-earmark-pdf me-1"></i> ${text}`;
         }
     }
 
