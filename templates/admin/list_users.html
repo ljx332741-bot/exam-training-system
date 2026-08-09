@@ -10,7 +10,7 @@
             <button class="btn btn-outline-info me-2" data-help="help-users" title="帮助 / Help">
                 <i class="bi bi-question-circle-fill me-1"></i>
                 <span data-i18n="help">帮助</span>
-            </button>       
+            </button>
             {% if has_permission('batch_delete') %}
             <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
                 <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
@@ -21,6 +21,10 @@
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
             {% endif %}
+            <!-- 离职人员管理按钮 -->
+            <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary me-2" target="_blank">
+                <i class="bi bi-person-x"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
+            </a>
             <button class="btn btn-secondary" onclick="window.close()">
                 <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
             </button>

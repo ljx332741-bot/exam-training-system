@@ -2818,11 +2818,12 @@ def export_batch_interview_pdf(interview_id):
         download_name=filename
     )
 
-
 def generate_interview_detail_pdf_html(interview, user_info, user_data, exam_id, interview_id):
     """
     生成单个学员的访谈详情 PDF HTML（以查看详情布局为准）
     """
+    from datetime import datetime
+    
     user_name = user_info.get('name_cn') or user_info.get('name_en', '未知')
     user_email = user_info.get('email', '')
     user_country = user_info.get('country', '')
@@ -2832,20 +2833,32 @@ def generate_interview_detail_pdf_html(interview, user_info, user_data, exam_id,
     correct_count = user_data['correct_count']
     correct_rate = f"{(correct_count / total_questions * 100):.1f}%" if total_questions > 0 else "0%"
     
-    # 生成答题详情 HTML（与模态框布局一致）
+    # 格式化提交时间
+    submitted_at = user_data.get('submitted_at', '')
+    if submitted_at:
+        try:
+            from dateutil import parser
+            dt = parser.parse(submitted_at)
+            submitted_display = dt.strftime('%Y-%m-%d %H:%M')
+        except:
+            submitted_display = submitted_at[:16] if len(submitted_at) > 16 else submitted_at
+    else:
+        submitted_display = '未提交'
+    
+    # 生成答题详情 HTML
     answers_html = ''
     sorted_answers = sorted(user_data['answers'], key=lambda x: x.get('question_num', 0))
     
     for idx, ans in enumerate(sorted_answers, 1):
         status_icon = '✅' if ans.get('is_correct') else '❌'
         status_color = 'color: #198754;' if ans.get('is_correct') else 'color: #dc3545;'
-        status_text = '正确' if ans.get('is_correct') else '错误'
+        status_text = '正确Correct' if ans.get('is_correct') else '错误Wrong'
         
         # 题型标签
         type_labels = {
-            'single': '单选题',
-            'multi': '多选题',
-            'judge': '判断题'
+            'single': '单选题Single',
+            'multi': '多选题Multi',
+            'judge': '判断题Judge'
         }
         type_badge = type_labels.get(ans.get('question_type', ''), ans.get('question_type', ''))
         
@@ -2872,10 +2885,10 @@ def generate_interview_detail_pdf_html(interview, user_info, user_data, exam_id,
                         {options_html}
                     </div>
                     <div style="margin-top: 6px; font-size: 13px;">
-                        <span style="color: #0d6efd; font-weight: 500;">正确答案：</span>
+                        <span style="color: #0d6efd; font-weight: 500;">正确答案Correct Answer：</span>
                         <span style="color: #198754;">{ans.get('correct_answer', '')}</span>
-                        <span style="margin-left: 15px; color: #0d6efd; font-weight: 500;">学员答案：</span>
-                        <span style="font-weight: 500;">{ans.get('user_answer', '未作答')}</span>
+                        <span style="margin-left: 15px; color: #0d6efd; font-weight: 500;">学员答案CA：</span>
+                        <span style="font-weight: 500;">{ans.get('user_answer', '未作答No answer')}</span>
                     </div>
                 </div>
                 <div style="font-weight: 700; font-size: 16px; {status_color} padding: 4px 12px; border-radius: 4px; white-space: nowrap;">
@@ -2919,47 +2932,84 @@ def generate_interview_detail_pdf_html(interview, user_info, user_data, exam_id,
                 font-size: 14px;
                 margin-top: 4px;
             }}
-            .user-info {{
-                background: #f8f9fa;
-                padding: 12px 16px;
-                border-radius: 6px;
+            
+            /* ===== 用户信息 - Table 布局 ===== */
+            .user-info-table {{
+                width: 100%;
+                border-collapse: collapse;
                 margin-bottom: 20px;
-                display: grid;
-                grid-template-columns: 1fr 1fr 1fr 1fr;
-                gap: 8px 20px;
+                table-layout: fixed;
+                background: #f8f9fa;
+                border-radius: 8px;
+                overflow: hidden;
             }}
-            .user-info .label {{
+            .user-info-table td {{
+                padding: 10px 16px;
+                text-align: center;
+                width: 25%;
+                border: none;
+                vertical-align: middle;
+            }}
+            .user-info-table td:not(:last-child) {{
+                border-right: 1px solid #e9ecef;
+            }}
+            .user-info-table .label {{
+                display: block;
                 color: #888;
                 font-size: 11px;
+                font-weight: 400;
+                letter-spacing: 0.3px;
+                text-transform: uppercase;
+                margin-bottom: 2px;
             }}
-            .user-info .value {{
+            .user-info-table .value {{
+                display: block;
                 font-weight: 600;
-                font-size: 13px;
+                font-size: 14px;
+                color: #1a1a2e;
             }}
-            .summary {{
-                display: flex;
-                gap: 20px;
+            
+            /* ===== 统计摘要 - Table 布局 ===== */
+            .summary-table {{
+                width: 100%;
+                border-collapse: collapse;
                 margin-bottom: 20px;
-                flex-wrap: wrap;
+                table-layout: fixed;
             }}
-            .summary-item {{
+            .summary-table td {{
                 background: #e7f3ff;
-                padding: 8px 16px;
-                border-radius: 6px;
+                padding: 10px 16px;
                 text-align: center;
+                width: 25%;
+                border: none;
             }}
-            .summary-item .number {{
+            .summary-table td:first-child {{
+                border-radius: 6px 0 0 6px;
+            }}
+            .summary-table td:last-child {{
+                border-radius: 0 6px 6px 0;
+            }}
+            .summary-table .number {{
                 font-size: 20px;
                 font-weight: 700;
                 color: #0d6efd;
+                display: block;
+                line-height: 1.3;
             }}
-            .summary-item .label {{
+            .summary-table .label {{
                 font-size: 11px;
                 color: #666;
                 display: block;
+                margin-top: 2px;
             }}
-            .summary-item.green .number {{ color: #198754; }}
-            .summary-item.orange .number {{ color: #fd7e14; }}
+            .summary-table .green .number {{ color: #198754; }}
+            .summary-table .orange .number {{ color: #fd7e14; }}
+            .summary-table .time-text {{
+                font-size: 13px;
+                color: #6c757d;
+                font-weight: 500;
+            }}
+            
             .answers-section {{
                 margin-top: 15px;
             }}
@@ -2990,51 +3040,57 @@ def generate_interview_detail_pdf_html(interview, user_info, user_data, exam_id,
             <div class="subtitle">{interview.get('title', '')} (访谈ID: {interview_id})</div>
         </div>
         
-        <div class="user-info">
-            <div>
-                <div class="label">姓名</div>
-                <div class="value">{user_name}</div>
-            </div>
-            <div>
-                <div class="label">邮箱</div>
-                <div class="value">{user_email}</div>
-            </div>
-            <div>
-                <div class="label">国家</div>
-                <div class="value">{user_country}</div>
-            </div>
-            <div>
-                <div class="label">库房编码</div>
-                <div class="value">{user_wh_id or '-'}</div>
-            </div>
-        </div>
+        <!-- 用户信息 - Table 布局 -->
+        <table class="user-info-table">
+            <tr>
+                <td>
+                    <span class="label">姓名Name</span>
+                    <span class="value">{user_name}</span>
+                </td>
+                <td>
+                    <span class="label">邮箱Mail</span>
+                    <span class="value">{user_email}</span>
+                </td>
+                <td>
+                    <span class="label">国家Country</span>
+                    <span class="value">{user_country}</span>
+                </td>
+                <td>
+                    <span class="label">库房编码WH Code</span>
+                    <span class="value">{user_wh_id or '-'}</span>
+                </td>
+            </tr>
+        </table>
         
-        <div class="summary">
-            <div class="summary-item">
-                <span class="number">{total_questions}</span>
-                <span class="label">总题数</span>
-            </div>
-            <div class="summary-item green">
-                <span class="number">{correct_count}</span>
-                <span class="label">答对数量</span>
-            </div>
-            <div class="summary-item orange">
-                <span class="number">{correct_rate}</span>
-                <span class="label">正确率</span>
-            </div>
-            <div class="summary-item">
-                <span class="number" style="font-size: 14px;">{user_data.get('submitted_at', '-')[:16] if user_data.get('submitted_at') else '未提交'}</span>
-                <span class="label">提交时间</span>
-            </div>
-        </div>
+        <!-- 统计摘要 - Table 布局 -->
+        <table class="summary-table">
+            <tr>
+                <td>
+                    <span class="number">{total_questions}</span>
+                    <span class="label">总题数Total Q</span>
+                </td>
+                <td class="green">
+                    <span class="number">{correct_count}</span>
+                    <span class="label">答对数量Correct answer</span>
+                </td>
+                <td class="orange">
+                    <span class="number">{correct_rate}</span>
+                    <span class="label">正确率Correct rate</span>
+                </td>
+                <td>
+                    <span class="number time-text">{submitted_display}</span>
+                    <span class="label">提交时间Submitted</span>
+                </td>
+            </tr>
+        </table>
         
         <div class="answers-section">
-            <h3>📝 答题明细</h3>
+            <h3>📝 答题明细Answer details</h3>
             {answers_html}
         </div>
         
         <div class="page-footer">
-            培训考试系统 · 访谈详情 · 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+            培训考试系统ETS · 访谈详情Interview details · 生成时间Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         </div>
     </body>
     </html>

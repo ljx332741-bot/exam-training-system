@@ -17,6 +17,12 @@
                 <i class="bi bi-question-circle-fill me-1"></i>
                 <span data-i18n="help">帮助</span>
             </button>
+            <!-- 培训完成度报表按钮 -->
+            <a href="{{ url_for('admin_training.completion_report_page') }}" class="btn btn-outline-success" target="_blank"
+                data-i18n-title="title_training_completion_report"
+                title="查看有绑定关系的培训考试完成度">
+                <i class="bi bi-bar-chart-steps"></i> <span data-i18n="training_completion_report">培训完成度报表</span>
+            </a>
             <button class="btn btn-secondary" onclick="window.close()">
                 <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
             </button>
