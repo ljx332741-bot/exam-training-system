@@ -735,13 +735,13 @@
         const selectedCount = document.querySelectorAll('.interview-checkbox:checked').length;
         const exportBtn = document.getElementById('exportSelectedPdfBtn');
         if (exportBtn) {
-            const text = selectedCount > 0 ? `导出选定PDF (${selectedCount})` : '导出选定PDF';
+            const text = selectedCount > 0 ? `${t('export_selected_pdf')} (${selectedCount})` : `${t('export_selected_pdf')}`;
             exportBtn.innerHTML = `<i class="bi bi-file-earmark-pdf me-1"></i> ${text}`;
         }
     }
 
     // ==================== Loading 遮罩函数 ====================
-    function showLoading(text = '正在处理...') {
+    function showLoading(text = t('processing') || '正在处理...') {
         const loadingEl = document.getElementById('globalLoading');
         const loadingText = document.getElementById('loadingText');
         
