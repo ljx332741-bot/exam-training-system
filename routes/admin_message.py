@@ -91,7 +91,7 @@ def get_admin_messages():
         for m in messages:
             m['created_by_name'] = user_names.get(m.get('created_by'), '系统')
             if m.get('created_at'):
-                # ✅ 使用 utc_string_to_local，它本身就支持3个参数
+                # 使用 utc_string_to_local，它本身就支持3个参数
                 m['created_at_local'] = utc_string_to_local(
                     m['created_at'], 
                     user_timezone, 
@@ -108,10 +108,25 @@ def get_admin_messages():
                 
                 # 构建增强的标题
                 location_text = ''
-                if location and location.get('country'):
-                    location_text = f"📍{location.get('country')}"
+                country = location.get('country', '')
+                ip = location.get('ip', '')
+                
+                if country in ('本地 (localhost)', '内网 (LAN)'):
+                    # 内网 IP 显示详细信息
+                    if country == '本地 (localhost)':
+                        location_text = f"📍 本地开发环境"
+                    else:
+                        location_text = f"📍 内网访问"
+                        if meta.get('ip_masked'):
+                            location_text += f" ({meta.get('ip_masked')})"
+                elif country and country != '未知':
+                    location_text = f"📍 {country}"
                     if location.get('city'):
                         location_text += f" {location.get('city')}"
+                    if meta.get('ip_masked'):
+                        location_text += f" ({meta.get('ip_masked')})"
+                elif meta.get('ip_masked'):
+                    location_text = f"📍 {meta.get('ip_masked')}"
                 
                 device_text = ''
                 if device and device.get('os'):
@@ -122,7 +137,7 @@ def get_admin_messages():
                 # 如果有增强信息，更新显示
                 if location_text or device_text:
                     m['title'] = f"🔑 用户 {meta.get('user_name', '')} 已登录"
-                    m['content'] = f"📍 {location_text or '未知位置'} | 💻 {device_text or '未知设备'}"
+                    m['content'] = f"{location_text or '未知位置'} | {device_text or '未知设备'}"
                     
         return jsonify({
             "success": True,

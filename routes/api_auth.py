@@ -330,6 +330,34 @@ def api_reset_password():
     }).eq("email", d['email']).execute()
     return jsonify({"success": True})
 
+def get_client_ip():
+    """
+    获取客户端真实 IP（支持 Render 等代理环境）
+    优先级：
+    1. X-Forwarded-For（Render 会设置）
+    2. X-Real-IP
+    3. CF-Connecting-IP（Cloudflare）
+    4. request.remote_addr（兜底）
+    """
+    # 1. X-Forwarded-For（最常用）
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        # 取第一个 IP（客户端真实 IP）
+        return forwarded.split(',')[0].strip()
+    
+    # 2. X-Real-IP
+    real_ip = request.headers.get('X-Real-IP')
+    if real_ip:
+        return real_ip
+    
+    # 3. Cloudflare
+    cf_ip = request.headers.get('CF-Connecting-IP')
+    if cf_ip:
+        return cf_ip
+    
+    # 4. 兜底
+    return request.remote_addr
+
 @auth_bp.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -356,13 +384,16 @@ def login():
                 "user_country": user.get('country')
             })
             
+            client_ip = get_client_ip()
+
             # 记录登录消息
             try:
                 log_user_login(
                     user_id=user['id'],
                     user_name=user.get('name_en') or user.get('name_cn', ''),
                     email=user.get('email', ''),
-                    ip=request.remote_addr,
+                    # ip=request.remote_addr,
+                    ip=client_ip,
                     user_agent=request.headers.get('User-Agent')
                 )
             except Exception as e:

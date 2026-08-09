@@ -10,9 +10,23 @@ from functools import lru_cache
 
 logger = logging.getLogger(__name__)
 
+# 内网 IP 段列表
+PRIVATE_IP_PREFIXES = (
+    '127.', '10.', '172.16.', '172.17.', '172.18.', '172.19.',
+    '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.',
+    '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.',
+    '192.168.', '::1', '0.0.0.0'
+)
+
 # 免费 IP 查询服务
 IP_API_URL = 'http://ip-api.com/json/{}?fields=status,message,country,regionName,city,isp,query&lang=zh-CN'
 
+
+def is_private_ip(ip):
+    """判断是否为内网 IP"""
+    if not ip:
+        return True
+    return ip.startswith(PRIVATE_IP_PREFIXES)
 
 @lru_cache(maxsize=1000)
 def get_ip_location(ip):
@@ -28,26 +42,27 @@ def get_ip_location(ip):
             'ip': 'xxx.xxx.xxx.xxx'
         }
     """
-    # 内网 IP 不查询
-    if ip.startswith(('127.', '192.168.', '10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.')):
+    # 1. 本地回环
+    if ip in ('127.0.0.1', '::1', '0.0.0.0'):
         return {
-            'country': '内网',
+            'country': '本地 (localhost)',
             'region': '-',
             'city': '-',
-            'isp': '-',
+            'isp': '本地回环',
             'ip': ip
         }
     
-    # 本地开发环境
-    if ip in ('127.0.0.1', 'localhost', '::1'):
+    # 2. 内网 IP
+    if is_private_ip(ip):
         return {
-            'country': '本地',
+            'country': '内网 (LAN)',
             'region': '-',
             'city': '-',
-            'isp': '-',
+            'isp': '内网地址',
             'ip': ip
         }
     
+    # 3. 外网 IP 查询（带缓存）
     try:
         response = requests.get(IP_API_URL.format(ip), timeout=5)
         data = response.json()
@@ -91,9 +106,11 @@ def format_ip_location(location):
 
 
 def mask_ip(ip):
-    """IP 地址脱敏"""
+    """IP 地址脱敏（只显示前两段）"""
     if not ip:
         return ''
+    if is_private_ip(ip):
+        return ip  # 内网 IP 不脱敏
     parts = ip.split('.')
     if len(parts) == 4:
         return f"{parts[0]}.{parts[1]}.***.***"
