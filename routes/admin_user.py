@@ -1387,7 +1387,7 @@ def resigned_users_page():
     """离职人员管理页面（仅超管/开发者可见）"""
     if not is_developer() and session.get('role') != 'super_admin':
         flash("权限不足", "danger")
-        return redirect(url_for('admin_dashboard'))
+        return redirect(url_for('admin_user.admin_user_list'))
     return render_template('admin/resigned_users.html')
 
 @admin_user_bp.route('/api/admin/users/<user_id>/resign', methods=['POST'])
