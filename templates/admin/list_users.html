@@ -21,10 +21,12 @@
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
             </button>
             {% endif %}
-            <!-- 离职人员管理按钮 -->
+            <!-- 离职人员管理按钮（仅超管/开发者可见） -->
+            {% if session.get('role') in ['super_admin', 'developer'] %}
             <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary me-2" target="_blank">
                 <i class="bi bi-person-x"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
             </a>
+            {% endif %}
             <button class="btn btn-secondary" onclick="window.close()">
                 <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
             </button>
