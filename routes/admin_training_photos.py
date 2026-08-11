@@ -32,103 +32,6 @@ admin_training_photos_bp = Blueprint('admin_training_photos', __name__)
 # ============================================================
 # 辅助函数
 # ============================================================
-'''
-def add_watermark_to_image(image_data, training_name, include_training_name=True):
-    """
-    为图片添加水印（左下角）
-    
-    Args:
-        image_data: 图片二进制数据
-        training_name: 培训名称
-        include_training_name: 是否包含培训名称
-    
-    Returns:
-        添加水印后的图片二进制数据
-    """
-    try:
-        print(f"🖼️ 开始添加水印: training_name={training_name}, include_training_name={include_training_name}")  # ✅ 添加日志
-        
-        # 打开图片
-        img = Image.open(io.BytesIO(image_data))
-        
-        # 转换为 RGB（支持 PNG 透明背景）
-        if img.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', img.size, (255, 255, 255))
-            if img.mode == 'P':
-                img = img.convert('RGBA')
-            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-            img = background
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        draw = ImageDraw.Draw(img)
-        
-        # 获取当前时间
-        now = datetime.now()
-        date_str = now.strftime('%Y-%m-%d %H:%M')
-        
-        # 构建水印文本
-        watermark_text = date_str
-        if include_training_name and training_name:
-            watermark_text = f"{training_name} | {date_str}"
-        
-        # 根据图片大小动态调整字体大小
-        base_size = min(img.width, img.height)
-        font_size = max(int(base_size * 0.04), 12)
-        
-        # 尝试加载中文字体
-        try:
-            font = ImageFont.truetype('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf', font_size)
-        except:
-            try:
-                font = ImageFont.truetype('/System/Library/Fonts/PingFang.ttc', font_size)
-            except:
-                font = ImageFont.load_default()
-        
-        # 计算文本位置（左下角，留边距）
-        bbox = draw.textbbox((0, 0), watermark_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        padding = max(int(font_size * 0.5), 15)
-        x = padding
-        y = img.height - text_height - padding
-        
-        print(f"📏 水印位置: ({x}, {y}), 文本尺寸: {text_width}x{text_height}, padding={padding}")
-
-        # 绘制半透明背景框（提高可读性）
-        bg_padding = int(font_size * 0.3) + 4
-        draw.rectangle(
-            [x - bg_padding, y - bg_padding, x + text_width + bg_padding, y + text_height + bg_padding],
-            fill=(0, 0, 0, 128)
-        )
-        
-        # 绘制水印文字（白色，带阴影）
-        draw.text(
-            (x + 1, y + 1),
-            watermark_text,
-            font=font,
-            fill=(0, 0, 0, 180)  # 黑色阴影
-        )
-        draw.text(
-            (x, y),
-            watermark_text,
-            font=font,
-            fill=(255, 255, 255, 230)  # 白色文字
-        )
-        
-        print(f"✅ 水印添加成功: 图片尺寸={img.size}, 字体大小={font_size}")  # ✅ 添加日志
-        
-        # 保存为 JPEG
-        output = io.BytesIO()
-        img.save(output, format='JPEG', quality=92)
-        return output.getvalue()
-        
-    except Exception as e:
-        logger.error(f"添加水印失败: {e}")
-        # 失败时返回原始图片
-        return image_data
-'''
 def add_watermark_to_image(
     image_data, 
     training_name, 
@@ -136,7 +39,7 @@ def add_watermark_to_image(
     font_scale=0.03,      # 字体大小比例（默认 6%）
     min_font_size=24,     # 最小字体（px）
     bg_padding_scale=0.15 # 背景框 padding 比例（默认 15%）
-):
+    ):
     """
     为图片添加水印（左下角）
     
@@ -149,8 +52,6 @@ def add_watermark_to_image(
         bg_padding_scale: 背景框 padding 相对于字体大小的比例
     """
     try:
-        logger.info(f"🖼️ 开始添加水印: training_name={training_name}")
-        
         # 打开图片
         img = Image.open(io.BytesIO(image_data))
         
@@ -183,25 +84,39 @@ def add_watermark_to_image(
         import os
         font = None
         font_paths = [
+            # Linux 中文字体
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
             '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
             '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            # macOS 中文字体
             '/System/Library/Fonts/PingFang.ttc',
             '/System/Library/Fonts/STHeiti Light.ttc',
-            '/System/Library/Fonts/Helvetica.ttf',
-            'C:/Windows/Fonts/msyh.ttc',
-            'C:/Windows/Fonts/simsun.ttc',
-            'C:/Windows/Fonts/arial.ttf',
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',
+            '/System/Library/Fonts/AppleSDGothicNeo.ttc',
+            # Windows 中文字体
+            'C:/Windows/Fonts/msyh.ttc',      # 微软雅黑
+            'C:/Windows/Fonts/msyhbd.ttc',    # 微软雅黑粗体
+            'C:/Windows/Fonts/simsun.ttc',    # 宋体
+            'C:/Windows/Fonts/simhei.ttf',    # 黑体
+            'C:/Windows/Fonts/STKAITI.TTF',   # 楷体
+            'C:/Windows/Fonts/arial.ttf',     # Arial（备选）
         ]
         for path in font_paths:
             if os.path.exists(path):
                 try:
                     font = ImageFont.truetype(path, font_size)
-                    logger.info(f"✅ 使用字体: {path}")
                     break
-                except:
+                except Exception as e:
+                    print(f"⚠️ 加载字体失败 {path}: {e}")
                     continue
+
+        # 如果所有字体都加载失败，尝试使用 ImageFont.load_default() 并记录警告
         if font is None:
-            logger.warning("⚠️ 使用默认字体")
+            print("⚠️ 未找到任何字体，使用默认字体（中文可能显示为方块）")
             font = ImageFont.load_default()
         
         # 计算文本尺寸
@@ -234,8 +149,6 @@ def add_watermark_to_image(
             font=font,
             fill=(255, 255, 255, 255)
         )
-        
-        logger.info(f"✅ 水印添加成功: 字体={font_size}px, 文本={watermark_text}")
         
         # 保存为 JPEG
         output = io.BytesIO()
