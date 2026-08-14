@@ -32,6 +32,7 @@ admin_training_photos_bp = Blueprint('admin_training_photos', __name__)
 # ============================================================
 # 辅助函数
 # ============================================================
+'''一行布局
 def add_watermark_to_image(
     image_data, 
     training_name, 
@@ -42,7 +43,6 @@ def add_watermark_to_image(
     ):
     """
     为图片添加水印（左下角）
-    
     Args:
         image_data: 图片二进制数据
         training_name: 培训名称
@@ -79,7 +79,7 @@ def add_watermark_to_image(
         # 根据图片大小动态调整字体大小
         base_size = min(img.width, img.height)
         font_size = max(int(base_size * font_scale), min_font_size)
-        
+
         # 尝试加载字体
         import os
         font = None
@@ -123,7 +123,6 @@ def add_watermark_to_image(
         bbox = draw.textbbox((0, 0), watermark_text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        
         # 计算位置
         padding = max(int(font_size * 0.4), 12)
         x = padding
@@ -149,6 +148,152 @@ def add_watermark_to_image(
             font=font,
             fill=(255, 255, 255, 255)
         )
+        
+        # 保存为 JPEG
+        output = io.BytesIO()
+        img.save(output, format='JPEG', quality=92)
+        return output.getvalue()
+        
+    except Exception as e:
+        logger.error(f"添加水印失败: {e}", exc_info=True)
+        return image_data
+'''
+def add_watermark_to_image(
+    image_data, 
+    training_name, 
+    include_training_name=True,
+    font_scale=0.03,
+    min_font_size=24,
+    bg_padding_scale=0.12
+):
+    """
+    为图片添加水印（左下角）- 双行布局
+    第一行：培训名称
+    第二行：日期时间
+    """
+    try:
+        logger.info(f"🖼️ 开始添加水印: training_name={training_name}")
+        
+        # 打开图片
+        img = Image.open(io.BytesIO(image_data))
+        
+        # 转换为 RGB
+        if img.mode in ('RGBA', 'LA', 'P'):
+            background = Image.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
+            img = background
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        
+        draw = ImageDraw.Draw(img)
+        
+        # 获取当前时间
+        now = datetime.now()
+        date_str = now.strftime('%Y-%m-%d %H:%M')
+        
+        # 双行布局：构建两行文本
+        if include_training_name and training_name:
+            line1 = training_name
+            line2 = date_str
+            watermark_texts = [line1, line2]
+        else:
+            # 如果不显示培训名称，只显示日期
+            watermark_texts = [date_str]
+        
+        # 根据图片大小动态调整字体大小
+        base_size = min(img.width, img.height)
+        font_size = max(int(base_size * font_scale), min_font_size)
+        
+        # 字体大小可以稍小一点（双行时更协调）
+        font_size = max(int(font_size * 0.85), 18)
+        
+        # 尝试加载中文字体
+        import os
+        font = None
+        font_paths = [
+            # Linux 中文字体
+            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
+            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
+            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            # macOS 中文字体
+            '/System/Library/Fonts/PingFang.ttc',
+            '/System/Library/Fonts/STHeiti Light.ttc',
+            '/System/Library/Fonts/Hiragino Sans GB.ttc',
+            # Windows 中文字体
+            'C:/Windows/Fonts/msyh.ttc',
+            'C:/Windows/Fonts/msyhbd.ttc',
+            'C:/Windows/Fonts/simsun.ttc',
+            'C:/Windows/Fonts/simhei.ttf',
+        ]
+        for path in font_paths:
+            if os.path.exists(path):
+                try:
+                    font = ImageFont.truetype(path, font_size)
+                    logger.info(f"✅ 使用字体: {path}")
+                    break
+                except:
+                    continue
+        if font is None:
+            logger.warning("⚠️ 使用默认字体")
+            font = ImageFont.load_default()
+        
+        # 计算所有行的尺寸（取最大宽度）
+        text_widths = []
+        text_heights = []
+        for text in watermark_texts:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_widths.append(bbox[2] - bbox[0])
+            text_heights.append(bbox[3] - bbox[1])
+        
+        max_width = max(text_widths) if text_widths else 0
+        line_height = max(text_heights) if text_heights else 0
+        total_height = len(watermark_texts) * line_height + (len(watermark_texts) - 1) * 6  # 行间距 6px
+        
+        # 计算位置（左下角）
+        padding = max(int(font_size * 0.4), 12)
+        x = padding
+        # 上移图片高度的 2%（大图移动更多，小图移动较少）
+        offset_up = int(img.height * 0.02)  # 2% 偏移量
+        y = img.height - total_height - padding - offset_up
+        
+        # 绘制背景框
+        bg_padding = int(font_size * bg_padding_scale) + 4
+        draw.rectangle(
+            [x - bg_padding, y - bg_padding, 
+             x + max_width + bg_padding, y + total_height + bg_padding],
+            fill=(0, 0, 0, 160)
+        )
+        
+        # 逐行绘制水印文字
+        current_y = y
+        for idx, text in enumerate(watermark_texts):
+            # 计算该行文本宽度（用于居中或左对齐）
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_width = bbox[2] - bbox[0]
+            
+            # 左对齐绘制
+            draw.text(
+                (x + 1, current_y + 1),
+                text,
+                font=font,
+                fill=(0, 0, 0, 200)
+            )
+            draw.text(
+                (x, current_y),
+                text,
+                font=font,
+                fill=(255, 255, 255, 255)
+            )
+            
+            # 移动到下一行
+            current_y += line_height + 6  # 行间距 6px
+        
+        logger.info(f"✅ 水印添加成功: 字体={font_size}px, {len(watermark_texts)}行")
         
         # 保存为 JPEG
         output = io.BytesIO()
