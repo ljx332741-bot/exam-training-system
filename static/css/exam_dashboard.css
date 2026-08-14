@@ -1,4 +1,112 @@
 /* static/css/exam_dashboard.css */
+/* ==================== 统计数据卡片 ==================== */
+.stat-card {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    padding: 16px 18px;
+    height: 100%;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+}
+
+.stat-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+}
+
+.stat-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: rgba(60, 60, 60, 0.7);
+    margin-bottom: 8px;
+}
+
+.stat-card-header i {
+    font-size: 1rem;
+}
+
+.stat-card-body .stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1a1a2e;
+    line-height: 1.2;
+    margin-bottom: 6px;
+}
+
+.stat-details {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+}
+
+.stat-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    color: rgba(60, 60, 60, 0.8);
+}
+
+.stat-item small {
+    color: rgba(80, 80, 80, 0.6);
+    font-size: 0.65rem;
+}
+
+.stat-card-footer {
+    margin-top: 10px;
+}
+
+.progress-bar-custom {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    border-radius: 4px;
+    transition: width 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+    background: linear-gradient(90deg, #818cf8, #a78bfa);
+}
+
+/* ========== 不同卡片主题 ========== */
+.exam-card {
+    background: linear-gradient(145deg, rgba(99, 102, 241, 0.25), rgba(99, 102, 241, 0.08));
+    border-color: rgba(99, 102, 241, 0.2);
+}
+.exam-card .stat-number { color: #818cf8; }
+.exam-card .progress-fill { background: linear-gradient(90deg, #818cf8, #a78bfa); }
+
+.training-card {
+    background: linear-gradient(145deg, rgba(52, 211, 153, 0.25), rgba(52, 211, 153, 0.08));
+    border-color: rgba(52, 211, 153, 0.2);
+}
+.training-card .stat-number { color: #34d399; }
+.training-card .progress-fill { background: linear-gradient(90deg, #34d399, #6ee7b7); }
+
+.interview-card {
+    background: linear-gradient(145deg, rgba(251, 146, 60, 0.25), rgba(251, 146, 60, 0.08));
+    border-color: rgba(251, 146, 60, 0.2);
+}
+.interview-card .stat-number { color: #fb923c; }
+.interview-card .progress-fill { background: linear-gradient(90deg, #fb923c, #fbbf24); }
+
+.completion-card {
+    background: linear-gradient(145deg, rgba(244, 67, 54, 0.25), rgba(244, 67, 54, 0.08));
+    border-color: rgba(244, 67, 54, 0.2);
+}
+.completion-card .stat-number { color: #f87171; }
+.completion-card .progress-fill { background: linear-gradient(90deg, #f87171, #fca5a5); }
+
 /* ===== 卡片新布局样式 ===== */
 /* 卡片名称 - 完整显示，独占一行 */
 .card-title-full {
@@ -86,6 +194,22 @@
     min-height: auto;
 }
 
+/* ========== 响应式 ========== */
+@media (max-width: 768px) {
+    .stat-card {
+        padding: 12px 14px;
+    }
+    .stat-card-body .stat-number {
+        font-size: 1.5rem;
+    }
+    .stat-details {
+        font-size: 0.7rem;
+        gap: 8px;
+    }
+    .stat-card-header {
+        font-size: 0.65rem;
+    }
+}
 /* 响应式调整 */
 @media (max-width: 576px) {
     .card-title-full {
@@ -98,6 +222,16 @@
     .card-action .btn {
         min-width: 80px;
         font-size: 0.75rem;
+    }
+    .stat-card {
+        padding: 10px 12px;
+    }
+    .stat-card-body .stat-number {
+        font-size: 1.3rem;
+    }
+    .stat-details {
+        flex-wrap: wrap;
+        gap: 4px 8px;
     }
 }
 

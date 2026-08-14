@@ -78,12 +78,12 @@
                     </div>
 
                     <div class="form-text text-muted mt-1">
-                        <span data-i18n="select_training_hint">请选择您要上传照片的培训</span>
+                        <span data-i18n="select_training_hint" id="trainingHintText">请选择您要上传照片的培训</span>
                     </div>
                 </div>
 
                 <div class="col-md-6">
-                    <label class="form-label fw-bold"><span data-i18n="photos">照片</span> <span class="text-danger">*</span></label>
+                    <label class="form-label fw-bold"><span data-i18n="add_photos">添加照片</span> <span class="text-danger">*</span></label>
                     <div class="d-flex gap-2 mb-2">
                         <button class="btn btn-outline-primary flex-fill btn-gallery" id="galleryBtn">
                             <i class="bi bi-images me-1"></i> <span data-i18n="choose_from_gallery">从相册选择</span>
@@ -123,13 +123,17 @@
                     </div>
 
                     <div class="mt-3">
-                        <button class="btn btn-primary" id="uploadBtn" disabled>
-                            <i class="bi bi-cloud-upload"></i> <span data-i18n="upload">上传</span>
-                            <span class="badge bg-light text-dark ms-1" id="selectedCount">0</span>
-                        </button>
-                        <button class="btn btn-outline-secondary ms-2" id="clearFilesBtn">
-                            <i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空</span>
-                        </button>
+                        <div class="d-flex align-items-center gap-2">
+                            <button class="btn btn-primary" id="uploadBtn" disabled>
+                                <i class="bi bi-cloud-upload"></i> <span data-i18n="upload">上传</span>
+                                <span class="badge bg-light text-dark ms-1" id="selectedCount">0</span>
+                            </button>
+                            <button class="btn btn-outline-secondary ms-2" id="clearFilesBtn">
+                                <i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空</span>
+                            </button>
+                            <!-- 添加提示信息 -->
+                            <span id="uploadBtnHint" class="text-muted small" style="font-size: 0.75rem;"></span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -149,7 +153,7 @@
                         placeholder="搜索培训..." data-i18n-placeholder="placeholder_training_name">
                 </div>
                 <!-- ========== 季度筛选（改为输入即搜索） ========== -->
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <div class="position-relative">
                         <input type="text" 
                             id="filterQuarterInput" 
@@ -184,7 +188,7 @@
                         </button>
                     </div>
                 </div>
-                <div class="col-md-2">
+                <div class="col-md-1">
                     <button class="btn btn-sm btn-outline-danger w-100" id="resetFilterBtn">
                         <i class="bi bi-arrow-counterclockwise"></i> <span data-i18n="reset">重置</span>
                     </button>
@@ -1431,7 +1435,13 @@
         const startDate = training.start_time ? new Date(training.start_time).toLocaleDateString() : '-';
         const endDate = training.end_time ? new Date(training.end_time).toLocaleDateString() : '-';
         document.getElementById('displayTrainingDate').textContent = `${startDate} → ${endDate}`;
-        
+
+        // 更新提示语：已选择培训 → 提示添加照片
+        const hintEl = document.getElementById('trainingHintText');
+        if (hintEl) {
+            hintEl.textContent = safeT('select_photo_hint') || '请点击下方按钮选择或拍摄照片';
+            hintEl.style.color = '#198754';
+        }
         updatePhotoLimit();
         document.getElementById('trainingDropdown').style.display = 'none';
         updateUploadBtn();
@@ -1450,6 +1460,13 @@
         document.getElementById('selectedTrainingDisplay').style.display = 'none';
         document.getElementById('photoLimitBadge').textContent = '0 / 50';
         document.getElementById('photoLimitBadge').className = 'badge bg-secondary';
+
+        // 恢复提示语：未选择培训 → 提示选择培训
+        const hintEl = document.getElementById('trainingHintText');
+        if (hintEl) {
+            hintEl.textContent = safeT('select_training_hint') || '请选择您要上传照片的培训';
+            hintEl.style.color = '';
+        }
         
         updateUploadBtn();
     }
@@ -1459,7 +1476,37 @@
         const btn = document.getElementById('uploadBtn');
         const trainingId = document.getElementById('selectedTrainingId').value;
         const hasFiles = selectedFiles.length > 0;
-        btn.disabled = !(hasFiles && trainingId);
+        const hintEl = document.getElementById('uploadBtnHint');
+        
+        if (!trainingId && !hasFiles) {
+            btn.disabled = true;
+            btn.title = safeT('please_select_training_and_photos') || '请选择培训并添加照片';
+            if (hintEl) {
+                hintEl.textContent = '⚠️ ' + (safeT('please_select_training_and_photos') || '请选择培训并添加照片');
+                hintEl.style.color = '#6c757d';
+            }
+        } else if (!trainingId && hasFiles) {
+            btn.disabled = true;
+            btn.title = safeT('please_select_training') || '请先选择培训';
+            if (hintEl) {
+                hintEl.textContent = '⚠️ ' + (safeT('please_select_training') || '请先选择培训');
+                hintEl.style.color = '#ffc107';
+            }
+        } else if (trainingId && !hasFiles) {
+            btn.disabled = true;
+            btn.title = safeT('please_select_photos') || '请添加照片';
+            if (hintEl) {
+                hintEl.textContent = '⚠️ ' + (safeT('please_select_photos') || '请添加照片');
+                hintEl.style.color = '#ffc107';
+            }
+        } else {
+            btn.disabled = false;
+            btn.title = safeT('upload_photos') || '上传照片';
+            if (hintEl) {
+                hintEl.textContent = '✅ ' + (safeT('ready_to_upload') || '准备上传');
+                hintEl.style.color = '#198754';
+            }
+        }
     }
     // ==================== 事件绑定 ====================
 
@@ -1657,6 +1704,12 @@
         document.getElementById('nextPhotoBtn')?.addEventListener('click', goToNextPhoto);
         document.getElementById('lastPhotoBtn')?.addEventListener('click', goToLastPhoto);
 
+        // 确保初始提示语正确
+        const hintEl = document.getElementById('trainingHintText');
+        if (hintEl) {
+            hintEl.textContent = safeT('select_training_hint') || '请选择您要上传照片的培训';
+        }
+
         // 键盘事件（支持循环导航）
         document.addEventListener('keydown', function(e) {
             const modal = document.getElementById('photoViewModal');
@@ -1737,6 +1790,7 @@
         const progressBar = document.getElementById('progressBar');
         const progressText = document.getElementById('progressText');
         progressDiv.style.display = 'block';
+        progressDiv.classList.add('show');
         progressBar.style.width = '10%';
         progressBar.textContent = '10%';
         progressText.textContent = safeT('preparing_upload');
@@ -1791,6 +1845,7 @@
             btn.disabled = false;
             setTimeout(() => {
                 progressDiv.style.display = 'none';
+                progressDiv.classList.remove('show');
                 progressBar.style.width = '0%';
                 progressBar.textContent = '0%';
             }, 2000);

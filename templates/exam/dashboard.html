@@ -3,6 +3,81 @@
 {% block title %}我的考试中心{% endblock %}
 
 {% block content %}
+<!-- ==================== 统计数据卡片 ==================== -->
+<div class="row g-3 mb-4" id="statsCards">
+    <!-- 考试统计 -->
+    <div class="col-6 col-md-3">
+        <div class="stat-card exam-card">
+            <div class="stat-card-header">
+                <i class="bi bi-journal-check"></i>
+                <span data-i18n="exam_statistics">考试统计</span>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-number" id="examTotal">0</div>
+                <div class="stat-details">
+                    <span class="stat-item" id="examPending">0 <small><span data-i18n="pending">待考试</span></small></span>
+                    <!-- <span class="stat-item" id="examInProgress">0 <small><span data-i18n="in_progress">考试中</span></small></span> -->
+                    <span class="stat-item" id="examCompleted">0 <small><span data-i18n="completed">已完成</span></small></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 签到统计 -->
+    <div class="col-6 col-md-3">
+        <div class="stat-card training-card">
+            <div class="stat-card-header">
+                <i class="bi bi-calendar-check"></i>
+                <span data-i18n="training_statistics">签到统计</span>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-number" id="trainingTotal">0</div>
+                <div class="stat-details">
+                    <span class="stat-item" id="trainingSigned">0 <small><span data-i18n="signed">已签到</span></small></span>
+                    <span class="stat-item" id="trainingPending">0 <small><span data-i18n="pending_sign">待签到</span></small></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 访谈统计 -->
+    <div class="col-6 col-md-3">
+        <div class="stat-card interview-card">
+            <div class="stat-card-header">
+                <i class="bi bi-chat-dots"></i>
+                <span data-i18n="interview_statistics">访谈统计</span>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-number" id="interviewTotal">0</div>
+                <div class="stat-details">
+                    <span class="stat-item" id="interviewPending">0 <small><span data-i18n="pending_complete">待完成</span></small></span>
+                    <span class="stat-item" id="interviewCompleted">0 <small><span data-i18n="completed">已完成</span></small></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 整体完成率 -->
+    <div class="col-6 col-md-3">
+        <div class="stat-card completion-card">
+            <div class="stat-card-header">
+                <i class="bi bi-bar-chart"></i>
+                <span data-i18n="completion_rate">整体完成率</span>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-number" id="completionRate">0%</div>
+                <div class="stat-details">
+                    <span class="stat-item" id="completionDetail">0 / 0</span>
+                </div>
+            </div>
+            <div class="stat-card-footer">
+                <div class="progress-bar-custom" id="completionProgress">
+                    <div class="progress-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 <div class="row g-4">
     <!-- 培训签到卡片区（多培训） -->
     <div class="col-12">
@@ -1366,6 +1441,55 @@
         }
     }
 
+    // templates/exam/dashboard.html - 添加统计加载函数
+
+    // ==================== 加载统计数据 ====================
+    async function loadStats() {
+        try {
+            const res = await fetch('/api/my/stats');
+            const data = await res.json();
+            
+            if (!data.success) {
+                console.warn('加载统计数据失败:', data.message);
+                return;
+            }
+            
+            const stats = data.data;
+            
+            // 1. 考试统计
+            document.getElementById('examTotal').textContent = stats.exam.total;
+            document.getElementById('examPending').innerHTML = `${stats.exam.pending} <small>${t('pending')}</small>`;
+            //document.getElementById('examInProgress').innerHTML = `${stats.exam.in_progress} <small>考试中</small>`;
+            document.getElementById('examCompleted').innerHTML = `${stats.exam.completed} <small>${t('completed')}</small>`;
+            
+            // 2. 签到统计
+            document.getElementById('trainingTotal').textContent = stats.training.total;
+            document.getElementById('trainingSigned').innerHTML = `${stats.training.signed} <small>${t('signed')}</small>`;
+            document.getElementById('trainingPending').innerHTML = `${stats.training.pending} <small>${t('pending_sign')}</small>`;
+            
+            // 3. 访谈统计
+            document.getElementById('interviewTotal').textContent = stats.interview.total;
+            document.getElementById('interviewPending').innerHTML = `${stats.interview.pending} <small>${t('pending_complete')}</small>`;
+            document.getElementById('interviewCompleted').innerHTML = `${stats.interview.completed} <small>${t('completed')}</small>`;
+            
+            // 4. 整体完成率
+            document.getElementById('completionRate').textContent = `${stats.completion.rate}%`;
+            document.getElementById('completionDetail').textContent = `${stats.completion.completed_items} / ${stats.completion.total_items}`;
+            
+            // 进度条动画
+            const progressFill = document.querySelector('#completionProgress .progress-fill');
+            if (progressFill) {
+                setTimeout(() => {
+                    progressFill.style.width = `${stats.completion.rate}%`;
+                }, 200);
+            }
+            
+        } catch (err) {
+            console.error('加载统计数据失败:', err);
+        }
+    }
+
+
     document.addEventListener('DOMContentLoaded', async () => {
         const userIdDisplay = document.getElementById('userIdDisplay');
         if (userIdDisplay) {
@@ -1389,11 +1513,13 @@
         await loadTrainings();
         await loadMyInterviews();
         await checkPhotoPermission();
+        await loadStats();
         
         if (window.i18n && typeof window.i18n.subscribe === 'function') {
             window.i18n.subscribe(() => {
                 loadTrainings();
                 loadMyInterviews();
+                loadStats();
             });
         }
         

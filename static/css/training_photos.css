@@ -458,7 +458,7 @@
     margin-top: 12px;
 }
 
-/* ✅ 修改：与 photo-thumb 尺寸一致 */
+/* 与 photo-thumb 尺寸一致 */
 .upload-preview .preview-item {
     position: relative;
     width: 130px;           /* 与 photo-grid 的 minmax(130px, 1fr) 一致 */
@@ -510,6 +510,27 @@
     border-radius: 4px;
     pointer-events: none;
 }
+
+/* 上传中...设置为默认隐藏 */
+
+.upload-progress {
+    display: none;  /* ✅ 默认隐藏 */
+    margin-top: 10px;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 6px;
+}
+
+.upload-progress.show {
+    display: block;  /* ✅ 只有添加 show 类时才显示 */
+}
+
+/* 上传按钮提示文字样式 */
+#uploadBtnHint {
+    font-size: 0.75rem;
+    transition: all 0.3s ease;
+}
+
 /* 额外内联样式（覆盖或补充） */
 .training-card-header .expand-icon {
     font-size: 0.7rem;
