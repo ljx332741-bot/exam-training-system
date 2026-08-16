@@ -261,7 +261,64 @@
         color: #6c757d;
         gap: 12px;
     }
-
+    /* ========== 上传预览样式 ========== */
+    .upload-preview {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 8px;
+        min-height: 60px;
+    }
+    .upload-preview .preview-item {
+        position: relative;
+        width: 80px;
+        height: 80px;
+        border-radius: 6px;
+        overflow: hidden;
+        border: 1px solid #ddd;
+        background: #f8f9fa;
+    }
+    .upload-preview .preview-item img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .upload-preview .preview-item .remove-btn {
+        position: absolute;
+        top: 2px;
+        right: 2px;
+        background: rgba(0,0,0,0.6);
+        color: #fff;
+        border: none;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        font-size: 12px;
+        line-height: 1;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .upload-preview .preview-item .remove-btn:hover {
+        background: rgba(220, 53, 69, 0.9);
+    }
+    .upload-preview .preview-item .watermark-badge {
+        position: absolute;
+        bottom: 2px;
+        left: 2px;
+        background: rgba(0,0,0,0.5);
+        color: #fff;
+        font-size: 10px;
+        padding: 1px 4px;
+        border-radius: 3px;
+    }
+    .upload-progress {
+        margin-top: 8px;
+    }
+    .upload-progress .progress {
+        height: 6px;
+    }
     /* ========== 响应式 ========== */
     @media (max-width: 768px) {
         .photo-grid {
@@ -312,6 +369,64 @@
             <button class="btn btn-secondary" onclick="window.close()">
                 <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
             </button>
+        </div>
+    </div>
+
+    <!-- ========== 上传区域 ========== -->
+    <div class="card mb-3">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-upload me-2"></i><span data-i18n="upload_photos">上传照片</span></span>
+            <span class="badge bg-secondary" id="adminPhotoLimitBadge">0 / 不限</span>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label fw-bold"><span data-i18n="select_photos">选择照片</span></label>
+                    <div class="d-flex gap-2 mb-2">
+                        <button class="btn btn-outline-primary flex-fill" id="adminGalleryBtn">
+                            <i class="bi bi-images me-1"></i> <span data-i18n="choose_from_gallery">从相册选择</span>
+                        </button>
+                        <button class="btn btn-outline-primary flex-fill" id="adminCameraBtn">
+                            <i class="bi bi-camera me-1"></i> <span data-i18n="take_photo">拍摄照片</span>
+                        </button>
+                    </div>
+                    <input type="file" id="adminFileInput" multiple accept="image/*" style="display: none;">
+                    
+                    <div class="watermark-options">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="adminAddWatermark" checked>
+                            <label class="form-check-label fw-small" for="adminAddWatermark">
+                                <i class="bi bi-water"></i> <span data-i18n="auto_add_watermark">自动添加日期水印</span>
+                            </label>
+                        </div>
+                        <div class="form-check form-switch ms-4">
+                            <input class="form-check-input" type="checkbox" id="adminIncludeTrainingName" checked>
+                            <label class="form-check-label fw-small" for="adminIncludeTrainingName">
+                                <span data-i18n="include_training_name">包含培训名称</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="upload-preview" id="adminUploadPreview"></div>
+                    <div class="upload-progress" id="adminUploadProgress" style="display: none;">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                role="progressbar" style="width: 0%;" id="adminProgressBar">0%</div>
+                        </div>
+                        <div class="text-muted small mt-1" id="adminProgressText"><span data-i18n="uploading">上传中...</span></div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <button class="btn btn-primary w-100" id="adminUploadBtn" disabled>
+                        <i class="bi bi-cloud-upload"></i> <span data-i18n="upload">上传</span>
+                        <span class="badge bg-light text-dark ms-1" id="adminSelectedCount">0</span>
+                    </button>
+                    <button class="btn btn-outline-secondary w-100 mt-2" id="adminClearFilesBtn">
+                        <i class="bi bi-x-circle"></i> <span data-i18n="clear_all">清空</span>
+                    </button>
+                    <span id="adminUploadBtnHint" class="text-muted small d-block mt-1 text-center"></span>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -708,7 +823,7 @@
     // ---------- 导航函数 ----------
     function goToPrevPhoto() {
         if (currentViewPhotos.length === 0) return;
-        // ✅ 循环导航：到第一张后跳到最后一张
+        // 循环导航：到第一张后跳到最后一张
         if (currentViewIndex > 0) {
             updateModalContent(currentViewIndex - 1);
         } else {
@@ -719,7 +834,7 @@
 
     function goToNextPhoto() {
         if (currentViewPhotos.length === 0) return;
-        // ✅ 循环导航：到最后一张后跳到第一张
+        // 循环导航：到最后一张后跳到第一张
         if (currentViewIndex < currentViewPhotos.length - 1) {
             updateModalContent(currentViewIndex + 1);
         } else {
@@ -728,13 +843,13 @@
         }
     }
 
-    // ✅ 新增：跳转到第一张
+    // 跳转到第一张
     function goToFirstPhoto() {
         if (currentViewPhotos.length === 0) return;
         updateModalContent(0);
     }
 
-    // ✅ 新增：跳转到最后一张
+    // 跳转到最后一张
     function goToLastPhoto() {
         if (currentViewPhotos.length === 0) return;
         updateModalContent(currentViewPhotos.length - 1);
@@ -756,15 +871,41 @@
         try {
             const res = await fetch(`/api/admin/training/photos/${photoId}`, { method: 'DELETE' });
             const data = await res.json();
+            
             if (data.success) {
-                showToast(safeT('photo_deleted'), '成功', 'success');
-                selectedIds.delete(photoId);
-
-                // ✅ 设置刷新标记，通知培训管理页面需要刷新
-                sessionStorage.setItem('training_photos_changed', 'true');
-                sessionStorage.setItem('training_photos_training_id', document.getElementById('pageTrainingId').value);
+                const trainingId = document.getElementById('pageTrainingId').value;
+                const photoCount = normalizePhotoCount(data.photo_count);
                 
-                loadPhotos(currentPage);
+                if (photoCount === null) {
+                    console.error('📸 API 返回无效 photo_count:', data);
+                    loadPhotos(currentPage);
+                    return;
+                }
+                
+                // ===== 1. 更新当前页面 =====
+                totalPhotos = photoCount;
+                document.getElementById('totalCount').textContent = String(photoCount);
+                photoData = photoData.filter(p => p.id !== photoId);
+                renderPhotos(photoData);
+                updateToolbar();
+                selectedIds.delete(photoId);
+                
+                // 如果当前页为空且不是第一页，跳到上一页
+                if (photoData.length === 0 && currentPage > 1) {
+                    loadPhotos(currentPage - 1);
+                }
+                
+                // ===== 2. 广播变更 =====
+                console.log('📤 准备发送 BroadcastChannel 消息:', { trainingId, photoCount });
+                broadcastPhotoChange(trainingId, photoCount, 'delete');
+                savePhotoCountState(trainingId, photoCount);
+                
+                // ===== 3. 尝试直接更新父窗口 =====
+                if (window.opener && typeof window.opener.updateTrainingPhotoCount === 'function') {
+                    window.opener.updateTrainingPhotoCount(trainingId, photoCount, Date.now());
+                }
+                
+                showToast(safeT('photo_deleted'), '成功', 'success');
             } else {
                 showToast(data.message || safeT('delete_failed'), '错误', 'error');
             }
@@ -780,6 +921,11 @@
         if (ids.length === 0) return;
         if (!confirm(safeT('confirm_batch_delete_photos', ids.length))) return;
 
+        // 禁用按钮防止重复点击
+        this.disabled = true;
+        const originalText = this.innerHTML;
+        this.innerHTML = `<span class="spinner-border spinner-border-sm me-2"></span> ${t('deleteing')}`;
+
         try {
             const res = await fetch('/api/admin/training/photos/batch_delete', {
                 method: 'POST',
@@ -787,22 +933,49 @@
                 body: JSON.stringify({ ids: ids })
             });
             const data = await res.json();
+            
             if (data.success) {
-                showToast(safeT('batch_delete_success', { count: data.success_count}), 'success');
-                selectedIds.clear();
+                const trainingId = document.getElementById('pageTrainingId').value;
 
-                // ✅ 设置刷新标记
-                sessionStorage.setItem('training_photos_changed', 'true');
-                sessionStorage.setItem('training_photos_training_id', document.getElementById('pageTrainingId').value);
+                let photoCount = normalizePhotoCount(data.photo_count);
                 
-                loadPhotos(currentPage);
+                if (photoCount === null) {
+                    photoCount = Math.max(0, totalPhotos - ids.length);
+                    console.warn('📸 API 未返回 photo_count，使用本地计算:', photoCount);
+                    console.error('📸 API 返回无效 photo_count:', data);
+                    loadPhotos(currentPage);
+                    return;
+                }
+                
+                // ===== 1. 更新当前页面 =====
+                totalPhotos = photoCount;
+                document.getElementById('totalCount').textContent = String(photoCount);
+                
+                // 批量删除后，重新加载当前页（保持分页一致性）
+                selectedIds.clear();
+                const maxPage = Math.max(1, Math.ceil(photoCount / perPage));
+                const targetPage = Math.min(currentPage, maxPage);
+                await loadPhotos(targetPage);
+                
+                // ===== 2. 广播变更 =====
+                broadcastPhotoChange(trainingId, photoCount, 'delete');
+                savePhotoCountState(trainingId, photoCount);
+                
+                if (window.opener && typeof window.opener.updateTrainingPhotoCount === 'function') {
+                    window.opener.updateTrainingPhotoCount(trainingId, photoCount, Date.now());
+                }
+                
+                showToast(safeT('batch_delete_success', { count: data.success_count }), 'success');
             } else {
                 showToast(data.message || safeT('delete_failed'), 'error');
             }
         } catch (err) {
             console.error('批量删除失败:', err);
             showToast(safeT('delete_failed'), '错误', 'error');
-        }
+        } finally {
+        this.disabled = false;
+        this.innerHTML = originalText;
+    }
     });
 
     // ---------- 刷新 ----------
@@ -811,25 +984,324 @@
         loadPhotos(currentPage);
     });
 
-    // ---------- Toast ----------
-    function showToast(message, type = 'info') {
-        // 检查 base.html 中的 showToast 是否存在且不是自身
-        if (typeof window.showToast === 'function' && window.showToast !== showToast) {
-            // base.html 的 showToast 签名: (message, title, type)
-            const titleMap = {
-                'success': '成功',
-                'error': '错误',
-                'warning': '警告',
-                'info': '提示'
-            };
-            const title = titleMap[type] || '提示';
-            window.showToast(message, title, type);
+    // ============================================================
+    // 管理员端照片上传功能（复用学员端逻辑）
+    // ============================================================
+
+    let adminSelectedFiles = [];
+    let adminIsUploading = false;
+
+    // ---------- 工具函数：验证 photo_count ----------
+    function normalizePhotoCount(value) {
+        const count = Number(value);
+        return Number.isFinite(count) && count >= 0 ? Math.floor(count) : null;
+    }
+
+    // ---------- 更新上传按钮状态 ----------
+    function updateAdminUploadBtn() {
+        const btn = document.getElementById('adminUploadBtn');
+        const trainingId = document.getElementById('pageTrainingId').value;
+        const hasFiles = adminSelectedFiles.length > 0;
+        const hintEl = document.getElementById('adminUploadBtnHint');
+        
+        if (!trainingId) {
+            btn.disabled = true;
+            btn.title = '请先选择培训';
+            if (hintEl) {
+                hintEl.textContent = '⚠️ 请先选择培训';
+                hintEl.style.color = '#ffc107';
+            }
             return;
         }
         
-        // 降级方案：使用 alert
-        console.warn('Toast 不可用，使用 alert 代替');
-        alert(message);
+        if (!hasFiles) {
+            btn.disabled = true;
+            btn.title = '请选择照片';
+            if (hintEl) {
+                hintEl.textContent = '⚠️ 请选择照片';
+                hintEl.style.color = '#ffc107';
+            }
+            return;
+        }
+        
+        btn.disabled = false;
+        btn.title = '上传照片';
+        if (hintEl) {
+            hintEl.textContent = `✅ 准备上传 ${adminSelectedFiles.length} 张照片`;
+            hintEl.style.color = '#198754';
+        }
+    }
+
+    // ---------- 渲染预览 ----------
+    function renderAdminPreview() {
+        const container = document.getElementById('adminUploadPreview');
+        container.innerHTML = '';
+        
+        if (adminSelectedFiles.length === 0) {
+            document.getElementById('adminSelectedCount').textContent = '0';
+            updateAdminUploadBtn();
+            return;
+        }
+        
+        adminSelectedFiles.forEach((file, index) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const div = document.createElement('div');
+                div.className = 'preview-item';
+                const hasWatermark = document.getElementById('adminAddWatermark').checked;
+                div.innerHTML = `
+                    <img src="${e.target.result}" alt="${file.name}">
+                    <button class="remove-btn" data-index="${index}" title="移除">×</button>
+                    ${hasWatermark ? '<span class="watermark-badge">💧</span>' : ''}
+                `;
+                div.querySelector('.remove-btn').addEventListener('click', () => {
+                    adminSelectedFiles.splice(index, 1);
+                    renderAdminPreview();
+                    updateAdminUploadBtn();
+                });
+                container.appendChild(div);
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        document.getElementById('adminSelectedCount').textContent = adminSelectedFiles.length;
+        updateAdminUploadBtn();
+    }
+
+    // ---------- 处理文件选择 ----------
+    function handleAdminFiles(files) {
+        const maxFiles = 20;
+        const remaining = maxFiles - adminSelectedFiles.length;
+        
+        for (let i = 0; i < Math.min(files.length, remaining); i++) {
+            const file = files[i];
+            if (file.type.startsWith('image/')) {
+                if (file.size > 10 * 1024 * 1024) {
+                    showToast(`${file.name}: 文件大小超过 10MB`, '警告', 'warning');
+                    continue;
+                }
+                adminSelectedFiles.push(file);
+            }
+        }
+        
+        renderAdminPreview();
+        updateAdminUploadBtn();
+    }
+
+    // ---------- 主上传逻辑 ----------
+    async function handleAdminMainUpload(btn) {
+        if (adminIsUploading) return;
+
+        const trainingId = document.getElementById('pageTrainingId').value;
+        if (!trainingId) {
+            showToast('请先选择培训', '提示', 'warning');
+            return;
+        }
+
+        if (adminSelectedFiles.length === 0) {
+            showToast('请选择照片', '提示', 'warning');
+            return;
+        }
+
+        // 获取培训名称
+        let trainingName = '';
+        let trainingCountry = '';
+        try {
+            const res = await fetch(`/api/admin/trainings/${trainingId}`);
+            const data = await res.json();
+            if (data.success && data.data) {
+                trainingName = data.data.name || `培训 ${trainingId}`;
+                trainingCountry = data.data.country || '';
+            }
+        } catch (e) {
+            console.warn('获取培训名称失败:', e);
+            trainingName = `培训 ${trainingId}`;
+            trainingCountry = '';
+        }
+
+        // 验证国家是否存在
+        if (!trainingCountry) {
+            showToast('该培训未指定国家，无法上传照片', '错误', 'error');
+            return;
+        }
+
+        const addWatermark = document.getElementById('adminAddWatermark').checked;
+        const includeTrainingName = document.getElementById('adminIncludeTrainingName').checked;
+        const totalFiles = adminSelectedFiles.length;
+
+        const formData = new FormData();
+        formData.append('training_id', trainingId);
+        formData.append('training_name', trainingName);
+        formData.append('training_country', trainingCountry);
+        formData.append('add_watermark', addWatermark ? 'true' : 'false');
+        formData.append('include_training_name', includeTrainingName ? 'true' : 'false');
+
+        adminSelectedFiles.forEach((file, index) => {
+            formData.append('photos', file);
+            formData.append(`descriptions[${index}]`, '');
+        });
+
+        adminIsUploading = true;
+        btn.disabled = true;
+        
+        const progressDiv = document.getElementById('adminUploadProgress');
+        const progressBar = document.getElementById('adminProgressBar');
+        const progressText = document.getElementById('adminProgressText');
+        progressDiv.style.display = 'block';
+        progressBar.style.width = '5%';
+        progressBar.textContent = '5%';
+        progressText.textContent = safeT('preparing_upload') + ` (0/${totalFiles})`;
+
+        try {
+            const uploadResult = await new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                
+                xhr.upload.addEventListener('progress', function(e) {
+                    if (e.lengthComputable) {
+                        const uploadPercent = Math.round((e.loaded / e.total) * 70);
+                        const currentProgress = uploadPercent + 10;
+                        progressBar.style.width = currentProgress + '%';
+                        progressBar.textContent = currentProgress + '%';
+                        const loadedMB = (e.loaded / (1024 * 1024)).toFixed(1);
+                        const totalMB = (e.total / (1024 * 1024)).toFixed(1);
+                        progressText.textContent = `📤 ${safeT('uploading')} ${loadedMB}/${totalMB} MB (${totalFiles} ${safeT('photos')})`;
+                    }
+                });
+                
+                xhr.addEventListener('load', function() {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        try {
+                            const data = JSON.parse(xhr.responseText);
+                            resolve(data);
+                        } catch (e) {
+                            reject(new Error('解析响应失败'));
+                        }
+                    } else {
+                        reject(new Error(`HTTP ${xhr.status}`));
+                    }
+                });
+                
+                xhr.addEventListener('error', function() {
+                    reject(new Error(safeT('network_error')));
+                });
+                
+                xhr.addEventListener('abort', function() {
+                    reject(new Error('上传已取消'));
+                });
+                
+                xhr.open('POST', '/api/admin/training/photos');
+                xhr.send(formData);
+            });
+
+            progressBar.style.width = '90%';
+            progressBar.textContent = '90%';
+            progressText.textContent = safeT('processing_response');
+
+            if (uploadResult.success) {
+                // ===== 完成 =====
+                progressBar.style.width = '100%';
+                progressBar.textContent = '100%';
+                progressText.textContent = '✅ ' + safeT('upload_complete');
+
+                // ===== 1. 获取上传后的最终照片数量 =====
+                const photoCount = normalizePhotoCount(uploadResult.photo_count);
+                
+                if (photoCount === null) {
+                    console.error('📸 API 返回无效 photo_count:', uploadResult);
+                    showToast(safeT('upload_success', uploadResult.uploaded_count), '成功', 'success');
+                    adminSelectedFiles = [];
+                    renderAdminPreview();
+                    updateAdminUploadBtn();
+                    document.getElementById('adminSelectedCount').textContent = '0';
+                    loadPhotos(currentPage);
+                    return;
+                }
+
+                // ===== 2. 更新当前页面 =====
+                totalPhotos = photoCount;
+                document.getElementById('totalCount').textContent = String(photoCount);
+                
+                // 重新加载照片列表
+                await loadPhotos(currentPage);
+
+                // ===== 3. 广播照片变更 =====
+                broadcastPhotoChange(trainingId, photoCount, 'upload');
+                savePhotoCountState(trainingId, photoCount);
+
+                // ===== 4. 尝试直接更新父窗口 =====
+                if (window.opener && typeof window.opener.updateTrainingPhotoCount === 'function') {
+                    window.opener.updateTrainingPhotoCount(trainingId, photoCount, Date.now());
+                }
+
+                // ===== 5. 显示成功消息 =====
+                showToast(safeT('upload_success', uploadResult.uploaded_count), '成功', 'success');
+                
+                // ===== 6. 清空文件选择状态 =====
+                adminSelectedFiles = [];
+                renderAdminPreview();
+                updateAdminUploadBtn();
+                document.getElementById('adminSelectedCount').textContent = '0';
+
+            } else {
+                progressText.textContent = '❌ ' + safeT('upload_failed');
+                showToast(uploadResult.message || safeT('upload_failed'), '错误', 'error');
+            }
+        } catch (err) {
+            console.error('上传失败:', err);
+            progressText.textContent = '❌ ' + safeT('upload_failed');
+            showToast(safeT('upload_failed') + ': ' + err.message, '错误', 'error');
+        } finally {
+            adminIsUploading = false;
+            btn.disabled = false;
+            setTimeout(() => {
+                progressDiv.style.display = 'none';
+                progressBar.style.width = '0%';
+                progressBar.textContent = '0%';
+            }, 2000);
+        }
+    }
+
+    // ---------- 绑定上传事件 ----------
+    function setupAdminUploadArea() {
+        // 从相册选择
+        document.getElementById('adminGalleryBtn')?.addEventListener('click', () => {
+            const input = document.getElementById('adminFileInput');
+            input.removeAttribute('capture');
+            input.click();
+        });
+
+        // 摄像头拍摄
+        document.getElementById('adminCameraBtn')?.addEventListener('click', () => {
+            const input = document.getElementById('adminFileInput');
+            input.setAttribute('capture', 'environment');
+            input.click();
+        });
+
+        // 文件选择
+        document.getElementById('adminFileInput')?.addEventListener('change', function() {
+            if (this.files) {
+                handleAdminFiles(this.files);
+            }
+            this.value = '';
+        });
+
+        // 上传按钮
+        document.getElementById('adminUploadBtn')?.addEventListener('click', function() {
+            handleAdminMainUpload(this);
+        });
+
+        // 清空按钮
+        document.getElementById('adminClearFilesBtn')?.addEventListener('click', () => {
+            adminSelectedFiles = [];
+            renderAdminPreview();
+            updateAdminUploadBtn();
+            document.getElementById('adminSelectedCount').textContent = '0';
+        });
+
+        // 水印选项变化时重新渲染预览
+        document.getElementById('adminAddWatermark')?.addEventListener('change', () => {
+            renderAdminPreview();
+        });
     }
 
     // ---------- 初始化 ----------
@@ -839,19 +1311,19 @@
             window.i18n.applyTranslations();
         }
 
-        // ✅ 绑定模态框导航事件（只绑定一次，使用独立的导航函数）
+        // 绑定模态框导航事件（只绑定一次，使用独立的导航函数）
         document.getElementById('firstPhotoBtn')?.addEventListener('click', goToFirstPhoto);
         document.getElementById('prevPhotoBtn')?.addEventListener('click', goToPrevPhoto);
         document.getElementById('nextPhotoBtn')?.addEventListener('click', goToNextPhoto);
         document.getElementById('lastPhotoBtn')?.addEventListener('click', goToLastPhoto);
 
-        // ✅ 下载按钮（只绑定一次）
+        // 下载按钮（只绑定一次）
         document.getElementById('viewDownloadBtn')?.addEventListener('click', function() {
             const photo = currentViewPhotos[currentViewIndex];
             if (photo) downloadPhoto(photo.id);
         });
 
-        // ✅ 删除按钮（只绑定一次）
+        // 删除按钮（只绑定一次）
         document.getElementById('viewDeleteBtn')?.addEventListener('click', function() {
             const photo = currentViewPhotos[currentViewIndex];
             if (photo) {
@@ -866,16 +1338,16 @@
             }
         });
 
-        // ✅ 键盘事件（支持循环导航）
+        // 键盘事件（支持循环导航）
         document.addEventListener('keydown', function(e) {
             const modal = document.getElementById('photoViewModal');
             if (!modal || !modal.classList.contains('show')) return;
             if (e.key === 'ArrowLeft') {
                 e.preventDefault();
-                goToPrevPhoto();  // ✅ 已有循环逻辑
+                goToPrevPhoto();  // 已有循环逻辑
             } else if (e.key === 'ArrowRight') {
                 e.preventDefault();
-                goToNextPhoto();  // ✅ 已有循环逻辑
+                goToNextPhoto();  // 已有循环逻辑
             } else if (e.key === 'Home') {
                 e.preventDefault();
                 goToFirstPhoto();
@@ -890,7 +1362,7 @@
             }
         });
 
-        // ✅ 模态框关闭时清理状态
+        // 模态框关闭时清理状态
         document.getElementById('photoViewModal')?.addEventListener('hidden.bs.modal', function() {
             isModalOpen = false;
             // 重置图片，防止下次打开闪烁
@@ -916,6 +1388,12 @@
                 console.warn('获取培训名称失败:', e);
             }
             loadPhotos(1);
+
+            // ✅ 初始化上传功能
+            setupAdminUploadArea();
+            
+            // ✅ 初始化照片变更监听
+            initAdminPhotoListener();
         } else {
             document.getElementById('photoGridContainer').innerHTML = `
                 <div class="empty-state">
@@ -924,6 +1402,58 @@
                     <p>${safeT('please_select_training_first')}</p>
                 </div>
             `;
+        }
+    });
+
+    // ============================================================
+    // 监听其他页面的照片变更，自动刷新
+    // ============================================================
+
+    let adminPhotoChannel = null;
+    let adminLastUpdateTime = 0;
+
+    function initAdminPhotoListener() {
+        if (window._adminPhotoListenerInitialized) return;
+        window._adminPhotoListenerInitialized = true;
+        
+        console.log('📸 管理员照片页面启动 BroadcastChannel 监听...');
+        
+        try {
+            adminPhotoChannel = new BroadcastChannel('training_photos_channel');
+            adminPhotoChannel.onmessage = function(event) {
+                const data = event.data;
+                if (data && data.type === 'photos_changed') {
+                    console.log(`📸 收到照片变更通知: training_id=${data.training_id}, count=${data.photo_count}`);
+                    
+                    // 检查是否是当前培训
+                    const currentTrainingId = document.getElementById('pageTrainingId')?.value;
+                    if (currentTrainingId && Number(currentTrainingId) === Number(data.training_id)) {
+                        // 如果是当前培训，刷新照片列表
+                        console.log(`📸 当前培训匹配，刷新照片列表...`);
+                        // 使用时间戳防止旧消息覆盖新操作
+                        if (data.timestamp && data.timestamp > adminLastUpdateTime) {
+                            adminLastUpdateTime = data.timestamp;
+                            // 延迟一点刷新，确保服务器数据已更新
+                            setTimeout(() => {
+                                loadPhotos(currentPage);
+                            }, 300);
+                        }
+                    }
+                }
+            };
+            console.log('📸 管理员照片页面 BroadcastChannel 监听已启动');
+        } catch (e) {
+            console.warn('📸 BroadcastChannel 不可用:', e);
+        }
+    }
+
+    // 页面关闭时清理 channel
+    window.addEventListener('beforeunload', function() {
+        if (adminPhotoChannel) {
+            try {
+                adminPhotoChannel.close();
+                adminPhotoChannel = null;
+            } catch(e) {}
         }
     });
 </script>

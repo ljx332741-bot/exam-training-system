@@ -310,93 +310,44 @@
 
 {% block extra_js %}
 <script>
-    // 在页面顶部定义缓存变量
+    // ---------- 状态变量 ----------
     let cachedData = [];
     let cachedTotal = 0;
-    // ========== 培训页面缓存（方案一） ==========
-    const TRAINING_CACHE_KEY = 'training_list_data';
-    const TRAINING_CACHE_TIME_KEY = 'training_list_data_time';
-    const CACHE_DURATION = 10 * 60 * 1000; // 5分钟
-
-    function getCachedTrainingData() {
-        try {
-            const cached = sessionStorage.getItem(TRAINING_CACHE_KEY);
-            const cachedTime = sessionStorage.getItem(TRAINING_CACHE_TIME_KEY);
-            if (cached && cachedTime && (Date.now() - parseInt(cachedTime)) < CACHE_DURATION) {
-                return JSON.parse(cached);
-            }
-        } catch (e) {}
-        return null;
-    }
-
-    function setCachedTrainingData(data) {
-        try {
-            sessionStorage.setItem(TRAINING_CACHE_KEY, JSON.stringify(data));
-            sessionStorage.setItem(TRAINING_CACHE_TIME_KEY, String(Date.now()));
-        } catch (e) {}
-    }
-
-    function clearTrainingCache() {
-        sessionStorage.removeItem(TRAINING_CACHE_KEY);
-        sessionStorage.removeItem(TRAINING_CACHE_TIME_KEY);
-    }
-
-    const STATUS_VIEW_URL = {{ url_for('admin_training.training_attendance_status_view')|tojson }};
     let currentPage = 1;
     let filters = { name: '', country: '', quarter: '' };
     let currentTrainingId = null;
     let currentHeaderTemplate = {};
+    let photoCountTimestamps = new Map();
+    let _lastLoadTime = 0;
+
+    const STATUS_VIEW_URL = {{ url_for('admin_training.training_attendance_status_view')|tojson }};
+
+    // ============================================================
+    // 核心：加载培训列表
+    // ============================================================
 
     async function loadTrainings(forceRefresh = false) {
-        // 如果强制刷新，直接显示进度条
         if (forceRefresh) {
             await doLoadTrainings();
             return;
         }
-        
-        // 尝试从缓存获取
-        const cached = getCachedTrainingData();
-        const fromDetail = sessionStorage.getItem('from_training_detail');
-        
-        // 从子页面返回时，直接使用缓存，不触发后台刷新
-        if (fromDetail === 'true') {
-            sessionStorage.removeItem('from_training_detail');
-            if (cached && cached.data && cached.data.length > 0) {
-                console.log('📋 从下级返回，使用缓存');
-                renderTrainingsTable(cached.data);
-                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
-                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-                return;
-            }
-        }
-        
-        // 有缓存且有效
-        if (cached && cached.data && cached.data.length > 0) {
-            renderTrainingsTable(cached.data);
-            document.getElementById('totalCount').innerText = cached.total || cached.data.length;
-            renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-            
-            // 检查缓存是否过期（超过TTL的一半就后台刷新）
-            const cacheTime = sessionStorage.getItem(TRAINING_CACHE_TIME_KEY);
-            if (cacheTime) {
-                const age = Date.now() - parseInt(cacheTime);
-                if (age > CACHE_DURATION * 0.5) {  // 超过2.5分钟
-                    console.log('📋 缓存即将过期，后台刷新');
-                    setTimeout(() => doLoadTrainings(true), 500);
-                }
-            } else {
-                // 没有时间戳，后台刷新
-                setTimeout(() => doLoadTrainings(true), 800);
+        // 从缓存加载
+        if (cachedData && cachedData.length > 0) {
+            renderTrainingsTable(cachedData);
+            document.getElementById('totalCount').innerText = cachedTotal || cachedData.length;
+            renderPagination(currentPage, Math.ceil((cachedTotal || cachedData.length) / 20));
+            // 后台静默刷新（如果距离上次加载超过 2 分钟）
+            if (Date.now() - _lastLoadTime > 120000) {
+                console.log('📋 缓存可能过期，后台静默刷新');
+                setTimeout(() => doLoadTrainings(), 300);
             }
             return;
         }
-        
-        // 无缓存，直接加载
         await doLoadTrainings();
     }
 
-    async function doLoadTrainings() {    
-        // 使用表格内嵌进度条
+    async function doLoadTrainings() {
+        _lastLoadTime = Date.now();
         await window.loadTableWithProgress('trainingsTbody', async (updateProgress, updateDesc) => {
             try {
                 updateProgress(10, t('preparing_load_training_data'));
@@ -415,17 +366,11 @@
                 const data = await res.json();
                 
                 updateProgress(70, t('processing_data'));
-                
-                setCachedTrainingData({
-                    data: data.data,
-                    total: data.total,
-                    page: data.page,
-                    per_page: data.per_page
-                });
 
-                // 缓存数据
+                // 更新内存缓存
                 cachedData = data.data;
                 cachedTotal = data.total;
+                window.cachedData = data.data;
                 
                 updateProgress(85, t('rendering_table'));
 
@@ -449,24 +394,168 @@
         });
     }
 
-    // 页面可见性变化时，不自动刷新（避免闪烁）
-    document.addEventListener('visibilitychange', function() {
-        if (document.visibilityState === 'visible') {
-            // 用户返回页面，检查缓存是否有效
-            const cached = getCachedTrainingData();
-            if (cached && cached.data && cached.data.length > 0) {
-                console.log('📋 页面可见性恢复，使用缓存');
-                renderTrainingsTable(cached.data);
-                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
-                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-                // 不触发刷新
+    // ============================================================
+    // 培训照片数量同步 - 局部更新
+    // ============================================================
+
+    function updateTrainingPhotoCount(trainingId, photoCount, timestamp) {
+        console.log('🔥🔥🔥 updateTrainingPhotoCount 被调用!', { trainingId, photoCount, timestamp });
+        const tid = Number(trainingId);
+        const count = normalizePhotoCount(photoCount);
+        if (count === null) {
+            console.warn(`📸 无效的 photo_count: ${photoCount}`);
+            return;
+        }
+        
+        // 防止旧状态覆盖新状态
+        if (timestamp !== undefined) {
+            const lastTs = photoCountTimestamps.get(tid) || 0;
+            if (timestamp < lastTs) {
+                console.log(`📸 忽略旧状态: ${tid}, ${timestamp} < ${lastTs}`);
+                return;
+            }
+            photoCountTimestamps.set(tid, timestamp);
+        }
+        
+        console.log(`📸 更新培训照片数量: ${tid} -> ${count}`);
+        
+        // ===== 1. 更新 cachedData =====
+        const training = cachedData.find(t => Number(t.id) === tid);
+        console.log('📸 cachedData 中查找培训:', tid, '找到:', training ? '是 (当前photo_count=' + training.photo_count + ')' : '否');
+        if (training) {
+            training.photo_count = count;
+            console.log('📸 cachedData 已更新:', training);
+        }
+        if (window.cachedData && Array.isArray(window.cachedData)) {
+            const windowTraining = window.cachedData.find(t => Number(t.id) === tid);
+            if (windowTraining) {
+                windowTraining.photo_count = count;
             }
         }
-    });
+
+        // ===== 2. 更新 DOM =====
+        const row = document.querySelector(`#trainingsTbody tr[data-id="${tid}"]`);
+        console.log('📸 查找培训行:', tid, '找到:', row ? '是' : '否');
+        if (!row) {
+            console.warn(`📸 未找到培训行: ${tid}`);
+            return;
+        }
+        
+        const photoBtn = row.querySelector('.photo-manage-btn');
+        const badge = row.querySelector('.photo-count-badge');
+        
+        if (count > 0) {
+            if (badge) {
+                badge.textContent = String(count);
+                badge.style.display = '';
+            } else if (photoBtn) {
+                const newBadge = document.createElement('span');
+                newBadge.className = 'photo-count-badge';
+                newBadge.textContent = String(count);
+                photoBtn.appendChild(newBadge);
+            }
+            
+            if (photoBtn) {
+                photoBtn.classList.remove('no-photos');
+                photoBtn.style.cursor = '';
+                photoBtn.style.opacity = '';
+                photoBtn.setAttribute('target', '_blank');
+                photoBtn.removeAttribute('onclick');
+                photoBtn.title = `${safeT('manage_training_photos') || '管理培训照片'} (${count}${safeT('photo_unit') || '张'})`;
+            }
+        } else {
+            if (badge) badge.style.display = 'none';
+            if (photoBtn) {
+                photoBtn.classList.add('no-photos');
+                photoBtn.style.cursor = 'not-allowed';
+                photoBtn.style.opacity = '0.4';
+                photoBtn.setAttribute('onclick', 'return false;');
+                photoBtn.removeAttribute('target');
+                photoBtn.title = safeT('no_photos') || '暂无照片';
+            }
+        }
+        
+        // ===== 3. 保存快照到 localStorage =====
+        savePhotoCountState(tid, count);
+    }
+
+
+    // ============================================================
+    // BroadcastChannel 监听初始化
+    // ============================================================
+
+    function initPhotoChangeListener() {
+        if (window._photoListenerInitialized) return;
+        window._photoListenerInitialized = true;
+        
+        console.log('📸 初始化照片变更监听...');
+        
+        const channel = getPhotoChannel();
+        if (channel) {
+            channel.onmessage = function(event) {
+                console.log('📨 BroadcastChannel 收到原始消息:', event.data);
+                const data = event.data;
+                if (data && data.type === 'photos_changed' && data.training_id !== undefined) {
+                    console.log(`📸 收到 BroadcastChannel 消息: training_id=${data.training_id}, count=${data.photo_count}`);
+                    console.log('📸 处理照片变更:', data);
+                    updateTrainingPhotoCount(
+                        data.training_id,
+                        data.photo_count,
+                        data.timestamp
+                    );
+                }else {
+                    console.warn('📨 收到非预期消息:', data);
+                }
+            };
+            console.log('📸 BroadcastChannel 监听已启动');
+        }
+        
+        // 从 localStorage 恢复（仅当 cachedData 中对应培训没有 photo_count 时）
+        restoreFromCache();
+    }
+
+    // ---------- 从 localStorage 恢复缓存 ----------
+    function restoreFromCache() {
+        console.log('📸 从 localStorage 恢复照片数量快照...');
+        let restoredCount = 0;
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith('training_photos_count_')) {
+                const trainingId = key.replace('training_photos_count_', '');
+                const state = getPhotoCountState(trainingId);
+                if (state) {
+                    const exists = cachedData.some(t => Number(t.id) === Number(trainingId));
+                    if (exists) {
+                        // ✅ 只在 cachedData 还没有 photo_count 时才恢复
+                        const training = cachedData.find(t => Number(t.id) === Number(trainingId));
+                        if (training && (training.photo_count === undefined || training.photo_count === null || training.photo_count === 0)) {
+                            updateTrainingPhotoCount(trainingId, state.count, state.timestamp);
+                            restoredCount++;
+                        }
+                    }
+                }
+            }
+        }
+        if (restoredCount > 0) {
+            console.log(`📸 从 localStorage 恢复了 ${restoredCount} 个照片数量快照`);
+        }
+        console.log(`📸 恢复了 ${restoredCount} 个照片数量快照`);
+    }
+
+    // 暴露给子窗口调用
+    window.updateTrainingPhotoCount = updateTrainingPhotoCount;
+
+    // ============================================================
+    // 渲染表格
+    // ============================================================
 
     function renderTrainingsTable(trainings) {
+        console.log('📋 renderTrainingsTable 被调用，数据条数:', trainings.length);
+        console.trace('调用堆栈');  // 查看是谁调用了这个函数
         // 更新全局缓存
         window.cachedData = trainings;
+        cachedData = trainings;
+
         const tbody = document.getElementById('trainingsTbody');
         if (!tbody) return;
 
@@ -556,7 +645,7 @@
             // 照片管理按钮（保持原样）
             const photoCount = t.photo_count || 0;
             const photoBtnHtml = `
-                <!-- ✅ DEBUG: 这是表格内的照片按钮，培训ID: ${t.id} -->
+                <!-- 表格内的照片按钮，培训ID: ${t.id} -->
                 <a href="/admin/training/photos?training_id=${t.id}" 
                     class="photo-manage-btn ${photoCount === 0 ? 'no-photos' : ''}" 
                     title="${photoCount > 0 ? safeT('manage_training_photos') + ' (' + photoCount + safeT('photo_unit') + ')' : safeT('no_photos')}"
@@ -640,8 +729,42 @@
         
         tbody.innerHTML = '';
         tbody.appendChild(fragment);
-        
-        attachRowEvents();    
+
+        // 重新应用最新的 photo_count（防止被旧数据覆盖）
+        if (cachedData && Array.isArray(cachedData)) {
+            cachedData.forEach(t => {
+                if (t.photo_count !== undefined && t.photo_count !== null) {
+                    const row = document.querySelector(`#trainingsTbody tr[data-id="${t.id}"]`);
+                    if (row) {
+                        const badge = row.querySelector('.photo-count-badge');
+                        const photoBtn = row.querySelector('.photo-manage-btn');
+                        const count = t.photo_count;
+                        if (badge) {
+                            badge.textContent = String(count);
+                            badge.style.display = count > 0 ? '' : 'none';
+                        }
+                        if (photoBtn) {
+                            if (count > 0) {
+                                photoBtn.classList.remove('no-photos');
+                                photoBtn.style.cursor = '';
+                                photoBtn.style.opacity = '';
+                                photoBtn.setAttribute('target', '_blank');
+                                photoBtn.removeAttribute('onclick');
+                            } else {
+                                photoBtn.classList.add('no-photos');
+                                photoBtn.style.cursor = 'not-allowed';
+                                photoBtn.style.opacity = '0.4';
+                                photoBtn.setAttribute('onclick', 'return false;');
+                                photoBtn.removeAttribute('target');
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        attachRowEvents();
+
         // 绑定国家分组链接的点击事件
         document.querySelectorAll('.group-detail-link').forEach(link => {
             link.addEventListener('click', async (e) => {
@@ -650,8 +773,14 @@
                 await showCountryGroupModal(trainingId);
             });
         });
+        console.log('📋 renderTrainingsTable 被调用，数据条数:', trainings.length);
+        console.trace('调用堆栈');  // 查看是谁调用了这个函数
     }
-    
+
+    // ============================================================
+    // 其他辅助函数
+    // ============================================================
+
     function formatDate(iso) {
         if (!iso) return '-';
         return new Date(iso).toLocaleString();
@@ -667,7 +796,9 @@
         });
     }
     
-    // ---------- 行内编辑名称 ----------
+    // ============================================================
+    // 行内编辑名称
+    // ============================================================
     function attachRowEvents() {
         // 编辑名称按钮事件
         document.querySelectorAll('.edit-name-btn').forEach(btn => {
@@ -1043,7 +1174,11 @@
         });
     }
 
-    // 加载推送候选用户（根据培训国家过滤 + 只显示未签到和待重新签字的用户）
+
+    // ============================================================
+    // 加载推送候选用户
+    // ============================================================
+
     async function loadPushUserList() {
         const search = document.getElementById('pushUserSearch').value;
         const whFilter = document.getElementById('pushWhFilter').value.toLowerCase();
@@ -1256,7 +1391,9 @@
         }
     }
 
-    // ==================== 辅助函数 ====================
+    // ============================================================
+    // 辅助函数
+    // ============================================================
 
     // 解析国家参数（将中文/英文名转换为国家代码）
     function resolveCountryParam(text) {
@@ -1351,8 +1488,18 @@
                     <td>${g.country}</td>
                     <td>${g.count}</td>
                     <td>
-                        <button class="btn btn-sm btn-primary view-country-attendance" data-training-id="${trainingId}" data-country="${g.country}">${safeT('view_sign_in_records_export')}</button>
-                        <button class="btn btn-sm btn-outline-info country-header-btn" data-training-id="${trainingId}" data-country="${g.country}">${safeT('header_input')}</button>
+                        <button 
+                            class="btn btn-sm btn-primary view-country-attendance" 
+                            data-training-id="${trainingId}" 
+                            data-country="${g.country}">
+                            ${safeT('view_sign_in_records_export')}
+                        </button>
+                        <button 
+                            class="btn btn-sm btn-outline-info country-header-btn" 
+                            data-training-id="${trainingId}" 
+                            data-country="${g.country}">
+                            ${safeT('header_input')}
+                        </button>
                     </td>
                 </tr>
             `).join('');
@@ -1492,7 +1639,11 @@
         }
     }
 
-    // ---------- 新增培训（可复制编辑行）----------
+    // ============================================================
+    // 新增培训
+    // ============================================================
+
+    // ---------- 可复制编辑行----------
     function addNewTrainingRow(prefillData = null) {
         const tbody = document.getElementById('trainingsTbody');
         // 移除可能已经存在的编辑行（避免多个）
@@ -1675,7 +1826,11 @@
         newRow.querySelector('.cancel-new-training').onclick = () => newRow.remove();
     }
 
-    // ==================== 推送对象选择对话框 ====================
+
+    // ============================================================
+    // 推送对象选择对话框
+    // ============================================================
+
     function showPushTargetDialog(trainingId, trainingName, countryCode) {
         // 移除已存在的模态框
         const existingModal = document.getElementById('pushTargetDialog');
@@ -1806,7 +1961,7 @@
             }
         } finally {
             hideLoading();
-            loadTrainings();
+            loadTrainings(true);
         }
     }
 
@@ -1847,7 +2002,7 @@
 
     // 搜索
     document.getElementById('searchBtn').addEventListener('click', async () => {
-        clearTrainingCache();
+        // clearTrainingCache();
         filters.name = document.getElementById('filterName').value;
         filters.country = document.getElementById('filterCountry').value;
         filters.quarter = document.getElementById('filterQuarter').value;
@@ -1936,71 +2091,110 @@
         }
     };
 
-    // 初始化国家列表和季度列表0429增加校验
-    document.addEventListener('DOMContentLoaded', async () => {
-        const fromDetail = sessionStorage.getItem('from_training_detail');
-        if (fromDetail === 'true') {
-            sessionStorage.removeItem('from_training_detail');
-            // 从下级返回，使用缓存，不刷新
-            const cached = getCachedTrainingData();
-            if (cached && cached.data && cached.data.length > 0) {
-                renderTrainingsTable(cached.data);
-                document.getElementById('totalCount').innerText = cached.total || cached.data.length;
-                renderPagination(cached.page || 1, Math.ceil((cached.total || cached.data.length) / 20));
-                return; // 不执行后续加载
-            }
-        }
+    // ============================================================
+    // 页面初始化
+    // ============================================================
 
+    document.addEventListener('DOMContentLoaded', async function() {
+        console.log('📋 list_trainings.html 初始化开始...');
+        
+        // 1. 等待 i18n 就绪
+        await waitForI18n();
+        if (window.i18n) {
+            window.i18n.applyTranslations();
+        }
+        
+        // 2. 初始化国家和季度
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await loadQuarterOptions();
         setupQuarterInput();
-
-        // ✅ 新增：检查照片变更标记
-        const photosChanged = sessionStorage.getItem('training_photos_changed') === 'true';
-        const photosTrainingId = sessionStorage.getItem('training_photos_training_id');
         
-        if (photosChanged) {
-            console.log('📸 检测到照片变更，刷新培训数据');
-            // 清除缓存
-            clearTrainingCache();
-            // 清除标记
-            sessionStorage.removeItem('training_photos_changed');
-            sessionStorage.removeItem('training_photos_training_id');
-            // 强制刷新
-            await loadTrainings(true);
-        } else {
-            // 正常加载
-            loadTrainings(false);
+        // 3. 检查是否从下级页面返回（使用内存缓存）
+        const fromDetail = sessionStorage.getItem('from_training_detail');
+        if (fromDetail === 'true') {
+            sessionStorage.removeItem('from_training_detail');
+            // 不再使用 sessionStorage 缓存，直接使用内存缓存
+            if (cachedData && cachedData.length > 0) {
+                console.log('📋 从下级返回，使用内存缓存');
+                renderTrainingsTable(cachedData);
+                document.getElementById('totalCount').innerText = cachedTotal || cachedData.length;
+                renderPagination(currentPage, Math.ceil((cachedTotal || cachedData.length) / 20));
+                // 后台静默刷新获取最新数据
+                setTimeout(() => doLoadTrainings(), 500);
+                initPhotoChangeListener();
+                return;
+            }
         }
+        
+        // 4. 正常加载
+        loadTrainings(false);
+        
+        // 5. 初始化照片变更监听
+        initPhotoChangeListener();
+        
+        // 6. 语言切换订阅
+        let isInitialSubscribe = true;
+        if (window.i18n && typeof window.i18n.subscribe === 'function') {
+            window.i18n.subscribe(async () => {
+                if (isInitialSubscribe) {
+                    isInitialSubscribe = false;
+                    return;
+                }
+                // 保存编辑行数据
+                const editRow = document.getElementById('new-training-row');
+                let editData = null;
+                if (editRow) {
+                    const countryInput = editRow.querySelector('#newCountry');
+                    const nameInput = editRow.querySelector('#newName');
+                    const startInput = editRow.querySelector('#newStartTime');
+                    const endInput = editRow.querySelector('#newEndTime');
+                    const countryCodeHidden = editRow.querySelector('#newCountryCode');
+                    const countryCode = countryCodeHidden ? countryCodeHidden.value : (countryInput ? countryInput.value : '');
+                    editData = {
+                        country: countryCode || (countryInput ? countryInput.value : ''),
+                        name: nameInput ? nameInput.value : '',
+                        start_time: startInput ? startInput.value : '',
+                        end_time: endInput ? endInput.value : ''
+                    };
+                }
+                
+                if (cachedData && cachedData.length > 0) {
+                    renderTrainingsTable(cachedData);
+                }
+                if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+                    window.i18n.applyTranslations();
+                }
+                if (editData) {
+                    addNewTrainingRow(editData);
+                }
+            });
+        }
+        
+        console.log('📋 list_trainings.html 初始化完成');
     });
 
-    // ✅ 新增：监听 pageshow 事件（处理 bfcache 恢复）
-    window.addEventListener('pageshow', function(event) {
-        const photosChanged = sessionStorage.getItem('training_photos_changed') === 'true';
-        if (photosChanged) {
-            console.log('📸 从 bfcache 恢复，检测到照片变更');
-            clearTrainingCache();
-            sessionStorage.removeItem('training_photos_changed');
-            sessionStorage.removeItem('training_photos_training_id');
-            loadTrainings(true);
-        }
-    });
+    // ============================================================
+    // 页面可见性变化（轻量处理，不重绘）
+    // ============================================================
 
-    // ✅ 新增：监听 visibilitychange（用户切换标签页回来时检查）
     document.addEventListener('visibilitychange', function() {
         if (document.visibilityState === 'visible') {
-            const photosChanged = sessionStorage.getItem('training_photos_changed') === 'true';
-            if (photosChanged) {
-                console.log('📸 页面可见性恢复，检测到照片变更');
-                clearTrainingCache();
-                sessionStorage.removeItem('training_photos_changed');
-                sessionStorage.removeItem('training_photos_training_id');
-                loadTrainings(true);
+            console.log('📋 页面恢复可见');
+            // 仅当数据过期时才后台刷新（超过 5 分钟）
+            if (_lastLoadTime && Date.now() - _lastLoadTime > 300000) {
+                console.log('📋 数据可能过期，后台静默刷新');
+                doLoadTrainings().then(() => {
+                    _lastLoadTime = Date.now();
+                }).catch(e => console.warn('静默刷新失败:', e));
             }
         }
     });
-    
-    // 监听国家分组模态框中的“表头录入”按钮（动态元素使用事件委托）
+
+
+    // ============================================================
+    // 监听国家分组模态框中的"表头录入"按钮
+    // ============================================================
+
     document.addEventListener('click', (e) => {
         const btn = e.target.closest('.country-header-btn');
         if (!btn) return;
@@ -2009,61 +2203,6 @@
         const country = btn.dataset.country;
         openHeaderModalForTraining(trainingId, country);
     });
-
-    // 页面初始化流程（替换原有 IIFE）
-    (async function() {
-        await waitForI18n();                 // 确保 i18n 已就绪
-        window.i18n.applyTranslations();     // 翻译静态 data-i18n 元素
-
-        // 检查是否从下级页面返回，如果是则不重复加载
-        const fromDetail = sessionStorage.getItem('from_training_detail');
-        if (fromDetail === 'true') {
-            // 已经由 DOMContentLoaded 处理了，这里不再重复加载
-            return;
-        }
-        
-        loadTrainings();                     // 首次加载列表
-
-        // 语言切换时重新加载列表，实现实时翻译
-        let isInitialSubscribe = true;
-        window.i18n.subscribe(async () => {
-            if (isInitialSubscribe) {
-                isInitialSubscribe = false;
-                return;
-            }
-            // 保存编辑行数据
-            const editRow = document.getElementById('new-training-row');
-            let editData = null;
-            if (editRow) {
-                const countryInput = editRow.querySelector('#newCountry');
-                const nameInput = editRow.querySelector('#newName');
-                const startInput = editRow.querySelector('#newStartTime');
-                const endInput = editRow.querySelector('#newEndTime');
-                const countryCodeHidden = editRow.querySelector('#newCountryCode');
-                const countryCode = countryCodeHidden ? countryCodeHidden.value : (countryInput ? countryInput.value : '');
-                editData = {
-                    country: countryCode || (countryInput ? countryInput.value : ''),
-                    name: nameInput ? nameInput.value : '',
-                    start_time: startInput ? startInput.value : '',
-                    end_time: endInput ? endInput.value : ''
-                };
-            }
-
-            // 只重新渲染表格，不重新加载数据
-            if (cachedData && cachedData.length > 0) {
-                renderTrainingsTable(cachedData);
-            }
-            
-            // 重新应用翻译
-            if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
-                window.i18n.applyTranslations();
-            }
-
-            if (editData) {
-                addNewTrainingRow(editData);
-            }
-        });
-    })();
 
     window.addEventListener('app:languageChanged', function() {
         function updateDynamicTranslations() {
@@ -2201,7 +2340,7 @@
                         </div>
                     </td>`;
             } else {
-                // ... 渲染绑定列表（保持不变）...
+                // 渲染绑定列表（保持不变）
                 let bindingsHtml = `
                     <div class="binding-content">
                         <div class="d-flex justify-content-between align-items-center mb-2">
@@ -2619,9 +2758,11 @@
                             }
 
                             // 3. 清除前端缓存
+                            /*
                             if (typeof clearTrainingCache === 'function') {
                                 clearTrainingCache();
                             }
+                            */
                             sessionStorage.removeItem(`training_bindings_${trainingId}`);
 
                         } else {
@@ -3322,9 +3463,11 @@
 
                 if (result.success) {
                     // 清除缓存
+                    /*
                     if (typeof clearTrainingCache === 'function') {
                         clearTrainingCache();
                     }
+                    */
                     sessionStorage.removeItem('training_bindings_data');
                     sessionStorage.removeItem(`training_bindings_${trainingId}`);
                     

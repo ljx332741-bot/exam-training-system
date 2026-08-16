@@ -2804,6 +2804,102 @@
             // 忽略
         }
     }
+
+    // ============================================================
+    // 培训照片数量同步层 - 公共部分
+    // ============================================================
+
+    const PHOTO_CHANNEL_NAME = 'training_photos_channel';
+    const PHOTO_CACHE_PREFIX = 'training_photos_count_';
+
+    // ---------- BroadcastChannel 管理 ----------
+    function getPhotoChannel() {
+        if (!window._photoChannel) {
+            try {
+                window._photoChannel = new BroadcastChannel(PHOTO_CHANNEL_NAME);
+                window.addEventListener('beforeunload', function() {
+                    if (window._photoChannel) {
+                        window._photoChannel.close();
+                        window._photoChannel = null;
+                    }
+                });
+            } catch (e) {
+                window._photoChannel = null;
+                console.warn('📸 BroadcastChannel 不可用');
+            }
+        }
+        return window._photoChannel;
+    }
+
+    // ---------- 广播照片变更 ----------
+    function broadcastPhotoChange(trainingId, photoCount, action) {
+        const channel = getPhotoChannel();
+        if (!channel) return;
+        
+        try {
+            channel.postMessage({
+                type: 'photos_changed',
+                training_id: Number(trainingId),
+                photo_count: Number(photoCount),
+                action: action || 'update',
+                timestamp: Date.now()
+            });
+            console.log(`📸 广播: training_id=${trainingId}, count=${photoCount}`);
+        } catch (e) {
+            console.warn('📸 广播失败:', e);
+        }
+    }
+
+    // ---------- localStorage 快照管理（带时间戳） ----------
+    function savePhotoCountState(trainingId, photoCount) {
+        try {
+            const tid = Number(trainingId);
+            const data = {
+                count: Number(photoCount),
+                timestamp: Date.now()
+            };
+            localStorage.setItem(`${PHOTO_CACHE_PREFIX}${tid}`, JSON.stringify(data));
+            localStorage.setItem('training_photos_update_time', String(Date.now()));
+        } catch (e) {
+            console.warn('📸 保存缓存失败:', e);
+        }
+    }
+
+    function getPhotoCountState(trainingId) {
+        try {
+            const raw = localStorage.getItem(`${PHOTO_CACHE_PREFIX}${Number(trainingId)}`);
+            if (!raw) return null;
+            const data = JSON.parse(raw);
+            return {
+                count: Number(data.count),
+                timestamp: Number(data.timestamp || 0)
+            };
+        } catch (e) {
+            return null;
+        }
+    }
+
+    // ---------- 验证 photo_count ----------
+    function normalizePhotoCount(value) {
+        const count = Number(value);
+        return Number.isFinite(count) && count >= 0 ? Math.floor(count) : null;
+    }
+    
+    function getPhotoChannel() {
+        if (!window._photoChannel) {
+            try {
+                console.log('📸 创建新的 BroadcastChannel');
+                window._photoChannel = new BroadcastChannel(PHOTO_CHANNEL_NAME);
+                // ...
+            } catch (e) {
+                // ...
+            }
+        } else {
+            console.log('📸 复用已有 BroadcastChannel');
+        }
+        return window._photoChannel;
+    }
+
 </script>
 
 <!-- 引入全局删除模态框 -->
