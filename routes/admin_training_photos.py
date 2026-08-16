@@ -437,7 +437,6 @@ def api_admin_get_training_photos():
         logger.error(f"获取照片列表失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
-
 @admin_training_photos_bp.route('/api/admin/training/photos', methods=['POST'])
 @login_required
 @admin_required
@@ -453,6 +452,8 @@ def api_admin_upload_training_photos():
         exam_name: 考试名称（可选）
         photos: 照片文件（多张）
         descriptions: 描述（JSON数组）
+        add_watermark: 是否添加水印（true/false）
+        include_training_name: 是否包含培训名称（true/false）
     """
     db = get_supabase_admin()
     current_user_id = session.get('user_id')
@@ -466,6 +467,10 @@ def api_admin_upload_training_photos():
     exam_id = request.form.get('exam_id')
     exam_name = request.form.get('exam_name')
     descriptions_json = request.form.get('descriptions', '[]')
+
+    # 获取水印参数（默认开启）
+    add_watermark = request.form.get('add_watermark', 'true').lower() == 'true'
+    include_training_name = request.form.get('include_training_name', 'true').lower() == 'true'
     
     # 参数验证
     if not training_id:
@@ -521,26 +526,85 @@ def api_admin_upload_training_photos():
         
         # 检查文件类型
         allowed_types = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic']
-        if file.content_type not in allowed_types:
-            errors.append(f"{file.filename}: 不支持的图片格式")
-            continue
-        
+        content_type = file.content_type or 'image/jpeg'
+        if content_type not in allowed_types:
+            # 尝试通过扩展名判断
+            ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else ''
+            if ext not in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic']:
+                errors.append(f"{file.filename}: 不支持的图片格式")
+                continue
+            if ext in ['jpg', 'jpeg']:
+                content_type = 'image/jpeg'
+            elif ext == 'png':
+                content_type = 'image/png'
+            elif ext == 'gif':
+                content_type = 'image/gif'
+            elif ext == 'webp':
+                content_type = 'image/webp'
+            elif ext == 'heic':
+                content_type = 'image/heic'
+                
         try:
+            # 读取图片数据
+            file.seek(0)
+            image_data = file.read()
+
+            # ✅ 添加水印（如果开启）- 与学员端完全一致
+            if add_watermark:
+                image_data = add_watermark_to_image(
+                    image_data, 
+                    training_name, 
+                    include_training_name
+                )
+            
+            # ✅ 确定扩展名和内容类型 - 与学员端完全一致
+            original_ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+            
+            # 如果添加了水印，图片已转换为 JPEG
+            if add_watermark:
+                ext = 'jpg'
+                content_type = 'image/jpeg'
+            else:
+                # 未添加水印，使用原始格式
+                ext = original_ext
+                # 支持的类型映射
+                type_map = {
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'jfif': 'image/jpeg',
+                    'jpe': 'image/jpeg',
+                    'png': 'image/png',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                    'heic': 'image/heic',
+                }
+                
+                if ext not in type_map:
+                    ext = 'jpg'
+                    content_type = 'image/jpeg'
+                else:
+                    content_type = type_map[ext]
+                    if ext in ['jfif', 'jpe']:
+                        ext = 'jpg'
+            
             # 生成唯一文件名
-            ext = file.filename.rsplit('.', 1)[-1] if '.' in file.filename else 'jpg'
             unique_id = uuid.uuid4().hex[:12]
             file_key = f"training_{training_id}/{unique_id}.{ext}"
+
+            # ✅ 关键修复：使用处理后的 image_data，而不是原始 file
+            file_obj = BytesIO(image_data)
+            file_obj.seek(0)
+            
+            # ✅ 上传到 R2
+            public_url, photo_path = upload_to_r2(
+                file_obj=file_obj,                # ✅ 使用 BytesIO 对象
+                training_id=training_id,
+                filename=f"{unique_id}.{ext}",    # ✅ 使用新文件名
+                content_type=content_type         # ✅ 使用正确的 content_type
+            )
             
             # 获取描述
             description = descriptions[idx] if idx < len(descriptions) else ''
-            
-            # 上传到 R2
-            public_url, photo_path = upload_to_r2(
-                file_obj=file,
-                training_id=training_id,
-                filename=file.filename,
-                content_type=file.content_type
-            )
             
             # 插入数据库
             insert_data = {
@@ -551,16 +615,18 @@ def api_admin_upload_training_photos():
                 "exam_name": exam_name,
                 "photo_url": public_url,
                 "photo_path": photo_path,
-                "file_name": file.filename,
+                "file_name": f"{unique_id}.{ext}",  # ✅ 使用新文件名
                 "file_size": file_size,
-                "file_type": file.content_type,
+                "file_type": content_type,          # ✅ 使用正确的 content_type
                 "photo_description": description,
-                "is_cover": False,  # 默认不是封面
+                "is_cover": False,
                 "uploaded_at": now,
                 "uploaded_by": current_user_id,
                 "metadata": {
                     "upload_source": "admin",
-                    "original_filename": file.filename
+                    "original_filename": file.filename,
+                    "has_watermark": add_watermark,
+                    "watermark_text": f"{training_name} | {datetime.now().strftime('%Y-%m-%d %H:%M')}" if add_watermark and include_training_name else datetime.now().strftime('%Y-%m-%d %H:%M') if add_watermark else None,
                 }
             }
             
@@ -575,57 +641,22 @@ def api_admin_upload_training_photos():
         except Exception as e:
             logger.error(f"上传照片失败 {file.filename}: {e}")
             errors.append(f"{file.filename}: {str(e)}")
-    
+
+    # 在返回之前，查询该培训的最新照片数量
+    count_res = db.table("training_photos").select("id", count="exact") \
+        .eq("training_id", int(training_id)) \
+        .eq("is_deleted", False) \
+        .execute()
+    new_photo_count = count_res.count or 0
+
     return jsonify({
         "success": True,
         "uploaded_count": len(uploaded_photos),
         "error_count": len(errors),
         "photos": uploaded_photos,
-        "errors": errors
+        "errors": errors,
+        "photo_count": new_photo_count
     })
-
-
-@admin_training_photos_bp.route('/api/admin/training/photos/<int:photo_id>', methods=['DELETE'])
-@login_required
-@admin_required
-def api_admin_delete_training_photo(photo_id):
-    """
-    删除照片（软删除 + 从 R2 删除）
-    """
-    db = get_supabase_admin()
-    current_user_id = session.get('user_id')
-    
-    # 获取照片信息
-    photo_res = db.table("training_photos").select("*").eq("id", photo_id).eq("is_deleted", False).maybe_single().execute()
-    if not photo_res.data:
-        return jsonify({"success": False, "message": "照片不存在或已删除"}), 404
-    
-    photo = photo_res.data
-    training_country = photo.get('training_country')
-    
-    # 权限检查
-    if not _can_manage_photo(photo):
-        return jsonify({"success": False, "message": "无权删除此照片"}), 403
-    
-    try:
-        # 1. 从 R2 删除文件
-        photo_path = photo.get('photo_path')
-        if photo_path:
-            delete_from_r2(photo_path)
-        
-        # 2. 软删除数据库记录
-        now = datetime.now(timezone.utc).isoformat()
-        db.table("training_photos").update({
-            "is_deleted": True,
-            "deleted_at": now,
-            "deleted_by": current_user_id
-        }).eq("id", photo_id).execute()
-        
-        return jsonify({"success": True, "message": "照片已删除"})
-    except Exception as e:
-        logger.error(f"删除照片失败: {e}")
-        return jsonify({"success": False, "message": str(e)}), 500
-
 
 @admin_training_photos_bp.route('/api/admin/training/photos/<int:photo_id>', methods=['PUT'])
 @login_required
@@ -709,67 +740,6 @@ def api_admin_set_training_cover(photo_id):
         logger.error(f"设置封面失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
-
-@admin_training_photos_bp.route('/api/admin/training/photos/batch_delete', methods=['POST'])
-@login_required
-@admin_required
-def api_admin_batch_delete_training_photos():
-    """
-    批量删除照片
-    """
-    db = get_supabase_admin()
-    current_user_id = session.get('user_id')
-    data = request.json
-    photo_ids = data.get('ids', [])
-    
-    if not photo_ids:
-        return jsonify({"success": False, "message": "请选择要删除的照片"}), 400
-    
-    success_count = 0
-    fail_count = 0
-    errors = []
-    
-    for photo_id in photo_ids:
-        try:
-            # 获取照片信息
-            photo_res = db.table("training_photos").select("*").eq("id", photo_id).eq("is_deleted", False).maybe_single().execute()
-            if not photo_res.data:
-                fail_count += 1
-                errors.append(f"照片 {photo_id} 不存在")
-                continue
-            
-            photo = photo_res.data
-            
-            # 权限检查
-            if not _can_manage_photo(photo):
-                fail_count += 1
-                errors.append(f"照片 {photo_id}: 无权限")
-                continue
-            
-            # 从 R2 删除
-            photo_path = photo.get('photo_path')
-            if photo_path:
-                delete_from_r2(photo_path)
-            
-            # 软删除数据库记录
-            now = datetime.now(timezone.utc).isoformat()
-            db.table("training_photos").update({
-                "is_deleted": True,
-                "deleted_at": now,
-                "deleted_by": current_user_id
-            }).eq("id", photo_id).execute()
-            
-            success_count += 1
-        except Exception as e:
-            fail_count += 1
-            errors.append(f"照片 {photo_id}: {str(e)}")
-    
-    return jsonify({
-        "success": True,
-        "success_count": success_count,
-        "fail_count": fail_count,
-        "errors": errors[:10]
-    })
 
 
 # ============================================================
@@ -1066,13 +1036,21 @@ def api_training_upload_photos():
             logger.error(f"上传照片失败 {file.filename}: {e}")
             errors.append(f"{file.filename}: {str(e)}")
 
+    # 在返回之前，查询该培训的最新照片数量
+    count_res = db.table("training_photos").select("id", count="exact") \
+        .eq("training_id", int(training_id)) \
+        .eq("is_deleted", False) \
+        .execute()
+    new_photo_count = count_res.count or 0
+
     return jsonify({
         "success": True,
         "uploaded_count": len(uploaded_photos),
         "error_count": len(errors),
         "photos": uploaded_photos,
         "errors": errors,
-        "remaining_slots": remaining - len(uploaded_photos)
+        "remaining_slots": remaining - len(uploaded_photos),
+        "photo_count": new_photo_count
     })
 
 
@@ -1095,6 +1073,7 @@ def api_training_delete_photo(photo_id):
         return jsonify({"success": False, "message": "照片不存在或已删除"}), 404
     
     photo = photo_res.data
+    training_id = photo.get('training_id')
     # 权限检查
     can_edit, can_delete, _ = validate_photo_permission(photo, current_user_id, current_role)
     
@@ -1116,7 +1095,19 @@ def api_training_delete_photo(photo_id):
             "deleted_by": current_user_id
         }).eq("id", photo_id).execute()
 
-        return jsonify({"success": True, "message": "照片已删除"})
+        # 查询该培训剩余照片数量
+        count_res = db.table("training_photos").select("id", count="exact") \
+            .eq("training_id", training_id) \
+            .eq("is_deleted", False) \
+            .execute()
+        new_photo_count = count_res.count or 0
+        
+        return jsonify({
+            "success": True, 
+            "message": "照片已删除",
+            "training_id": training_id,
+            "photo_count": new_photo_count
+        })
     except Exception as e:
         logger.error(f"删除照片失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1253,7 +1244,7 @@ def api_admin_delete_photo(photo_id):
         return jsonify({"success": False, "message": "照片不存在"}), 404
     
     photo = photo_res.data
-    
+    training_id = photo.get('training_id')
     # 权限检查
     allowed_countries = get_admin_allowed_countries()
     training_country = photo.get('training_country')
@@ -1273,8 +1264,20 @@ def api_admin_delete_photo(photo_id):
             "deleted_at": now,
             "deleted_by": current_user_id
         }).eq("id", photo_id).execute()
+
+        # 查询该培训剩余照片数量
+        count_res = db.table("training_photos").select("id", count="exact") \
+            .eq("training_id", training_id) \
+            .eq("is_deleted", False) \
+            .execute()
+        new_photo_count = count_res.count or 0
         
-        return jsonify({"success": True, "message": "照片已删除"})
+        return jsonify({
+            "success": True, 
+            "message": "照片已删除",
+            "training_id": training_id,
+            "photo_count": new_photo_count
+        })
     except Exception as e:
         logger.error(f"删除照片失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -1386,6 +1389,7 @@ def api_admin_batch_delete_photos():
                 continue
             
             photo = photo_res.data
+            training_id = photo.get('training_id')
             
             # 权限检查
             allowed_countries = get_admin_allowed_countries()
@@ -1412,12 +1416,23 @@ def api_admin_batch_delete_photos():
         except Exception as e:
             fail_count += 1
             errors.append(f"照片 {photo_id}: {str(e)}")
+
+    # 查询该培训剩余照片数量
+    new_photo_count = 0
+    if training_id:
+        count_res = db.table("training_photos").select("id", count="exact") \
+            .eq("training_id", training_id) \
+            .eq("is_deleted", False) \
+            .execute()
+        new_photo_count = count_res.count or 0
     
     return jsonify({
         "success": True,
         "success_count": success_count,
         "fail_count": fail_count,
-        "errors": errors[:10]
+        "errors": errors[:10],
+        "training_id": training_id,
+        "photo_count": new_photo_count
     })
 
 
