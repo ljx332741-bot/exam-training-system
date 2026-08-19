@@ -1684,7 +1684,7 @@
             if (input) {
                 input.placeholder = allTrainings.length > 0 
                     ? safeT('placeholder_search_training') || '搜索并选择培训...'
-                    : (isAdmin ? '暂无培训数据' : '您所在国家暂无可用培训');
+                    : (isAdmin ? `${safeT('no_training_data_available')}` : `${safeT('currently_no_available_training')}`);
                 input.disabled = allTrainings.length === 0;
             }
             
@@ -1694,7 +1694,7 @@
                 container.innerHTML = `
                     <div class="empty-state">
                         <i class="bi bi-inbox"></i>
-                        <span>${isAdmin ? '暂无培训数据' : '您所在国家暂无可用培训'}</span>
+                        <span>${isAdmin ? `${safeT('no_training_data_available')}` : `${safeT('currently_no_available_training')}`}</span>
                     </div>
                 `;
             } else if (container && allTrainings.length > 0) {

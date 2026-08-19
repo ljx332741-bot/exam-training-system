@@ -995,6 +995,7 @@
 "placeholder_multi_training_search": "Input training name to search",
 "placeholder_multi_exam_search": "Input exam name to search",
 "no_training_data_available": "No training data available",
+"currently_no_available_training": "Currently no available training",
 "no_quarter_data_available": "No  quarter data available",
 "training": "training",
 "exam": "Exam",

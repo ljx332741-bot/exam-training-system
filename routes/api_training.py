@@ -368,6 +368,7 @@ def api_available_trainings():
 def api_trainings_for_photos():
     """
     获取照片上传可选择的培训列表
+    普通学员：与照片墙保持一致
     """
     db = get_supabase()
     admin_db = get_supabase_admin()
@@ -417,30 +418,31 @@ def api_trainings_for_photos():
             
             country_list = _parse_country_list(training_country)
             
-            # 如果没有权限限制，显示所有
             if allowed_countries is None:
                 filtered_trainings.append(t)
                 continue
             
-            # 如果有权限限制，检查交集
             if allowed_countries:
                 matched = any(c in allowed_countries for c in country_list)
                 if matched:
                     filtered_trainings.append(t)
-                else:
-                    print(f"    ❌ 跳过：国家不匹配")
         
         result = _build_photo_training_response(db, filtered_trainings)
         result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         return jsonify(result)
     
-    # 情况3：普通学员
-    # 获取用户相关的培训
+    # ============================================================
+    # 情况3：普通学员 - 与照片墙逻辑保持一致
+    # ============================================================
+    if not user_country:
+        return jsonify([])
+    
+    # 1. 获取用户相关的培训ID（与照片墙完全一致）
     assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
-    assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
+    assigned_training_ids = {a['training_id'] for a in (assigned_res.data or [])}
     
     att_res = admin_db.table("training_attendances") \
-        .select("training_id, sign_time") \
+        .select("training_id") \
         .eq("user_id", user_id) \
         .execute()
     signed_training_ids = {a['training_id'] for a in (att_res.data or [])}
@@ -452,18 +454,22 @@ def api_trainings_for_photos():
     if completed_exam_ids:
         bindings_res = admin_db.table("training_exam_bindings").select("training_id").in_("exam_id", completed_exam_ids).execute()
         for b in (bindings_res.data or []):
-            training_id = b['training_id']
-            if training_id not in signed_training_ids:
-                pending_sign_training_ids.add(training_id)
+            training_id_tmp = b['training_id']
+            if training_id_tmp not in signed_training_ids:
+                pending_sign_training_ids.add(training_id_tmp)
     
-    # 时间过滤
-    from datetime import datetime, timedelta
-    now = datetime.now(timezone.utc)
-    one_month_ago = now - timedelta(days=30)
-    one_month_ago_str = one_month_ago.isoformat()
+    # 2. 合并所有可访问的培训ID（与照片墙完全一致）
+    accessible_training_ids = assigned_training_ids | signed_training_ids | pending_sign_training_ids
     
+    # 3. 如果没有可访问的培训，返回空
+    if not accessible_training_ids:
+        return jsonify([])
+    
+    # 4. 筛选培训
     for t in all_trainings:
+        training_id = t.get('id')
         training_country = t.get('country')
+        
         if not training_country:
             continue
         
@@ -473,34 +479,9 @@ def api_trainings_for_photos():
         if user_country not in country_list:
             continue
         
-        training_id = t['id']
-        should_include = False
-        
-        # 条件1：近一个月有签到记录
-        if training_id in signed_training_ids:
-            for att in (att_res.data or []):
-                if att['training_id'] == training_id:
-                    sign_time = att.get('sign_time')
-                    if sign_time and sign_time >= one_month_ago_str:
-                        should_include = True
-                        break
-        
-        # 条件2：待签到（已分配）
-        if not should_include and training_id in assigned_training_ids:
-            start_time = t.get('start_time')
-            if start_time and start_time >= one_month_ago_str:
-                should_include = True
-            else:
-                print(f"    ⏳ 待签到但开始时间不在近一个月内: {start_time}")
-        
-        # 条件3：待补签
-        if not should_include and training_id in pending_sign_training_ids:
-            should_include = True
-        
-        if should_include:
+        # 只返回可访问的培训（与照片墙完全一致）
+        if training_id in accessible_training_ids:
             filtered_trainings.append(t)
-        else:
-            print(f"    ❌ 不满足任何条件")
     
     result = _build_photo_training_response(db, filtered_trainings)
     result.sort(key=lambda x: x.get('created_at', ''), reverse=True)

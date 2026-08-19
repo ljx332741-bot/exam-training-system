@@ -750,11 +750,10 @@ def api_admin_set_training_cover(photo_id):
 def api_training_get_photos():
     """
     获取学员可见的培训照片
-    - 普通用户：仅自己国家的培训照片
+    - 普通用户：仅自己国家 + 被分配的培训
     - 管理员：权限范围内的所有照片
     """
-    # 关键修复：使用管理员客户端绕过 RLS
-    db = get_supabase_admin()  # 改为 admin 客户端
+    db = get_supabase_admin()  # 使用管理员客户端绕过 RLS
     current_user_id = session.get('user_id')
     current_role = session.get('role')
     
@@ -774,34 +773,117 @@ def api_training_get_photos():
     
     # 判断是否管理员及以上
     is_admin = user_role in ['admin', 'super_admin', 'developer']
-    all_photos_res = db.table("training_photos").select("*").eq("is_deleted", False).execute()
-    all_photos = all_photos_res.data or []
+    allowed_countries = get_admin_allowed_countries()
     
-    user_photos_res = db.table("training_photos").select("*").eq("is_deleted", False).eq("uploaded_by", current_user_id).execute()
-    user_photos = user_photos_res.data or []
-    
-    # 基础查询
-    query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
-    
+    # ============================================================
+    # 管理员：按权限范围过滤
+    # ============================================================
     if is_admin:
-        allowed_countries = get_admin_allowed_countries()
+        query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
         
         if allowed_countries is not None:
             if allowed_countries:
                 query = query.in_("training_country", allowed_countries)
             else:
                 return jsonify({"success": True, "data": [], "total": 0, "page": page, "per_page": per_page})
-    else:
-        if not user_country:
-            return jsonify({"success": True, "data": [], "total": 0, "page": page, "per_page": per_page})
         
-        query = query.eq("training_country", user_country)
+        if only_mine:
+            query = query.eq("uploaded_by", current_user_id)
+        
+        if training_id:
+            query = query.eq("training_id", training_id)
+        
+        query = query.order("uploaded_at", desc=True)
+        start = (page - 1) * per_page
+        end = start + per_page - 1
+        query = query.range(start, end)
+        
+        try:
+            result = query.execute()
+            photos = result.data or []
+            total = result.count or 0
+            
+            # 获取上传人信息
+            uploader_ids = [p.get('uploaded_by') for p in photos if p.get('uploaded_by')]
+            if uploader_ids:
+                user_res = db.table("users").select("id, name_en, name_cn").in_("id", uploader_ids).execute()
+                user_map = {u['id']: u.get('name_en') or u.get('name_cn', '') for u in (user_res.data or [])}
+                for p in photos:
+                    p['uploaded_by_name'] = user_map.get(p.get('uploaded_by'), '')
+            
+            return jsonify({
+                "success": True,
+                "data": photos,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "user_country": user_country,
+                "user_role": user_role,
+                "is_admin": is_admin
+            })
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return jsonify({"success": False, "message": str(e)}), 500
+    
+    # ============================================================
+    # 普通学员：只能看到自己被分配的培训的照片
+    # ============================================================
+    
+    # 1. 获取用户被分配的培训ID
+    assigned_res = db.table("training_assignments").select("training_id").eq("user_id", current_user_id).execute()
+    assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
+    
+    # 2. 获取用户已签到的培训ID（全国推送场景）
+    signed_res = db.table("training_attendances").select("training_id").eq("user_id", current_user_id).execute()
+    signed_training_ids = [a['training_id'] for a in (signed_res.data or [])]
+    
+    # 3. 获取已完成考试需要补签的培训ID
+    completed_exams_res = db.table("exam_results").select("exam_id").eq("user_id", current_user_id).execute()
+    completed_exam_ids = [r['exam_id'] for r in (completed_exams_res.data or [])]
+    pending_sign_training_ids = set()
+    if completed_exam_ids:
+        bindings_res = db.table("training_exam_bindings").select("training_id").in_("exam_id", completed_exam_ids).execute()
+        for b in (bindings_res.data or []):
+            training_id_tmp = b['training_id']
+            if training_id_tmp not in signed_training_ids:
+                pending_sign_training_ids.add(training_id_tmp)
+    
+    # 4. 合并所有可访问的培训ID
+    accessible_training_ids = set(assigned_training_ids) | set(signed_training_ids) | pending_sign_training_ids
+    
+    # 5. 如果没有可访问的培训，返回空
+    if not accessible_training_ids:
+        return jsonify({
+            "success": True,
+            "data": [],
+            "total": 0,
+            "page": page,
+            "per_page": per_page,
+            "user_country": user_country,
+            "user_role": user_role,
+            "is_admin": is_admin
+        })
+    
+    # 6. 获取这些培训的照片
+    query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
+    
+    if training_id:
+        # 如果指定了 training_id，检查是否在可访问列表中
+        if int(training_id) not in accessible_training_ids:
+            return jsonify({"success": True, "data": [], "total": 0, "page": page, "per_page": per_page})
+        query = query.eq("training_id", training_id)
+    else:
+        query = query.in_("training_id", list(accessible_training_ids))
     
     if only_mine:
         query = query.eq("uploaded_by", current_user_id)
     
-    if training_id:
-        query = query.eq("training_id", training_id)
+    # 按国家过滤（安全保护）
+    if user_country:
+        query = query.eq("training_country", user_country)
+    else:
+        return jsonify({"success": True, "data": [], "total": 0, "page": page, "per_page": per_page})
     
     query = query.order("uploaded_at", desc=True)
     start = (page - 1) * per_page
@@ -820,11 +902,9 @@ def api_training_get_photos():
             user_map = {u['id']: u.get('name_en') or u.get('name_cn', '') for u in (user_res.data or [])}
             for p in photos:
                 p['uploaded_by_name'] = user_map.get(p.get('uploaded_by'), '')
-                can_edit, can_delete, _ = validate_photo_permission(
-                    p, current_user_id, current_role
-                )
-                p['can_edit'] = can_edit
-                p['can_delete'] = can_delete
+                # 普通学员只能删除自己上传的
+                p['can_edit'] = p.get('uploaded_by') == current_user_id
+                p['can_delete'] = p.get('uploaded_by') == current_user_id
         
         return jsonify({
             "success": True,
@@ -834,7 +914,8 @@ def api_training_get_photos():
             "per_page": per_page,
             "user_country": user_country,
             "user_role": user_role,
-            "is_admin": is_admin
+            "is_admin": is_admin,
+            "accessible_training_count": len(accessible_training_ids)
         })
     except Exception as e:
         import traceback

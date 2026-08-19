@@ -990,6 +990,7 @@
 "placeholder_multi_training_search": "输入培训名称搜索...",
 "placeholder_multi_exam_search": "输入考试名称搜索...",
 "no_training_data_available": "暂无培训数据",
+"currently_no_available_training": "当前无可用培训",
 "no_quarter_data_available": "暂无季度数据",
 "training": "培训",
 "exam": "考试",
