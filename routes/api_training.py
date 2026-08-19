@@ -10,7 +10,95 @@ from routes.helpers import login_required, upload_signature
 from utils.permissions import get_admin_allowed_countries, is_developer
 from utils.manage_messages import log_exam_auto_extend, log_exam_assign_from_signin
 
+# 导入新的工具函数
+from utils.training_helpers import (
+    parse_training_countries,
+    get_training_primary_country,
+    training_has_country,
+    training_matches_any_country,
+    filter_trainings_by_country,
+    get_training_countries_display,
+    normalize_training_countries,
+    parse_country_list  # 向后兼容
+)
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# 考试分配辅助函数
+# ============================================================
+
+def ensure_exam_assignment(exam_id, user_id, created_by):
+    """
+    确保考试分配记录存在（使用 upsert）
+    这是唯一创建 exam_assignments 的入口
+    """
+    admin_db = get_supabase_admin()
+    
+    # 使用 upsert 避免并发竞态
+    try:
+        admin_db.table("exam_assignments").upsert({
+            "exam_id": exam_id,
+            "user_id": user_id,
+            "created_by": created_by,
+            "assigned_at": datetime.now(timezone.utc).isoformat(),
+            "deleted_at": None,
+            "deleted_by": None
+        }, on_conflict="exam_id, user_id").execute()
+        logger.info(f"✅ 考试分配 upsert 成功: user={user_id}, exam={exam_id}")
+        return True
+    except Exception as e:
+        # 如果 upsert 不支持，降级到传统方式
+        logger.warning(f"⚠️ upsert 失败，降级到传统方式: {e}")
+        return _ensure_exam_assignment_fallback(exam_id, user_id, created_by)
+
+
+def _ensure_exam_assignment_fallback(exam_id, user_id, created_by):
+    """
+    降级方案：先查后插（带并发保护）
+    """
+    admin_db = get_supabase_admin()
+    
+    try:
+        # 检查是否已存在（包括软删除）
+        existing = admin_db.table("exam_assignments").select("id, deleted_at")\
+            .eq("exam_id", exam_id)\
+            .eq("user_id", user_id)\
+            .execute()
+        
+        # 情况1：已有有效分配
+        if existing.data and existing.data[0].get('deleted_at') is None:
+            logger.info(f"用户 {user_id} 已分配考试 {exam_id}，跳过")
+            return True
+        
+        # 情况2：有软删除记录，恢复
+        if existing.data and existing.data[0].get('deleted_at') is not None:
+            admin_db.table("exam_assignments").update({
+                "deleted_at": None,
+                "deleted_by": None,
+                "assigned_at": datetime.now(timezone.utc).isoformat()
+            }).eq("id", existing.data[0]['id']).execute()
+            logger.info(f"✅ 恢复已删除的考试分配: user={user_id}, exam={exam_id}")
+            return True
+        
+        # 情况3：没有记录，创建新分配
+        admin_db.table("exam_assignments").insert({
+            "exam_id": exam_id,
+            "user_id": user_id,
+            "created_by": created_by,
+            "assigned_at": datetime.now(timezone.utc).isoformat()
+        }).execute()
+        logger.info(f"✅ 创建考试分配: user={user_id}, exam={exam_id}")
+        return True
+        
+    except Exception as e:
+        # 唯一约束冲突（并发情况）
+        if '23505' in str(e) or 'duplicate' in str(e).lower():
+            logger.info(f"用户 {user_id} 已分配考试 {exam_id}（并发），视为成功")
+            return True
+        # 其他错误
+        logger.error(f"❌ 考试分配失败: {e}")
+        return False
 
 @training_bp.route('/api/trainings/available')
 @login_required
@@ -70,6 +158,7 @@ def api_available_trainings():
     all_pending_training_ids = resign_training_ids | pending_sign_training_ids
     logger.info(f"所有待处理培训ID: {list(all_pending_training_ids)}")
     logger.info(f"✅ resign_training_ids: {list(resign_training_ids)}")
+
     # ========== 3. 查询用户被定点分配的培训ID ==========
     assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
     assigned_training_ids = [a['training_id'] for a in (assigned_res.data or [])]
@@ -84,26 +173,12 @@ def api_available_trainings():
     filtered_trainings = []
     for t in all_trainings:
         training_id = t['id']
-        training_country = t.get('country')
         
-        if not training_country:
+        # 使用新的工具函数解析国家列表
+        country_list = parse_training_countries(t)
+        
+        if not country_list:
             continue
-        
-        # 解析国家列表
-        country_list = []
-        if isinstance(training_country, str):
-            try:
-                parsed = json.loads(training_country)
-                if isinstance(parsed, list):
-                    country_list = parsed
-                else:
-                    country_list = [training_country]
-            except json.JSONDecodeError:
-                country_list = [training_country]
-        elif isinstance(training_country, list):
-            country_list = training_country
-        else:
-            country_list = [str(training_country)]
         
         # 检查该培训是否有任何分配记录
         assign_check = admin_db.table("training_assignments").select("id").eq("training_id", training_id).execute()
@@ -438,57 +513,105 @@ def api_training_sign():
     training_id = data.get('training_id')
     sig = data.get('signature')
     name = data.get('name', '').strip()
-    if not training_id or not sig: return jsonify({"success": False, "message": "缺少必要参数"}), 400
+    if not training_id or not sig:
+        return jsonify({"success": False, "message": "缺少必要参数"}), 400
+    
     db = get_supabase()
     admin_db = get_supabase_admin()
     user_id = session['user_id']
 
     # 1. 验证用户状态
-    user_res = db.table("users").select("is_active, user_status").eq("id", user_id).maybe_single().execute()
+    user_res = db.table("users").select("is_active, user_status, country, role").eq("id", user_id).maybe_single().execute()
     if not user_res.data or not user_res.data.get('is_active') or user_res.data.get('user_status') != 'registered':
         return jsonify({"success": False, "message": "用户未完成注册"}), 400
+    
+    # 获取用户国家（用于多国家校验）
+    user_country = user_res.data.get('country')
+    if not user_country:
+        user_country = session.get('user_country')
+    
+    user_role = user_res.data.get('role', 'user')
+    is_developer = user_role == 'developer'
 
-    # 2. 检查是否重复签到
+    # 2. 检查培训有效期和国家匹配（多国家支持）
+    now = datetime.now(timezone.utc).isoformat()
+    tr = db.table("trainings").select("start_time, end_time, countries, country").eq("id", training_id).maybe_single().execute()
+    if not tr or not tr.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
+    
+    if now < tr.data['start_time']:
+        return jsonify({"success": False, "message": "签到尚未开始"}), 400
+    if now > tr.data['end_time']:
+        return jsonify({"success": False, "message": "签到已结束"}), 400
+
+    # ✅ 国家匹配检查（多国家支持）
+    from utils.training_helpers import parse_training_countries
+    training_countries = parse_training_countries(tr.data)
+    
+    if training_countries:
+        if is_developer and not user_country:
+            logger.info(f"开发者 {user_id} 无国家信息，允许签到")
+        elif user_country:
+            if user_country not in training_countries:
+                logger.warning(f"用户 {user_id} 国家 {user_country} 不在培训 {training_id} 国家列表 {training_countries} 中")
+                return jsonify({
+                    "success": False, 
+                    "message": "您的国家不在该培训的签到范围内"
+                }), 403
+        else:
+            logger.warning(f"用户 {user_id} 未设置国家，无法签到多国家培训 {training_id}")
+            return jsonify({
+                "success": False, 
+                "message": "用户未设置国家，无法签到多国家培训"
+            }), 403
+
+    # 3. 检查是否重复签到
     try:
         exist = db.table("training_attendances").select("id").eq("training_id", training_id).eq("user_id", user_id).execute()
-        if exist and exist.data: return jsonify({"success": False, "message": "您已签到过本培训"}), 400
-    except: pass
-
-    # 3. 检查培训有效期
-    now = datetime.now(timezone.utc).isoformat()
-    tr = db.table("trainings").select("start_time, end_time").eq("id", training_id).maybe_single().execute()
-    if not tr or not tr.data: return jsonify({"success": False, "message": "培训不存在"}), 404
-    if now < tr.data['start_time']: return jsonify({"success": False, "message": "签到尚未开始"}), 400
-    if now > tr.data['end_time']: return jsonify({"success": False, "message": "签到已结束"}), 400
+        if exist and exist.data:
+            return jsonify({"success": False, "message": "您已签到过本培训"}), 400
+    except:
+        pass
 
     # 4. 保存签名
-    try: url = upload_signature(sig, training_id, user_id)
-    except: return jsonify({"success": False, "message": "签名保存失败"}), 500
+    try:
+        url = upload_signature(sig, training_id, user_id)
+    except Exception as e:
+        logger.error(f"签名上传失败: {e}")
+        return jsonify({"success": False, "message": "签名保存失败"}), 500
 
     # 5. 保存签到记录
     try:
-        admin_db.table("training_attendances").insert({"training_id": training_id, "user_id": user_id, "signature_url": url, "signed_name": name, "sign_time": now}).execute()
-    except Exception as e: return jsonify({"success": False, "message": "数据保存失败"}), 500
+        admin_db.table("training_attendances").insert({
+            "training_id": training_id, 
+            "user_id": user_id, 
+            "signature_url": url, 
+            "signed_name": name, 
+            "sign_time": now
+        }).execute()
+        logger.info(f"✅ 签到记录保存成功: user={user_id}, training={training_id}")
+    except Exception as e:
+        logger.error(f"签到记录保存失败: {e}")
+        return jsonify({"success": False, "message": "数据保存失败"}), 500
 
-    # 签到成功后，检查是否有分配记录，如果没有则创建（全国推送场景）
+    # 6. 签到成功后，检查是否有培训分配记录
     try:
         assign_check = admin_db.table("training_assignments").select("id").eq("training_id", training_id).eq("user_id", user_id).execute()
         if not assign_check.data:
             admin_db.table("training_assignments").insert({
                 "training_id": training_id,
                 "user_id": user_id,
-                "created_by": user_id  # 由学员自己触发
+                "created_by": user_id
             }).execute()
-            logger.info(f"全国推送场景：为学员 {user_id} 自动创建分配记录")
+            logger.info(f"全国推送场景：为学员 {user_id} 自动创建培训分配记录")
     except Exception as e:
-        logger.warning(f"创建分配记录失败: {e}")
-    # ========== 6. 签到成功后自动分配绑定的考试 ==========
+        logger.warning(f"创建培训分配记录失败: {e}")
 
-    # 签到成功后
+    # ========== 7. 签到成功后自动分配绑定的考试（修复版） ==========
     logger.info(f"========== 用户签到成功 ==========")
     logger.info(f"用户: {user_id}, 培训: {training_id}")
+    
     try:
-        # 查询该培训绑定的考试
         bindings_res = admin_db.table("training_exam_bindings").select("exam_id, pass_score")\
             .eq("training_id", training_id)\
             .eq("is_auto_assign", True)\
@@ -497,10 +620,13 @@ def api_training_sign():
         
         for binding in (bindings_res.data or []):
             exam_id = binding['exam_id']
+            exam_title = None
+            exam_res = None
 
             # 检查考试是否过期，如果过期则自动延长
-            exam_res = admin_db.table("exams").select("title, start_time, end_time, status").eq("id", exam_id).maybe_single().execute()
+            exam_res = admin_db.table("exams").select("title, start_time, end_time, status, is_active, is_binding_exam").eq("id", exam_id).maybe_single().execute()
             if exam_res.data:
+                exam_title = exam_res.data.get('title', f'考试#{exam_id}')
                 now_utc = datetime.now(timezone.utc)
                 end_time = exam_res.data.get('end_time')
                 
@@ -517,56 +643,56 @@ def api_training_sign():
                                 "status": "active",
                                 "is_active": True
                             }).eq("id", exam_id).execute()
+                            logger.info(f"考试 {exam_id} 已自动延长有效期")
                             
-                            # 记录消息
-                            log_exam_auto_extend(
-                                exam_id=exam_id,
-                                exam_title=exam_res.data.get('title', f'考试#{exam_id}'),
-                                new_end_time=new_end_time,
-                                triggered_by=user_id
-                            )
+                            # ✅ 记录消息
+                            try:
+                                log_exam_auto_extend(
+                                    exam_id=exam_id,
+                                    exam_title=exam_title,
+                                    new_end_time=new_end_time,
+                                    triggered_by=user_id
+                                )
+                            except Exception as msg_error:
+                                logger.warning(f"记录考试延期消息失败: {msg_error}")
                     except Exception as e:
                         logger.warning(f"检查考试有效期失败: {e}")
             
-            # 检查是否已分配
-            existing = admin_db.table("exam_assignments").select("id")\
-                .eq("exam_id", exam_id)\
-                .eq("user_id", user_id)\
-                .execute()
+            # ============================================================
+            # 使用 ensure_exam_assignment（统一入口）
+            # ============================================================
+            assignment_created = ensure_exam_assignment(exam_id, user_id, user_id)
             
-            if not existing.data:
-                # 分配考试
-                admin_db.table("exam_assignments").insert({
-                    "exam_id": exam_id,
-                    "user_id": user_id,
-                    "created_by": user_id
-                }).execute()
-                logger.info(f"培训签到后自动分配考试: user={user_id}, exam={exam_id}")
+            # 只有成功分配后才记录消息
+            if assignment_created:
+                try:
+                    log_exam_assign_from_signin(
+                        db=admin_db,
+                        exam_id=exam_id,
+                        exam_title=exam_title or f'考试#{exam_id}',
+                        user_id=user_id,
+                        user_name=name or user_id
+                    )
+                    logger.info(f"✅ 消息记录成功: user={user_id}, exam={exam_id}")
+                except Exception as msg_error:
+                    logger.warning(f"记录消息失败: {msg_error}")
 
-                # 记录消息
-                log_exam_assign_from_signin(
-                    db=admin_db,
-                    exam_id=exam_id,
-                    exam_title=exam_res.data.get('title', f'考试#{exam_id}') if exam_res.data else f'考试#{exam_id}',
-                    user_id=user_id,
-                    user_name=name or user_id
-                )
-                # 激活绑定模式的考试（如果尚未激活）
-                exam_res = admin_db.table("exams").select("is_active, is_binding_exam").eq("id", exam_id).maybe_single().execute()
-                if exam_res.data and exam_res.data.get('is_binding_exam') and not exam_res.data.get('is_active'):
-                    # 设置默认有效期
-                    now = datetime.now(timezone.utc).isoformat()
+            # 激活绑定模式的考试（如果尚未激活）
+            if exam_res and exam_res.data:
+                if exam_res.data.get('is_binding_exam') and not exam_res.data.get('is_active'):
+                    now_utc = datetime.now(timezone.utc).isoformat()
                     end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
                     admin_db.table("exams").update({
                         "is_active": True,
                         "status": "active",
-                        "start_time": now,
+                        "start_time": now_utc,
                         "end_time": end_time
                     }).eq("id", exam_id).execute()
                     logger.info(f"绑定考试 {exam_id} 已激活")
         
     except Exception as e:
         logger.error(f"自动分配考试失败: {e}")
+        # ✅ 不返回500，签到已经成功
     
     return jsonify({"success": True, "sign_time": now})
 

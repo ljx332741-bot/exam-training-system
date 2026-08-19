@@ -293,9 +293,38 @@
 {% block extra_js %}
 <script>
     const trainingId = {{ request.view_args.get('training_id') }};
+    // ============================================================
+    // 权限管理
+    // ============================================================
+    let allowedCountries = null;
+    let permissionsLoaded = false;
 
-    // 签到签字详情
+    async function fetchUserPermissions() {
+        if (permissionsLoaded) return;
+        try {
+            const res = await fetch('/api/admin/current_user_permissions');
+            if (res.ok) {
+                const data = await res.json();
+                // allowed_countries 可能是数组或 null
+                allowedCountries = data.allowed_countries || null;
+                console.log('📋 用户权限范围:', allowedCountries);
+            } else {
+                allowedCountries = null;
+            }
+        } catch (err) {
+            console.warn('获取用户权限失败，跳过权限检查:', err);
+            allowedCountries = null;
+        }
+        permissionsLoaded = true;
+    }
+
+    // ============================================================
+    // 签到签字详情 - 修复版
+    // ============================================================
     async function loadDetail() {
+        // 确保权限数据已加载（如果权限检查需要
+        await fetchUserPermissions();
+
         const urlParams = new URLSearchParams(window.location.search);
         let country = urlParams.get('country');
         // 过滤无效值（null、'null'、'undefined' 等均视为没有筛选）
@@ -303,9 +332,14 @@
             country = '';
         }
     
-        // ✅ 验证选择的 country 是否在权限范围内
-        if (country && allowedCountries !== null && !allowedCountries.includes(country)) {
-            alert('您没有权限查看该国家的签到记录');
+        // 验证选择的 country 是否在权限范围内
+        if (country && allowedCountries !== null && Array.isArray(allowedCountries) && !allowedCountries.includes(country)) {
+            // 使用 showToast 或 alert
+            if (typeof showToast === 'function') {
+                showToast('您没有权限查看该国家的签到记录', 'warning');
+            } else {
+                alert('您没有权限查看该国家的签到记录');
+            }
             // 清空 URL 参数
             const newUrl = window.location.pathname;
             window.history.replaceState({}, '', newUrl);
@@ -316,121 +350,129 @@
         if (country) {
             apiUrl += `?country=${encodeURIComponent(country)}`;
         }
-        const res = await fetch(apiUrl);
-        const data = await res.json();
+        try {
+            const res = await fetch(apiUrl);
+            const data = await res.json();
 
-        if (!data.training) {
-            document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="5">${t('no_training_exist')}</td></tr>`;
-            return;
-        }
+            if (!data.training) {
+                document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="5">${t('no_training_exist')}</td></tr>`;
+                return;
+            }
 
-        // 动态设置标题为培训名称 
-        const titleElement = document.getElementById('attendanceTitle');
-        if (titleElement && data.training.name) {
-            titleElement.innerHTML = 
-            '<i class="bi bi-people-fill"> 签到表Attendance Record</i>' 
-            + 
-            `<span><i class="print-hide badge bg-info ms-2" style="font-size: 0.85rem; margin-top: -4px;">- 
-                ${escapeHtml(data.training.name)}
-            </i></span>`;
-        }
+            // 动态设置标题为培训名称 
+            const titleElement = document.getElementById('attendanceTitle');
+            if (titleElement && data.training.name) {
+                titleElement.innerHTML = 
+                '<i class="bi bi-people-fill"> 签到表Attendance Record</i>' 
+                + 
+                `<span><i class="print-hide badge bg-info ms-2" style="font-size: 0.85rem; margin-top: -4px;">- 
+                    ${escapeHtml(data.training.name)}
+                </i></span>`;
+            }
 
-        // 使用后端返回的 header_template（已考虑国家模板）
-        const header = data.header_template || {};
+            // 使用后端返回的 header_template（已考虑国家模板）
+            const header = data.header_template || {};
 
-        // 渲染表头 HTML
-        const headerHtml = `
-            <div class="row">
-                <div class="col-md-6"><strong>培训课程名称（双语）Training Course Name：</strong> ${escapeHtml(header.course_name || '')}</div>
-                <div class="col-md-6"><strong>项目编号Training Project NO.：</strong> ${escapeHtml(header.project_no || '')}</div>
-                <div class="col-md-6"><strong>培训地点（双语）Training Venue：</strong> ${escapeHtml(header.venue || '')}</div>
-                <div class="col-md-6"><strong>培训语言Language：</strong> ${escapeHtml(header.language || '')}</div>
-                <div class="col-md-6"><strong>培训对象（双语）Target Trainees：</strong> ${escapeHtml(header.target || '')}</div>
-                <div class="col-md-6"><strong>组织部门（双语）Training Organizing Dept：</strong> ${escapeHtml(header.dept || '')}</div>
-                <div class="col-md-6"><strong>组织者Training Organizer：</strong> ${escapeHtml(header.organizer || '')}</div>
-                <div class="col-md-6"><strong>培训日期Training Date：</strong> ${escapeHtml(header.training_date || '')}</div>
-                <div class="col-md-6"><strong>主讲人Course Lecturer：</strong> ${escapeHtml(header.lecturer || '')}</div>
-                <div class="col-md-6"><strong>翻译员Translator：</strong> ${escapeHtml(header.translator || '')}</div>
-            </div>
-            <hr>
-        `;
-        document.getElementById('headerInfo').innerHTML = headerHtml;
-
-        // 渲染签到记录
-        const tbody = document.getElementById('attendanceTbody');
-        const records = data.attendances || [];
-        if (records.length === 0) {
-            tbody.innerHTML = `<td><td colspan="8">${t('no_sign_in_record_available')}</td></tr>`;
-            return;
-        }
-        tbody.innerHTML = '';
-        records.forEach((r, idx) => {
-            const nameDisplay = r.signed_name || r.name_cn || r.name_en || '';
-            const empId = r.employee_id ? ` (${r.employee_id})` : '';
-            // 签名单元格：有签名显示图片，无签名显示提示文字
-            const signatureCell = r.signature_url
-                ? `<img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'">`
-                : `<span class="text-warning fw-bold">${t('pending_re_signature')}</span>`;
-
-            const row = tbody.insertRow();
-            row.innerHTML = `
-                <td class="no-print"><input type="checkbox" class="attendance-checkbox" data-att-id="${r.id}"></td>
-                <td>${idx+1}</td>
-                <td>${escapeHtml(r.company || '')}</td>
-                <td>${escapeHtml(nameDisplay)}${empId}</td>
-                <td>${signatureCell}</td>
-                <td class="print-hide">${formatLocalTime(r.sign_time)}</td>
-                <td class="country-cell no-print" title="${escapeHtml(r.country )}">${escapeHtml(r.country )}</td>
-                <td class="print-hide">
-                    <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
-                        <i class="bi bi-pencil-square"></i> ${t('re_signature')}
-                    </button>
-                    <button class="btn btn-sm btn-outline-danger delete-attendance-btn" data-id="${r.id}" data-name="${escapeHtml(nameDisplay)}">
-                        <i class="bi bi-trash"></i> ${t('t_delete')}
-                    </button>
-                </td>
+            // 渲染表头 HTML
+            const headerHtml = `
+                <div class="row">
+                    <div class="col-md-6"><strong>培训课程名称（双语）Training Course Name：</strong> ${escapeHtml(header.course_name || '')}</div>
+                    <div class="col-md-6"><strong>项目编号Training Project NO.：</strong> ${escapeHtml(header.project_no || '')}</div>
+                    <div class="col-md-6"><strong>培训地点（双语）Training Venue：</strong> ${escapeHtml(header.venue || '')}</div>
+                    <div class="col-md-6"><strong>培训语言Language：</strong> ${escapeHtml(header.language || '')}</div>
+                    <div class="col-md-6"><strong>培训对象（双语）Target Trainees：</strong> ${escapeHtml(header.target || '')}</div>
+                    <div class="col-md-6"><strong>组织部门（双语）Training Organizing Dept：</strong> ${escapeHtml(header.dept || '')}</div>
+                    <div class="col-md-6"><strong>组织者Training Organizer：</strong> ${escapeHtml(header.organizer || '')}</div>
+                    <div class="col-md-6"><strong>培训日期Training Date：</strong> ${escapeHtml(header.training_date || '')}</div>
+                    <div class="col-md-6"><strong>主讲人Course Lecturer：</strong> ${escapeHtml(header.lecturer || '')}</div>
+                    <div class="col-md-6"><strong>翻译员Translator：</strong> ${escapeHtml(header.translator || '')}</div>
+                </div>
+                <hr>
             `;
-        });
-    
-        // 绑定删除按钮事件
-        document.querySelectorAll('.delete-attendance-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const attId = btn.dataset.id;
-                const name = btn.dataset.name;
-                if (confirm(t('t_confirm_delete_attendance').replace('{name}', name))) {
-                    await deleteSingleAttendance(attId);
-                }
-            });
-        });
-        
-        // 绑定重置签名按钮事件
-        document.querySelectorAll('.reset-sign-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                const attId = e.currentTarget.dataset.id;
-                if (!confirm(t('t_re_sign_prompt'))) return;
-                const res = await fetch(`/api/admin/training/attendance/${attId}/reset-signature`, { method: 'POST' });
-                const json = await res.json();
-                if (json.success) {
-                    alert(t('t_re_sign_pushed_prompt'));
-                    // 刷新页面或更新当前行签名显示
-                    loadDetail();
-                } else {
-                    alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
-                }
-            });
-        });
+            document.getElementById('headerInfo').innerHTML = headerHtml;
 
-        // 绑定专用PDF导出按钮
-        const pdfBtn = document.getElementById('pdfExportBtn');
-        if (pdfBtn) {
-            const countryParam = country ? `?country=${encodeURIComponent(country)}` : '';
-            pdfBtn.href = `/admin/training/${trainingId}/attendance/pdf${countryParam}`;
+            // 渲染签到记录
+            const tbody = document.getElementById('attendanceTbody');
+            const records = data.attendances || [];
+            if (records.length === 0) {
+                tbody.innerHTML = `<td><td colspan="8">${t('no_sign_in_record_available')}</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = '';
+            records.forEach((r, idx) => {
+                const nameDisplay = r.signed_name || r.name_cn || r.name_en || '';
+                const empId = r.employee_id ? ` (${r.employee_id})` : '';
+                // 签名单元格：有签名显示图片，无签名显示提示文字
+                const signatureCell = r.signature_url
+                    ? `<img src="${r.signature_url}" style="max-height:70px; max-width:150px;" onerror="this.style.display='none'">`
+                    : `<span class="text-warning fw-bold">${t('pending_re_signature')}</span>`;
+
+                const row = tbody.insertRow();
+                row.innerHTML = `
+                    <td class="no-print"><input type="checkbox" class="attendance-checkbox" data-att-id="${r.id}"></td>
+                    <td>${idx+1}</td>
+                    <td>${escapeHtml(r.company || '')}</td>
+                    <td>${escapeHtml(nameDisplay)}${empId}</td>
+                    <td>${signatureCell}</td>
+                    <td class="print-hide">${formatLocalTime(r.sign_time)}</td>
+                    <td class="country-cell no-print" title="${escapeHtml(r.country )}">${escapeHtml(r.country )}</td>
+                    <td class="print-hide">
+                        <button class="btn btn-sm btn-outline-warning reset-sign-btn" data-id="${r.id}">
+                            <i class="bi bi-pencil-square"></i> ${t('re_signature')}
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger delete-attendance-btn" data-id="${r.id}" data-name="${escapeHtml(nameDisplay)}">
+                            <i class="bi bi-trash"></i> ${t('t_delete')}
+                        </button>
+                    </td>
+                `;
+            });
+        
+            // 绑定删除按钮事件
+            document.querySelectorAll('.delete-attendance-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const attId = btn.dataset.id;
+                    const name = btn.dataset.name;
+                    if (confirm(t('t_confirm_delete_attendance').replace('{name}', name))) {
+                        await deleteSingleAttendance(attId);
+                    }
+                });
+            });
+            
+            // 绑定重置签名按钮事件
+            document.querySelectorAll('.reset-sign-btn').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const attId = e.currentTarget.dataset.id;
+                    if (!confirm(t('t_re_sign_prompt'))) return;
+                    const res = await fetch(`/api/admin/training/attendance/${attId}/reset-signature`, { method: 'POST' });
+                    const json = await res.json();
+                    if (json.success) {
+                        alert(t('t_re_sign_pushed_prompt'));
+                        // 刷新页面或更新当前行签名显示
+                        loadDetail();
+                    } else {
+                        alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
+                    }
+                });
+            });
+
+            // 绑定专用PDF导出按钮
+            const pdfBtn = document.getElementById('pdfExportBtn');
+            if (pdfBtn) {
+                const countryParam = country ? `?country=${encodeURIComponent(country)}` : '';
+                pdfBtn.href = `/admin/training/${trainingId}/attendance/pdf${countryParam}`;
+            }
+            // 添加批量删除按钮
+            addBatchDeleteButton();
+            // 绑定全选按钮
+            bindSelectAll();
+        } catch (err) {
+            console.error('加载签到详情失败:', err);
+            const tbody = document.getElementById('attendanceTbody');
+            if (tbody) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${t('load_failed')}: ${err.message}</td></tr>`;
+            }
         }
-        // 添加批量删除按钮
-        addBatchDeleteButton();
-        // 绑定全选按钮
-        bindSelectAll();
     }
 
     // 全选功能

@@ -1858,3 +1858,74 @@ def api_admin_exam_result_detail(result_id):
         "questions": question_details
     })
 
+@admin_user_bp.route('/api/users/by_countries', methods=['GET'])
+@login_required
+@admin_required
+def get_users_by_countries():
+    """
+    根据多个国家代码获取用户列表
+    支持格式: /api/users/by_countries?countries=NP,LK,MM
+    """
+    from services.db import get_supabase
+    from utils.permissions import get_admin_allowed_countries, filter_users_by_permission
+    
+    countries_param = request.args.get('countries', '')
+    if not countries_param:
+        return jsonify([])
+    
+    # 解析国家列表（支持逗号分隔）
+    country_list = [c.strip() for c in countries_param.split(',') if c.strip()]
+    if not country_list:
+        return jsonify([])
+    
+    db = get_supabase()
+    allowed_countries = get_admin_allowed_countries()
+    
+    # 权限检查：确保用户有权限查看这些国家的用户
+    if allowed_countries is not None:
+        # 过滤掉不在权限范围内的国家
+        filtered_countries = [c for c in country_list if c in allowed_countries]
+        if not filtered_countries:
+            return jsonify([])
+        country_list = filtered_countries
+    
+    try:
+        # 查询用户
+        query = db.table("users").select(
+            "id, name_en, name_cn, email, country, wh_id, role, user_status, is_resign"
+        ).in_("country", country_list)
+        
+        # 只查询注册用户
+        query = query.eq("user_status", "registered")
+        query = query.eq("is_resign", False)
+        query = query.is_("deleted_at", "null")
+        query = query.order("name_en", desc=False)
+        
+        res = query.execute()
+        users = res.data or []
+        
+        # 应用权限过滤
+        users = filter_users_by_permission(
+            users, 
+            allowed_countries=allowed_countries,
+            current_user_id=session.get('user_id')
+        )
+        
+        # 返回简化格式
+        result = []
+        for u in users:
+            result.append({
+                "id": u.get('id'),
+                "name_en": u.get('name_en', ''),
+                "name_cn": u.get('name_cn', ''),
+                "email": u.get('email', ''),
+                "country": u.get('country', ''),
+                "wh_id": u.get('wh_id', ''),
+                "role": u.get('role', 'user')
+            })
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"获取用户列表失败: {e}")
+        return jsonify([]), 500

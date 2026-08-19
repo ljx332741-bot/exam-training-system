@@ -705,6 +705,7 @@
 // ==================== 国际化字典 ====================
 const translations = {
     zh: {
+        pageTitle: '登录 - 培训考试平台',
         loginTitle: '用户登录',
         loginSubtitle: '欢迎回来，请登录您的账号',
         labelEmail: '邮箱地址',
@@ -739,6 +740,7 @@ const translations = {
         privacy_policy_login_hint: '请先阅读并同意隐私声明'
     },
     en: {
+        pageTitle: 'Login - Training & Exam Platform',
         loginTitle: 'User Login',
         loginSubtitle: 'Welcome back, please login to your account',
         labelEmail: 'Email Address',
@@ -789,6 +791,7 @@ function switchLang(lang) {
     });
     
     // 更新所有文本
+    document.title = t('pageTitle');
     document.getElementById('loginTitle').textContent = t('loginTitle');
     document.getElementById('loginSubtitle').textContent = t('loginSubtitle');
     document.getElementById('labelEmail').textContent = t('labelEmail');

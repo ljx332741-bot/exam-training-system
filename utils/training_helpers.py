@@ -1,6 +1,10 @@
 # utils/training_helpers.py
+import json
+import logging
+from typing import List, Union, Optional, Any
 from services.db import get_supabase
-from utils.common import match_country_code  # 假设存在
+
+logger = logging.getLogger(__name__)
 
 def _save_country_template(db, training_id, country_code, header_template):
     """内部辅助函数：保存培训的国家表头模板"""
@@ -79,3 +83,253 @@ def get_training_country_templates_status(training_id):
         "any_template_exists": any_exists,
         "templates": templates_map
     }
+
+# utils/training_helpers.py - 培训多国家支持工具函数
+
+def parse_training_countries(training: Union[dict, None]) -> List[str]:
+    """
+    解析培训的国家列表，支持新旧格式
+    
+    新格式: {"countries": ["NP", "LK"]}
+    旧格式: {"country": "NP"} 或 {"country": ["NP", "LK"]}
+    
+    Args:
+        training: 培训数据字典
+    
+    Returns:
+        list: 国家代码列表，如果没有则返回空列表
+    """
+    if not training:
+        return []
+    
+    # 1. 优先检查 countries 字段（新格式，多国家）
+    countries_data = training.get('countries')
+    if countries_data is not None:
+        return _parse_countries_field(countries_data)
+    
+    # 2. 降级：使用旧的 country 字段
+    old_country = training.get('country')
+    if old_country is not None:
+        return _parse_countries_field(old_country)
+    
+    return []
+
+
+def _parse_countries_field(field_data: Any) -> List[str]:
+    """
+    解析国家字段数据（内部函数）
+    支持: 字符串、JSON字符串、列表
+    """
+    if not field_data:
+        return []
+    
+    # 如果是列表
+    if isinstance(field_data, list):
+        return [str(c).strip() for c in field_data if c]
+    
+    # 如果是字符串
+    if isinstance(field_data, str):
+        # 尝试解析 JSON
+        try:
+            parsed = json.loads(field_data)
+            if isinstance(parsed, list):
+                return [str(c).strip() for c in parsed if c]
+            elif isinstance(parsed, str):
+                return [parsed.strip()] if parsed.strip() else []
+            else:
+                return []
+        except json.JSONDecodeError:
+            # 不是 JSON，可能是单个国家或逗号分隔
+            if ',' in field_data:
+                # 逗号分隔 "NP,LK"
+                return [c.strip() for c in field_data.split(',') if c.strip()]
+            else:
+                return [field_data.strip()] if field_data.strip() else []
+    
+    return []
+
+
+def get_training_primary_country(training: Union[dict, None]) -> Optional[str]:
+    """
+    获取培训的主要国家（第一个国家），用于向后兼容
+    
+    Args:
+        training: 培训数据字典
+    
+    Returns:
+        str: 第一个国家代码，如果没有则返回 None
+    """
+    countries = parse_training_countries(training)
+    return countries[0] if countries else None
+
+
+def training_has_country(training: Union[dict, None], country_code: str) -> bool:
+    """
+    检查培训是否包含指定的国家
+    
+    Args:
+        training: 培训数据字典
+        country_code: 国家代码
+    
+    Returns:
+        bool: True 如果培训包含该国家
+    """
+    if not training or not country_code:
+        return False
+    countries = parse_training_countries(training)
+    return country_code in countries
+
+
+def training_matches_any_country(training: Union[dict, None], country_codes: List[str]) -> bool:
+    """
+    检查培训是否匹配任意一个国家
+    
+    Args:
+        training: 培训数据字典
+        country_codes: 国家代码列表
+    
+    Returns:
+        bool: True 如果培训包含任意一个国家
+    """
+    if not training or not country_codes:
+        return False
+    countries = parse_training_countries(training)
+    return any(c in countries for c in country_codes)
+
+
+def filter_trainings_by_country(trainings: List[dict], allowed_countries: Optional[List[str]]) -> List[dict]:
+    """
+    根据国家权限过滤培训列表
+    
+    Args:
+        trainings: 培训列表
+        allowed_countries: 允许的国家代码列表（None 表示无限制）
+    
+    Returns:
+        list: 过滤后的培训列表
+    """
+    if allowed_countries is None:
+        return trainings
+    
+    if not allowed_countries:
+        return []
+    
+    result = []
+    for training in trainings:
+        countries = parse_training_countries(training)
+        if any(c in allowed_countries for c in countries):
+            result.append(training)
+    
+    return result
+
+
+def get_training_countries_display(training: Union[dict, None], 
+                                   allowed_countries: Optional[List[str]] = None,
+                                   lang: str = 'zh') -> str:
+    """
+    获取培训的国家显示字符串（带权限过滤）
+    
+    Args:
+        training: 培训数据字典
+        allowed_countries: 允许的国家列表（用于过滤）
+        lang: 语言 'zh' 或 'en'
+    
+    Returns:
+        str: 显示字符串
+    """
+    countries = parse_training_countries(training)
+    
+    if not countries:
+        return '-'
+    
+    if allowed_countries is not None:
+        countries = [c for c in countries if c in allowed_countries]
+        if not countries:
+            return '-'
+    
+    return ', '.join(countries)
+
+
+def normalize_training_countries(countries_input: Union[str, List[str], None]) -> Optional[str]:
+    """
+    规范化国家数据为 JSON 字符串存储格式
+    
+    Args:
+        countries_input: 国家数据（字符串、列表或 None）
+    
+    Returns:
+        str: JSON 字符串，或 None
+    """
+    if not countries_input:
+        return None
+    
+    if isinstance(countries_input, list):
+        # 过滤空值
+        cleaned = [c.strip() for c in countries_input if c and c.strip()]
+        if not cleaned:
+            return None
+        return json.dumps(cleaned)
+    
+    if isinstance(countries_input, str):
+        # 尝试解析 JSON
+        try:
+            parsed = json.loads(countries_input)
+            if isinstance(parsed, list):
+                cleaned = [c.strip() for c in parsed if c and c.strip()]
+                return json.dumps(cleaned) if cleaned else None
+            elif isinstance(parsed, str) and parsed.strip():
+                return json.dumps([parsed.strip()])
+        except json.JSONDecodeError:
+            # 普通字符串
+            if ',' in countries_input:
+                # 逗号分隔
+                cleaned = [c.strip() for c in countries_input.split(',') if c.strip()]
+                return json.dumps(cleaned) if cleaned else None
+            elif countries_input.strip():
+                return json.dumps([countries_input.strip()])
+    
+    return None
+
+
+def get_training_country_for_query(training: Union[dict, None]) -> Optional[str]:
+    """
+    获取培训的国家用于数据库查询（返回第一个国家）
+    主要用于 WHERE 条件查询
+    
+    Args:
+        training: 培训数据字典
+    
+    Returns:
+        str: 第一个国家代码，或 None
+    """
+    return get_training_primary_country(training)
+
+
+# ============================================================
+# 向后兼容的别名
+# ============================================================
+
+def parse_country_list(training_country):
+    """
+    向后兼容的别名函数（用于 api_training.py）
+    建议逐步迁移到 parse_training_countries
+    """
+    if isinstance(training_country, dict):
+        return parse_training_countries(training_country)
+    
+    # 直接传入字符串或列表的情况
+    if isinstance(training_country, list):
+        return training_country
+    
+    if isinstance(training_country, str):
+        try:
+            parsed = json.loads(training_country)
+            if isinstance(parsed, list):
+                return parsed
+            return [training_country]
+        except json.JSONDecodeError:
+            if ',' in training_country:
+                return [c.strip() for c in training_country.split(',') if c.strip()]
+            return [training_country] if training_country else []
+    
+    return []

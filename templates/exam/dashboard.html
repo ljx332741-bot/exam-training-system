@@ -920,7 +920,24 @@
                 })
             });
             const json = await res.json();
-            
+
+            if (!res.ok) {
+                // 服务器返回错误状态码
+                const errorMsg = json.message || json.error || `HTTP ${res.status}`;
+                console.error('签到失败:', { status: res.status, error: errorMsg });
+                
+                if (typeof showToast === 'function') {
+                    showToast(`❌ ${errorMsg}`, 'error');
+                } else {
+                    alert(`操作失败: ${errorMsg}`);
+                }
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+                submitBtn.classList.remove('btn-secondary', 'opacity-75');
+                submitBtn.classList.add('btn-primary');
+                return;
+            }
+
             if (json.success) {
                 // 显示成功提示
                 const successMsg = currentSignAction === 'resign' ? t('t_re_sign_successful') : t('t_sign_in_successful');
@@ -936,16 +953,21 @@
                 // 刷新培训列表
                 loadTrainings();
             } else {
-                // 使用全局翻译函数显示错误
-                if (typeof apiAlert === 'function') {
-                    apiAlert(json);
+                if (typeof showToast === 'function') {
+                    showToast(json.message || t('t_operation_failure'), 'error');
                 } else {
-                    alert(t('t_operation_failure') + (json.message || t('t_unknown_error')));
+                    alert(json.message || t('t_operation_failure'));
                 }
             }
         } catch (error) {
             console.error('签到失败:', error);
-            alert(t('t_operation_failure') + '，请重试');
+            // ✅ 显示更详细的错误信息
+            const errorMsg = error.message || '网络错误，请检查连接';
+            if (typeof showToast === 'function') {
+                showToast(`❌ 签到失败: ${errorMsg}`, 'error');
+            } else {
+                alert(`签到失败: ${errorMsg}`);
+            }
         } finally {
             // 恢复按钮状态
             submitBtn.disabled = false;

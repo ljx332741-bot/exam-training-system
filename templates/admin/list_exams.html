@@ -22,6 +22,30 @@
         from { transform: rotate(0deg); }
         to { transform: rotate(360deg); }
     }
+
+    /* 草稿状态的考试名称样式 */
+    .exam-name-draft {
+        color: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+        text-decoration: none;
+    }
+
+    .exam-name-draft:hover {
+        color: #6c757d;
+        text-decoration: none;
+    }
+
+    /* 可点击的考试名称样式 */
+    .exam-name-link {
+        color: #0d6efd;
+        cursor: pointer;
+        text-decoration: none;
+    }
+
+    .exam-name-link:hover {
+        text-decoration: underline;
+    }
 </style>
 {% endblock %}
 
@@ -851,10 +875,28 @@
         });
 
         document.querySelectorAll('.exam-detail-link').forEach(link => {
-            link.addEventListener('click', (e) => {
+            // 移除旧监听器避免重复绑定
+            link.removeEventListener('click', link._detailHandler);
+            
+            link._detailHandler = (e) => {
                 e.preventDefault();
-                if (link.dataset.id) window.location.href = `/admin/exam/${link.dataset.id}/scores`;
-            });
+                const status = link.dataset.status;
+                
+                // 草稿状态不允许进入详情
+                if (status === 'draft') {
+                    if (typeof showToast === 'function') {
+                        showToast(t('draft_exam_no_details') || '草稿考试暂无详情，请先发布考试', 'warning');
+                    } else {
+                        alert(t('draft_exam_no_details') || '草稿考试暂无详情，请先发布考试');
+                    }
+                    return;
+                }
+                
+                if (link.dataset.id) {
+                    window.location.href = `/admin/exam/${link.dataset.id}/scores`;
+                }
+            };
+            link.addEventListener('click', link._detailHandler);
         });
 
         // 调试推送按钮
@@ -866,13 +908,17 @@
 
     // ========== 构建单行 HTML（提取为独立函数） ==========
     function buildExamRow(ex, globalIdx) {
-        const isDeleted = ex.deleted_at !== null && ex.deleted_at !== undefined;
         // 使用 getQuarterFromDate 函数计算季度
         const quarter = typeof getQuarterFromDate === 'function' 
             ? getQuarterFromDate(ex.created_at) 
             : (ex.quarter || '-');
         
         let countryDisplay = ex.countries_display || '-';
+
+        // 判断是否可点击：草稿状态不可点击
+        const isDraft = ex.status === 'draft';
+        const isDeleted = ex.deleted_at !== null && ex.deleted_at !== undefined;
+        const isClickable = !isDraft && !isDeleted;
         
         const showDetail = ['active', 'closed'].includes(ex.status);
         const showPush = ['draft', 'created', 'active'].includes(ex.status) || 
@@ -897,20 +943,30 @@
                         <i class="bi bi-bootstrap-reboot spin-icon"></i>
                         ${t('reopen') || '重新打开'}
                     </button>` : ''}
-                <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('t_copy')}</button>
+                <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('copy')}</button>
                 ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}"
                     onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
-                    ${t('t_edit')}</button>` : ''}
-                ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('t_batch_export_pdf')}</button>` : ''}
-                ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('t_delete')}</button>` : ''}
+                    ${t('edit')}</button>` : ''}
+                ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('batch_export_pdf')}</button>` : ''}
+                ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('delete')}</button>` : ''}
             `;
         }
-        
+
+        // 构建考试名称链接
+        let examNameHtml;
+        if (isClickable) {
+            examNameHtml = `<a href="#" class="exam-detail-link exam-name-link" data-id="${ex.id}" data-status="${ex.status}">${escapeHtml(ex.title)}</a>`;
+        } else if (isDraft) {
+            examNameHtml = `<span class="exam-name-draft" title="${t('draft_exam_no_details') || '草稿考试暂无详情，请先发布考试'}" style="color: #6c757d; cursor: not-allowed; opacity: 0.6;">${escapeHtml(ex.title)}</span>`;
+        } else {
+            examNameHtml = `<span class="text-muted" title="${t('deleted_exam_no_details') || '已删除考试'}" style="cursor: not-allowed; opacity: 0.5;">${escapeHtml(ex.title)}</span>`;
+        }
+
         return `
         <tr>
             <td>${globalIdx}</td>
             <td>${escapeHtml(countryDisplay)}</td>
-            <td><a href="#" class="exam-detail-link" data-id="${ex.id}">${escapeHtml(ex.title)}</a></td>
+            <td>${examNameHtml}</td>
             <td>${ex.id}</td>
             <td>${quarter}</td>
             <td>${statusBadge}</td>  <!-- ✅ 使用状态徽章 -->
