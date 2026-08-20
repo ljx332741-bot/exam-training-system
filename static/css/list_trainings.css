@@ -249,3 +249,328 @@
     background: rgba(13, 110, 253, 0.12);
     color: #0d6efd;
 }
+
+    /* 国家选择器样式 */
+    .training-countries-container {
+        position: relative;
+        min-width: 150px;
+    }
+    
+    .training-countries-container select[multiple] {
+        min-height: 60px;
+        padding: 4px;
+        border-radius: 4px;
+        border: 1px solid #ced4da;
+        background: white;
+    }
+    
+    .training-countries-container select[multiple]:focus {
+        border-color: #86b7fe;
+        outline: 0;
+        box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+    }
+    
+    .training-countries-container select[multiple] option {
+        padding: 2px 8px;
+        border-radius: 3px;
+    }
+    
+    .training-countries-container select[multiple] option:checked {
+        background: #0d6efd linear-gradient(0deg, #0d6efd 0%, #0d6efd 100%);
+        color: white;
+    }
+    
+    .country-tag {
+        font-size: 0.7rem;
+        padding: 2px 8px;
+        border-radius: 12px;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: #e9ecef;
+        color: #333;
+    }
+    
+    .country-tag .bi-x-circle-fill {
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+    
+    .country-tag .bi-x-circle-fill:hover {
+        opacity: 1;
+    }
+    
+    .selected-countries-tags {
+        min-height: 24px;
+        padding: 2px 0;
+    }
+
+/* templates/admin/list_trainings.html - 多国家标签输入组件样式 */
+
+/* 多国家标签输入容器 */
+.country-tag-input-container {
+    position: relative;
+    min-width: 200px;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    padding: 4px 8px;
+    transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+    cursor: text;
+}
+
+.country-tag-input-container:focus-within {
+    border-color: #86b7fe;
+    outline: 0;
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+.country-tag-input-container .tags-wrapper {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    min-height: 32px;
+}
+
+/* 国家标签 */
+.country-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #e9ecef;
+    border-radius: 12px;
+    padding: 2px 8px 2px 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #212529;
+    border: 1px solid #dee2e6;
+    transition: all 0.2s ease;
+    animation: tagFadeIn 0.2s ease;
+}
+
+.country-tag .tag-code {
+    font-weight: 600;
+    color: #0d6efd;
+}
+
+.country-tag .tag-remove {
+    cursor: pointer;
+    font-size: 0.6rem;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+    padding: 0 2px;
+    border-radius: 50%;
+    line-height: 1;
+}
+
+.country-tag .tag-remove:hover {
+    opacity: 1;
+    background: rgba(220, 53, 69, 0.2);
+    color: #dc3545;
+}
+
+.country-tag:hover {
+    background: #dee2e6;
+}
+
+@keyframes tagFadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+/* 搜索输入框（内联） */
+.country-tag-input {
+    flex: 1;
+    min-width: 100px;
+    border: none !important;
+    outline: none !important;
+    padding: 4px 8px;
+    font-size: 0.8rem;
+    background: transparent !important;
+    box-shadow: none !important;
+    height: 28px;
+}
+
+.country-tag-input:focus {
+    border: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+}
+
+.country-tag-input::placeholder {
+    color: #adb5bd;
+    font-size: 0.75rem;
+}
+
+/* 搜索建议下拉框 */
+.country-suggestions-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 1050;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.country-suggestions-dropdown.show {
+    display: block;
+}
+
+.country-suggestions-dropdown .suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+    border-bottom: 1px solid #f1f3f5;
+}
+
+.country-suggestions-dropdown .suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.country-suggestions-dropdown .suggestion-item:hover,
+.country-suggestions-dropdown .suggestion-item.active {
+    background: #f0f7ff;
+}
+
+.country-suggestions-dropdown .suggestion-item .suggestion-code {
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: #0d6efd;
+    min-width: 32px;
+}
+
+.country-suggestions-dropdown .suggestion-item .suggestion-name {
+    flex: 1;
+    font-size: 0.85rem;
+    color: #212529;
+}
+
+.country-suggestions-dropdown .suggestion-item .suggestion-flag {
+    font-size: 1.1rem;
+}
+
+.country-suggestions-dropdown .suggestion-item .suggestion-match {
+    font-size: 0.7rem;
+    color: #6c757d;
+    background: #e9ecef;
+    padding: 0 6px;
+    border-radius: 3px;
+}
+
+.country-suggestions-dropdown .suggestion-item .suggestion-check {
+    color: #198754;
+    font-size: 0.9rem;
+}
+
+/* 搜索高亮 */
+.country-suggestions-dropdown .suggestion-item .highlight {
+    background: #ffd700;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+/* 加载状态 */
+.country-suggestions-dropdown .suggestion-loading {
+    padding: 12px;
+    text-align: center;
+    color: #6c757d;
+    font-size: 0.8rem;
+}
+
+.country-suggestions-dropdown .suggestion-empty {
+    padding: 12px;
+    text-align: center;
+    color: #6c757d;
+    font-size: 0.8rem;
+}
+
+/* 已选国家数量提示 */
+.country-tag-input-container .selected-count-hint {
+    font-size: 0.6rem;
+    color: #6c757d;
+    padding: 0 4px;
+    white-space: nowrap;
+}
+
+/* 错误状态 */
+.country-tag-input-container.error {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
+}
+
+.country-tag-input-container .error-message {
+    font-size: 0.65rem;
+    color: #dc3545;
+    display: none;
+    padding: 2px 4px;
+}
+
+.country-tag-input-container.error .error-message {
+    display: block;
+}
+
+/* ============================================================
+   表头录入按钮状态样式
+   ============================================================ */
+
+/* 空状态 */
+.header-status-empty {
+    opacity: 0.7;
+}
+
+.header-status-empty:hover {
+    opacity: 1;
+}
+
+/* 部分录入状态 */
+.header-status-partial {
+    border-color: #ffc107;
+    color: #856404;
+}
+
+.header-status-partial:hover {
+    background-color: #fff3cd;
+    border-color: #ffc107;
+}
+
+/* 完整录入状态 */
+.header-status-full {
+    border-color: #28a745;
+    color: #155724;
+}
+
+.header-status-full:hover {
+    background-color: #d4edda;
+    border-color: #28a745;
+}
+
+/* Tooltip 样式增强 */
+.header-tooltip .tooltip-inner {
+    max-width: 350px;
+    text-align: left;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.header-tooltip .tooltip-inner .field-list {
+    font-size: 0.75rem;
+    color: #ffd700;
+    margin-top: 4px;
+}

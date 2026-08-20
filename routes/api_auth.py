@@ -365,7 +365,7 @@ def login():
         db = get_supabase()
         user = None
         try:
-            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").maybe_single().execute()
+            res = db.table("users").select("*").eq("email", email).is_("deleted_at", "null").eq("is_resign", False).maybe_single().execute()
             if res and hasattr(res, 'data'): user = res.data
             elif isinstance(res, dict): user = res
         except: pass
@@ -412,7 +412,7 @@ def login():
             return redirect(url_for('auth.index'))
         else:
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-                return jsonify({"success": False, "message": "invalid_email_or_password"}), 401
+                return jsonify({"success": False, "message": "invalid_email_or_password", "params": []}), 401
             
             flash({'msg': 'invalid_email_or_password', 'params': []}, 'danger')
             return render_template('auth/login_standalone.html')

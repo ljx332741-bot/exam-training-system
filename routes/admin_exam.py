@@ -2028,7 +2028,7 @@ def api_admin_exams_list_light():
     if end_date:
         all_exams = [e for e in all_exams if e.get('start_time') and e['start_time'] <= end_date]
     
-    # ✅ 获取培训绑定的考试ID（用于标记）
+    # 获取培训绑定的考试ID（用于标记）
     bound_exam_ids = set()
     if training_id:
         try:
@@ -2043,6 +2043,27 @@ def api_admin_exams_list_light():
     start_idx = (page - 1) * per_page
     end_idx = start_idx + per_page
     paginated = all_exams[start_idx:end_idx]
+
+    # 批量获取已参考人数（只统计在职人员）
+    submitted_counts = {}
+    if paginated:
+        exam_ids = [e['id'] for e in paginated]
+        for eid in exam_ids:
+            # 获取该考试已提交的用户
+            results_res = db.table("exam_results")\
+                .select("user_id, users!inner(is_resign)")\
+                .eq("exam_id", eid)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            # 过滤离职人员
+            submitted_user_ids = []
+            for r in (results_res.data or []):
+                user = r.get('users', {})
+                if user.get('is_resign') == False:
+                    submitted_user_ids.append(r['user_id'])
+            
+            submitted_counts[eid] = len(set(submitted_user_ids))
     
     # 构建返回数据
     result = []
@@ -2057,10 +2078,11 @@ def api_admin_exams_list_light():
             "start_time": exam.get('start_time'),
             "end_time": exam.get('end_time'),
              "status": exam.get('status', ''),
-            "is_bound": exam['id'] in bound_exam_ids  # ✅ 关键：标记是否已绑定
+            "is_bound": exam['id'] in bound_exam_ids,
+            "submitted_count": submitted_counts.get(exam['id'], 0)
         })
     
-    # ✅ 排序：绑定的考试排在前面
+    # 绑定的考试排在前面
     result.sort(key=lambda x: (not x['is_bound'], x['title']))
     
     return jsonify({

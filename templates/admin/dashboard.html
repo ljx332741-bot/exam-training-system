@@ -1762,6 +1762,54 @@
 		btn.style.display = (input.value && input.value.trim() !== '') ? 'block' : 'none';
 	}
 
+    /**
+     * 解析培训的国家列表（支持新旧格式）
+     */
+    function parseTrainingCountries(training) {
+        if (!training) return [];
+        
+        let countries = [];
+        
+        // 1. 优先检查 countries 字段（新格式 - 多国家）
+        if (training.countries) {
+            try {
+                if (typeof training.countries === 'string') {
+                    const parsed = JSON.parse(training.countries);
+                    countries = Array.isArray(parsed) ? parsed : [parsed];
+                } else if (Array.isArray(training.countries)) {
+                    countries = training.countries;
+                } else {
+                    countries = [training.countries];
+                }
+            } catch {
+                countries = [training.countries];
+            }
+        } 
+        // 2. 降级：使用旧的 country 字段（单国家）
+        else if (training.country) {
+            try {
+                const parsed = JSON.parse(training.country);
+                countries = Array.isArray(parsed) ? parsed : [parsed];
+            } catch {
+                countries = [training.country];
+            }
+        }
+        
+        if (!Array.isArray(countries)) {
+            countries = [countries];
+        }
+        return countries.filter(c => c && c.trim());
+    }
+
+    /**
+     * 检查培训是否包含指定国家
+     */
+    function trainingHasCountry(training, countryCode) {
+        if (!training || !countryCode) return false;
+        const countries = parseTrainingCountries(training);
+        return countries.includes(countryCode);
+    }
+
     // ==================统一状态管理器======================
     const ExportFilterStore = {
         // 状态
@@ -2016,7 +2064,6 @@
 				params.append('country', this.state.country.code);
 				console.log('培训搜索 - 国家过滤:', this.state.country.code);
 			}
-            if (this.state.country.code) params.append('country', this.state.country.code);
             if (this.state.warehouse) params.append('warehouse', this.state.warehouse);
             if (this.state.startDate) params.append('start_date', this.state.startDate);
             if (this.state.endDate) params.append('end_date', this.state.endDate);
@@ -2024,7 +2071,7 @@
             return params;
         },
         
-        // 构建考试API参数（✅ 修复：使用 this.state 而不是未定义的变量）
+        // 构建考试API参数（使用 this.state 而不是未定义的变量）
         _buildExamParams(searchTerm = '') {
             const params = new URLSearchParams();
             if (searchTerm) params.append('name', searchTerm);
@@ -2104,9 +2151,32 @@
             }
             try {
                 const res = await fetch(`/api/search/trainings?${params}`);
-                const data = await res.json();
+
+                // 添加错误处理
+                if (!res.ok) {
+                    console.error(`API 返回错误: ${res.status}`);
+                    this.cache.trainings = [];
+                    return this.cache.trainings;
+                }
                 
-                let trainings = Array.isArray(data) ? data : (data.data || []);
+                const data = await res.json();
+                console.log('📋 搜索培训返回数据:', data);
+
+                // 兼容多种返回格式
+                let trainings = [];
+                if (Array.isArray(data)) {
+                    trainings = data;
+                } else if (data.data && Array.isArray(data.data)) {
+                    trainings = data.data;
+                } else {
+                    trainings = [];
+                }
+
+                // 确保每个培训都有 countries 字段
+                trainings = trainings.map(t => ({
+                    ...t,
+                    countries: t.countries || (t.country ? [t.country] : [])
+                }));
                 
 				// 如果后端没有返回 is_bound，前端查询绑定关系
 				if (this.state.exam.id && trainings.length > 0) {
@@ -2114,19 +2184,13 @@
 						const examId = this.state.exam.id;
 						const bindRes = await fetch(`/api/admin/training/bindings/by_exam?exam_id=${examId}`);
 						if (!bindRes.ok) {
-							console.warn(`获取绑定关系失败: ${bindRes.status}`);
-							trainings = trainings.map(t => ({ ...t, is_bound: false }));
-							this.cache.trainings = trainings;
-							return trainings;
-						}
-						const bindData = await bindRes.json();
-						// 检查 bindData 的结构
-						const boundTrainingIds = new Set(bindData.training_ids || bindData.bindings?.map(b => b.training_id) || []);
-						
-						trainings = trainings.map(t => ({
-							...t,
-							is_bound: boundTrainingIds.has(t.id)
-						}));
+                            const bindData = await bindRes.json();
+                            const boundTrainingIds = new Set(bindData.training_ids || bindData.bindings?.map(b => b.training_id) || []);
+                            trainings = trainings.map(t => ({
+                                ...t,
+                                is_bound: boundTrainingIds.has(t.id)
+                            }));
+                        }
 					} catch (err) {
 						console.error('获取绑定关系失败:', err);
 						trainings = trainings.map(t => ({ ...t, is_bound: false }));
@@ -2137,6 +2201,7 @@
 				
                 this.cache.trainings = trainings;
             } catch (err) {
+                console.error('刷新培训列表失败:', err);
                 this.cache.trainings = [];
             }
             return this.cache.trainings;
@@ -2150,7 +2215,24 @@
                 const res = await fetch(`/api/admin/exams/list_light?${params}`);
                 const data = await res.json();
                 let exams = data.data || [];
-                
+
+                // 确保每个考试都有 countries_display
+                exams = exams.map(e => {
+                    if (!e.countries_display) {
+                        if (e.countries) {
+                            try {
+                                const parsed = typeof e.countries === 'string' ? JSON.parse(e.countries) : e.countries;
+                                e.countries_display = Array.isArray(parsed) ? parsed.join(', ') : parsed;
+                            } catch {
+                                e.countries_display = e.country || '-';
+                            }
+                        } else {
+                            e.countries_display = e.country || '-';
+                        }
+                    }
+                    return e;
+                });
+
                 // 如果后端没有返回 is_bound，前端查询绑定关系
                 if (this.state.training.id && exams.length > 0) {
                     try {
@@ -2215,25 +2297,46 @@
             const dropdown = document.getElementById('trainingDropdown');
             if (!container) return;
             
-            let trainings = this.cache.trainings;
-			// 国家过滤
-			if (this.state.country.code && trainings.length > 0) {
-				trainings = trainings.filter(t => t.country === this.state.country.code);
-				console.log(`培训国家过滤后: ${trainings.length} 条`);
-			}
-			// 过滤掉草稿和未激活的培训
-			trainings = trainings.filter(t => {
-				// 检查 dynamic_status 是否为 draft
-				if (t.dynamic_status === 'draft') return false;
-				// 检查是否有有效的开始和结束时间
-				if (!t.start_time || !t.end_time) return false;
-				// 可选：检查是否已激活
-				if (t.is_active === false) return false;
-				return true;
-			});
-			
+            let trainings = this.cache.trainings || [];
+            
+            console.log('📋 渲染培训下拉，数据量:', trainings.length);
+            
+            // 如果没有数据，显示提示
+            if (!trainings || trainings.length === 0) {
+                container.innerHTML = `
+                    <div class="p-3 text-center text-muted">
+                        <i class="bi bi-inbox me-1"></i>
+                        ${safeT('no_training_data_available') || '暂无培训数据，请检查权限或创建培训'}
+                    </div>
+                `;
+                if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
+                return;
+            }
+            
+            // 国家过滤（支持多国家）
+            if (this.state.country.code && trainings.length > 0) {
+                trainings = trainings.filter(t => {
+                    const countries = parseTrainingCountries(t);
+                    return countries.includes(this.state.country.code);
+                });
+                console.log('📋 国家过滤后:', trainings.length);
+            }
+            
+            // 过滤掉草稿和未激活的培训    
+            trainings = trainings.filter(t => {
+                // 只过滤草稿状态
+                if (t.dynamic_status === 'draft') return false;
+                // 保留所有非草稿培训，包括 is_active 为 false 的
+                return true;
+            });
+            
             if (!trainings.length) {
-                container.innerHTML = `<div class="p-3 text-center text-muted">${safeT('no_training_data_available')}</div>`;
+                container.innerHTML = `
+                    <div class="p-3 text-center text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        ${safeT('no_training_data_available') || '暂无培训数据'}
+                    </div>
+                `;
                 if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
                 return;
             }
@@ -2242,10 +2345,32 @@
             trainings.forEach(t => {
                 const createdDate = DateUtils.formatDateOnly(t.created_at);
                 const quarter = DateUtils.getQuarterFromDate(t.created_at);
-				// 绑定徽章（如果先选了考试）
-				const bindingBadge = t.is_bound 
-					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> ${safeT('binded')}</span>` 
-					: '';
+                
+                // 解析多国家
+                const countryList = parseTrainingCountries(t);
+                const countriesDisplay = countryList.length > 0 ? countryList.join(', ') : (t.country || '-');
+
+                // ID 标记（与 multi-tab 保持一致）
+                const idBadge = `<span class="badge bg-secondary ms-1" style="font-size: 0.55rem; padding: 1px 6px; border-radius: 3px;">${t.id}</span>`;
+                
+                // 状态图标
+                const statusIcon = getTrainingStatusIcon(t.dynamic_status);
+                
+                // 签到人数显示（人像图标 + 数量）
+                const signedCount = t.signed_count || 0;
+                const signedBadge = signedCount > 0 
+                    ? `<span class="badge bg-info ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('signed_count') || '签到人数'}">
+                        <i class="bi bi-person-fill" style="font-size: 0.7rem;"></i> ${signedCount}
+                    </span>` 
+                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('no_signed_users') || '暂无签到'}">
+                        <i class="bi bi-person" style="font-size: 0.7rem;"></i> 0
+                    </span>`;
+
+                // 绑定标记
+                const bindingBadge = t.is_bound 
+                    ? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i> ${safeT('binded') || '已绑定'}</span>` 
+                    : '';
+                
                 html += `
                     <div class="export-dropdown-item" 
                         data-id="${t.id}" 
@@ -2253,13 +2378,15 @@
                         data-start="${t.start_time || ''}"
                         data-end="${t.end_time || ''}">
                         <div class="item-title">
-							${escapeHtml(t.name)}
-							${bindingBadge}
-						</div>
+                            ${idBadge}${escapeHtml(t.name)}
+                            ${statusIcon}
+                            ${signedBadge}
+                            ${bindingBadge}
+                        </div>
                         <div class="item-meta">
-                            <span><i class="bi bi-calendar3"></i> ${safeT('create')}: ${createdDate}</span>
-                            <span><i class="bi bi-calendar-week"></i> ${safeT('quarter')}: ${quarter}</span>
-                            <span><i class="bi bi-globe2"></i> ${escapeHtml(t.country || '-')}</span>
+                            <span><i class="bi bi-calendar3"></i> ${safeT('create') || '创建'}: ${createdDate}</span>
+                            <span><i class="bi bi-calendar-week"></i> ${safeT('quarter') || '季度'}: ${quarter}</span>
+                            <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
                         </div>
                     </div>
                 `;
@@ -2274,7 +2401,7 @@
             
             if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
         },
-        
+
         // 渲染考试下拉面板
         _renderExamDropdown(searchTerm = '', showDropdown = false) {
             const container = document.getElementById('examListContainer');
@@ -2310,6 +2437,22 @@
                 const quarter = DateUtils.getQuarterFromDate(exam.created_at);
                 const countriesDisplay = exam.countries_display || exam.country || '-';
 
+                // ID 标记（与 multi-tab 保持一致）
+                const idBadge = `<span class="badge bg-secondary ms-1" style="font-size: 0.55rem; padding: 1px 6px; border-radius: 3px;">${exam.id}</span>`;
+                
+                // 状态图标
+                const statusIcon = getExamStatusIcon(exam.status);
+
+                // 已参考人数显示（人像图标 + 数量）
+                const submittedCount = exam.submitted_count || 0;
+                const submittedBadge = submittedCount > 0 
+                    ? `<span class="badge bg-success ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('submitted_count') || '已参考人数'}">
+                        <i class="bi bi-person-fill" style="font-size: 0.7rem;"></i> ${submittedCount}
+                    </span>` 
+                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('no_submitted_users') || '暂无参考'}">
+                        <i class="bi bi-person" style="font-size: 0.7rem;"></i> 0
+                    </span>`;
+
 				// 已绑定的考试添加特殊标记
 				const bindingBadge = exam.is_bound 
 					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;">${safeT('binded')}</span>` 
@@ -2322,7 +2465,9 @@
                         data-start="${exam.start_time || ''}"
                         data-end="${exam.end_time || ''}">
                         <div class="item-title">
-							${escapeHtml(exam.title)}
+							${idBadge}${escapeHtml(exam.title)}
+                            ${statusIcon}
+                            ${submittedBadge}
 							${bindingBadge}
 						</div>
                         <div class="item-meta">
@@ -2720,9 +2865,11 @@
         // 加载初始数据
         async init() {
             if (this.state.isInitialized) return;
+            console.log('📋 ExportFilterStore 初始化开始...');
             
             // 加载权限范围内的国家
             await this.loadAllCountries();
+            console.log('📋 国家列表加载完成:', this.cache.allCountries.length);
 
 			// 加载季度列表并存储到全局
 			try {
@@ -2737,7 +2884,9 @@
 				window.allQuartersList = [];
 			}
             // 加载初始数据（无筛选条件时显示最近8个）
+            console.log('📋 加载初始培训数据...');
             await this.refreshAll();
+            console.log('📋 初始数据加载完成，培训数:', this.cache.trainings.length);
             
             // 设置默认日期为当前季度
             /*
@@ -3044,6 +3193,50 @@
         }
     };
 
+    window.ExportFilterStore = ExportFilterStore;
+
+    /**
+     * 获取培训状态对应的图标
+     */
+    function getTrainingStatusIcon(status) {
+        const statusMap = {
+            'draft': `<span class="badge bg-secondary ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('draft') || '草稿'}">
+                        <i class="bi bi-door-closed"></i>
+                    </span>`,
+            'pending': `<span class="badge bg-info ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('not_started') || '未开始'}">
+                        <i class="bi bi-door-open"></i>
+                    </span>`,
+            'active': `<span class="badge bg-success ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('ongoing') || '进行中'}">
+                        <i class="bi bi-door-open"></i>
+                    </span>`,
+            'closed': `<span class="badge bg-danger ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('closed') || '已关闭'}">
+                        <i class="bi bi-door-closed"></i>
+                    </span>`
+        };
+        return statusMap[status] || statusMap['draft'];
+    }
+
+    /**
+     * 获取考试状态对应的图标
+     */
+    function getExamStatusIcon(status) {
+        const statusMap = {
+            'draft': `<span class="badge bg-secondary ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('draft') || '草稿'}">
+                        <i class="bi bi-door-closed"></i>
+                    </span>`,
+            'created': `<span class="badge bg-info ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('not_started') || '未开始'}">
+                        <i class="bi bi-door-open"></i>
+                    </span>`,
+            'active': `<span class="badge bg-success ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('ongoing') || '进行中'}">
+                        <i class="bi bi-door-open"></i>
+                    </span>`,
+            'closed': `<span class="badge bg-danger ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('closed') || '已关闭'}">
+                        <i class="bi bi-door-closed"></i>
+                    </span>`
+        };
+        return statusMap[status] || statusMap['draft'];
+    }
+
     // ==================== 综合筛选管理器 ====================
     // 用于处理综合筛选（多选模式）的所有逻辑
     const MultiSelectManager = {
@@ -3302,14 +3495,17 @@
             const data = await res.json();
             let trainings = Array.isArray(data) ? data : (data.data || []);
 
+            // 确保每个培训都有 countries 字段
+            trainings = trainings.map(t => ({
+                ...t,
+                countries: t.countries || (t.country ? [t.country] : []),
+                signed_count: t.signed_count || 0
+            }));
+
             // 过滤草稿和未激活的培训
             trainings = trainings.filter(t => {
-                // 检查 dynamic_status 是否为 draft
                 if (t.dynamic_status === 'draft') return false;
-                // 检查是否有有效的开始和结束时间
-                if (!t.start_time || !t.end_time) return false;
-                // 检查是否已激活
-                if (t.is_active === false) return false;
+                // 移除 is_active 和 start_time/end_time 过滤
                 return true;
             });
             
@@ -3367,6 +3563,13 @@
                 if (e.is_active === false) return false;
                 return true;
             });
+
+            // 确保每个考试都有 submitted_count
+            exams = exams.map(e => ({
+                ...e,
+                submitted_count: e.submitted_count || 0
+            }));
+            
             if (selectedTrainingIds && selectedTrainingIds.length > 0) {
                 try {
                     const boundExamIds = new Set();
@@ -3392,7 +3595,7 @@
             
             return exams;
         },
-        
+
         // ========== 渲染培训列表（修复版） ==========
         renderTrainingList(trainings) {
             const container = document.getElementById('multiTrainingList');
@@ -3408,7 +3611,20 @@
                 const isChecked = this.selectedTrainings.has(t.id);
                 const createdDate = t.created_at ? t.created_at.slice(0, 10) : '-';
                 const quarter = this.getQuarterFromDate(t.created_at);
-                        
+
+                // 解析多国家
+                const countryList = parseTrainingCountries(t);
+                const countriesDisplay = countryList.length > 0 ? countryList.join(', ') : '-';
+
+                // 状态图标
+                const statusIcon = getTrainingStatusIcon(t.dynamic_status);
+
+                // 签到人数显示
+                const signedCount = t.signed_count || 0;
+                const signedBadge = signedCount > 0 
+                    ? `<span class="badge bg-info ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person-fill"></i> ${signedCount}</span>`
+                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person"></i> 0</span>`;
+                
                 // ID 标记（小标签）
                 const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${t.id}</span>`;
                 
@@ -3439,10 +3655,13 @@
                                     data-id="${t.id}" ${isChecked ? 'checked' : ''}>
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(t.name)}">
-                                        ${idBadge}${escapeHtml(t.name)} ${bindingBadge}
+                                        ${idBadge}${escapeHtml(t.name)} 
+                                        ${statusIcon}
+                                        ${signedBadge}
+                                        ${bindingBadge}
                                     </div>
                                     <div class="small text-muted">
-                                        <span><i class="bi bi-tag"></i> ${escapeHtml(t.country || '-')}</span>
+                                        <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
                                         <span class="mx-1">|</span>
                                         <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
                                         <span class="mx-1">|</span>
@@ -3688,6 +3907,15 @@
                 const createdDate = e.created_at ? e.created_at.slice(0, 10) : '-';
                 const quarter = this.getQuarterFromDate(e.created_at);
                 const countriesDisplay = e.countries_display || e.country || '-';
+
+                // 状态图标
+                const statusIcon = getExamStatusIcon(e.status);
+                
+                // 已参考人数显示
+                const submittedCount = e.submitted_count || 0;
+                const submittedBadge = submittedCount > 0 
+                    ? `<span class="badge bg-success ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person-fill"></i> ${submittedCount}</span>`
+                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person"></i> 0</span>`;
                 
                 // ID 标记（小标签）
                 const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${e.id}</span>`;
@@ -3718,7 +3946,10 @@
                                     data-id="${e.id}" ${isChecked ? 'checked' : ''}>
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(e.title)}">
-                                        ${idBadge}${escapeHtml(e.title)} ${bindingBadge}
+                                        ${idBadge}${escapeHtml(e.title)}
+                                        ${statusIcon} 
+                                        ${submittedBadge}
+                                        ${bindingBadge}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>

@@ -760,3 +760,165 @@ def admin_required_for_api(f):
             return jsonify({"success": False, "message": "permission_denied"}), 403
         return f(*args, **kwargs)
     return decorated
+
+# ==================== 培训/考试权限检查（支持多国家） ====================
+
+def parse_training_countries(training):
+    """
+    解析培训的国家列表（支持新旧格式）
+    用于权限判断，复用 training_helpers 中的实现
+    """
+    from utils.training_helpers import parse_training_countries as _parse
+    return _parse(training)
+
+
+def can_access_training(training):
+    """
+    检查当前用户是否有权访问该培训（支持多国家）
+    
+    Args:
+        training: 培训数据字典，包含 countries 或 country 字段
+    
+    Returns:
+        bool: True 表示有权访问
+    """
+    from utils.training_helpers import parse_training_countries
+    
+    # 开发者无限制
+    if is_developer():
+        return True
+    
+    # 获取当前用户的权限范围
+    allowed_countries = get_allowed_countries()
+    
+    # 无权限范围限制
+    if allowed_countries is None:
+        return True
+    
+    # 空权限范围
+    if not allowed_countries:
+        return False
+    
+    # 解析培训的国家列表
+    training_countries = parse_training_countries(training)
+    
+    # 如果培训没有国家，根据用户角色决定
+    if not training_countries:
+        user_country = session.get('user_country')
+        if user_country:
+            return user_country in allowed_countries
+        return False
+    
+    # 检查是否有交集
+    return any(c in allowed_countries for c in training_countries)
+
+
+def can_access_exam(exam):
+    """
+    检查当前用户是否有权访问该考试（支持多国家）
+    
+    Args:
+        exam: 考试数据字典，包含 countries 或 country 字段
+    
+    Returns:
+        bool: True 表示有权访问
+    """
+    from routes.helpers import parse_exam_countries
+    
+    # 开发者无限制
+    if is_developer():
+        return True
+    
+    # 获取当前用户的权限范围
+    allowed_countries = get_allowed_countries()
+    
+    # 无权限范围限制
+    if allowed_countries is None:
+        return True
+    
+    # 空权限范围
+    if not allowed_countries:
+        return False
+    
+    # 解析考试的国家列表
+    exam_countries = parse_exam_countries(exam)
+    
+    # 如果考试没有国家，根据用户角色决定
+    if not exam_countries:
+        user_country = session.get('user_country')
+        if user_country:
+            return user_country in allowed_countries
+        return False
+    
+    # 检查是否有交集
+    return any(c in allowed_countries for c in exam_countries)
+
+
+def filter_trainings_by_permission(trainings):
+    """
+    根据权限过滤培训列表（支持多国家）
+    
+    Args:
+        trainings: 培训数据列表
+    
+    Returns:
+        list: 过滤后的培训列表
+    """
+    return [t for t in trainings if can_access_training(t)]
+
+
+def filter_exams_by_permission(exams):
+    """
+    根据权限过滤考试列表（支持多国家）
+    
+    Args:
+        exams: 考试数据列表
+    
+    Returns:
+        list: 过滤后的考试列表
+    """
+    from routes.helpers import can_access_exam
+    return [e for e in exams if can_access_exam(e)]
+
+
+def can_access_training_by_id(training_id):
+    """
+    根据培训ID检查当前用户是否有权访问
+    
+    Args:
+        training_id: 培训ID
+    
+    Returns:
+        bool: True 表示有权访问
+    """
+    try:
+        db = get_supabase()
+        res = db.table("trainings").select("countries, country").eq("id", training_id).maybe_single().execute()
+        if not res.data:
+            return False
+        return can_access_training(res.data)
+    except Exception as e:
+        logger.error(f"检查培训权限失败: {e}")
+        return False
+
+
+def can_access_exam_by_id(exam_id):
+    """
+    根据考试ID检查当前用户是否有权访问
+    
+    Args:
+        exam_id: 考试ID
+    
+    Returns:
+        bool: True 表示有权访问
+    """
+    try:
+        db = get_supabase()
+        res = db.table("exams").select("countries, country").eq("id", exam_id).maybe_single().execute()
+        if not res.data:
+            return False
+        from routes.helpers import can_access_exam
+        return can_access_exam(res.data)
+    except Exception as e:
+        logger.error(f"检查考试权限失败: {e}")
+        return False
