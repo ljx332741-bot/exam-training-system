@@ -127,9 +127,9 @@ def api_admin_trainings():
 @cache_get(ttl=300, prefix='training_list', include_user=True)
 def _get_trainings_list(db):
     """获取培训列表（带缓存）"""
-    print("=" * 60, flush=True)
-    print("🔥🔥🔥 _get_trainings_list 被调用（应该是第一次或缓存过期）", flush=True)
-    print("=" * 60, flush=True)
+    logger.info("=" * 60, flush=True)
+    logger.info("🔥🔥🔥 _get_trainings_list 被调用（应该是第一次或缓存过期）", flush=True)
+    logger.info("=" * 60, flush=True)
 
     # 获取过滤参数
     country_filter = request.args.get('country', '')
@@ -138,9 +138,9 @@ def _get_trainings_list(db):
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
 
-    print("=" * 50)
-    print("调用 _get_trainings_list (缓存)")
-    print(f"当前用户: role={session.get('role')}, user_country={session.get('user_country')}")
+    logger.info("=" * 50)
+    logger.info("调用 _get_trainings_list (缓存)")
+    logger.info(f"当前用户: role={session.get('role')}, user_country={session.get('user_country')}")
     
     # 1. 获取所有培训
     query = db.table("trainings").select("*")
