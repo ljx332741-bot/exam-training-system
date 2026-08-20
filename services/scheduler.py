@@ -14,6 +14,8 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+# 全局调度器实例
+_scheduler = None
 
 # ============================================================
 # 1. 重试装饰器（如果 db.py 已有，可直接导入）
@@ -256,9 +258,9 @@ def init_scheduler(app):
     """初始化定时调度器"""
     try:
         scheduler = BackgroundScheduler()
+
+        # ========== 任务1: 自动提交超时考试 ==========
         scan_interval = int(os.environ.get('EXAM_SCAN_INTERVAL', 60))
-        
-        # 添加定时任务
         scheduler.add_job(
             func=auto_submit_timeout_exams,
             trigger="interval",
@@ -269,9 +271,40 @@ def init_scheduler(app):
             max_instances=1,  # 防止任务重叠
             misfire_grace_time=30  # 允许 30 秒的延迟
         )
+        logger.info(f"✅ 自动提交调度器已启动，扫描间隔: {scan_interval}秒")
+
+        # ========== 任务2: 更新培训状态 ==========
+        scheduler.add_job(
+            func=update_all_training_statuses,
+            trigger="interval",
+            minutes=30,
+            id="update_training_statuses",
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("✅ 培训状态更新任务已注册，间隔: 30分钟")
+        
+        # ========== 任务3: 更新考试状态 ==========
+        scheduler.add_job(
+            func=update_all_exam_statuses,
+            trigger="interval",
+            minutes=30,
+            id="update_exam_statuses",
+            replace_existing=True,
+            max_instances=1
+        )
+        logger.info("✅ 考试状态更新任务已注册，间隔: 30分钟")
         
         scheduler.start()
-        logger.info(f"✅ 自动提交调度器已启动，扫描间隔: {scan_interval}秒")
+        logger.info("✅ 定时调度器已启动")
+
+        # 立即执行一次，确保状态及时更新
+        try:
+            update_all_training_statuses()
+            update_all_exam_statuses()
+            logger.info("✅ 首次状态更新已执行")
+        except Exception as e:
+            logger.warning(f"首次状态更新失败（非致命）: {e}")
         
         # 确保程序退出时关闭调度器
         def shutdown_scheduler():
@@ -290,42 +323,82 @@ def init_scheduler(app):
         return None
 
 # ============================================================
-# 7. 动态更新培训的 dynamic_status
+# 7. 动态更新状态
 # ============================================================
 def update_all_training_statuses():
     """定时更新所有培训的 dynamic_status"""
-    db = get_supabase()
-    now = datetime.now(timezone.utc).isoformat()
-    
-    # 更新为 active（进行中）
-    db.table("trainings").update({
-        "dynamic_status": "active"
-    }).lt("start_time", now).gt("end_time", now).execute()
-    
-    # 更新为 closed（已关闭）
-    db.table("trainings").update({
-        "dynamic_status": "closed"
-    }).lt("end_time", now).execute()
-    
-    # 更新为 pending（未开始）
-    db.table("trainings").update({
-        "dynamic_status": "pending"
-    }).gt("start_time", now).execute()
-    
-    # 更新为 draft（草稿，没有有效期）
-    db.table("trainings").update({
-        "dynamic_status": "draft"
-    }).is_("start_time", "null").or_("end_time", "is", "null").execute()
+    try:
+        db = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        logger.info("🔄 开始更新培训状态...")
+        
+        # 1. 更新为 closed（已结束）
+        result1 = db.table("trainings").update({
+            "dynamic_status": "closed"
+        }).lt("end_time", now).execute()
+        
+        # 2. 更新为 active（进行中）
+        result2 = db.table("trainings").update({
+            "dynamic_status": "active",
+            "is_active": True
+        }).lte("start_time", now).gte("end_time", now).execute()
+        
+        # 3. 更新为 pending（未开始）
+        result3 = db.table("trainings").update({
+            "dynamic_status": "pending"
+        }).gt("start_time", now).execute()
+        
+        # 4. 更新为 draft（草稿，没有有效期）
+        result4 = db.table("trainings").update({
+            "dynamic_status": "draft",
+            "is_active": False
+        }).filter("start_time", "is", "null").filter("end_time", "is", "null").execute()
+        
+        logger.info(f"✅ 培训状态更新完成: closed={len(result1.data or [])}, "
+                   f"active={len(result2.data or [])}, "
+                   f"pending={len(result3.data or [])}, "
+                   f"draft={len(result4.data or [])}")
+        
+    except Exception as e:
+        logger.error(f"❌ 更新培训状态失败: {e}")
 
-# 在 scheduler 中注册
-def start_scheduler():
-    scheduler = BackgroundScheduler()
-    # 每小时更新一次
-    scheduler.add_job(
-        update_all_training_statuses,
-        'interval',
-        hours=1,
-        id='update_training_statuses'
-    )
-    scheduler.start()
-    return scheduler
+
+def update_all_exam_statuses():
+    """定时更新所有考试的状态"""
+    try:
+        db = get_supabase()
+        now = datetime.now(timezone.utc).isoformat()
+        
+        logger.info("🔄 开始更新考试状态...")
+        
+        # 1. 更新为 closed（已结束）
+        result1 = db.table("exams").update({
+            "status": "closed"
+        }).lt("end_time", now).execute()
+        
+        # 2. 更新为 active（进行中）
+        result2 = db.table("exams").update({
+            "status": "active",
+            "is_active": True
+        }).lte("start_time", now).gte("end_time", now).execute()
+        
+        # 3. 更新为 created（未开始）
+        result3 = db.table("exams").update({
+            "status": "created"
+        }).gt("start_time", now).execute()
+        
+        # 4. 更新为 draft（草稿，没有有效期）
+        result4 = db.table("exams").update({
+            "status": "draft",
+            "is_active": False
+        }).filter("start_time", "is", "null").filter("end_time", "is", "null").execute()
+        
+        logger.info(f"✅ 考试状态更新完成: closed={len(result1.data or [])}, "
+                   f"active={len(result2.data or [])}, "
+                   f"created={len(result3.data or [])}, "
+                   f"draft={len(result4.data or [])}")
+        
+    except Exception as e:
+        logger.error(f"❌ 更新考试状态失败: {e}")
+

@@ -1692,7 +1692,7 @@ def search_trainings():
     
     db = get_supabase()
     
-    # ✅ 获取当前用户的权限范围
+    # 获取当前用户的权限范围
     allowed_countries = get_admin_allowed_countries()
     
     # ========== 1. 基础查询 ==========
@@ -1713,7 +1713,7 @@ def search_trainings():
     
     logger.info(f"[search_trainings] 查询到 {len(all_trainings)} 条培训")
     
-    # ========== 3. ✅ 权限过滤（支持多国家） ==========
+    # ========== 3. 权限过滤（支持多国家） ==========
     if allowed_countries is not None:
         if not allowed_countries:
             logger.info("[search_trainings] 用户无权限，返回空列表")
@@ -1726,7 +1726,7 @@ def search_trainings():
         all_trainings = filtered_by_permission
         logger.info(f"[search_trainings] 权限过滤后 {len(all_trainings)} 条")
     
-    # ========== 4. ✅ 国家过滤（支持多国家） ==========
+    # ========== 4. 国家过滤（支持多国家） ==========
     if country:
         filtered_by_country = []
         for t in all_trainings:
@@ -1768,12 +1768,35 @@ def search_trainings():
             bound_training_ids = set([b['training_id'] for b in (bindings_res.data or [])])
         except ValueError:
             bound_training_ids = set()
+
+    # ========== 9. 获取签到人数统计 ==========
+    # 批量获取所有培训的签到人数
+    signed_counts = {}
+    if paginated:
+        training_ids = [t['id'] for t in paginated]
+        # 获取每个培训的签到人数（只统计在职人员）
+        for tid in training_ids:
+            # 查询该培训的签到记录
+            att_res = db.table("training_attendances")\
+                .select("user_id, users!inner(is_resign)")\
+                .eq("training_id", tid)\
+                .is_("deleted_at", "null")\
+                .execute()
+            
+            # 过滤离职人员
+            signed_user_ids = []
+            for att in (att_res.data or []):
+                user = att.get('users', {})
+                if user.get('is_resign') == False:
+                    signed_user_ids.append(att['user_id'])
+            
+            signed_counts[tid] = len(set(signed_user_ids))
     
-    # ========== 9. ✅ 组装返回数据（保持兼容性） ==========
+    # ========== 10. 组装返回数据（保持兼容性） ==========
     result = []
     for t in paginated:
         t_countries = parse_training_countries(t)
-        # ✅ 确保返回所有原始字段 + 新增字段
+        # 确保返回所有原始字段 + 新增字段
         result.append({
             "id": t['id'],
             "name": t.get('name', ''),
@@ -1787,7 +1810,8 @@ def search_trainings():
             "dynamic_status": t.get('dynamic_status', 'draft'),
             "is_active": t.get('is_active', False),
             "is_bound": t['id'] in bound_training_ids,
-            "header_template": t.get('header_template', {}),  # ✅ 保留表头模板
+            "header_template": t.get('header_template', {}),
+            "signed_count": signed_counts.get(t['id'], 0)
         })
     
     logger.info(f"[search_trainings] 最终返回 {len(result)} 条数据")

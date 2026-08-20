@@ -33,21 +33,29 @@ logger = setup_logging(
     app=None,  # 稍后绑定到 app
     log_dir='logs',
     keep_days=2,
-    # 可选：通过环境变量控制日志级别
-    console_level=os.environ.get('LOG_CONSOLE_LEVEL', None),
-    file_level=os.environ.get('LOG_FILE_LEVEL', None)
+    console_level=logging.INFO if not IS_PRODUCTION else logging.WARNING,  # 控制台始终显示 INFO
+    file_level=logging.DEBUG if not IS_PRODUCTION else logging.INFO,    # 文件记录 DEBUG（可选）
+    is_production=IS_PRODUCTION  # 传入生产环境标志
 )
+root_logger = logging.getLogger()
+
+# 只在本地开发时强制设置 INFO
+if not IS_PRODUCTION:
+    import logging
+    logging.getLogger().setLevel(logging.INFO)
+    print("🔧 本地开发模式：日志级别 INFO")
+else:
+    print("🚀 生产模式：日志级别 WARNING")
 
 # 手动清理一次旧日志（启动时清理）
 clean_old_logs('logs', 2)
-
 
 # ========== 2. 应用配置 ==========
 app = Flask(__name__)
 app.config.from_object(Config)
 app.secret_key = Config.SECRET_KEY
 
-# ✅ 关联日志到 app
+# 关联日志到 app
 app.logger = logger
 
 # 将 Flask 的日志也纳入管理
@@ -55,7 +63,7 @@ werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.handlers = logging.root.handlers
 werkzeug_logger.setLevel(logging.WARNING if IS_PRODUCTION else logging.DEBUG)
 
-# ✅ 缓存管理器日志（已经由 logger 处理）
+# 缓存管理器日志（已经由 logger 处理）
 logger.info("=" * 60)
 logger.info("🚀 缓存管理器已初始化")
 logger.info(f"📊 当前缓存: {training_cache.get_stats()}")
