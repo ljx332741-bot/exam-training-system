@@ -24,31 +24,53 @@ from utils.cache_manager import training_cache
 from utils.logger import setup_logging, clean_old_logs, init_default_logging
 
 
-# ========== 1. 日志配置 ==========
-# 方法一：使用默认初始化（兼容旧方式）
 IS_PRODUCTION = Config.is_production()
+# ========== 1. 日志配置 ==========
+# 从环境变量读取日志级别
+LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')
 
-# 配置日志（统一入口）
+# 如果是 Render 环境且没有设置 LOG_LEVEL，默认为 WARNING
+IS_RENDER = os.environ.get('RENDER', '').lower() == 'true'
+if IS_RENDER:
+    if 'LOG_LEVEL' not in os.environ:
+        LOG_LEVEL = 'WARNING'
+    else:
+        # ✅ 生产环境最低只能设置到 INFO，不能 DEBUG
+        if LOG_LEVEL.upper() == 'DEBUG':
+            LOG_LEVEL = 'INFO'
+            print("⚠️ Render 环境不允许 DEBUG 级别，已自动降级为 INFO")
+
+# 将字符串转换为 logging 级别
+level_map = {
+    'DEBUG': logging.DEBUG,
+    'INFO': logging.INFO,
+    'WARNING': logging.WARNING,
+    'ERROR': logging.ERROR,
+    'CRITICAL': logging.CRITICAL
+}
+console_level = level_map.get(LOG_LEVEL.upper(), logging.INFO)
+
 logger = setup_logging(
-    app=None,  # 稍后绑定到 app
+    app=None,
     log_dir='logs',
     keep_days=2,
-    console_level=logging.INFO if not IS_PRODUCTION else logging.WARNING,  # 控制台始终显示 INFO
-    file_level=logging.DEBUG if not IS_PRODUCTION else logging.INFO,    # 文件记录 DEBUG（可选）
-    is_production=IS_PRODUCTION  # 传入生产环境标志
+    console_level=console_level,
+    file_level=logging.DEBUG if console_level == logging.INFO else logging.INFO,
+    is_production=console_level >= logging.WARNING
 )
-root_logger = logging.getLogger()
 
-# 只在本地开发时强制设置 INFO
-if not IS_PRODUCTION:
-    import logging
-    logging.getLogger().setLevel(logging.INFO)
-    print("🔧 本地开发模式：日志级别 INFO")
-else:
-    print("🚀 生产模式：日志级别 WARNING")
+# 强制设置 root logger 级别
+logging.getLogger().setLevel(console_level)
 
-# 手动清理一次旧日志（启动时清理）
-clean_old_logs('logs', 2)
+# 添加调试信息
+print("=" * 60)
+print(f"📋 日志配置信息:")
+print(f"   🔹 IS_PRODUCTION: {IS_PRODUCTION}")
+print(f"   🔹 IS_RENDER: {IS_RENDER}")
+print(f"   🔹 LOG_LEVEL: {LOG_LEVEL}")
+print(f"   🔹 console_level: {logging.getLevelName(console_level)}")
+print(f"   🔹 Root logger level: {logging.getLevelName(logging.getLogger().level)}")
+print("=" * 60)
 
 # ========== 2. 应用配置 ==========
 app = Flask(__name__)
@@ -61,7 +83,7 @@ app.logger = logger
 # 将 Flask 的日志也纳入管理
 werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.handlers = logging.root.handlers
-werkzeug_logger.setLevel(logging.WARNING if IS_PRODUCTION else logging.DEBUG)
+werkzeug_logger.setLevel(console_level if console_level > logging.WARNING else logging.WARNING)
 
 # 缓存管理器日志（已经由 logger 处理）
 logger.info("=" * 60)
