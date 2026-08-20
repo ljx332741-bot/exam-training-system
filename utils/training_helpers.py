@@ -2,6 +2,7 @@
 import json
 import logging
 from typing import List, Union, Optional, Any
+from datetime import datetime, timezone 
 from services.db import get_supabase
 
 logger = logging.getLogger(__name__)
@@ -333,3 +334,24 @@ def parse_country_list(training_country):
             return [training_country] if training_country else []
     
     return []
+
+def calculate_dynamic_status(start_time, end_time):
+    """
+    计算培训的动态状态（工具函数，供其他地方调用）
+    如果数据库已有 dynamic_status 字段，可以直接读取
+    """
+    if not start_time or not end_time:
+        return 'draft'
+    try:
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc)
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+        if now < start_dt:
+            return 'pending'
+        elif now > end_dt:
+            return 'closed'
+        else:
+            return 'active'
+    except Exception:
+        return 'draft'

@@ -179,6 +179,7 @@ def format_admin_countries_display(admin_countries_json):
 def format_countries_display(countries_data, use_name=False, lang='zh'):
     """
     格式化考试目标国家列表用于显示
+    支持多国家 JSON 数组格式
     
     Args:
         countries_data: 可以是以下格式:
@@ -199,16 +200,21 @@ def format_countries_display(countries_data, use_name=False, lang='zh'):
     country_codes = []
     
     if isinstance(countries_data, str):
+        # 尝试解析 JSON
         try:
             parsed = json.loads(countries_data)
             if isinstance(parsed, list):
-                country_codes = parsed
-            else:
-                country_codes = [countries_data] if countries_data else []
+                country_codes = [c for c in parsed if c and c.strip()]
+            elif isinstance(parsed, str) and parsed.strip():
+                country_codes = [parsed.strip()]
         except json.JSONDecodeError:
-            country_codes = [countries_data] if countries_data else []
+            # 不是 JSON，可能是单个国家或逗号分隔
+            if ',' in countries_data:
+                country_codes = [c.strip() for c in countries_data.split(',') if c.strip()]
+            elif countries_data.strip():
+                country_codes = [countries_data.strip()]
     elif isinstance(countries_data, list):
-        country_codes = countries_data
+        country_codes = [c for c in countries_data if c and c.strip()]
     else:
         return str(countries_data) if countries_data else '-'
     
@@ -241,7 +247,6 @@ def format_countries_display(countries_data, use_name=False, lang='zh'):
     if len(country_codes) == 1:
         return country_codes[0]
     return ', '.join(country_codes)
-
 
 def format_single_country_display(country_code, lang='zh'):
     """

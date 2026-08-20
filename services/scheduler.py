@@ -288,3 +288,44 @@ def init_scheduler(app):
     except Exception as e:
         logger.error(f"❌ 调度器启动失败: {e}")
         return None
+
+# ============================================================
+# 7. 动态更新培训的 dynamic_status
+# ============================================================
+def update_all_training_statuses():
+    """定时更新所有培训的 dynamic_status"""
+    db = get_supabase()
+    now = datetime.now(timezone.utc).isoformat()
+    
+    # 更新为 active（进行中）
+    db.table("trainings").update({
+        "dynamic_status": "active"
+    }).lt("start_time", now).gt("end_time", now).execute()
+    
+    # 更新为 closed（已关闭）
+    db.table("trainings").update({
+        "dynamic_status": "closed"
+    }).lt("end_time", now).execute()
+    
+    # 更新为 pending（未开始）
+    db.table("trainings").update({
+        "dynamic_status": "pending"
+    }).gt("start_time", now).execute()
+    
+    # 更新为 draft（草稿，没有有效期）
+    db.table("trainings").update({
+        "dynamic_status": "draft"
+    }).is_("start_time", "null").or_("end_time", "is", "null").execute()
+
+# 在 scheduler 中注册
+def start_scheduler():
+    scheduler = BackgroundScheduler()
+    # 每小时更新一次
+    scheduler.add_job(
+        update_all_training_statuses,
+        'interval',
+        hours=1,
+        id='update_training_statuses'
+    )
+    scheduler.start()
+    return scheduler

@@ -250,22 +250,42 @@ def safe_parse_datetime(dt_str):
             
 # ================= 考试国家辅助函数 =================
 def parse_exam_countries(exam):
-    """解析考试的国家列表，支持新旧格式"""
-    countries_data = exam.get('countries') or exam.get('country', '')
-    
-    if isinstance(countries_data, str):
-        try:
-            countries = json.loads(countries_data)
-            if isinstance(countries, list):
-                return countries
-            else:
-                return [countries] if countries else []
-        except:
-            return [countries_data] if countries_data else []
-    elif isinstance(countries_data, list):
-        return countries_data
-    else:
+    """
+    解析考试的国家列表，支持新旧格式
+    增强版：支持更多输入格式
+    """
+    if not exam:
         return []
+    
+    # 获取国家数据
+    countries_data = exam.get('countries')
+    if countries_data is None:
+        countries_data = exam.get('country', '')
+    
+    # 如果已经是列表
+    if isinstance(countries_data, list):
+        return [c for c in countries_data if c and c.strip()]
+    
+    # 如果是字符串
+    if isinstance(countries_data, str):
+        # 尝试解析 JSON
+        try:
+            parsed = json.loads(countries_data)
+            if isinstance(parsed, list):
+                return [c for c in parsed if c and c.strip()]
+            elif isinstance(parsed, str) and parsed.strip():
+                return [parsed.strip()]
+            else:
+                return []
+        except (json.JSONDecodeError, TypeError):
+            # 不是 JSON，可能是单个国家或逗号分隔
+            if ',' in countries_data:
+                return [c.strip() for c in countries_data.split(',') if c.strip()]
+            elif countries_data.strip():
+                return [countries_data.strip()]
+            return []
+    
+    return []
 
 
 def exam_countries_intersection(exam, allowed_countries):

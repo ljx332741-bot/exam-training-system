@@ -2037,7 +2037,11 @@
             console.warn('⚠️ 无效的培训数据，无法添加');
             return false;
         }
-        
+
+        // 防止污染：净化 name 字段
+        if (training.name) {
+            training.name = training.name.replace(/[▶➕✕]/g, '').trim();
+        }
         // 检查是否已存在（防止重复添加）
         const exists = cachedData.some(t => t.id === training.id);
         if (exists) {
@@ -2069,7 +2073,11 @@
             console.warn('⚠️ 未找到培训:', trainingId);
             return false;
         }
-        
+
+        // 防止污染：净化 name 字段
+        if (updates.name) {
+            updates.name = updates.name.replace(/[▶➕✕]/g, '').trim();
+        }
         // 更新数据
         cachedData[index] = { ...cachedData[index], ...updates };
         
@@ -2117,6 +2125,12 @@
             console.warn('⚠️ 未找到培训:', trainingId);
             return false;
         }
+
+        // 如果更新的是 name 字段，净化值
+        if (field === 'name' && value) {
+            value = value.replace(/[▶➕✕]/g, '').trim();
+        }
+
         cachedData[index][field] = value;
         
         // 2. 局部更新 DOM（不重新渲染整个表格）
@@ -2269,7 +2283,7 @@
                     existingCountries = parseTrainingCountries(currentTraining);
                 }
                 
-                const originalName = nameCell.innerText;
+                const originalName = currentTraining ? currentTraining.name : '';
                 const timeRangeCell = row.querySelector('.time-range');
                 const timeRangeText = timeRangeCell.innerText;
         
