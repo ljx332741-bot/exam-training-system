@@ -322,3 +322,151 @@ def api_admin_privacy_users():
         "total": total,
         "agreement_version": agreement_version
     })
+
+# routes/admin_privacy.py - 在文件末尾添加
+
+@admin_privacy_bp.route('/api/admin/privacy/sync_user_status', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_sync_user_privacy_status():
+    """
+    管理员：手动同步所有用户的隐私签署状态到 users 表
+    用于修复历史数据不一致问题
+    """
+    try:
+        db = get_supabase_admin()
+        
+        # 获取所有有签署记录的用户
+        ack_res = db.table("user_agreement_acks")\
+            .select("user_id, agreement_id, acknowledged_at")\
+            .execute()
+        
+        if not ack_res.data:
+            return jsonify({
+                "success": True, 
+                "message": "没有签署记录需要同步",
+                "synced_count": 0
+            })
+        
+        # 按用户分组，取最新的签署记录
+        user_latest = {}
+        for record in ack_res.data:
+            user_id = record['user_id']
+            if user_id not in user_latest:
+                user_latest[user_id] = record
+            else:
+                if record['acknowledged_at'] > user_latest[user_id]['acknowledged_at']:
+                    user_latest[user_id] = record
+        
+        # 批量更新 users 表
+        synced_count = 0
+        for user_id, record in user_latest.items():
+            result = db.table("users").update({
+                "privacy_acknowledged_at": record['acknowledged_at'],
+                "privacy_agreement_id": record['agreement_id']
+            }).eq("id", user_id).execute()
+            
+            if result.data:
+                synced_count += 1
+        
+        logger.info(f"管理员同步隐私状态: 更新了 {synced_count} 个用户")
+        
+        return jsonify({
+            "success": True,
+            "message": f"成功同步 {synced_count} 个用户的签署状态",
+            "synced_count": synced_count
+        })
+        
+    except Exception as e:
+        logger.error(f"同步用户隐私状态失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@admin_privacy_bp.route('/api/admin/privacy/user_status/<user_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_admin_get_user_privacy_status(user_id):
+    """
+    管理员：查看指定用户的隐私签署状态
+    """
+    try:
+        db = get_supabase_admin()
+        
+        # 获取用户基本信息
+        user_res = db.table("users").select(
+            "id, name_en, email, privacy_acknowledged_at, privacy_agreement_id"
+        ).eq("id", user_id).maybe_single().execute()
+        
+        if not user_res.data:
+            return jsonify({"success": False, "message": "用户不存在"}), 404
+        
+        user = user_res.data
+        
+        # 获取签署历史
+        ack_res = db.table("user_agreement_acks")\
+            .select("agreement_id, acknowledged_at, ip_address, user_agent")\
+            .eq("user_id", user_id)\
+            .order("acknowledged_at", desc=True)\
+            .execute()
+        
+        return jsonify({
+            "success": True,
+            "data": {
+                "user": user,
+                "history": ack_res.data or [],
+                "is_signed": user.get('privacy_acknowledged_at') is not None
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"获取用户隐私状态失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+
+
+@admin_privacy_bp.route('/api/admin/privacy/fix_user/<user_id>', methods=['POST'])
+@login_required
+@admin_required
+def api_admin_fix_user_privacy(user_id):
+    """
+    管理员：修复单个用户的隐私签署状态
+    从 user_agreement_acks 同步到 users 表
+    """
+    try:
+        db = get_supabase_admin()
+        
+        # 获取该用户最新的签署记录
+        ack_res = db.table("user_agreement_acks")\
+            .select("agreement_id, acknowledged_at")\
+            .eq("user_id", user_id)\
+            .order("acknowledged_at", desc=True)\
+            .limit(1)\
+            .execute()
+        
+        if not ack_res.data:
+            return jsonify({
+                "success": False, 
+                "message": "该用户没有签署记录"
+            }), 404
+        
+        latest = ack_res.data[0]
+        
+        # 更新 users 表
+        result = db.table("users").update({
+            "privacy_acknowledged_at": latest['acknowledged_at'],
+            "privacy_agreement_id": latest['agreement_id']
+        }).eq("id", user_id).execute()
+        
+        logger.info(f"管理员修复用户 {user_id} 的隐私状态: 协议ID={latest['agreement_id']}")
+        
+        return jsonify({
+            "success": True,
+            "message": "用户状态已修复",
+            "data": {
+                "privacy_acknowledged_at": latest['acknowledged_at'],
+                "privacy_agreement_id": latest['agreement_id']
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"修复用户隐私状态失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500

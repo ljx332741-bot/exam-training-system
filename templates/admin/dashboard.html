@@ -821,10 +821,10 @@
                     </span>
 					<div class="d-flex gap-2">
 						<button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#exportFilterModal">
-							<i class="bi bi-download me-1"></i><span data-i18n="export_training_exam_result">导出[Excel]培训测评结果</span>
+							<i class="bi bi-download me-1"></i><span data-i18n="export_training_exam_result">导出培训测评报告</span>
 						</button>
 						<a href="{{ url_for('admin_import') }}" class="btn btn-sm btn-outline-success"><i class="bi bi-upload me-1"></i>
-							<span data-i18n="import_test_bank_word">导入Word题库</span>
+							<span data-i18n="import_examination_word">导入Word题库</span>
 						</a>
 					</div>
 				</div>
@@ -1114,7 +1114,7 @@
                                             <i class="bi bi-x-circle-fill"></i>
                                         </span>
                                         <div id="quarterDropdown" class="export-dropdown" style="display: none;">
-                                            <div class="dropdown-header">📋 选择季度</div>
+                                            <div class="dropdown-header">📋 <span data-i18n="select_quarter">选择季度</span></div>
                                             <div id="quarterListContainer"></div>
                                         </div>
                                     </div>
@@ -1170,7 +1170,7 @@
                                             <i class="bi bi-x-circle-fill"></i>
                                         </span>
                                         <div id="countryDropdown" class="export-dropdown" style="display: none;">
-                                            <div class="dropdown-header">🌍 可选国家</div>
+                                            <div class="dropdown-header">🌍 <span data-i18n="select_country">可选国家</span></div>
                                             <div id="countryListContainer"></div>
                                             <div id="countrySearchLoading" class="p-2 text-center text-muted" style="display: none;">
                                                 <div class="spinner-border spinner-border-sm me-1"></div> <span data-i18n="searching">搜索中...</span>
@@ -2358,12 +2358,18 @@
                 
                 // 签到人数显示（人像图标 + 数量）
                 const signedCount = t.signed_count || 0;
-                const signedBadge = signedCount > 0 
-                    ? `<span class="badge bg-info ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('signed_count') || '签到人数'}">
-                        <i class="bi bi-person-fill" style="font-size: 0.7rem;"></i> ${signedCount}
+                const signedBadge = signedCount > 0
+                    ? `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.75rem; color: #0dcaf0; cursor: help;" title="${safeT('signed_count') || '签到人数'} ${signedCount}">
+                        <i class="bi bi-person" 
+                        style="font-size: 0.75rem; transition: all 0.25s ease;"
+                        onmouseenter="this.className='bi bi-person-fill'"
+                        onmouseleave="this.className='bi bi-person'">
+                        </i>
+                        ${signedCount}
                     </span>` 
-                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('no_signed_users') || '暂无签到'}">
-                        <i class="bi bi-person" style="font-size: 0.7rem;"></i> 0
+                    : `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.75rem; color: #adb5bd; cursor: help;" title="${safeT('no_signed_users') || '暂无签到'}">
+                        <i class="bi bi-person" style="font-size: 0.75rem;"></i>
+                        0
                     </span>`;
 
                 // 绑定标记
@@ -2387,6 +2393,7 @@
                             <span><i class="bi bi-calendar3"></i> ${safeT('create') || '创建'}: ${createdDate}</span>
                             <span><i class="bi bi-calendar-week"></i> ${safeT('quarter') || '季度'}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
+                            {# <span><i class="item-title"></i> ${statusIcon} ${signedBadge} ${bindingBadge}</span> #}
                         </div>
                     </div>
                 `;
@@ -2446,11 +2453,17 @@
                 // 已参考人数显示（人像图标 + 数量）
                 const submittedCount = exam.submitted_count || 0;
                 const submittedBadge = submittedCount > 0 
-                    ? `<span class="badge bg-success ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('submitted_count') || '已参考人数'}">
-                        <i class="bi bi-person-fill" style="font-size: 0.7rem;"></i> ${submittedCount}
+                    ? `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.75rem; color: #198754; cursor: help;" title="${safeT('submitted_count') || '已参考人数'} ${submittedCount}">
+                        <i class="bi bi-person" 
+                        style="font-size: 0.75rem; transition: all 0.25s ease;"
+                        onmouseenter="this.className='bi bi-person-fill'"
+                        onmouseleave="this.className='bi bi-person'">
+                        </i>
+                        ${submittedCount}
                     </span>` 
-                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.65rem; padding: 2px 8px;" title="${safeT('no_submitted_users') || '暂无参考'}">
-                        <i class="bi bi-person" style="font-size: 0.7rem;"></i> 0
+                    : `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.75rem; color: #adb5bd; cursor: help;" title="${safeT('no_submitted_users') || '暂无参考'}">
+                        <i class="bi bi-person" style="font-size: 0.75rem;"></i>
+                        0
                     </span>`;
 
 				// 已绑定的考试添加特殊标记
@@ -3196,45 +3209,83 @@
     window.ExportFilterStore = ExportFilterStore;
 
     /**
-     * 获取培训状态对应的图标
+     * 获取培训状态对应的图标（悬浮时切换 fill 版本）
      */
     function getTrainingStatusIcon(status) {
-        const statusMap = {
-            'draft': `<span class="badge bg-secondary ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('draft') || '草稿'}">
-                        <i class="bi bi-door-closed"></i>
-                    </span>`,
-            'pending': `<span class="badge bg-info ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('not_started') || '未开始'}">
-                        <i class="bi bi-door-open"></i>
-                    </span>`,
-            'active': `<span class="badge bg-success ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('ongoing') || '进行中'}">
-                        <i class="bi bi-door-open"></i>
-                    </span>`,
-            'closed': `<span class="badge bg-danger ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('closed') || '已关闭'}">
-                        <i class="bi bi-door-closed"></i>
-                    </span>`
+        const config = {
+            'draft': { 
+                icon: 'bi-door-closed', 
+                fillIcon: 'bi-door-closed-fill', 
+                color: '#6c757d',
+                title: safeT('draft') || '草稿'
+            },
+            'pending': { 
+                icon: 'bi-door-open', 
+                fillIcon: 'bi-door-open-fill', 
+                color: '#0dcaf0',
+                title: safeT('not_started') || '未开始'
+            },
+            'active': { 
+                icon: 'bi-door-open', 
+                fillIcon: 'bi-door-open-fill', 
+                color: '#198754',
+                title: safeT('ongoing') || '进行中'
+            },
+            'closed': { 
+                icon: 'bi-door-closed', 
+                fillIcon: 'bi-door-closed-fill', 
+                color: '#dc3545',
+                title: safeT('closed') || '已关闭'
+            }
         };
-        return statusMap[status] || statusMap['draft'];
+        
+        const c = config[status] || config['draft'];
+        
+        return `<i class="bi ${c.icon}" 
+                style="font-size: 0.85rem; color: ${c.color}; cursor: help; transition: all 0.25s ease;"
+                onmouseenter="this.className='bi ${c.fillIcon}'; this.style.color='${c.color}'"
+                onmouseleave="this.className='bi ${c.icon}'; this.style.color='${c.color}'"
+                title="${c.title}"></i>`;
     }
 
     /**
-     * 获取考试状态对应的图标
+     * 获取考试状态对应的图标（悬浮时切换 fill 版本）
      */
     function getExamStatusIcon(status) {
-        const statusMap = {
-            'draft': `<span class="badge bg-secondary ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('draft') || '草稿'}">
-                        <i class="bi bi-door-closed"></i>
-                    </span>`,
-            'created': `<span class="badge bg-info ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('not_started') || '未开始'}">
-                        <i class="bi bi-door-open"></i>
-                    </span>`,
-            'active': `<span class="badge bg-success ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('ongoing') || '进行中'}">
-                        <i class="bi bi-door-open"></i>
-                    </span>`,
-            'closed': `<span class="badge bg-danger ms-1" style="font-size: 0.7rem; padding: 2px 6px;" title="${safeT('closed') || '已关闭'}">
-                        <i class="bi bi-door-closed"></i>
-                    </span>`
+        const config = {
+            'draft': { 
+                icon: 'bi-door-closed', 
+                fillIcon: 'bi-door-closed-fill', 
+                color: '#6c757d',
+                title: safeT('draft') || '草稿'
+            },
+            'created': { 
+                icon: 'bi-door-open', 
+                fillIcon: 'bi-door-open-fill', 
+                color: '#0dcaf0',
+                title: safeT('not_started') || '未开始'
+            },
+            'active': { 
+                icon: 'bi-door-open', 
+                fillIcon: 'bi-door-open-fill', 
+                color: '#198754',
+                title: safeT('ongoing') || '进行中'
+            },
+            'closed': { 
+                icon: 'bi-door-closed', 
+                fillIcon: 'bi-door-closed-fill', 
+                color: '#dc3545',
+                title: safeT('closed') || '已关闭'
+            }
         };
-        return statusMap[status] || statusMap['draft'];
+        
+        const c = config[status] || config['draft'];
+        
+        return `<i class="bi ${c.icon}" 
+                style="font-size: 0.85rem; color: ${c.color}; cursor: help; transition: all 0.25s ease;"
+                onmouseenter="this.className='bi ${c.fillIcon}'; this.style.color='${c.color}'"
+                onmouseleave="this.className='bi ${c.icon}'; this.style.color='${c.color}'"
+                title="${c.title}"></i>`;
     }
 
     // ==================== 综合筛选管理器 ====================
@@ -3622,8 +3673,18 @@
                 // 签到人数显示
                 const signedCount = t.signed_count || 0;
                 const signedBadge = signedCount > 0 
-                    ? `<span class="badge bg-info ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person-fill"></i> ${signedCount}</span>`
-                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person"></i> 0</span>`;
+                    ? `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; color: #0dcaf0;">
+                        <i class="bi bi-person" 
+                        style="transition: all 0.25s ease;"
+                        onmouseenter="this.className='bi bi-person-fill'"
+                        onmouseleave="this.className='bi bi-person'">
+                        </i>
+                        ${signedCount}
+                    </span>`
+                    : `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; color: #adb5bd;">
+                        <i class="bi bi-person" style="font-size: 0.7rem;"></i>
+                        0
+                    </span>`;
                 
                 // ID 标记（小标签）
                 const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${t.id}</span>`;
@@ -3914,8 +3975,18 @@
                 // 已参考人数显示
                 const submittedCount = e.submitted_count || 0;
                 const submittedBadge = submittedCount > 0 
-                    ? `<span class="badge bg-success ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person-fill"></i> ${submittedCount}</span>`
-                    : `<span class="badge bg-light text-muted ms-1" style="font-size: 0.6rem; padding: 1px 6px;"><i class="bi bi-person"></i> 0</span>`;
+                    ? `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; color: #198754;">
+                        <i class="bi bi-person" 
+                        style="transition: all 0.25s ease;"
+                        onmouseenter="this.className='bi bi-person-fill'"
+                        onmouseleave="this.className='bi bi-person'">
+                        </i>
+                        ${submittedCount}
+                    </span>`
+                    : `<span style="display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; color: #adb5bd;">
+                        <i class="bi bi-person" style="font-size: 0.7rem;"></i>
+                        0
+                    </span>`;
                 
                 // ID 标记（小标签）
                 const idBadge = `<span class="badge bg-secondary id-badge" style="font-size: 0.5rem; padding: 1px 5px; margin-right: 4px; border-radius: 3px;">${e.id}</span>`;

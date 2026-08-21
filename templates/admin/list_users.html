@@ -77,13 +77,13 @@
                                     <i class="bi bi-download"></i> <span data-i18n="download_template">下载导入模板</span>
                                 </a></li>
                                 <li><a class="dropdown-item" href="#" id="importUserBtn">
-                                    <i class="bi bi-upload"></i> <span data-i18n="upload_import">上传文件导入</span>
+                                    <i class="bi bi-person-up"></i> <span data-i18n="import_users">导入用户</span>
                                 </a></li>
                             </ul>
                         </div>
                         
                         <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addUserModal">
-                            <i class="bi bi-plus-circle"></i> <span data-i18n="add_user">添加用户</span>
+                            <i class="bi bi-person-add"></i> <span data-i18n="add_user">添加用户</span>
                         </button>
                         
                         <input type="file" id="importFileInput" accept=".xlsx,.xls" style="display:none">
@@ -91,7 +91,7 @@
                         <!-- 导出按钮 -->
                         {% if session.get('role') in ['admin', 'super_admin', 'developer'] %}
                         <button class="btn btn-outline-success me-2" id="exportUsersBtn">
-                            <i class="bi bi-file-earmark-excel"></i> <span data-i18n="export_excel">导出Excel</span>
+                            <i class="bi bi-person-down"></i> <span data-i18n="export_users">导出用户</span>
                         </button>
                         {% endif %}
                     </div>
