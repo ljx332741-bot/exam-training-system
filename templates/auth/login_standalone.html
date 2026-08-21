@@ -727,7 +727,6 @@ const translations = {
         toastMessage: '操作成功',
         logging: '登录中...',
         loginSuccess: '登录成功！正在跳转...',
-        'invalid_email_or_password': '邮箱或密码错误',
         loginFailed: '邮箱或密码错误',
         networkError: '网络错误',
         otpSent: '验证码已发送',
@@ -763,7 +762,6 @@ const translations = {
         toastMessage: 'Operation Successful',
         logging: 'Logging in...',
         loginSuccess: 'Login successful! Redirecting...',
-        'invalid_email_or_password': 'Invalid email or password',
         loginFailed: 'Invalid email or password',
         networkError: 'Network error',
         otpSent: 'Verification code sent',
@@ -1040,25 +1038,19 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             const data = await res.json();
             
-            // 检查 success 字段
-            if (data.success) {
-                if (data.needs_privacy) {
-                    showToast(t('privacy_policy_login_hint'), 'info');
-                    setTimeout(() => {
-                        window.location.href = data.redirect || '/';
-                    }, 500);
-                } else {
-                    showToast(t('loginSuccess'), 'success');
-                    setTimeout(() => {
-                        window.location.href = data.redirect || '/';
-                    }, 1200);
-                }
+            if (data.needs_privacy) {
+                // 登录成功但需要确认隐私声明
+                showToast(t('privacy_policy_login_hint'), 'info');
+                // 保存登录状态，隐私声明弹窗会自动显示
+                // 延迟跳转到 index，让隐私管理器处理
+                setTimeout(() => {
+                    window.location.href = data.redirect || '/';
+                }, 500);
             } else {
-                // 登录失败时显示错误信息
-                const msg = t(data.message) || t('loginFailed');
-                showToast(msg, 'error');
-                loginBtn.disabled = false;
-                loginBtn.innerHTML = originalText;
+                showToast(t('loginSuccess'), 'success');
+                setTimeout(() => {
+                    window.location.href = data.redirect || '/';
+                }, 1200);
             }
         } catch (err) {
             showToast(t('networkError') + ': ' + err.message, 'error');

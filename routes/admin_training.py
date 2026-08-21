@@ -1,5 +1,6 @@
 # routes/admin_training.py
 import logging
+import sys
 import json
 import pdfkit
 import openpyxl
@@ -58,7 +59,7 @@ def cache_result(seconds=300):
         cache = {}
         
         def wrapper(*args, **kwargs):
-            print(f"📌 请求方法: {request.method}", flush=True)  # 应该是 GET
+            logger.info(f"📌 请求方法: {request.method}")  # 应该是 GET
             # 只缓存 GET 请求
             if request.method != 'GET':
                 return func(*args, **kwargs)
@@ -102,7 +103,7 @@ def api_admin_trainings():
     if request.method == 'GET':
         # 这里调用的是被缓存装饰的函数
         result = _get_trainings_list(db)
-        print(f"📤 API 返回结果: {type(result)}, keys: {result.keys() if isinstance(result, dict) else 'not dict'}", flush=True)
+        logger.info(f"📤 API 返回结果: {type(result)}, keys: {result.keys() if isinstance(result, dict) else 'not dict'}")
         return jsonify(result)
     
     elif request.method == 'POST':
@@ -127,9 +128,11 @@ def api_admin_trainings():
 @cache_get(ttl=300, prefix='training_list', include_user=True)
 def _get_trainings_list(db):
     """获取培训列表（带缓存）"""
-    logger.info("=" * 60, flush=True)
-    logger.info("🔥🔥🔥 _get_trainings_list 被调用（应该是第一次或缓存过期）", flush=True)
-    logger.info("=" * 60, flush=True)
+    logger.info("=" * 60)
+    sys.stdout.flush()
+    logger.info("🔥🔥🔥 _get_trainings_list 被调用（应该是第一次或缓存过期）")
+    logger.info("=" * 60)
+    sys.stdout.flush()
 
     # 获取过滤参数
     country_filter = request.args.get('country', '')

@@ -102,9 +102,16 @@ def set_user_timezone(timezone_str):
     """设置用户的时区（由前端调用）"""
     try:
         pytz.timezone(timezone_str)
+
+        # ✅ 只在变化时用 info，否则用 debug
+        current_tz = session.get('user_timezone')
+        if current_tz != timezone_str:
+            logger.info(f"用户时区已更新: {current_tz} -> {timezone_str}")
+        else:
+            logger.debug(f"用户时区确认: {timezone_str}")
+        
         session['user_timezone'] = timezone_str
         g.user_timezone = timezone_str  # 同时设置 g 对象
-        logger.info(f"用户时区已设置: {timezone_str}")
         return True
     except Exception as e:
         logger.error(f"设置时区失败: {e}")

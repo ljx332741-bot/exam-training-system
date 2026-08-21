@@ -220,16 +220,135 @@
             align-items: flex-start;
         }
     }
+
+/* 隐私声明按钮 - 简化版 */
+/* 隐私声明按钮 - 美化样式 */
+.privacy-view-btn {
+    border: 1px solid rgba(13, 110, 253, 0.2);
+    color: #6c757d;
+    background: transparent;
+    transition: all 0.3s ease;
+    padding: 0.5rem 1.2rem;
+    font-size: 0.95rem;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.privacy-view-btn:hover {
+    background: transparent !important;
+    border-color: #0d6efd;
+    color: #0d6efd;
+}
+
+/* 默认显示空心图标，隐藏填充图标 */
+.privacy-view-btn .bi-shield-check {
+    display: inline-block;
+    transition: transform 0.3s ease;
+}
+
+.privacy-view-btn .bi-shield-fill-check {
+    display: none;
+}
+
+/* 悬浮时：空心图标隐藏，填充图标显示并放大 */
+.privacy-view-btn:hover .bi-shield-check {
+    display: none;
+}
+
+.privacy-view-btn:hover .bi-shield-fill-check {
+    display: inline-block;
+    color: #0d6efd;
+    transform: scale(1.3);  /* ✅ 放大 1.3 倍 */
+}
 </style>
 {% endblock %}
 
 {% block content %}
-    <!-- 登录/仪表盘入口 -->
-    <div class="text-center">
+<!-- 登录/仪表盘入口 + 隐私声明入口 - 同一行 -->
+<div class="container py-3">
+    <div class="d-flex align-items-center justify-content-center position-relative">
+        <!-- 居中：仪表盘按钮 -->
         <a href="{{ url_for('exam.dashboard') }}" class="btn btn-primary btn-lg px-5">
             <span data-i18n="url_for_exam_dashboard">进入我的仪表盘</span>
         </a>
+        
+        <!-- 靠右：隐私声明按钮（调整大小与仪表盘按钮协调） -->
+        <button class="btn position-absolute end-0 privacy-view-btn" 
+                onclick="openPrivacyView()" 
+                data-i18n-title="privacy_statement" 
+                title="查看隐私声明">
+            <i class="bi bi-shield-check me-1"></i>
+            <i class="bi bi-shield-fill-check me-1"></i>
+        </button>
     </div>
+</div>
+<!-- ============================================================ -->
+<!-- ✅ 纯查看隐私声明模态框（独立于强制签署模态框） -->
+<!-- ============================================================ -->
+<div class="modal fade" id="privacyViewModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable modal-dialog-centered">
+        <div class="modal-content">
+            <!-- 模态框头部 -->
+            <div class="modal-header" style="background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);">
+                <h5 class="modal-title text-white">
+                    <i class="bi bi-shield-check me-2"></i>
+                    <span data-i18n="privacy_statement">隐私声明</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+
+            <!-- 模态框主体 -->
+            <div class="modal-body" id="privacyViewBody">
+                <!-- 签署状态卡片 -->
+                <div class="card mb-3 bg-light">
+                    <div class="card-body d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="fw-bold"><span data-i18n="privacy_sign_status">签署状态</span>：</span>
+                            <span id="viewSignStatus" class="badge bg-success">
+                                <i class="bi bi-check-circle"></i> <span data-i18n="privacy_signed">已签署</span>
+                            </span>
+                        </div>
+                        <div class="text-muted small">
+                            <i class="bi bi-clock me-1"></i>
+                            <span data-i18n="privacy_signed_date">签署时间</span>：<span id="viewSignedAt">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 加载状态 -->
+                <div id="viewLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted"><span data-i18n="loading">加载中...</span></p>
+                </div>
+
+                <!-- 隐私声明内容 -->
+                <div id="viewContentArea" style="display: none;">
+                    <div class="cms-content" id="viewContent"></div>
+                    <div class="cms-version-info mt-3">
+                        <span>
+                            <i class="bi bi-tag me-1"></i>
+                            <span data-i18n="version">版本</span>：<span id="viewVersion">-</span>
+                        </span>
+                        <span>
+                            <i class="bi bi-clock me-1"></i>
+                            <span data-i18n="updated_at">更新时间</span>：<span id="viewUpdatedAt">-</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 模态框底部 - 只有关闭按钮 -->
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle me-1"></i> <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="container py-5">
     <!-- 企业标语 -->
     <div class="text-center mb-5">
@@ -667,5 +786,79 @@
             }
         }
     });
+
+    // ============================================================
+    // ✅ 查看隐私声明（纯查看，无强制签署）
+    // ============================================================
+
+    async function openPrivacyView() {
+        const modalEl = document.getElementById('privacyViewModal');
+        const loadingEl = document.getElementById('viewLoading');
+        const contentArea = document.getElementById('viewContentArea');
+        const contentEl = document.getElementById('viewContent');
+        const versionEl = document.getElementById('viewVersion');
+        const updatedAtEl = document.getElementById('viewUpdatedAt');
+        const statusEl = document.getElementById('viewSignStatus');
+        const timeEl = document.getElementById('viewSignedAt');
+        
+        // 显示加载状态
+        loadingEl.style.display = 'block';
+        contentArea.style.display = 'none';
+        statusEl.className = 'badge bg-secondary';
+        statusEl.innerHTML = `<i class="bi bi-hourglass-split"></i> ${t('loading')}`;
+        timeEl.textContent = '-';
+        
+        // 创建并显示模态框
+        const modal = new bootstrap.Modal(modalEl, {
+            backdrop: true,
+            keyboard: true
+        });
+        modal.show();
+        
+        try {
+            // 1. 获取隐私声明内容
+            const contentRes = await fetch('/api/privacy/current');
+            const contentData = await contentRes.json();
+            
+            if (contentData.success && contentData.data) {
+                const agreement = contentData.data;
+                const currentLang = getCurrentLanguage();
+                const content = currentLang === 'zh' ? agreement.content_zh : agreement.content_en;
+                
+                contentEl.innerHTML = renderMarkdown(content);
+                versionEl.textContent = agreement.version || '1.0';
+                updatedAtEl.textContent = formatLocalTime(agreement.updated_at);
+            } else {
+                contentEl.innerHTML = '<div class="alert alert-warning">暂无隐私声明内容</div>';
+            }
+            
+            // 2. 获取用户签署状态
+            const userRes = await fetch('/api/auth/me');
+            const userData = await userRes.json();
+            
+            if (userData.success && userData.user) {
+                const signedAt = userData.user.privacy_acknowledged_at;
+                if (signedAt) {
+                    statusEl.className = 'badge bg-success';
+                    statusEl.innerHTML = `<i class="bi bi-check-circle"></i> ${t('privacy_signed')}`;
+                    timeEl.textContent = formatLocalTime(signedAt);
+                } else {
+                    statusEl.className = 'badge bg-warning text-dark';
+                    statusEl.innerHTML = '<i class="bi bi-clock"></i> 未签署';
+                    timeEl.textContent = '-';
+                }
+            }
+            
+            // 显示内容
+            loadingEl.style.display = 'none';
+            contentArea.style.display = 'block';
+            
+        } catch (err) {
+            console.error('加载隐私声明失败:', err);
+            loadingEl.style.display = 'none';
+            contentEl.innerHTML = '<div class="alert alert-danger">加载失败，请刷新重试</div>';
+            contentArea.style.display = 'block';
+        }
+    }
 </script>
 {% endblock %}

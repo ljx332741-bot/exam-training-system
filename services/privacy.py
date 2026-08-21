@@ -209,7 +209,7 @@ class PrivacyService:
         ip_address: str = None,
         user_agent: str = None
         ) -> Dict[str, Any]:
-        """记录用户确认声明"""
+        """记录用户确认声明，同时更新 users 表"""
         db = get_supabase_admin()
         now = datetime.now(timezone.utc).isoformat()
         
@@ -217,7 +217,8 @@ class PrivacyService:
         if PrivacyService.has_user_acknowledged(user_id, agreement_id):
             return {"success": True, "already_acknowledged": True}
         
-        data = {
+        # ✅ 1. 插入签署记录到 user_agreement_acks
+        ack_data = {
             "user_id": user_id,
             "agreement_id": agreement_id,
             "acknowledged_at": now,
@@ -225,13 +226,26 @@ class PrivacyService:
             "user_agent": user_agent
         }
         
-        res = db.table("user_agreement_acks").insert(data).execute()
-        if not res or not hasattr(res, 'data') or not res.data:
+        ack_res = db.table("user_agreement_acks").insert(ack_data).execute()
+        if not ack_res or not hasattr(ack_res, 'data') or not ack_res.data:
             raise Exception("记录确认失败")
         
-        logger.info(f"用户确认隐私声明: user={user_id}, agreement={agreement_id}")
+        # ✅ 2. 同时更新 users 表（关键修复）
+        update_res = db.table("users").update({
+            "privacy_acknowledged_at": now,
+            "privacy_agreement_id": agreement_id,
+            "updated_at": now
+        }).eq("id", user_id).execute()
+        
+        if not update_res or not hasattr(update_res, 'data') or not update_res.data:
+            # 如果更新失败，回滚（删除刚插入的签署记录）
+            db.table("user_agreement_acks").delete().eq("user_id", user_id).eq("agreement_id", agreement_id).execute()
+            raise Exception("更新用户表失败")
+        
+        logger.info(f"用户确认隐私声明: user={user_id}, agreement={agreement_id}, 已同步更新 users 表")
+        
         return {"success": True, "acknowledged": True}
-    
+
     @staticmethod
     def get_user_acknowledgments(user_id: str) -> List[Dict[str, Any]]:
         """获取用户所有的确认记录"""
