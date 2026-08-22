@@ -41,24 +41,56 @@
     margin-bottom: 6px;
 }
 
+/* ==================== 状态图标样式 ==================== */
 .stat-details {
     display: flex;
-    gap: 12px;
+    justify-content: space-around;
     flex-wrap: wrap;
-    font-size: 0.75rem;
+    gap: 4px;
+    margin-top: 4px;
 }
 
 .stat-item {
     display: inline-flex;
     align-items: center;
-    gap: 2px;
-    color: rgba(60, 60, 60, 0.8);
+    gap: 3px;
+    font-size: 0.75rem;
+    cursor: default;
+}
+
+.stat-item .status-icon {
+    display: inline-block;
+    font-size: 0.85rem;
+    line-height: 1;
+}
+
+/* ✅ 状态颜色 */
+.stat-item .status-icon.status-pending {
+    color: #ffc107;  /* 黄色 - 等待中 */
+}
+
+.stat-item .status-icon.status-in-progress {
+    color: #0dcaf0;  /* 青色 - 进行中 */
+}
+
+.stat-item .status-icon.status-completed {
+    color: #198754;  /* 绿色 - 已完成 */
+}
+
+.stat-item .status-icon.status-info {
+    color: #0d6efd;  /* 蓝色 - 信息 */
+}
+
+/* ✅ Tooltip 样式增强 */
+.stat-item[data-bs-toggle="tooltip"] {
+    cursor: help;
 }
 
 .stat-item small {
-    color: rgba(80, 80, 80, 0.6);
     font-size: 0.65rem;
+    color: #6c757d;
 }
+
 
 .stat-card-footer {
     margin-top: 10px;
@@ -514,4 +546,19 @@
     font-size: 3rem;
     display: block;
     margin-bottom: 12px;
+}
+
+/* 统计卡片可点击样式 */
+.stat-card {
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+.stat-card:active {
+    transform: scale(0.97);
 }

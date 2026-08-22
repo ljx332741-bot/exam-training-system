@@ -384,7 +384,7 @@ def api_admin_get_training_photos():
     order = request.args.get('order', 'desc')
     
     # 基础查询
-    query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
+    query = db.table("training_photos").select("*", count="exact")
     
     # 筛选条件
     if training_id:
@@ -499,9 +499,29 @@ def api_admin_upload_training_photos():
     if not files or len(files) == 0:
         return jsonify({"success": False, "message": "请选择要上传的照片"}), 400
     
-    if len(files) > 20:
-        return jsonify({"success": False, "message": "单次最多上传20张照片"}), 400
+    # 添加数量限制检查（管理员可以设置更大的上限）
+    MAX_PHOTOS_PER_TRAINING_ADMIN = 100  # 管理员上限
     
+    count_res = db.table("training_photos").select("id", count="exact") \
+        .eq("training_id", int(training_id)) \
+        .eq("is_deleted", False) \
+        .execute()
+    current_count = count_res.count or 0
+    
+    if current_count >= MAX_PHOTOS_PER_TRAINING_ADMIN:
+        return jsonify({
+            "success": False,
+            "message": f"该培训已上传 {current_count} 张照片，达到上限 {MAX_PHOTOS_PER_TRAINING_ADMIN} 张"
+        }), 400
+    
+    # 计算剩余可上传数量
+    remaining = MAX_PHOTOS_PER_TRAINING_ADMIN - current_count
+    if len(files) > remaining:
+        return jsonify({
+            "success": False,
+            "message": f"该培训最多 {MAX_PHOTOS_PER_TRAINING_ADMIN} 张，剩余 {remaining} 张"
+        }), 400
+
     # 验证培训是否存在
     training_res = db.table("trainings").select("id, name, country").eq("id", int(training_id)).maybe_single().execute()
     if not training_res.data:
@@ -779,7 +799,7 @@ def api_training_get_photos():
     # 管理员：按权限范围过滤
     # ============================================================
     if is_admin:
-        query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
+        query = db.table("training_photos").select("*", count="exact")
         
         if allowed_countries is not None:
             if allowed_countries:
@@ -866,7 +886,7 @@ def api_training_get_photos():
         })
     
     # 6. 获取这些培训的照片
-    query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
+    query = db.table("training_photos").select("*", count="exact")
     
     if training_id:
         # 如果指定了 training_id，检查是否在可访问列表中
@@ -1139,7 +1159,7 @@ def api_training_upload_photos():
 @login_required
 def api_training_delete_photo(photo_id):
     """
-    删除照片（学员端）
+    删除照片（学员端）- 硬删除
     - 普通用户：仅能删除自己上传的
     - 管理员：可删除所有
     """
@@ -1170,11 +1190,7 @@ def api_training_delete_photo(photo_id):
         
         # 2. 软删除数据库记录
         now = datetime.now(timezone.utc).isoformat()
-        db.table("training_photos").update({
-            "is_deleted": True,
-            "deleted_at": now,
-            "deleted_by": current_user_id
-        }).eq("id", photo_id).execute()
+        db.table("training_photos").delete().eq("id", photo_id).execute()
 
         # 查询该培训剩余照片数量
         count_res = db.table("training_photos").select("id", count="exact") \
@@ -1255,7 +1271,7 @@ def api_admin_get_photos():
     order = request.args.get('order', 'desc')
     
     # 基础查询
-    query = db.table("training_photos").select("*", count="exact").eq("is_deleted", False)
+    query = db.table("training_photos").select("*", count="exact")
     
     # 筛选条件
     if training_id:
@@ -1316,7 +1332,7 @@ def api_admin_get_photos():
 @login_required
 @admin_required
 def api_admin_delete_photo(photo_id):
-    """管理员删除照片"""
+    """管理员删除照片（硬删除）"""
     db = get_supabase_admin()
     current_user_id = session.get('user_id')
     
@@ -1338,13 +1354,9 @@ def api_admin_delete_photo(photo_id):
         if photo_path:
             delete_from_r2(photo_path)
         
-        # 软删除
+        # 硬删除数据库记录（直接删除，不保留）
         now = datetime.now(timezone.utc).isoformat()
-        db.table("training_photos").update({
-            "is_deleted": True,
-            "deleted_at": now,
-            "deleted_by": current_user_id
-        }).eq("id", photo_id).execute()
+        db.table("training_photos").delete().eq("id", photo_id).execute()
 
         # 查询该培训剩余照片数量
         count_res = db.table("training_photos").select("id", count="exact") \
@@ -1448,7 +1460,7 @@ def api_admin_set_cover(photo_id):
 @login_required
 @admin_required
 def api_admin_batch_delete_photos():
-    """批量删除照片"""
+    """批量删除照片（硬删除）"""
     db = get_supabase_admin()
     current_user_id = session.get('user_id')
     data = request.json
@@ -1487,11 +1499,7 @@ def api_admin_batch_delete_photos():
             
             # 软删除
             now = datetime.now(timezone.utc).isoformat()
-            db.table("training_photos").update({
-                "is_deleted": True,
-                "deleted_at": now,
-                "deleted_by": current_user_id
-            }).eq("id", photo_id).execute()
+            db.table("training_photos").delete().eq("id", photo_id).execute()
             
             success_count += 1
         except Exception as e:

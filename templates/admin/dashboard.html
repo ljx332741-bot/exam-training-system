@@ -10,568 +10,7 @@
 
 {% block extra_css %}
 {{ super() }}
-<style>
-    .tab-content .name-input {
-        font-size: 0.75rem;
-        color: #f9f9f9e5;
-        margin-bottom: 12px;
-        padding: 6px 0;
-    }
-    /* ==================== 统计卡片 - 毛玻璃效果（保留各自颜色） ==================== */
-    /* 卡片基础样式 - 所有统计卡片共用 */
-    .dashboard-stats-card {
-        border: 1px solid rgba(255, 255, 255, 0.15) !important;
-        border-radius: 16px !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
-        transition: all 0.3s ease !important;
-        cursor: pointer;
-        position: relative;
-        overflow: hidden;
-        backdrop-filter: blur(4px) saturate(1.2) !important;
-        -webkit-backdrop-filter: blur(4px) saturate(1.2) !important;
-    }
-
-    /* 卡片顶部发光线条 */
-    .dashboard-stats-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-        opacity: 0.6;
-    }
-
-    /* 卡片悬停效果 */
-    .dashboard-stats-card:hover {
-        transform: translateY(-4px) !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15) !important;
-    }
-
-    /* 小标签文字（如：已注册、已导入、考试总数等） */
-    .dashboard-stats-card .card-body .opacity-75,
-    .dashboard-stats-card .card-body .small,
-    .dashboard-stats-card .card-body small:not(.text-muted),
-    .dashboard-stats-card .card-body .card-title small {
-        color: rgba(255, 255, 255, 0.75) !important;
-        text-shadow: 0 0 20px rgba(255, 255, 255, 0.10), 0 1px 3px rgba(0, 0, 0, 0.2) !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.3px !important;
-    }
-
-    /* 统计数据旁边的辅助文字（如：已注册、已导入、考试总数等） */
-    .dashboard-stats-card .card-body .ms-2,
-    .dashboard-stats-card .card-body .opacity-75 {
-        color: rgba(255, 255, 255, 0.7) !important;
-        text-shadow: 0 0 18px rgba(45, 44, 44, 0.742), 0 1px 2px rgba(0, 0, 0, 0.15) !important;
-    } 
-
-    /* 卡片内的文字颜色适配毛玻璃 */
-    .dashboard-stats-card .card-title {
-        color: rgba(255, 255, 255, 0.8) !important;
-        text-shadow: 0 0 20px rgba(255, 255, 255, 0.08), 0 2px 4px rgba(0, 0, 0, 0.2) !important;
-    }
-
-    .dashboard-stats-card .card-body h2,
-    .dashboard-stats-card .card-body .h2,
-    .dashboard-stats-card .card-body .fw-bold {
-        color: #ffffff !important;
-        text-shadow: 0 0 30px rgba(255, 255, 255, 0.12), 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-    }
-
-    /* 卡片中的小字图标 */
-    .dashboard-stats-card .card-body .bi {
-        color: rgba(255, 255, 255, 0.5) !important;
-        text-shadow: 0 0 15px rgba(255, 255, 255, 0.06) !important;
-    }
-    .dashboard-stats-card .card-body .text-muted,
-    .dashboard-stats-card .card-body small {
-        color: rgba(255, 255, 255, 0.6) !important;
-        text-shadow: 0 0 15px rgba(255, 255, 255, 0.05) !important;
-    }
-
-    .dashboard-stats-card .card-body .opacity-75 {
-        opacity: 0.8 !important;
-    }
-
-    /* 卡片图标颜色 */
-    .dashboard-stats-card .bi {
-        color: rgba(255, 255, 255, 0.7);
-    }
-
-    /* ==================== 导出模态框下拉面板样式 ==================== */
-    .export-dropdown {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        z-index: 1060;
-        background: white;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        max-height: 300px;
-        overflow-y: auto;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    
-    .export-dropdown .dropdown-header {
-        position: sticky;
-        top: 0;
-        background: #f8f9fa;
-        padding: 8px 12px;
-        font-weight: 600;
-        font-size: 0.85rem;
-        border-bottom: 1px solid #eee;
-        color: #495057;
-    }
-    
-    .export-dropdown-item {
-        padding: 10px 12px;
-        cursor: pointer;
-        border-bottom: 1px solid #f0f0f0;
-        transition: background 0.2s ease;
-    }
-    
-    .export-dropdown-item:hover {
-        background-color: #e7f3ff;
-    }
-    
-    .export-dropdown-item .item-title {
-        font-weight: 500;
-        font-size: 0.9rem;
-    }
-    
-    .export-dropdown-item .item-meta {
-        font-size: 0.7rem;
-        color: #6c757d;
-        margin-top: 4px;
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-    }
-    
-    .export-dropdown-item .item-meta span {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-    }
-
-    /* ==================== 输入框和按钮样式 ==================== */
-    .btn-group .btn-check:checked + .btn-outline-primary {
-        background-color: #0d6efd;
-        color: white;
-    }
-    
-    #filterQuarter:focus {
-        border-color: #86b7fe;
-        box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.25);
-    }
-    
-    .input-clear-btn {
-        position: absolute;
-        right: 10px;
-        top: 50%;
-        transform: translateY(-50%);
-        cursor: pointer;
-        color: #999;
-        z-index: 10;
-        background: white;
-        padding-left: 5px;
-        display: none;
-    }
-    
-    .position-relative {
-        position: relative;
-    }
-    
-    /* 锁定状态样式 */
-    .lockable-field.locked {
-        background-color: #e9ecef !important;
-        cursor: not-allowed !important;
-        opacity: 0.7;
-    }
-    
-    .lockable-field.locked::placeholder {
-        color: #adb5bd;
-    }
-    
-    .lockable-field.locked + .input-clear-btn {
-        display: none !important;
-    }
-    
-    /* 日期范围按钮锁定样式 */
-    input[name="dateRangeOption"]:disabled + label {
-        opacity: 0.5;
-        cursor: not-allowed;
-        pointer-events: none;
-    }
-    
-    input[name="dateRangeOption"]:disabled + label.btn-outline-primary {
-        background-color: #e9ecef !important;
-        border-color: #ced4da !important;
-        color: #6c757d !important;
-    }
-
-    /* ==================== 综合筛选 - 培训列表（蓝色系） ==================== */
-    /* 培训 - 列表渲染区选中状态 */
-    #multiTrainingList .list-group-item.active {
-        background-color: #e7f3ff !important;  /* 淡蓝色 */
-        border-color: #b6d4fe !important;
-        color: #212529 !important;
-    }
-    
-    #multiTrainingList .list-group-item.active:hover {
-        background-color: #d4e8ff !important;  /* 悬停加深 */
-        border-color: #a0c4f0 !important;
-    }
-    
-    /* 培训 - 列表渲染区普通悬停 */
-    #multiTrainingList .list-group-item-action:hover {
-        background-color: #f0f7ff !important;
-    }
-    
-    /* 培训 - 选中状态文字颜色 */
-    #multiTrainingList .list-group-item.active .fw-bold,
-    #multiTrainingList .list-group-item.active .text-muted,
-    #multiTrainingList .list-group-item.active .small {
-        color: #212529 !important;
-    }
-    
-    /* 培训 - 选中状态复选框 */
-    #multiTrainingList .list-group-item.active .form-check-input {
-        border-color: #0d6efd !important;
-        background-color: #ffffff !important;
-    }
-    
-    #multiTrainingList .list-group-item.active .form-check-input:checked {
-        background-color: #0d6efd !important;
-        border-color: #0d6efd !important;
-    }
-    
-    /* 培训 - 已选标签（下方）与列表颜色一致 */
-    .training-selected-tag {
-        background-color: #e7f3ff !important;
-        border: 1px solid #b6d4fe !important;
-        color: #212529 !important;
-    }
-
-    /* ==================== 综合筛选 - 考试列表（绿色系） ==================== */
-    /* 考试 - 列表渲染区选中状态 */
-    #multiExamList .list-group-item.active {
-        background-color: #e6f9e6 !important;  /* 淡绿色 */
-        border-color: #b4e6b4 !important;
-        color: #212529 !important;
-    }
-    
-    #multiExamList .list-group-item.active:hover {
-        background-color: #d4f0d4 !important;  /* 悬停加深 */
-        border-color: #a0d8a0 !important;
-    }
-    
-    /* 考试 - 列表渲染区普通悬停 */
-    #multiExamList .list-group-item-action:hover {
-        background-color: #f0faf0 !important;
-    }
-    
-    /* 考试 - 选中状态文字颜色 */
-    #multiExamList .list-group-item.active .fw-bold,
-    #multiExamList .list-group-item.active .text-muted,
-    #multiExamList .list-group-item.active .small {
-        color: #212529 !important;
-    }
-    
-    /* 考试 - 选中状态复选框 */
-    #multiExamList .list-group-item.active .form-check-input {
-        border-color: #87193f !important;
-        background-color: #ffffff !important;
-    }
-    
-    #multiExamList .list-group-item.active .form-check-input:checked {
-        background-color: #198754 !important;
-        border-color: #198754 !important;
-    }
-    
-    /* 考试 - 已选标签（下方）与列表颜色一致 */
-    .exam-selected-tag {
-        background-color: #e6f9e6 !important;
-        border: 1px solid #b4e6b4 !important;
-        color: #212529 !important;
-    }
-
-    /* ==================== 通用 - ID 标记样式 ==================== */
-    .id-badge {
-        font-size: 0.5rem !important;
-        padding: 1px 5px !important;
-        border-radius: 3px !important;
-        vertical-align: middle;
-        background-color: #6c757d !important;
-        color: #ffffff !important;
-        display: inline-block;
-        line-height: 1.2;
-    }
-    
-    /* 选中状态下 ID 标记 */
-    #multiTrainingList .list-group-item.active .id-badge,
-    #multiExamList .list-group-item.active .id-badge {
-        background-color: rgba(108, 117, 125, 0.8) !important;
-        color: #ffffff !important;
-    }
-
-    /* ==================== 通用 - 绑定标记样式 ==================== */
-    .binding-badge {
-        font-size: 0.6rem !important;
-        cursor: help !important;
-        transition: all 0.2s ease;
-    }
-    
-    .binding-badge:hover {
-        transform: scale(1.05);
-        box-shadow: 0 2px 8px rgba(25, 135, 84, 0.3);
-    }
-    
-    /* 选中状态下绑定标记 - 保持绿色 */
-    #multiTrainingList .list-group-item.active .binding-badge,
-    #multiExamList .list-group-item.active .binding-badge {
-        background-color: #198754 !important;
-        color: #ffffff !important;
-    }
-
-    /* 下拉框中的绑定标记 */
-    .option-binding-icon {
-        color: #198754;
-        margin-left: 4px;
-        font-size: 0.8rem;
-    }
-
-    /* ==================== 通用 - 已选标签 ==================== */
-    .badge .remove-selection {
-        opacity: 0.7;
-        transition: opacity 0.2s;
-        cursor: pointer;
-    }
-    
-    .badge .remove-selection:hover {
-        opacity: 1;
-    }
-    
-    /* ==================== Tab 切换样式 ==================== */
-    .nav-tabs .nav-link {
-        color: #495057;
-    }
-    
-    .nav-tabs .nav-link.active {
-        font-weight: 600;
-    }
-
-    /* ==================== 水晶统计卡片样式 ==================== */
-    .crystal-card {
-        position: relative;
-        border: none;
-        border-radius: 20px;
-        padding: 20px 24px;
-        min-height: 80px;
-        display: flex;
-        align-items: center;
-        overflow: hidden;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.06);
-        cursor: pointer;
-    }
-
-    /* 玻璃态背景 */
-    .crystal-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        border-radius: 20px;
-        background: linear-gradient(135deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.08) 100%);
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        z-index: 0;
-    }
-
-    /* 顶部高光条 */
-    .crystal-card::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 3px;
-        border-radius: 20px 20px 0 0;
-        z-index: 1;
-    }
-
-    /* 卡片内容 */
-    .crystal-card .card-content {
-        position: relative;
-        z-index: 2;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%;
-    }
-
-    .crystal-card .card-left {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-        flex: 1;
-    }
-
-    .crystal-card .card-title {
-        font-size: 0.7rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-        opacity: 0.7;
-        margin: 0 0 2px 0;
-    }
-
-    .crystal-card .card-value {
-        font-size: 1.6rem;
-        font-weight: 700;
-        line-height: 1.2;
-        margin: 0;
-    }
-
-    .crystal-card .card-value small {
-        font-size: 0.7rem;
-        font-weight: 400;
-        opacity: 0.7;
-    }
-
-    .crystal-card .card-icon {
-        width: 48px;
-        height: 48px;
-        border-radius: 14px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        flex-shrink: 0;
-        background: rgba(255,255,255,0.3);
-        backdrop-filter: blur(4px);
-        -webkit-backdrop-filter: blur(4px);
-        border: 1px solid rgba(255,255,255,0.2);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        transition: all 0.3s ease;
-    }
-
-    .crystal-card .card-icon i {
-        filter: drop-shadow(0 2px 4px rgba(0,0,0,0.08));
-    }
-
-    /* 悬浮效果 */
-    .crystal-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.12);
-    }
-
-    .crystal-card:hover .card-icon {
-        transform: scale(1.05) rotate(-2deg);
-    }
-
-    /* 不同主题颜色 */
-    .crystal-card.blue {
-        background: linear-gradient(135deg, #e8f0fe 0%, #d4e4fd 100%);
-        border: 1px solid rgba(66, 133, 244, 0.2);
-    }
-    .crystal-card.blue::after {
-        background: linear-gradient(90deg, #4285f4, #8ab4f8);
-    }
-    .crystal-card.blue .card-icon {
-        color: #4285f4;
-        background: rgba(66, 133, 244, 0.15);
-    }
-
-    .crystal-card.green {
-        background: linear-gradient(135deg, #e6f4ea 0%, #ceead6 100%);
-        border: 1px solid rgba(52, 168, 83, 0.2);
-    }
-    .crystal-card.green::after {
-        background: linear-gradient(90deg, #34a853, #81c995);
-    }
-    .crystal-card.green .card-icon {
-        color: #34a853;
-        background: rgba(52, 168, 83, 0.15);
-    }
-
-    .crystal-card.orange {
-        background: linear-gradient(135deg, #fef3e8 0%, #fde8d0 100%);
-        border: 1px solid rgba(251, 140, 0, 0.2);
-    }
-    .crystal-card.orange::after {
-        background: linear-gradient(90deg, #fb8c00, #ffb74d);
-    }
-    .crystal-card.orange .card-icon {
-        color: #fb8c00;
-        background: rgba(251, 140, 0, 0.15);
-    }
-
-    .crystal-card.purple {
-        background: linear-gradient(135deg, #f3e8f9 0%, #e8d5f5 100%);
-        border: 1px solid rgba(156, 39, 176, 0.2);
-    }
-    .crystal-card.purple::after {
-        background: linear-gradient(90deg, #9c27b0, #ce93d8);
-    }
-    .crystal-card.purple .card-icon {
-        color: #9c27b0;
-        background: rgba(156, 39, 176, 0.15);
-    }
-
-    /* 响应式调整 */
-    @media (max-width: 768px) {
-        .crystal-card {
-            padding: 16px 18px;
-            min-height: 90px;
-        }
-        .crystal-card .card-value {
-            font-size: 1.3rem;
-        }
-        .crystal-card .card-icon {
-            width: 40px;
-            height: 40px;
-            font-size: 1.2rem;
-        }
-        .crystal-card .card-title {
-            font-size: 0.65rem;
-        }
-    }
-
-    /* ==================== 悬浮触发旋转图标 ==================== */
-    /* ✅ 默认静态，不消耗任何资源 */
-    .spin-icon {
-        display: inline-block;
-        transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
-        will-change: transform;
-        transform: translateZ(0);
-        backface-visibility: hidden;
-    }
-
-    .spin-icon.spinning {
-        animation: spin 5s linear infinite;
-    }
-
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-
-    /* ==================== 悬浮触发容器 ==================== */
-    /* 卡片标题悬浮时触发齿轮旋转 */
-    .card-header-trigger:hover .spin-icon {
-        animation: spin 5s linear infinite;
-    }
-
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/admin_dashboard.css') }}">
 {% endblock %}
 
 {% block content %}
@@ -2183,7 +1622,7 @@
 					try {
 						const examId = this.state.exam.id;
 						const bindRes = await fetch(`/api/admin/training/bindings/by_exam?exam_id=${examId}`);
-						if (!bindRes.ok) {
+						if (bindRes.ok) {
                             const bindData = await bindRes.json();
                             const boundTrainingIds = new Set(bindData.training_ids || bindData.bindings?.map(b => b.training_id) || []);
                             trainings = trainings.map(t => ({
@@ -2385,15 +1824,15 @@
                         data-end="${t.end_time || ''}">
                         <div class="item-title">
                             ${idBadge}${escapeHtml(t.name)}
-                            ${statusIcon}
+                            {# ${statusIcon}
                             ${signedBadge}
-                            ${bindingBadge}
+                            ${bindingBadge} #}
                         </div>
                         <div class="item-meta">
                             <span><i class="bi bi-calendar3"></i> ${safeT('create') || '创建'}: ${createdDate}</span>
                             <span><i class="bi bi-calendar-week"></i> ${safeT('quarter') || '季度'}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
-                            {# <span><i class="item-title"></i> ${statusIcon} ${signedBadge} ${bindingBadge}</span> #}
+                            <span> ${statusIcon} ${signedBadge} ${bindingBadge}</span>
                         </div>
                     </div>
                 `;
@@ -2433,7 +1872,7 @@
 			});
 			
             if (!exams.length) {
-                container.innerHTML = `<div class="p-3 text-center text-muted">${t('no_exam_datas')}</div>`;
+                container.innerHTML = `<div class="p-3 text-center text-muted">${safeT('no_exam_datas')}</div>`;
                 if (dropdown) dropdown.style.display = showDropdown ? 'block' : 'none';
                 return;
             }
@@ -2468,7 +1907,7 @@
 
 				// 已绑定的考试添加特殊标记
 				const bindingBadge = exam.is_bound 
-					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;">${safeT('binded')}</span>` 
+					? `<span class="badge bg-success ms-1" style="font-size: 0.6rem;"><i class="bi bi-link"></i>${safeT('binded')}</span>` 
 					: '';
 				
                 html += `
@@ -2479,15 +1918,15 @@
                         data-end="${exam.end_time || ''}">
                         <div class="item-title">
 							${idBadge}${escapeHtml(exam.title)}
-                            ${statusIcon}
+                            {# ${statusIcon}
                             ${submittedBadge}
-							${bindingBadge}
+							${bindingBadge} #}
 						</div>
                         <div class="item-meta">
                             <span><i class="bi bi-calendar3"></i> ${safeT('create')}: ${createdDate}</span>
                             <span><i class="bi bi-calendar-week"></i> ${safeT('quarter')}: ${quarter}</span>
                             <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
-							<!-- <span><i class="bi bi-link"></i> ${bindingBadge}</span> -->
+							<span> ${statusIcon} ${submittedBadge} ${bindingBadge}</span>
                         </div>
                     </div>
                 `;
@@ -3440,32 +2879,6 @@
             document.getElementById('multiExportBtn')?.addEventListener('click', () => {
                 this.exportMultiReport();
             });
-            
-            // 点击行切换复选框（事件委托）
-            /*
-            document.getElementById('multiTrainingList')?.addEventListener('click', (e) => {
-                const item = e.target.closest('.list-group-item');
-                if (!item || e.target.type === 'checkbox') return;
-                const checkbox = item.querySelector('.training-checkbox');
-                if (checkbox) {
-                    checkbox.checked = !checkbox.checked;
-                    // 修复：使用 bubbles: true 确保事件冒泡到容器
-                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            });
-                        
-            // 考试列表同理
-            document.getElementById('multiExamList')?.addEventListener('click', (e) => {
-                const item = e.target.closest('.list-group-item');
-                if (!item || e.target.type === 'checkbox') return;
-                const checkbox = item.querySelector('.exam-checkbox');
-                if (checkbox) {
-                    checkbox.checked = !checkbox.checked;
-                    // 修复：使用 bubbles: true
-                    checkbox.dispatchEvent(new Event('change', { bubbles: true }));
-                }
-            });
-            */
         },
         
         // ========== 搜索 ==========
@@ -3695,15 +3108,15 @@
                     // 获取绑定的考试ID列表
                     const boundExamIds = this._getBoundExamIdsForTraining(t.id);
                     const titleText = boundExamIds.length > 0 
-                        ? `${t('binded_exam')} ID: ${boundExamIds.join(', ')}` 
-                        : `${t('already_linked_current_exam')}`;
+                        ? `${safeT('binded_exam')} ID: ${boundExamIds.join(', ')}` 
+                        : `${safeT('already_linked_current_exam')}`;
                     bindingBadge = `<span class="badge bg-success ms-1 binding-badge" title="${titleText}" style="font-size: 0.6rem; cursor: help;">
-                        <i class="bi bi-link"></i> ${t('binded')}
+                        <i class="bi bi-link"></i> ${safeT('binded')}
                     </span>`;
                 } else if (t.is_bound) {
                     // 兼容：没有选中考试但有绑定关系的情况
                     bindingBadge = `<span class="badge bg-success ms-1 binding-badge" title="已绑定到其他考试" style="font-size: 0.6rem; cursor: help;">
-                        <i class="bi bi-link"></i> ${t('binded')}
+                        <i class="bi bi-link"></i> ${safeT('binded')}
                     </span>`;
                 }
                 
@@ -3717,9 +3130,9 @@
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(t.name)}">
                                         ${idBadge}${escapeHtml(t.name)} 
-                                        ${statusIcon}
+                                        {# ${statusIcon}
                                         ${signedBadge}
-                                        ${bindingBadge}
+                                        ${bindingBadge} #}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
@@ -3727,6 +3140,7 @@
                                         <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
                                         <span class="mx-1">|</span>
                                         <span><i class="bi bi-calendar-week"></i> ${quarter}</span>
+                                        <span> ${statusIcon} ${signedBadge} ${bindingBadge}</span>
                                     </div>
                                 </div>
                             </div>
@@ -4018,9 +3432,9 @@
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(e.title)}">
                                         ${idBadge}${escapeHtml(e.title)}
-                                        ${statusIcon} 
+                                        {# ${statusIcon} 
                                         ${submittedBadge}
-                                        ${bindingBadge}
+                                        ${bindingBadge} #}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
@@ -4028,6 +3442,7 @@
                                         <span><i class="bi bi-calendar3"></i> ${createdDate}</span>
                                         <span class="mx-1">|</span>
                                         <span><i class="bi bi-calendar-week"></i> ${quarter}</span>
+                                        <span> ${statusIcon} ${submittedBadge} ${bindingBadge}</span>
                                     </div>
                                 </div>
                             </div>

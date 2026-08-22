@@ -16,6 +16,8 @@ from services.db import get_supabase, get_supabase_admin
 from services import auth, exam, export
 from utils.status import get_exam_status
 from utils.manage_messages import log_user_login
+from utils.training_helpers import parse_training_countries
+from utils.permissions import is_developer
 logger = logging.getLogger(__name__)
 
 @exam_bp.route('/dashboard')
@@ -1347,14 +1349,71 @@ def my_attendances():
         # 获取培训信息
         if attendances:
             training_ids = list(set([a['training_id'] for a in attendances]))
-            training_res = db.table("trainings").select("id, name, country, start_time, end_time").in_("id", training_ids).execute()
+            training_res = db.table("trainings").select("id, name, country, countries, start_time, end_time").in_("id", training_ids).execute()
             training_map = {t['id']: t for t in (training_res.data or [])}
             now = datetime.now(timezone.utc).isoformat()
+
+            # ========== 获取当前用户的权限信息 ==========
+            current_user_id = session.get('user_id')
+            current_role = session.get('role')
+            is_dev = is_developer()  # 从 utils.permissions 导入
+            
+            # 获取管理员的权限范围
+            allowed_countries = None
+            if not is_dev and current_role in ['super_admin', 'admin']:
+                # 从数据库获取用户的 admin_countries
+                user_res = db.table("users").select("admin_countries, country").eq("id", current_user_id).maybe_single().execute()
+                if user_res and user_res.data:
+                    admin_countries = user_res.data.get('admin_countries')
+                    if admin_countries:
+                        try:
+                            allowed_countries = json.loads(admin_countries) if isinstance(admin_countries, str) else admin_countries
+                        except:
+                            allowed_countries = []
+                    else:
+                        # 如果没有设置权限范围，使用用户注册国家
+                        user_country = user_res.data.get('country')
+                        if user_country:
+                            allowed_countries = [user_country]
+                        else:
+                            allowed_countries = []
+            
             for att in attendances:
                 training = training_map.get(att['training_id'], {})
                 att['training_name'] = training.get('name', '未知培训')
-                att['country'] = training.get('country', '')
 
+                # 解析多国家
+                training_countries = parse_training_countries(training)
+                
+                # ========== 根据角色过滤国家显示 ==========
+                filtered_countries = []
+                
+                if is_dev:
+                    # 开发者：显示所有国家
+                    filtered_countries = training_countries
+                elif allowed_countries is not None and allowed_countries:
+                    # 超管/管理员：只显示与权限范围有交集的国家
+                    if training_countries:
+                        filtered_countries = [c for c in training_countries if c in allowed_countries]
+                    else:
+                        # 兼容单国家
+                        single_country = training.get('country', '')
+                        if single_country and single_country in allowed_countries:
+                            filtered_countries = [single_country]
+                else:
+                    # 没有权限范围的情况（如超管无权限限制）
+                    filtered_countries = training_countries
+                
+                # 设置国家显示
+                if filtered_countries:
+                    att['country'] = ', '.join(filtered_countries)
+                else:
+                    # 如果没有匹配的国家，显示 '-' 或者保留原值
+                    att['country'] = '-'
+                    # 可选：记录原始国家用于调试
+                    att['_original_countries'] = training_countries
+                    att['_allowed_countries'] = allowed_countries
+                
                 # 判断是否需要重新签名
                 # 条件1：有签到记录但无签名（signature_url 为空）
                 # 条件2：培训仍在有效期内
@@ -1566,8 +1625,6 @@ def my_interview_results():
         logger.error(f"获取访谈记录失败: {e}", exc_info=True)
         return jsonify([])
 
-# routes/api_exam.py - 修改 api_my_stats 函数
-
 @exam_bp.route('/api/my/stats')
 @login_required
 def api_my_stats():
@@ -1576,6 +1633,7 @@ def api_my_stats():
     """
     user_id = session['user_id']
     db = get_supabase()
+    admin_db = get_supabase_admin()
     now = datetime.now(timezone.utc)
     
     # ========== 1. 获取用户信息 ==========
@@ -1588,155 +1646,163 @@ def api_my_stats():
     assign_res = db.table("exam_assignments").select("exam_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
     assigned_exam_ids = list(set([a['exam_id'] for a in (assign_res.data or [])]))
     
-    if not assigned_exam_ids:
-        return jsonify({
-            "success": True,
-            "data": {
-                "exam": {"total": 0, "pending": 0, "in_progress": 0, "completed": 0},
-                "training": {"total": 0, "signed": 0, "pending": 0},
-                "interview": {"total": 0, "pending": 0, "completed": 0},
-                "completion": {"rate": 0, "total_items": 0, "completed_items": 0}
-            }
-        })
+    # ========== 3. 考试统计 ==========
+    exam_total = 0
+    exam_pending = 0
+    exam_in_progress = 0
+    exam_completed = 0
     
-    # ========== 3. 获取考试详细信息 ==========
-    exams_res = db.table("exams").select("*").in_("id", assigned_exam_ids).execute()
-    exam_map = {}
-    for e in (exams_res.data or []):
-        exam_map[e['id']] = e
-    
-    # ========== 4. 获取考试状态 ==========
-    status_res = db.table("user_exam_status").select("exam_id, started_at, is_submitted").eq("user_id", user_id).execute()
-    status_map = {}
-    for s in (status_res.data or []):
-        status_map[s['exam_id']] = s
-    
-    # ========== 5. 获取已提交的考试（去重） ==========
-    results_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
-    submitted_exam_ids = list(set([r['exam_id'] for r in (results_res.data or [])]))
-    
-    # ========== 6. 统计有效考试（与待考试列表逻辑一致） ==========
-    total_exams = 0
-    pending_exams = 0
-    in_progress_exams = 0
-    completed_exams = len(submitted_exam_ids)
-    
-    for exam_id in assigned_exam_ids:
-        # ✅ 已提交的算已完成
-        if exam_id in submitted_exam_ids:
-            total_exams += 1  # 已完成也算在总数里
-            continue
+    if assigned_exam_ids:
+        # 获取考试信息
+        exams_res = db.table("exams").select("*").in_("id", assigned_exam_ids).is_("deleted_at", "null").execute()
+        exam_map = {e['id']: e for e in (exams_res.data or [])}
         
-        exam_info = exam_map.get(exam_id, {})
-        if not exam_info:
-            continue
+        # 获取考试状态
+        status_res = db.table("user_exam_status").select("exam_id, started_at, is_submitted").eq("user_id", user_id).execute()
+        status_map = {s['exam_id']: s for s in (status_res.data or [])}
         
-        # ✅ 1. 国家过滤
-        exam_countries = []
-        countries_data = exam_info.get('countries') or exam_info.get('country', '')
-        if isinstance(countries_data, str):
-            try:
-                exam_countries = json.loads(countries_data)
-            except:
-                exam_countries = [countries_data] if countries_data else []
-        elif isinstance(countries_data, list):
-            exam_countries = countries_data
-        else:
-            exam_countries = []
+        # 获取已提交的考试
+        results_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
+        submitted_exam_ids = set([r['exam_id'] for r in (results_res.data or [])])
         
-        if exam_countries and user_country:
-            if user_country not in exam_countries:
-                continue  # 国家不匹配，跳过
-        
-        # ✅ 2. 检查考试状态（与 get_exam_status 一致）
-        start_time = exam_info.get('start_time')
-        end_time = exam_info.get('end_time')
-        status = 'draft'
-        
-        if start_time and end_time:
-            try:
-                start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                if now < start_dt:
-                    status = 'created'
-                elif now > end_dt:
-                    status = 'closed'
-                else:
-                    status = 'active'
-            except:
-                status = 'draft'
-        else:
-            status = 'draft'
-        
-        # ✅ 3. 只有 created 或 active 状态才统计为待考试或进行中
-        if status not in ('created', 'active'):
-            # 已关闭或草稿状态不计入总数（与待考试列表逻辑一致）
-            continue
-        
-        total_exams += 1
-        
-        # ✅ 4. 检查是否已开始
-        user_status = status_map.get(exam_id, {})
-        if user_status.get('started_at'):
-            in_progress_exams += 1
-        else:
-            pending_exams += 1
+        for exam_id in assigned_exam_ids:
+            exam_info = exam_map.get(exam_id)
+            if not exam_info:
+                continue
+            
+            # 国家过滤
+            if user_country:
+                exam_countries = []
+                countries_data = exam_info.get('countries') or exam_info.get('country', '')
+                if isinstance(countries_data, str):
+                    try:
+                        exam_countries = json.loads(countries_data)
+                    except:
+                        exam_countries = [countries_data] if countries_data else []
+                elif isinstance(countries_data, list):
+                    exam_countries = countries_data
+                
+                if exam_countries and user_country not in exam_countries:
+                    continue
+            
+            # ✅ 获取考试状态（排除 draft）
+            start_time = exam_info.get('start_time')
+            end_time = exam_info.get('end_time')
+            exam_status = 'draft'
+            if start_time and end_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                    if now < start_dt:
+                        exam_status = 'created'
+                    elif now > end_dt:
+                        exam_status = 'closed'
+                    else:
+                        exam_status = 'active'
+                except:
+                    exam_status = 'draft'
+            
+            # 跳过草稿
+            if exam_status == 'draft':
+                continue
+            
+            is_submitted = exam_id in submitted_exam_ids
+            is_started = status_map.get(exam_id, {}).get('started_at') is not None
+            
+            # ✅ 统计逻辑
+            if is_submitted:
+                # 已提交 = 已完成
+                exam_completed += 1
+            elif is_started and exam_status == 'active':
+                # 已开始且在进行中
+                exam_in_progress += 1
+            elif exam_status == 'closed':
+                # 已关闭但未提交（跳过，不计入总数）
+                continue
+            else:
+                # 未开始（created 或 active 但未开始）
+                exam_pending += 1
+            
+            exam_total += 1
     
-    # ========== 7. 培训签到统计 ==========
-    trainings_res = db.table("trainings").select("id, country").is_("deleted_at", "null").execute()
-    all_trainings = []
-    for t in (trainings_res.data or []):
-        if t.get('country') == user_country:
-            all_trainings.append(t)
+    # ========== 4. 培训签到统计 ==========
+    from utils.training_helpers import parse_training_countries
     
-    total_trainings = len(all_trainings)
-    training_ids = [t['id'] for t in all_trainings]
+    # 获取用户所有签到记录
+    att_res = db.table("training_attendances")\
+        .select("training_id, signature_url")\
+        .eq("user_id", user_id)\
+        .is_("deleted_at", "null")\
+        .execute()
     
-    signed_trainings = set()
-    if training_ids:
-        att_res = db.table("training_attendances").select("training_id").eq("user_id", user_id).in_("training_id", training_ids).is_("deleted_at", "null").execute()
-        signed_trainings = set([a['training_id'] for a in (att_res.data or [])])
+    signed_training_ids = set()
+    signed_with_signature = set()
+    for att in (att_res.data or []):
+        tid = att['training_id']
+        signed_training_ids.add(tid)
+        signature_url = att.get('signature_url', '')
+        if signature_url and signature_url != '' and signature_url != 'null':
+            signed_with_signature.add(tid)
     
-    signed_count = len(signed_trainings)
-    pending_trainings = total_trainings - signed_count
+    # 获取培训信息（用于国家过滤）
+    training_total = 0
+    training_signed = 0
+    training_pending = 0
     
-    # ========== 8. 访谈统计 ==========
-    interview_res = db.table("interview_results").select("interview_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
-    interview_ids = list(set([r['interview_id'] for r in (interview_res.data or [])]))
+    if signed_training_ids:
+        trainings_res = db.table("trainings").select("*").in_("id", list(signed_training_ids)).is_("deleted_at", "null").execute()
+        for t in (trainings_res.data or []):
+            # 国家过滤
+            if user_country:
+                training_countries = parse_training_countries(t)
+                if training_countries and user_country not in training_countries:
+                    continue
+            
+            training_total += 1
+            if t['id'] in signed_with_signature:
+                training_signed += 1
+            else:
+                training_pending += 1
     
-    total_interviews = len(interview_ids)
-    completed_interviews = 0
+    # ========== 5. 访谈统计 ==========
+    interview_res = db.table("interview_results").select("interview_id, submitted_at").eq("user_id", user_id).is_("deleted_at", "null").execute()
+    interview_ids = list(set([r['interview_id'] for r in (interview_res.data or []) if r.get('interview_id')]))
+    
+    interview_total = len(interview_ids)
+    interview_completed = 0
+    interview_pending = 0
+    
     if interview_ids:
         for inv_id in interview_ids:
-            sub_res = db.table("interview_results").select("id").eq("interview_id", inv_id).eq("user_id", user_id).not_.is_("submitted_at", "null").limit(1).execute()
-            if sub_res.data:
-                completed_interviews += 1
+            inv_results = [r for r in (interview_res.data or []) if r['interview_id'] == inv_id]
+            if any(r.get('submitted_at') for r in inv_results):
+                interview_completed += 1
+            else:
+                interview_pending += 1
     
-    pending_interviews = total_interviews - completed_interviews
-    
-    # ========== 9. 整体完成率 ==========
-    total_items = total_exams + total_trainings + total_interviews
-    completed_items = completed_exams + signed_count + completed_interviews
+    # ========== 6. 整体完成率 ==========
+    total_items = exam_total + training_total + interview_total
+    completed_items = exam_completed + training_signed + interview_completed
     completion_rate = round(completed_items / total_items * 100, 1) if total_items > 0 else 0
     
     return jsonify({
         "success": True,
         "data": {
             "exam": {
-                "total": total_exams,
-                "pending": pending_exams,
-                "in_progress": in_progress_exams,
-                "completed": completed_exams
+                "total": exam_total,
+                "pending": exam_pending,
+                "in_progress": exam_in_progress,
+                "completed": exam_completed
             },
             "training": {
-                "total": total_trainings,
-                "signed": signed_count,
-                "pending": pending_trainings
+                "total": training_total,
+                "signed": training_signed,
+                "pending": training_pending
             },
             "interview": {
-                "total": total_interviews,
-                "pending": pending_interviews,
-                "completed": completed_interviews
+                "total": interview_total,
+                "pending": interview_pending,
+                "completed": interview_completed
             },
             "completion": {
                 "rate": completion_rate,
@@ -1745,4 +1811,452 @@ def api_my_stats():
             }
         }
     })
+
+@exam_bp.route('/api/my/stats_detail')
+@login_required
+def api_my_stats_detail():
+    """
+    获取学员统计详情（用于点击卡片弹出详情）
+    统计逻辑与 /api/my/stats 完全一致
+    """
+    user_id = session['user_id']
+    detail_type = request.args.get('type', 'exam')
+    db = get_supabase()
+    admin_db = get_supabase_admin()
+    now = datetime.now(timezone.utc)
+    
+    # 获取用户信息
+    user_res = db.table("users").select("country, role").eq("id", user_id).maybe_single().execute()
+    if not user_res.data:
+        return jsonify({"success": False, "message": "用户不存在"}), 404
+    user_country = user_res.data.get('country')
+    
+    if detail_type == 'exam':
+        # ========== 考试详情（与卡片统计完全一致）==========
+        
+        # 1. 获取所有分配的考试
+        assign_res = db.table("exam_assignments").select("exam_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
+        assigned_exam_ids = list(set([a['exam_id'] for a in (assign_res.data or [])]))
+        
+        if not assigned_exam_ids:
+            return jsonify({
+                "success": True, 
+                "data": [], 
+                "summary": {"total": 0, "pending": 0, "in_progress": 0, "completed": 0, "closed": 0}
+            })
+        
+        # 2. 获取考试信息
+        exams_res = db.table("exams").select("*").in_("id", assigned_exam_ids).is_("deleted_at", "null").execute()
+        exam_map = {e['id']: e for e in (exams_res.data or [])}
+        
+        # 3. 获取考试状态
+        status_res = db.table("user_exam_status").select("exam_id, started_at, is_submitted").eq("user_id", user_id).execute()
+        status_map = {s['exam_id']: s for s in (status_res.data or [])}
+        
+        # 4. 获取已提交的考试
+        results_res = db.table("exam_results").select("exam_id, total_score, created_at").eq("user_id", user_id).is_("deleted_at", "null").execute()
+        submitted_exam_ids = list(set([r['exam_id'] for r in (results_res.data or [])]))
+        
+        result = []
+        for exam_id in assigned_exam_ids:
+            exam_info = exam_map.get(exam_id)
+            if not exam_info:
+                continue
+            
+            # ✅ 国家过滤
+            if user_country:
+                exam_countries = []
+                countries_data = exam_info.get('countries') or exam_info.get('country', '')
+                if isinstance(countries_data, str):
+                    try:
+                        exam_countries = json.loads(countries_data)
+                    except:
+                        exam_countries = [countries_data] if countries_data else []
+                elif isinstance(countries_data, list):
+                    exam_countries = countries_data
+                
+                if exam_countries and user_country not in exam_countries:
+                    continue
+            
+            # ✅ 获取考试状态（包括 closed）
+            start_time = exam_info.get('start_time')
+            end_time = exam_info.get('end_time')
+            exam_status = 'draft'
+            if start_time and end_time:
+                try:
+                    start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                    if now < start_dt:
+                        exam_status = 'created'
+                    elif now > end_dt:
+                        exam_status = 'closed'
+                    else:
+                        exam_status = 'active'
+                except:
+                    exam_status = 'draft'
+            
+            # ✅ 关键：只统计 created、active、closed 状态的考试（排除 draft）
+            # 但如果是 draft 且用户已提交（不可能），或者 draft 但用户已开始（不可能）
+            # 所以直接跳过 draft
+            if exam_status == 'draft':
+                continue
+            
+            user_status = status_map.get(exam_id, {})
+            is_submitted = exam_id in submitted_exam_ids
+            is_started = user_status.get('started_at') is not None
+            
+            title = exam_info.get('title')
+            if not title:
+                title = f'考试 #{exam_id}'
+            
+            # 获取分数
+            score = None
+            submitted_at = None
+            for r in (results_res.data or []):
+                if r['exam_id'] == exam_id:
+                    score = r.get('total_score')
+                    submitted_at = r.get('created_at')
+                    break
+            
+            result.append({
+                "exam_id": exam_id,
+                "title": title,
+                "start_time": exam_info.get('start_time'),
+                "end_time": exam_info.get('end_time'),
+                "exam_status": exam_status,
+                "is_submitted": is_submitted,
+                "started": is_started,
+                "score": score,
+                "submitted_at": submitted_at,
+                "duration": exam_info.get('duration', 60),
+                "pass_score": exam_info.get('pass_score', 85)
+            })
+        
+        # 排序
+        def get_sort_key(x):
+            if x['is_submitted']:
+                return 2
+            elif x['exam_status'] == 'closed':
+                return 3
+            elif x['started']:
+                return 1
+            else:
+                return 0
+        
+        result.sort(key=get_sort_key)
+        
+        # 统计
+        total = len(result)
+        pending = len([x for x in result if not x['is_submitted'] and not x['started'] and x['exam_status'] in ('created', 'active')])
+        in_progress = len([x for x in result if x['started'] and not x['is_submitted']])
+        completed = len([x for x in result if x['is_submitted']])
+        closed = len([x for x in result if x['exam_status'] == 'closed' and not x['is_submitted']])
+        
+        return jsonify({
+            "success": True, 
+            "data": result, 
+            "summary": {
+                "total": total,
+                "pending": pending,
+                "in_progress": in_progress,
+                "completed": completed,
+                "closed": closed
+            }
+        })
+    
+    elif detail_type == 'training':
+        # ========== 培训签到详情 ==========
+        from utils.training_helpers import parse_training_countries
+        
+        # 获取用户所有签到记录
+        att_res = db.table("training_attendances")\
+            .select("training_id, signature_url, sign_time, signed_name")\
+            .eq("user_id", user_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        signed_training_ids = set()
+        for att in (att_res.data or []):
+            signed_training_ids.add(att['training_id'])
+        
+        if not signed_training_ids:
+            return jsonify({
+                "success": True, 
+                "data": [], 
+                "summary": {"total": 0, "signed": 0, "resign": 0}
+            })
+        
+        # 获取培训信息
+        trainings_res = db.table("trainings").select("*").in_("id", list(signed_training_ids)).is_("deleted_at", "null").execute()
+        
+        result = []
+        for t in (trainings_res.data or []):
+            tid = t['id']
+            
+            # 国家过滤
+            if user_country:
+                training_countries = parse_training_countries(t)
+                if training_countries and user_country not in training_countries:
+                    continue
+            
+            # 获取签到记录
+            att = next((a for a in (att_res.data or []) if a['training_id'] == tid), {})
+            signature_url = att.get('signature_url', '')
+            
+            is_signed = signature_url and signature_url != '' and signature_url != 'null'
+            needs_resign = not is_signed
+            
+            name = t.get('name')
+            if not name:
+                name = f'培训 #{tid}'
+            
+            # 国家显示
+            countries = parse_training_countries(t)
+            country_display = ', '.join(countries) if countries else t.get('country', '')
+            
+            result.append({
+                "training_id": tid,
+                "name": name,
+                "country": country_display,
+                "sign_time": att.get('sign_time'),
+                "signed_name": att.get('signed_name', ''),
+                "signature_url": signature_url,
+                "is_signed": is_signed,
+                "needs_resign": needs_resign
+            })
+        
+        total = len(result)
+        signed = len([x for x in result if x['is_signed']])
+        resign = len([x for x in result if x['needs_resign']])
+        
+        return jsonify({
+            "success": True, 
+            "data": result, 
+            "summary": {
+                "total": total,
+                "signed": signed,
+                "resign": resign
+            }
+        })
+    
+    elif detail_type == 'interview':
+        # ========== 访谈详情 ==========
+        
+        results_res = db.table("interview_results").select("interview_id, submitted_at, is_correct, answer").eq("user_id", user_id).is_("deleted_at", "null").execute()
+        interview_result_map = {}
+        for r in (results_res.data or []):
+            inv_id = r['interview_id']
+            if inv_id not in interview_result_map:
+                interview_result_map[inv_id] = []
+            interview_result_map[inv_id].append(r)
+        
+        interview_ids = list(interview_result_map.keys())
+        
+        if not interview_ids:
+            return jsonify({
+                "success": True, 
+                "data": [], 
+                "summary": {"total": 0, "pending": 0, "completed": 0}
+            })
+        
+        inv_res = db.table("interviews").select("*").in_("id", interview_ids).is_("deleted_at", "null").execute()
+        inv_map = {i['id']: i for i in (inv_res.data or [])}
+        
+        result = []
+        for inv_id in interview_ids:
+            inv_info = inv_map.get(inv_id)
+            if not inv_info:
+                continue
+            
+            inv_results = interview_result_map.get(inv_id, [])
+            has_submitted = any(r.get('submitted_at') for r in inv_results)
+            
+            correct_count = sum(1 for r in inv_results if r.get('is_correct') == True)
+            total_questions = len(inv_results)
+            
+            title = inv_info.get('title')
+            if not title:
+                title = f'访谈 #{inv_id}'
+            
+            result.append({
+                "interview_id": inv_id,
+                "title": title,
+                "start_time": inv_info.get('start_time'),
+                "end_time": inv_info.get('end_time'),
+                "question_count": inv_info.get('question_count', 0),
+                "is_completed": has_submitted,
+                "correct_count": correct_count,
+                "total_questions": total_questions,
+                "exam_id": inv_info.get('exam_id')
+            })
+        
+        total = len(result)
+        pending = len([x for x in result if not x['is_completed']])
+        completed = len([x for x in result if x['is_completed']])
+        
+        return jsonify({
+            "success": True, 
+            "data": result, 
+            "summary": {
+                "total": total,
+                "pending": pending,
+                "completed": completed
+            }
+        })
+    
+    elif detail_type == 'completion':
+        # ========== 完成率详情（与卡片统计完全一致）==========
+        from utils.training_helpers import parse_training_countries
+        
+        # ✅ 1. 考试统计（与卡片统计一致）
+        assign_res = db.table("exam_assignments").select("exam_id").eq("user_id", user_id).is_("deleted_at", "null").execute()
+        assigned_exam_ids = list(set([a['exam_id'] for a in (assign_res.data or [])]))
+        
+        valid_exam_ids = []
+        exam_titles = {}
+        exam_statuses = {}
+        if assigned_exam_ids:
+            exams_res = db.table("exams").select("*").in_("id", assigned_exam_ids).execute()
+            for e in (exams_res.data or []):
+                # 国家过滤
+                if user_country:
+                    exam_countries = []
+                    countries_data = e.get('countries') or e.get('country', '')
+                    if isinstance(countries_data, str):
+                        try:
+                            exam_countries = json.loads(countries_data)
+                        except:
+                            exam_countries = [countries_data] if countries_data else []
+                    elif isinstance(countries_data, list):
+                        exam_countries = countries_data
+                    
+                    if exam_countries and user_country not in exam_countries:
+                        continue
+                
+                # ✅ 获取考试状态
+                start_time = e.get('start_time')
+                end_time = e.get('end_time')
+                status = 'draft'
+                if start_time and end_time:
+                    try:
+                        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+                        if now < start_dt:
+                            status = 'created'
+                        elif now > end_dt:
+                            status = 'closed'
+                        else:
+                            status = 'active'
+                    except:
+                        status = 'draft'
+                
+                # ✅ 只统计 created、active、closed（排除 draft）
+                if status == 'draft':
+                    continue
+                
+                valid_exam_ids.append(e['id'])
+                exam_titles[e['id']] = e.get('title', f'考试 #{e["id"]}')
+                exam_statuses[e['id']] = status
+        
+        results_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).in_("exam_id", valid_exam_ids).is_("deleted_at", "null").execute()
+        completed_exam_ids = set([r['exam_id'] for r in (results_res.data or [])])
+        
+        # ✅ 2. 培训统计（只统计已签到的培训）
+        att_res = db.table("training_attendances")\
+            .select("training_id, signature_url")\
+            .eq("user_id", user_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        signed_training_ids = set()
+        signed_with_signature = set()
+        for att in (att_res.data or []):
+            tid = att['training_id']
+            signed_training_ids.add(tid)
+            signature_url = att.get('signature_url', '')
+            if signature_url and signature_url != '' and signature_url != 'null':
+                signed_with_signature.add(tid)
+        
+        valid_training_ids = []
+        training_names = {}
+        if signed_training_ids:
+            trainings_res = db.table("trainings").select("*").in_("id", list(signed_training_ids)).is_("deleted_at", "null").execute()
+            for t in (trainings_res.data or []):
+                # 国家过滤
+                if user_country:
+                    training_countries = parse_training_countries(t)
+                    if training_countries and user_country not in training_countries:
+                        continue
+                valid_training_ids.append(t['id'])
+                training_names[t['id']] = t.get('name', f'培训 #{t["id"]}')
+        
+        # ✅ 3. 访谈统计
+        results_res = db.table("interview_results").select("interview_id, submitted_at").eq("user_id", user_id).is_("deleted_at", "null").execute()
+        interview_ids = list(set([r['interview_id'] for r in (results_res.data or []) if r.get('interview_id')]))
+        
+        interview_names = {}
+        if interview_ids:
+            inv_res = db.table("interviews").select("id, title").in_("id", interview_ids).is_("deleted_at", "null").execute()
+            for inv in (inv_res.data or []):
+                interview_names[inv['id']] = inv.get('title', f'访谈 #{inv["id"]}')
+        
+        completed_interview_ids = set()
+        for inv_id in interview_ids:
+            inv_results = [r for r in (results_res.data or []) if r['interview_id'] == inv_id]
+            if any(r.get('submitted_at') for r in inv_results):
+                completed_interview_ids.add(inv_id)
+        
+        # ✅ 4. 构建详细项列表
+        items = []
+        
+        # 考试项（包括已关闭的）
+        for exam_id in valid_exam_ids:
+            items.append({
+                "type": "exam",
+                "id": exam_id,
+                "name": exam_titles.get(exam_id, f'考试 #{exam_id}'),
+                "is_completed": exam_id in completed_exam_ids,
+                "status": "已完成" if exam_id in completed_exam_ids else "待完成",
+                "exam_status": exam_statuses.get(exam_id, '')
+            })
+        
+        # 培训项
+        for tid in valid_training_ids:
+            is_signed = tid in signed_with_signature
+            items.append({
+                "type": "training",
+                "id": tid,
+                "name": training_names.get(tid, f'培训 #{tid}'),
+                "is_completed": is_signed,
+                "status": "已签到" if is_signed else "待签到"
+            })
+        
+        # 访谈项
+        for inv_id in interview_ids:
+            items.append({
+                "type": "interview",
+                "id": inv_id,
+                "name": interview_names.get(inv_id, f'访谈 #{inv_id}'),
+                "is_completed": inv_id in completed_interview_ids,
+                "status": "已完成" if inv_id in completed_interview_ids else "待完成"
+            })
+        
+        # ✅ 5. 计算汇总
+        total_items = len(valid_exam_ids) + len(valid_training_ids) + len(interview_ids)
+        completed_items = len(completed_exam_ids) + len(signed_with_signature) + len(completed_interview_ids)
+        
+        return jsonify({
+            "success": True,
+            "data": items,
+            "summary": {
+                "total_items": total_items,
+                "completed_items": completed_items,
+                "rate": round(completed_items / total_items * 100, 1) if total_items > 0 else 0,
+                "exam": {"total": len(valid_exam_ids), "completed": len(completed_exam_ids)},
+                "training": {"total": len(valid_training_ids), "completed": len(signed_with_signature)},
+                "interview": {"total": len(interview_ids), "completed": len(completed_interview_ids)}
+            }
+        })
+    
+    return jsonify({"success": False, "message": "未知类型"}), 400
 

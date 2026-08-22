@@ -376,7 +376,7 @@
     <div class="card mb-3">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
             <span><i class="bi bi-upload me-2"></i><span data-i18n="upload_photos">上传照片</span></span>
-            <span class="badge bg-secondary" id="adminPhotoLimitBadge">0 / 不限</span>
+            <span class="badge bg-secondary" id="adminPhotoLimitBadge">0 / 100</span>
         </div>
         <div class="card-body">
             <div class="row g-3 align-items-end">
@@ -565,6 +565,28 @@
         } catch { return utcString; }
     }
 
+    // 在加载照片后更新显示
+    async function updateAdminPhotoLimit() {
+        const trainingId = document.getElementById('pageTrainingId').value;
+        if (!trainingId) {
+            document.getElementById('adminPhotoLimitBadge').textContent = '0 / 200';
+            document.getElementById('adminPhotoLimitBadge').className = 'badge bg-secondary';
+            return;
+        }
+        
+        try {
+            const res = await fetch(`/api/admin/training/photos?training_id=${trainingId}&page=1&per_page=1`);
+            const data = await res.json();
+            const count = data.total || 0;
+            const MAX = 100;
+            const badge = document.getElementById('adminPhotoLimitBadge');
+            badge.textContent = `${count} / ${MAX}`;
+            badge.className = `badge ${count >= MAX ? 'bg-danger' : 'bg-secondary'}`;
+        } catch (err) {
+            console.error('获取照片数量失败:', err);
+        }
+    }
+
     // ---------- 加载照片 ----------
     async function loadPhotos(page = 1) {
         currentPage = page;
@@ -605,6 +627,7 @@
                 renderPhotos(photoData);
                 renderPagination(data.total, data.page, data.per_page);
                 updateToolbar();
+                updateAdminPhotoLimit();
             } else {
                 container.innerHTML = `<div class="alert alert-danger">${data.message || safeT('load_failed')}</div>`;
             }
@@ -1006,9 +1029,9 @@
         
         if (!trainingId) {
             btn.disabled = true;
-            btn.title = '请先选择培训';
+            btn.title = `${t('select_training_first')}`;
             if (hintEl) {
-                hintEl.textContent = '⚠️ 请先选择培训';
+                hintEl.textContent = `⚠️ ${t('select_training_first')}`;
                 hintEl.style.color = '#ffc107';
             }
             return;
@@ -1016,16 +1039,16 @@
         
         if (!hasFiles) {
             btn.disabled = true;
-            btn.title = '请选择照片';
+            btn.title = `${t('select_photo')}`;
             if (hintEl) {
-                hintEl.textContent = '⚠️ 请选择照片';
+                hintEl.textContent = `⚠️ ${t('select_photo')}`;
                 hintEl.style.color = '#ffc107';
             }
             return;
         }
         
         btn.disabled = false;
-        btn.title = '上传照片';
+        btn.title = `${t('upload_photos')}`;
         if (hintEl) {
             hintEl.textContent = `✅ 准备上传 ${adminSelectedFiles.length} 张照片`;
             hintEl.style.color = '#198754';
