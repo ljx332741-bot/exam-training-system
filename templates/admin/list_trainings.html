@@ -1385,13 +1385,12 @@
 
             // 照片管理按钮（保持原样）
             const photoCount = t.photo_count || 0;
+            const hasNoPhoto = photoCount === 0;
             const photoBtnHtml = `
-                <!-- 表格内的照片按钮，培训ID: ${t.id} -->
                 <a href="/admin/training/photos?training_id=${t.id}" 
-                    class="photo-manage-btn ${photoCount === 0 ? 'no-photos' : ''}" 
-                    title="${photoCount > 0 ? safeT('manage_training_photos') + ' (' + photoCount + safeT('photo_unit') + ')' : safeT('no_photos')}"
-                    ${photoCount === 0 ? 'onclick="return false;" style="cursor: not-allowed; opacity: 0.4;"' : 'target="_blank"'}
-                    ${photoCount > 0 ? `target="_blank"` : ''}>
+                    class="photo-manage-btn ${hasNoPhoto ? 'no-photo' : ''}"
+                    title="${photoCount > 0 ? safeT('manage_training_photos') + ' (' + photoCount + safeT('photo_unit') + ')' : safeT('upload_photos')}"
+                    target="_blank">
                     <i class="bi bi-images" style="font-size: 14px;"></i>
                     ${photoCount > 0 ? `<span class="photo-count-badge">${photoCount}</span>` : ''}
                 </a>
@@ -1559,17 +1558,21 @@
                         }
                         if (photoBtn) {
                             if (count > 0) {
-                                photoBtn.classList.remove('no-photos');
+                                photoBtn.classList.remove('no-photo', 'no-photos');
                                 photoBtn.style.cursor = '';
                                 photoBtn.style.opacity = '';
                                 photoBtn.setAttribute('target', '_blank');
                                 photoBtn.removeAttribute('onclick');
+                                photoBtn.title = `${safeT('manage_training_photos') || '管理培训照片'} (${count}${safeT('photo_unit') || '张'})`;
                             } else {
-                                photoBtn.classList.add('no-photos');
-                                photoBtn.style.cursor = 'not-allowed';
-                                photoBtn.style.opacity = '0.4';
-                                photoBtn.setAttribute('onclick', 'return false;');
-                                photoBtn.removeAttribute('target');
+                                // ✅ 修改：无照片时也可点击进入上传
+                                photoBtn.classList.remove('no-photos');
+                                photoBtn.classList.add('no-photo');
+                                photoBtn.style.cursor = '';
+                                photoBtn.style.opacity = '';
+                                photoBtn.setAttribute('target', '_blank');
+                                photoBtn.removeAttribute('onclick');
+                                photoBtn.title = safeT('upload_photos') || '上传照片';
                             }
                         }
                     }
@@ -1792,12 +1795,13 @@
         } else {
             if (badge) badge.style.display = 'none';
             if (photoBtn) {
-                photoBtn.classList.add('no-photos');
-                photoBtn.style.cursor = 'not-allowed';
-                photoBtn.style.opacity = '0.4';
-                photoBtn.setAttribute('onclick', 'return false;');
-                photoBtn.removeAttribute('target');
-                photoBtn.title = safeT('no_photos') || '暂无照片';
+                photoBtn.classList.remove('no-photos');  // ✅ 移除 no-photos 类
+                photoBtn.classList.add('no-photo');
+                photoBtn.style.cursor = '';              // ✅ 移除 not-allowed
+                photoBtn.style.opacity = '';             // ✅ 移除透明度限制
+                photoBtn.setAttribute('target', '_blank'); // ✅ 允许新窗口打开
+                photoBtn.removeAttribute('onclick');     // ✅ 移除 onclick 拦截
+                photoBtn.title = safeT('upload_photos') || '上传照片'; // ✅ 改为"上传照片"
             }
         }
         
@@ -2225,7 +2229,7 @@
             }
             
             if (photoBtn) {
-                photoBtn.classList.remove('no-photos');
+                photoBtn.classList.remove('no-photos', 'no-photo');
                 photoBtn.style.cursor = '';
                 photoBtn.style.opacity = '';
                 photoBtn.setAttribute('target', '_blank');
@@ -2235,12 +2239,13 @@
         } else {
             if (badge) badge.style.display = 'none';
             if (photoBtn) {
-                photoBtn.classList.add('no-photos');
-                photoBtn.style.cursor = 'not-allowed';
-                photoBtn.style.opacity = '0.4';
-                photoBtn.setAttribute('onclick', 'return false;');
-                photoBtn.removeAttribute('target');
-                photoBtn.title = typeof safeT === 'function' ? safeT('no_photos') : '暂无照片';
+                photoBtn.classList.remove('no-photos');
+                photoBtn.classList.add('no-photo');  // 添加淡色样式
+                photoBtn.style.cursor = '';          // 移除 not-allowed
+                photoBtn.style.opacity = '';         // 移除内联透明度
+                photoBtn.setAttribute('target', '_blank');
+                photoBtn.removeAttribute('onclick');
+                photoBtn.title = typeof safeT === 'function' ? safeT('upload_photos') : '上传照片';
             }
         }
     }

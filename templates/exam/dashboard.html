@@ -15,9 +15,27 @@
             <div class="stat-card-body">
                 <div class="stat-number" id="examTotal">0</div>
                 <div class="stat-details">
-                    <span class="stat-item" id="examPending">0 <small><span data-i18n="pending">待考试</span></small></span>
-                    <!-- <span class="stat-item" id="examInProgress">0 <small><span data-i18n="in_progress">考试中</span></small></span> -->
-                    <span class="stat-item" id="examCompleted">0 <small><span data-i18n="completed">已完成</span></small></span>
+                    <span class="stat-item" id="examPending" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="pending" 
+                        title="待考试">
+                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                        <small><span data-i18n="pending">待考试</span></small>
+                    </span>
+                    <span class="stat-item" id="examInProgress" 
+                        data-bs-toggle="tooltip"
+                        data-i18n-title="in_progress" 
+                        title="考试中">
+                        <i class="bi bi-play-circle-fill status-icon status-in-progress"></i>
+                        <small><span data-i18n="in_progress">考试中</span></small>
+                    </span>
+                    <span class="stat-item" id="examCompleted" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="completed"
+                        title="已完成">
+                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                        <small><span data-i18n="completed">已完成</span></small>
+                    </span>
                 </div>
             </div>
         </div>
@@ -33,8 +51,20 @@
             <div class="stat-card-body">
                 <div class="stat-number" id="trainingTotal">0</div>
                 <div class="stat-details">
-                    <span class="stat-item" id="trainingSigned">0 <small><span data-i18n="signed">已签到</span></small></span>
-                    <span class="stat-item" id="trainingPending">0 <small><span data-i18n="pending_sign">待签到</span></small></span>
+                    <span class="stat-item" id="trainingSigned" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="signed"
+                        title="已签到">
+                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                        <small><span data-i18n="signed">已签到</span></small>
+                    </span>
+                    <span class="stat-item" id="trainingPending" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="pending_sign"
+                        title="待签到">
+                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                        <small><span data-i18n="pending_sign">待签到</span></small>
+                    </span>
                 </div>
             </div>
         </div>
@@ -50,8 +80,20 @@
             <div class="stat-card-body">
                 <div class="stat-number" id="interviewTotal">0</div>
                 <div class="stat-details">
-                    <span class="stat-item" id="interviewPending">0 <small><span data-i18n="pending_complete">待完成</span></small></span>
-                    <span class="stat-item" id="interviewCompleted">0 <small><span data-i18n="completed">已完成</span></small></span>
+                    <span class="stat-item" id="interviewPending" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="pending_complete"
+                        title="待完成">
+                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                        <small><span data-i18n="pending_complete">待完成</span></small>
+                    </span>
+                    <span class="stat-item" id="interviewCompleted" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="completed"
+                        title="已完成">
+                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                        <small><span data-i18n="completed">已完成</span></small>
+                    </span>
                 </div>
             </div>
         </div>
@@ -67,7 +109,13 @@
             <div class="stat-card-body">
                 <div class="stat-number" id="completionRate">0%</div>
                 <div class="stat-details">
-                    <span class="stat-item" id="completionDetail">0 / 0</span>
+                    <span class="stat-item" id="completionDetail" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="complete_total"
+                        title="已完成/总数">
+                        <i class="bi bi-pie-chart-fill status-icon status-info"></i>
+                        <small>0 / 0</small>
+                    </span>
                 </div>
             </div>
             <div class="stat-card-footer">
@@ -527,10 +575,39 @@
         </div>
     </div>
 </div>
+
+<!-- 统计详情模态框（通用） -->
+<div class="modal fade" id="statsDetailModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header" id="statsDetailHeader">
+                <h5 class="modal-title" id="statsDetailTitle">
+                    <i class="bi bi-bar-chart me-2"></i>
+                    <span data-i18n="stats_detail">统计详情</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="statsDetailBody">
+                <!-- 动态加载内容 -->
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted" data-i18n="loading">加载中...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/exam_dashboard.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 {% endblock %}
 
 {% block extra_js %}
@@ -1463,8 +1540,6 @@
         }
     }
 
-    // templates/exam/dashboard.html - 添加统计加载函数
-
     // ==================== 加载统计数据 ====================
     async function loadStats() {
         try {
@@ -1480,23 +1555,47 @@
             
             // 1. 考试统计
             document.getElementById('examTotal').textContent = stats.exam.total;
-            document.getElementById('examPending').innerHTML = `${stats.exam.pending} <small>${t('pending')}</small>`;
-            //document.getElementById('examInProgress').innerHTML = `${stats.exam.in_progress} <small>考试中</small>`;
-            document.getElementById('examCompleted').innerHTML = `${stats.exam.completed} <small>${t('completed')}</small>`;
+            document.getElementById('examPending').innerHTML = `
+                <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                <small>${stats.exam.pending}</small>
+            `;
+            document.getElementById('examInProgress').innerHTML = `
+                <i class="bi bi-play-circle-fill status-icon status-in-progress"></i>
+                <small>${stats.exam.in_progress}</small>
+            `;
+            document.getElementById('examCompleted').innerHTML = `
+                <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                <small>${stats.exam.completed}</small>
+            `;
             
             // 2. 签到统计
             document.getElementById('trainingTotal').textContent = stats.training.total;
-            document.getElementById('trainingSigned').innerHTML = `${stats.training.signed} <small>${t('signed')}</small>`;
-            document.getElementById('trainingPending').innerHTML = `${stats.training.pending} <small>${t('pending_sign')}</small>`;
+            document.getElementById('trainingSigned').innerHTML = `
+                <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                <small>${stats.training.signed}</small>
+            `;
+            document.getElementById('trainingPending').innerHTML = `
+                <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                <small>${stats.training.pending}</small>
+            `;
             
             // 3. 访谈统计
             document.getElementById('interviewTotal').textContent = stats.interview.total;
-            document.getElementById('interviewPending').innerHTML = `${stats.interview.pending} <small>${t('pending_complete')}</small>`;
-            document.getElementById('interviewCompleted').innerHTML = `${stats.interview.completed} <small>${t('completed')}</small>`;
+            document.getElementById('interviewPending').innerHTML = `
+                <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                <small>${stats.interview.pending}</small>
+            `;
+            document.getElementById('interviewCompleted').innerHTML = `
+                <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                <small>${stats.interview.completed}</small>
+            `;
             
             // 4. 整体完成率
             document.getElementById('completionRate').textContent = `${stats.completion.rate}%`;
-            document.getElementById('completionDetail').textContent = `${stats.completion.completed_items} / ${stats.completion.total_items}`;
+            document.getElementById('completionDetail').innerHTML = `
+                <i class="bi bi-pie-chart-fill status-icon status-info"></i>
+                <small>${stats.completion.completed_items} / ${stats.completion.total_items}</small>
+            `;
             
             // 进度条动画
             const progressFill = document.querySelector('#completionProgress .progress-fill');
@@ -1506,11 +1605,23 @@
                 }, 200);
             }
             
+            // 重新初始化 Tooltip
+            document.querySelectorAll('.stat-item[data-bs-toggle="tooltip"]').forEach(el => {
+                const oldTooltip = bootstrap.Tooltip.getInstance(el);
+                if (oldTooltip) {
+                    oldTooltip.dispose();
+                }
+                new bootstrap.Tooltip(el, {
+                    container: 'body',
+                    trigger: 'hover focus',
+                    placement: 'top'
+                });
+            });
+            
         } catch (err) {
             console.error('加载统计数据失败:', err);
         }
     }
-
 
     document.addEventListener('DOMContentLoaded', async () => {
         const userIdDisplay = document.getElementById('userIdDisplay');
@@ -1560,6 +1671,26 @@
             persist: true,
             storageKey: 'dashboard_table_widths'
         });
+            
+        // 考试统计卡片
+        document.querySelector('.stat-card.exam-card')?.addEventListener('click', function() {
+            openStatsDetail('exam', `${t('exam_statistics')}`, 'bi-journal-check', 'primary');
+        });
+        
+        // 签到统计卡片
+        document.querySelector('.stat-card.training-card')?.addEventListener('click', function() {
+            openStatsDetail('training', `${t('training_statistics')}`, 'bi-calendar-check', 'success');
+        });
+        
+        // 访谈统计卡片
+        document.querySelector('.stat-card.interview-card')?.addEventListener('click', function() {
+            openStatsDetail('interview', `${t('interview_statistics')}`, 'bi-chat-dots', 'info');
+        });
+        
+        // 完成率卡片
+        document.querySelector('.stat-card.completion-card')?.addEventListener('click', function() {
+            openStatsDetail('completion', `${t('completion_rate_details')}`, 'bi-bar-chart', 'warning');
+        });
     });
 
     // 签到按钮逻辑
@@ -1587,5 +1718,195 @@
     };
     // 每秒更新一次
     setInterval(updateAllTimers, 1000);
+
+
+    /**
+    * 打开统计详情模态框
+    */
+    async function openStatsDetail(type, title, icon, color) {
+        const modal = new bootstrap.Modal(document.getElementById('statsDetailModal'));
+        const header = document.getElementById('statsDetailHeader');
+        const titleEl = document.getElementById('statsDetailTitle');
+        const body = document.getElementById('statsDetailBody');
+        
+        // 设置标题和颜色
+        titleEl.innerHTML = `<i class="bi ${icon} me-2"></i> ${title}`;
+        header.className = `modal-header bg-${color} text-white`;
+        
+        // 显示加载状态
+        body.innerHTML = `
+            <div class="text-center py-5">
+                <div class="spinner-border text-${color}" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">${safeT('loading') || '加载中...'}</p>
+            </div>
+        `;
+        
+        modal.show();
+        
+        try {
+            const res = await fetch(`/api/my/stats_detail?type=${type}&_t=${Date.now()}`);
+            const data = await res.json();
+            
+            if (!data.success) {
+                body.innerHTML = `
+                    <div class="text-center text-danger py-5">
+                        <i class="bi bi-exclamation-triangle-fill" style="font-size: 2rem;"></i>
+                        <p class="mt-2">${data.message || safeT('load_failed') || '加载失败'}</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            renderStatsDetail(type, data, body);
+            
+        } catch (err) {
+            console.error('加载统计详情失败:', err);
+            body.innerHTML = `
+                <div class="text-center text-danger py-5">
+                    <i class="bi bi-exclamation-triangle-fill" style="font-size: 2rem;"></i>
+                    <p class="mt-2">${safeT('load_failed') || '加载失败，请重试'}</p>
+                </div>
+            `;
+        }
+    }
+        /**
+    * 渲染统计详情
+    */
+    function renderStatsDetail(type, data, body) {
+        const { summary, data: items } = data;
+        
+        if (!items || items.length === 0) {
+            body.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="bi bi-inbox" style="font-size: 3rem;"></i>
+                    <p class="mt-2">${safeT('no_data') || '暂无数据'}</p>
+                </div>
+            `;
+            return;
+        }
+        
+        let html = '';
+        
+        // 摘要统计
+        html += `<div class="row g-3 mb-4">`;
+        
+        // 根据类型生成统计卡片
+        const statConfigs = {
+            'exam': [
+                { label: 'total', value: summary.total, color: 'primary' },
+                { label: 'pending', value: summary.pending || 0, color: 'info' },
+                { label: 'in_progress', value: summary.in_progress || 0, color: 'warning' },
+                { label: 'completed', value: summary.completed || 0, color: 'success' },
+            ],
+            'training': [
+                { label: 'total', value: summary.total, color: 'primary' },
+                { label: 'signed', value: summary.signed || 0, color: 'success' },
+                { label: 'pending_sign', value: summary.pending || 0, color: 'warning' },
+            ],
+            'interview': [
+                { label: 'total', value: summary.total, color: 'primary' },
+                { label: 'pending_complete', value: summary.pending || 0, color: 'warning' },
+                { label: 'completed', value: summary.completed || 0, color: 'success' },
+            ],
+            'completion': [
+                { label: 'total_items', value: summary.total_items, color: 'primary' },
+                { label: 'completed_items', value: summary.completed_items, color: 'success' },
+                { label: 'completion_rate', value: `${summary.rate || 0}%`, color: 'info' },
+            ]
+        };
+        
+        const configs = statConfigs[type] || statConfigs['exam'];
+        const cols = Math.max(1, Math.floor(12 / configs.length));
+        
+        configs.forEach(cfg => {
+            const labelText = safeT(cfg.label) || cfg.label;
+            html += `
+                <div class="col-${cols}">
+                    <div class="p-3 bg-${cfg.color} bg-opacity-10 rounded text-center">
+                        <div class="h3 mb-0 text-${cfg.color}">${cfg.value}</div>
+                        <small class="text-muted">${labelText}</small>
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        
+        // 详细列表
+        html += `<div class="list-group">`;
+        
+        items.forEach((item) => {
+            let statusBadge = '';
+            let subInfo = '';
+            
+            // 确保名称有值
+            const itemName = item.name || item.title || `项目 #${item.id}`;
+            
+            if (type === 'exam') {
+                if (item.is_submitted) {
+                    statusBadge = `<span class="badge bg-success">${safeT('completed') || '已完成'} ${item.score !== null && item.score !== undefined ? `(${item.score}分)` : ''}</span>`;
+                } else if (item.started) {
+                    statusBadge = `<span class="badge bg-warning text-dark">${safeT('in_progress') || '进行中'}</span>`;
+                } else {
+                    statusBadge = `<span class="badge bg-info">${safeT('pending') || '待考试'}</span>`;
+                }
+                subInfo = `<small class="text-muted d-block">${safeT('valid_period') || '有效期'}: ${formatLocalTime(item.start_time)} → ${formatLocalTime(item.end_time)}</small>`;
+                
+            } else if (type === 'training') {
+                // 与"我的签到记录"状态显示一致
+                if (item.needs_resign) {
+                    statusBadge = `<span class="badge bg-warning text-dark">${safeT('need_re-sign') || '需重新签名'}</span>`;
+                } else if (item.needs_admin_contact) {
+                    statusBadge = `<span class="badge bg-danger">${safeT('contact_admin') || '联系管理员'}</span>`;
+                } else if (item.signature_url && item.signature_url !== '' && item.signature_url !== 'null') {
+                    statusBadge = `<span class="badge bg-success">${safeT('signed') || '已签到'}</span>`;
+                } else {
+                    statusBadge = `<span class="badge bg-warning text-dark">${safeT('pending_sign') || '待签到'}</span>`;
+                }
+                subInfo = `
+                    <small class="text-muted d-block">
+                        ${safeT('country') || '国家'}: ${escapeHtml(item.country || '-')} | 
+                        ${safeT('sign_in_period') || '签到时间'}: ${formatLocalTime(item.sign_time)}
+                    </small>
+                `;
+                
+            } else if (type === 'interview') {
+                if (item.is_completed) {
+                    statusBadge = `<span class="badge bg-success">${safeT('completed') || '已完成'} (${item.correct_count || 0}/${item.total_questions || 0})</span>`;
+                } else {
+                    statusBadge = `<span class="badge bg-warning text-dark">${safeT('pending_complete') || '待完成'}</span>`;
+                }
+                
+            } else if (type === 'completion') {
+                const typeMap = {
+                    'exam': '📝 考试',
+                    'training': '📋 培训',
+                    'interview': '💬 访谈'
+                };
+                if (item.is_completed) {
+                    statusBadge = `<span class="badge bg-success">${safeT('completed') || '已完成'}</span>`;
+                } else {
+                    statusBadge = `<span class="badge bg-secondary">${safeT('pending') || '待完成'}</span>`;
+                }
+                subInfo = `<small class="text-muted">${typeMap[item.type] || item.type}</small>`;
+            }
+            
+            html += `
+                <div class="list-group-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="fw-semibold">${escapeHtml(itemName)}</span>
+                        ${subInfo}
+                    </div>
+                    ${statusBadge}
+                </div>
+            `;
+        });
+        
+        html += '</div>';
+        
+        body.innerHTML = html;
+    }
 </script>
 {% endblock %}

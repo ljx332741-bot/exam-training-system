@@ -1477,10 +1477,14 @@
 "retake_exhausted": "Limit reached",
 "score_tooltip": "Pass score: {pass}",
 "confirm_retake_hint": "Confirm to retake the exam?\nAlready retaken the exam {0} times, the max retakes is {1}.",
-    "training_statistics": "Training Statistics",
-    "interview_statistics": "Interview Statistics",
-    "completion_rate": "Completion Rate",
-    "in_progress_exam": "Doing",
-    "completed_exam": "Done",
-    "pending_complete": "Pending"
+"training_statistics": "Training Statistics",
+"interview_statistics": "Interview Statistics",
+"completion_rate": "Completion Rate",
+"in_progress_exam": "Doing",
+"completed_exam": "Done",
+"pending_complete": "Pending",
+"select_training_first": "Please select training first",
+"select_photo": "Please select photo",
+"complete_total": "Complete/Total",
+"completion_rate_details": "Completion rate details"
 }

@@ -42,17 +42,6 @@
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
-/* 无照片时只显示一个更淡的图标 */
-.photo-manage-btn.no-photos {
-    background: rgba(108, 117, 125, 0.08);
-    color: #adb5bd;
-}
-
-.photo-manage-btn.no-photos:hover {
-    background: rgba(13, 110, 253, 0.12);
-    color: #0d6efd;
-}
-
 /* 表格名称列布局 */
 .name-cell .d-flex {
     display: flex;
@@ -240,14 +229,14 @@
     box-shadow: 0 2px 12px rgba(13, 110, 253, 0.2);
 }
 
-.photo-manage-btn.no-photos {
-    background: rgba(108, 117, 125, 0.08);
-    color: #adb5bd;
+/* 无照片时的按钮样式 - 淡色但可点击 */
+.photo-manage-btn.no-photo {
+    opacity: 0.5;
+    transition: opacity 0.2s ease;
 }
 
-.photo-manage-btn.no-photos:hover {
-    background: rgba(13, 110, 253, 0.12);
-    color: #0d6efd;
+.photo-manage-btn.no-photo:hover {
+    opacity: 0.8;
 }
 
     /* 国家选择器样式 */
@@ -304,8 +293,6 @@
         min-height: 24px;
         padding: 2px 0;
     }
-
-/* templates/admin/list_trainings.html - 多国家标签输入组件样式 */
 
 /* 多国家标签输入容器 */
 .country-tag-input-container {
