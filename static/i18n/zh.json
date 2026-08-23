@@ -919,6 +919,7 @@
 "draft_saved": "保存草稿",
 "jsonify_no_permmission_delete_item_created_by_others": "无权删除他人创建的项目",
 "jsonify_permission_denied": "权限不足",
+"jsonify_marked_count_message_as_readed": "标记 {count} 条消息为已读",
 "jsonify_no_authorith_delete_project": "无权删除该项目",
 "title_view_signature_handwriting": "查看签名笔迹",
 "handwriting_is_loading": "签名加载中...",
@@ -998,6 +999,7 @@
 "no_quarter_data_available": "暂无季度数据",
 "training": "培训",
 "exam": "考试",
+"interview": "访谈",
 "binded_exam": "已绑定考试",
 "already_linked_current_exam": "已绑定到当前考试",
 "binded_training": "已绑定培训",
@@ -1067,7 +1069,8 @@
 "title_start_date": "开始日期",
 "title_end_date": "结束日期",
 "no_bind_hint": "该培训尚未绑定考试，请先绑定考试后再查看完成度",
-"my_sign_in_records": "我的签到记录",
+"my_training": "我的培训签到",
+"my_training_records": "我的培训记录",
 "my_interview_records": "我的访谈记录",
 "interview_answer_details": "访谈答题详情",
 "signature_view": "签名查看",
@@ -1187,7 +1190,7 @@
 "title_unassigned_count": "培训或考试未分配的学员数（去重）",
 "click_to_filter": "点击筛选",
 "no_photos_uploaded": "暂无照片上传",
-"name_input_hint": "加载需要时间请稍等",
+"name_input_hint": "加载中请稍等",
 "privacy_title": "数据保护与隐私声明",
 "privacy_agree_text": "我已阅读并同意以上隐私声明",
 "confirm_and_continue": "确认并继续",
@@ -1475,5 +1478,7 @@
 "select_training_first": "请先选择培训",
 "select_photo": "请选择照片",
 "complete_total": "已完成/总数",
-"completion_rate_details": "完成率详情"
+"completion_rate_details": "完成率详情",
+"total_items": "总项目数",
+"completed_items": "已完成项目数"
 }

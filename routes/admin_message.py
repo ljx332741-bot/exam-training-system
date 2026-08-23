@@ -211,7 +211,13 @@ def mark_all_read():
     """标记所有消息为已读"""
     try:
         count = mark_all_messages_read()
-        return jsonify({"success": True, "count": count, "message": f"已标记 {count} 条消息为已读"})
+        #return jsonify({"success": True, "count": count, "message": f"已标记 {count} 条消息为已读"})
+        return jsonify({
+            "success": True, 
+            "count": count, 
+            "message": "jsonify_marked_count_message_as_readed", 
+            "params": {"count": count}
+        })
     except Exception as e:
         logger.error(f"标记全部已读失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
@@ -226,7 +232,7 @@ def delete_message(message_id):
     print(f"🔍🔍🔍 DELETE 路由被调用了！message_id={message_id}")
 
     if not is_developer() and session.get('role') != 'super_admin':
-        return jsonify({"success": False, "message": "权限不足"}), 403
+        return jsonify({"success": False, "message": "jsonify_permission_denied", "params": []}), 403
     
     db = get_supabase_admin()
     try:
@@ -250,13 +256,13 @@ def delete_message(message_id):
 def batch_delete_messages():
     """批量删除消息（仅超管/开发者可用）"""
     if not is_developer() and session.get('role') != 'super_admin':
-        return jsonify({"success": False, "message": "权限不足"}), 403
+        return jsonify({"success": False, "message": "jsonify_permission_denied", "params": []}), 403
     
     data = request.json
     message_ids = data.get('ids', [])
     
     if not message_ids:
-        return jsonify({"success": False, "message": "请选择要删除的消息"}), 400
+        return jsonify({"success": False, "message": "jsonify_select_message_to_delete", "params": []}), 400
     
     db = get_supabase_admin()
     

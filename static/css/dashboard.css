@@ -562,3 +562,24 @@
 .stat-card:active {
     transform: scale(0.97);
 }
+
+/* ==================== 柔和徽章样式 ==================== */
+/* 徽章基础样式 - 颜色由 JS 控制 */
+.badge-soft {
+    display: none;  /* 默认隐藏 */
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 2px 8px;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    align-items: center;
+    justify-content: center;
+    margin-left: 4px;
+    border: none;
+}
+
+/* 当有数据时显示 */
+.badge-soft.show {
+    display: inline-flex;
+}

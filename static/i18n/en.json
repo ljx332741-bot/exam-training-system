@@ -924,6 +924,7 @@
 "draft_saved": "Draft safed",
 "jsonify_no_permmission_delete_item_created_by_others": "No permission to delete project created by others",
 "jsonify_permission_denied": "Permission denied",
+"jsonify_marked_count_message_as_readed": "Marked {count} message(s) as readed",
 "jsonify_no_authorith_delete_project": "No authority to delete this project",
 "title_view_signature_handwriting": "View the signature handwriting",
 "handwriting_is_loading": "Handwriting is loading...",
@@ -1003,6 +1004,7 @@
 "no_quarter_data_available": "No  quarter data available",
 "training": "training",
 "exam": "Exam",
+"interview": "Interview",
 "binded_exam": "Binded exam",
 "already_linked_current_exam": "Already linked to the current exam",
 "binded_training": "Binded training",
@@ -1072,7 +1074,8 @@
 "title_start_date": "Start date",
 "title_end_date": "End date",
 "no_bind_hint": "This training is not yet bound to an exam. Please bind an exam first before checking the completion status.",
-"my_sign_in_records": "My Sign-in Records",
+"my_training": "My Training sign-in",
+"my_training_records": "My Training Records",
 "my_interview_records": "My Interview Records",
 "interview_answer_details": "Interview Answer Details",
 "signature_view": "Signature View",
@@ -1192,7 +1195,7 @@
 "title_unassigned_count": "The number of who have not assigned for exam or training (unique)",
 "click_to_filter": "Click to filter",
 "no_photos_uploaded": "No photos uploaded",
-"name_input_hint": "Loading will take some time. Please wait a moment.",
+"name_input_hint": "Loading...Pls wait while.",
 "privacy_title": "Data Protection and Privacy Statement",
 "privacy_agree_text": "I have read and agree to the privacy statement above",
 "confirm_and_continue": "Confirm & Continue",
@@ -1486,5 +1489,7 @@
 "select_training_first": "Please select training first",
 "select_photo": "Please select photo",
 "complete_total": "Complete/Total",
-"completion_rate_details": "Completion rate details"
+"completion_rate_details": "Completion rate details",
+"total_items": "Total items",
+"completed_items": "Completed items"
 }
