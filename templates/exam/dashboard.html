@@ -5,6 +5,64 @@
 {% block content %}
 <!-- ==================== 统计数据卡片 ==================== -->
 <div class="row g-3 mb-4" id="statsCards">
+    <!-- 签到统计 -->
+    <div class="col-6 col-md-3">
+        <div class="stat-card training-card">
+            <div class="stat-card-header">
+                <i class="bi bi-calendar-check"></i>
+                <span data-i18n="training_statistics">签到统计</span>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-number" id="trainingTotal">0</div>
+                <div class="stat-details">
+                    <span class="stat-item" id="trainingPending" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="pending_sign"
+                        title="待签到">
+                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                        <small><span data-i18n="pending_sign">待签到</span></small>
+                    </span>
+                    <span class="stat-item" id="trainingSigned" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="signed"
+                        title="已签到">
+                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                        <small><span data-i18n="signed">已签到</span></small>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 访谈统计 -->
+    <div class="col-6 col-md-3">
+        <div class="stat-card interview-card">
+            <div class="stat-card-header">
+                <i class="bi bi-chat-dots"></i>
+                <span data-i18n="interview_statistics">访谈统计</span>
+            </div>
+            <div class="stat-card-body">
+                <div class="stat-number" id="interviewTotal">0</div>
+                <div class="stat-details">
+                    <span class="stat-item" id="interviewPending" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="pending_complete"
+                        title="待完成">
+                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
+                        <small><span data-i18n="pending_complete">待完成</span></small>
+                    </span>
+                    <span class="stat-item" id="interviewCompleted" 
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="completed"
+                        title="已完成">
+                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
+                        <small><span data-i18n="completed">已完成</span></small>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 考试统计 -->
     <div class="col-6 col-md-3">
         <div class="stat-card exam-card">
@@ -30,64 +88,6 @@
                         <small><span data-i18n="in_progress">考试中</span></small>
                     </span>
                     <span class="stat-item" id="examCompleted" 
-                        data-bs-toggle="tooltip" 
-                        data-i18n-title="completed"
-                        title="已完成">
-                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
-                        <small><span data-i18n="completed">已完成</span></small>
-                    </span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 签到统计 -->
-    <div class="col-6 col-md-3">
-        <div class="stat-card training-card">
-            <div class="stat-card-header">
-                <i class="bi bi-calendar-check"></i>
-                <span data-i18n="training_statistics">签到统计</span>
-            </div>
-            <div class="stat-card-body">
-                <div class="stat-number" id="trainingTotal">0</div>
-                <div class="stat-details">
-                    <span class="stat-item" id="trainingSigned" 
-                        data-bs-toggle="tooltip" 
-                        data-i18n-title="signed"
-                        title="已签到">
-                        <i class="bi bi-check-circle-fill status-icon status-completed"></i>
-                        <small><span data-i18n="signed">已签到</span></small>
-                    </span>
-                    <span class="stat-item" id="trainingPending" 
-                        data-bs-toggle="tooltip" 
-                        data-i18n-title="pending_sign"
-                        title="待签到">
-                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
-                        <small><span data-i18n="pending_sign">待签到</span></small>
-                    </span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 访谈统计 -->
-    <div class="col-6 col-md-3">
-        <div class="stat-card interview-card">
-            <div class="stat-card-header">
-                <i class="bi bi-chat-dots"></i>
-                <span data-i18n="interview_statistics">访谈统计</span>
-            </div>
-            <div class="stat-card-body">
-                <div class="stat-number" id="interviewTotal">0</div>
-                <div class="stat-details">
-                    <span class="stat-item" id="interviewPending" 
-                        data-bs-toggle="tooltip" 
-                        data-i18n-title="pending_complete"
-                        title="待完成">
-                        <i class="bi bi-hourglass-top status-icon status-pending"></i>
-                        <small><span data-i18n="pending_complete">待完成</span></small>
-                    </span>
-                    <span class="stat-item" id="interviewCompleted" 
                         data-bs-toggle="tooltip" 
                         data-i18n-title="completed"
                         title="已完成">
@@ -126,19 +126,24 @@
         </div>
     </div>
 </div>
+
 <div class="row g-4">
     <!-- 培训签到卡片区（多培训） -->
     <div class="col-12">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-white">
                 <!-- 培训照片按钮独立一行靠右 -->
-                <div class="d-flex justify-content-end">
+                <div class="d-flex justify-content-start">
                     <button class="btn btn-sm btn-outline-success glow-icon-wrapper" 
                             id="viewTrainingPhotosBtn" 
                             onclick="window.open('/training/photos', '_blank')"
+                            data-needs-resign="true"
+                            data-i18n-title="photo_upload"
+                            title="点击上传照片"
                             style="display: none;">
                         <i class="bi bi-images glow-icon"></i> 
                         <span data-i18n="training_photos">培训照片</span>
+                        <span class="badge-soft" id="photoCountBadge" style="display: none;">0</span>
                     </button>
                 </div>
                 <div class="d-flex justify-content-between align-items-center mb-2">
@@ -151,7 +156,8 @@
                             data-bs-toggle="modal" 
                             data-bs-target="#myAttendancesModal">
                         <i class="bi bi-list-columns-reverse glow-icon"></i> 
-                        <span data-i18n="my_sign_in_records">我的签到记录</span>
+                        <span data-i18n="my_training_records">我的培训记录</span>
+                        <span class="badge-soft" id="attendancesCountBadge">0</span>
                     </button>
                 </div>
             </div>
@@ -174,8 +180,13 @@
                     <span data-i18n="my_interviews">我的访谈</span>
                 </div>
                 <div style="flex-shrink: 0;">
-                    <button class="btn btn-sm btn-outline-success glow-icon-wrapper" id="viewMyInterviewsBtn" data-bs-toggle="modal" data-bs-target="#myInterviewsModal">
-                        <i class="bi bi-list-columns glow-icon" id="gearIcon"></i> <span data-i18n="my_interview_records">我的访谈记录</span>
+                    <button class="btn btn-sm btn-outline-success glow-icon-wrapper" 
+                        id="viewMyInterviewsBtn" 
+                        data-bs-toggle="modal" 
+                        data-bs-target="#myInterviewsModal">
+                        <i class="bi bi-list-columns glow-icon" id="gearIcon"></i> 
+                        <span data-i18n="my_interview_records">我的访谈记录</span>
+                        <span class="badge-soft" id="interviewsCountBadge">0</span>
                     </button>
                 </div>
             </div>
@@ -257,9 +268,10 @@
     <!-- 📊 历史记录 -->
     <div class="col-lg-6">
         <div class="card shadow-sm border-0 h-100">
-            <div class="card-header bg-white fw-bold">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
                 <i class="bi bi-clock-history me-2"></i>
                 <span data-i18n="recent_scores">最近考试成绩</span>
+                <span class="badge-soft" id="examHistoryCountBadge">0</span>
             </div>
             <div class="card-body p-0">
                 <div class="table-responsive" style="overflow-x: auto; white-space: nowrap;">
@@ -408,7 +420,7 @@
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title">
                     <i class="bi bi-calendar-check me-2"></i>
-                    <span data-i18n="my_sign_in_records">我的签到记录</span>
+                    <span data-i18n="my_training_records">我的签到记录</span>
                 </h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -1567,6 +1579,13 @@
                 <i class="bi bi-check-circle-fill status-icon status-completed"></i>
                 <small>${stats.exam.completed}</small>
             `;
+
+            // 更新考试历史记录徽章（去重考试数量 = 已完成数量）
+            const examHistoryBadge = document.getElementById('examHistoryCountBadge');
+            if (examHistoryBadge) {
+                examHistoryBadge.textContent = stats.exam.completed;
+                examHistoryBadge.style.display = stats.exam.completed > 0 ? 'inline-block' : 'none';
+            }
             
             // 2. 签到统计
             document.getElementById('trainingTotal').textContent = stats.training.total;
@@ -1578,7 +1597,14 @@
                 <i class="bi bi-hourglass-top status-icon status-pending"></i>
                 <small>${stats.training.pending}</small>
             `;
-            
+
+            // 更新我的签到记录徽章（去重签到数量）
+            const attendancesBadge = document.getElementById('attendancesCountBadge');
+            if (attendancesBadge) {
+                attendancesBadge.textContent = stats.training.total;
+                attendancesBadge.style.display = stats.training.total > 0 ? 'inline-block' : 'none';
+            }
+
             // 3. 访谈统计
             document.getElementById('interviewTotal').textContent = stats.interview.total;
             document.getElementById('interviewPending').innerHTML = `
@@ -1589,6 +1615,13 @@
                 <i class="bi bi-check-circle-fill status-icon status-completed"></i>
                 <small>${stats.interview.completed}</small>
             `;
+
+            // 更新我的访谈记录徽章（去重访谈数量）
+            const interviewsBadge = document.getElementById('interviewsCountBadge');
+            if (interviewsBadge) {
+                interviewsBadge.textContent = stats.interview.total;
+                interviewsBadge.style.display = stats.interview.total > 0 ? 'inline-block' : 'none';
+            }
             
             // 4. 整体完成率
             document.getElementById('completionRate').textContent = `${stats.completion.rate}%`;
@@ -1617,9 +1650,67 @@
                     placement: 'top'
                 });
             });
-            
+            // 一行一个，清晰简洁
+            updateBadge('examHistoryCountBadge', stats.exam.completed, '#dbeafe', '#1d4ed8');
+            updateBadge('attendancesCountBadge', stats.training.total, '#ede9fe', '#5b21b6');
+            updateBadge('interviewsCountBadge', stats.interview.total, '#dcfce7', '#15803d');
         } catch (err) {
             console.error('加载统计数据失败:', err);
+        }
+    }
+
+    // ==================== 加载照片数量 ====================
+    async function loadPhotoCount() {
+        try {
+            const res = await fetch('/api/trainings/for_photos');
+            const trainings = await res.json();
+            
+            // 计算所有培训的照片总数
+            let totalPhotos = 0;
+            trainings.forEach(t => {
+                if (t.photo_count) {
+                    totalPhotos += t.photo_count;
+                }
+            });
+            
+            const badge = document.getElementById('photoCountBadge');
+            const btn = document.getElementById('viewTrainingPhotosBtn');
+            if (badge && btn) {
+                if (totalPhotos > 0) {
+                    badge.textContent = totalPhotos;
+                    badge.style.display = 'inline-block';
+                    btn.style.display = 'inline-flex';
+                } else {
+                    badge.style.display = 'none';
+                    btn.style.display = 'inline-flex';  // 仍然显示按钮，只是没有徽章
+                }
+            }
+            updateBadge('photoCountBadge', totalPhotos, '#fef3c7', '#b45309');
+        } catch (err) {
+            console.error('加载照片数量失败:', err);
+        }
+    }
+
+    // 徽章更新函数
+    function updateBadge(id, count, bgColor, textColor) {
+        const badge = document.getElementById(id);
+        if (!badge) return;
+        
+        if (count > 0) {
+            badge.textContent = count;
+            badge.style.display = 'inline-flex';
+            badge.style.backgroundColor = bgColor;
+            badge.style.color = textColor;
+            badge.style.fontWeight = '700';
+            badge.style.fontSize = '0.6rem';
+            badge.style.padding = '2px 8px';
+            badge.style.minWidth = '20px';
+            badge.style.height = '20px';
+            badge.style.borderRadius = '50%';
+            badge.style.alignItems = 'center';
+            badge.style.justifyContent = 'center';
+        } else {
+            badge.style.display = 'none';
         }
     }
 
@@ -1647,7 +1738,8 @@
         await loadMyInterviews();
         await checkPhotoPermission();
         await loadStats();
-        
+        await loadPhotoCount();
+
         if (window.i18n && typeof window.i18n.subscribe === 'function') {
             window.i18n.subscribe(() => {
                 loadTrainings();
@@ -1880,9 +1972,9 @@
                 
             } else if (type === 'completion') {
                 const typeMap = {
-                    'exam': '📝 考试',
-                    'training': '📋 培训',
-                    'interview': '💬 访谈'
+                    'exam': `📝 ${safeT('exam') || '考试'}`,
+                    'training': `📋 ${safeT('training') || '培训'}`,
+                    'interview': `💬 ${safeT('interview') || '访谈'}`,
                 };
                 if (item.is_completed) {
                     statusBadge = `<span class="badge bg-success">${safeT('completed') || '已完成'}</span>`;
@@ -1895,8 +1987,8 @@
             html += `
                 <div class="list-group-item d-flex justify-content-between align-items-center">
                     <div>
-                        <span class="fw-semibold">${escapeHtml(itemName)}</span>
                         ${subInfo}
+                        <span class="fw-semibold">${escapeHtml(itemName)}</span>
                     </div>
                     ${statusBadge}
                 </div>

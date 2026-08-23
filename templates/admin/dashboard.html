@@ -470,7 +470,11 @@
                             <div class="row g-3 mb-3">
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold" for="filterTrainingName">
-                                        <span data-i18n="training_name">培训名称</span> <span class="name-input"><i class="bi bi-hourglass-split"></i> <span data-i18n="name_input_hint">加载需要时间请稍等</span></span>
+                                        <span data-i18n="training_name">培训名称</span> 
+                                        <span class="name-input" id="trainingNameStatus">
+                                            <i class="bi bi-hourglass-split"></i> 
+                                            <span class="status-text" data-i18n="name_input_hint">加载需要时间请稍等</span>
+                                        </span>
                                     </label>
                                     <div class="position-relative">
                                         <input type="text" id="filterTrainingName" class="form-control" 
@@ -497,7 +501,11 @@
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label fw-bold" for="filterExamName">
-                                        <span data-i18n="exam_name">考试名称</span> <span class="name-input"><i class="bi bi-hourglass-split"></i> <span data-i18n="name_input_hint">加载需要时间请稍等</span></span>
+                                        <span data-i18n="exam_name">考试名称</span> 
+                                        <span class="name-input" id="examNameStatus">
+                                            <i class="bi bi-hourglass-split"></i> 
+                                            <span class="status-text" data-i18n="name_input_hint">加载需要时间请稍等</span>
+                                        </span>
                                     </label>
                                     <div class="position-relative">
                                         <input type="text" id="filterExamName" class="form-control" 
@@ -1582,8 +1590,40 @@
 			if (radioAll) radioAll.checked = (this.state.dateRangeOption === 'all');
 		},
 
+        // 更新加载状态
+        _updateLoadingStatus(type, isLoading) {
+            const statusMap = {
+                'training': 'trainingNameStatus',
+                'exam': 'examNameStatus'
+            };
+            
+            const elementId = statusMap[type];
+            if (!elementId) return;
+            
+            const container = document.getElementById(elementId);
+            if (!container) return;
+            
+            const icon = container.querySelector('.bi-hourglass-split');
+            const textSpan = container.querySelector('.status-text') || container.querySelector('span:last-child');
+            
+            if (isLoading) {
+                container.classList.remove('loaded');
+                container.classList.add('loading');
+                if (icon) icon.className = 'bi bi-hourglass-split';
+                if (textSpan) textSpan.textContent = t('loading_please_wait_while') || '加载中...';
+            } else {
+                container.classList.remove('loading');
+                container.classList.add('loaded');
+                if (icon) icon.className = 'bi bi-hourglass-split';
+                if (textSpan) textSpan.textContent = t('infomation_loaded') || '已就绪';
+            }
+        },
+
         // 刷新培训列表
         async refreshTrainingListWithFilters(searchTerm = '') {
+            // 显示加载状态
+            this._updateLoadingStatus('training', true);
+
             const params = this._buildTrainingParams(searchTerm);
             if (this.state.exam.id) {
                 params.append('exam_id', this.state.exam.id);
@@ -1599,9 +1639,6 @@
                 }
                 
                 const data = await res.json();
-                console.log('📋 搜索培训返回数据:', data);
-
-                // 兼容多种返回格式
                 let trainings = [];
                 if (Array.isArray(data)) {
                     trainings = data;
@@ -1611,7 +1648,6 @@
                     trainings = [];
                 }
 
-                // 确保每个培训都有 countries 字段
                 trainings = trainings.map(t => ({
                     ...t,
                     countries: t.countries || (t.country ? [t.country] : [])
@@ -1639,15 +1675,20 @@
 				}
 				
                 this.cache.trainings = trainings;
+                this._updateLoadingStatus('training', false);
             } catch (err) {
                 console.error('刷新培训列表失败:', err);
                 this.cache.trainings = [];
+                this._updateLoadingStatus('training', false);
             }
             return this.cache.trainings;
         },
         
         // 修复：刷新考试列表（使用轻量级API + 正确的状态）
         async refreshExamListWithFilters(searchTerm = '') {
+            // 显示加载状态
+            this._updateLoadingStatus('exam', true);
+
             const params = this._buildExamParams(searchTerm);
             
             try {
@@ -1692,8 +1733,10 @@
                 }
                 
                 this.cache.exams = exams;
+                this._updateLoadingStatus('exam', false);
             } catch (err) {
                 this.cache.exams = [];
+                this._updateLoadingStatus('exam', false);
             }
             return this.cache.exams;
         },
@@ -1824,9 +1867,6 @@
                         data-end="${t.end_time || ''}">
                         <div class="item-title">
                             ${idBadge}${escapeHtml(t.name)}
-                            {# ${statusIcon}
-                            ${signedBadge}
-                            ${bindingBadge} #}
                         </div>
                         <div class="item-meta">
                             <span><i class="bi bi-calendar3"></i> ${safeT('create') || '创建'}: ${createdDate}</span>
@@ -1918,9 +1958,6 @@
                         data-end="${exam.end_time || ''}">
                         <div class="item-title">
 							${idBadge}${escapeHtml(exam.title)}
-                            {# ${statusIcon}
-                            ${submittedBadge}
-							${bindingBadge} #}
 						</div>
                         <div class="item-meta">
                             <span><i class="bi bi-calendar3"></i> ${safeT('create')}: ${createdDate}</span>
@@ -2318,6 +2355,10 @@
         async init() {
             if (this.state.isInitialized) return;
             console.log('📋 ExportFilterStore 初始化开始...');
+
+            // 初始状态：加载中
+            this._updateLoadingStatus('training', true);
+            this._updateLoadingStatus('exam', true);
             
             // 加载权限范围内的国家
             await this.loadAllCountries();
@@ -2340,13 +2381,16 @@
             await this.refreshAll();
             console.log('📋 初始数据加载完成，培训数:', this.cache.trainings.length);
             
-            // 设置默认日期为当前季度
-            /*
-            const currentDates = DateUtils.getCurrentQuarterDates();
-            if (currentDates) {
-                this.state.startDate = currentDates.start;
-                this.state.endDate = currentDates.end;
-            } */
+            // 数据加载完成后更新状态（refreshAll 中已经更新了每个单独的状态）
+            // 但如果 refreshAll 没有触发单个更新，这里做兜底
+            setTimeout(() => {
+                if (this.cache.trainings.length > 0) {
+                    this._updateLoadingStatus('training', false);
+                }
+                if (this.cache.exams.length > 0) {
+                    this._updateLoadingStatus('exam', false);
+                }
+            }, 500);
 
             // 初始状态：日期为空
             this.state.startDate = '';
@@ -2921,8 +2965,8 @@
                 
             } catch (err) {
                 console.error('搜索失败:', err);
-                if (trainingList) trainingList.innerHTML = '<div class="list-group-item text-center text-danger py-3">加载失败</div>';
-                if (examList) examList.innerHTML = '<div class="list-group-item text-center text-danger py-3">加载失败</div>';
+                if (trainingList) trainingList.innerHTML = `<div class="list-group-item text-center text-danger py-3">${t('loading_failed')}</div>`;
+                if (examList) examList.innerHTML = `<div class="list-group-item text-center text-danger py-3">${t('loading_failed')}</div>`;
             }
             
         },
@@ -3130,9 +3174,6 @@
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(t.name)}">
                                         ${idBadge}${escapeHtml(t.name)} 
-                                        {# ${statusIcon}
-                                        ${signedBadge}
-                                        ${bindingBadge} #}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
@@ -3289,10 +3330,10 @@
             
             container.querySelectorAll('.list-group-item').forEach(item => {
                 const examId = parseInt(item.dataset.id);
-                const titleDiv = item.querySelector('.fw-bold');
-                if (!titleDiv) return;
+                const textMutedDiv = item.querySelector('.small.text-muted');
+                if (!textMutedDiv) return;
                 
-                const existingBadge = titleDiv.querySelector('.binding-badge');
+                const existingBadge = textMutedDiv.querySelector('.binding-badge');
                 const isBound = boundExamIds.has(examId);
                 
                 if (isBound && !existingBadge) {
@@ -3307,7 +3348,7 @@
                     badge.setAttribute('title', titleText);
                     badge.style.cssText = 'font-size: 0.6rem; cursor: help;';
                     badge.innerHTML = `<i class="bi bi-link"></i> ${t('binded')}`;
-                    titleDiv.appendChild(badge);
+                    textMutedDiv.appendChild(badge);
                 } else if (!isBound && existingBadge) {
                     existingBadge.remove();
                 }
@@ -3319,7 +3360,7 @@
             const container = document.getElementById('multiExamList');
             if (!container) return;
             
-            container.querySelectorAll('.binding-badge').forEach(badge => {
+            container.querySelectorAll('.small.text-muted .binding-badge').forEach(badge => {
                 badge.remove();
             });
         },
@@ -3331,10 +3372,10 @@
             
             container.querySelectorAll('.list-group-item').forEach(item => {
                 const trainingId = parseInt(item.dataset.id);
-                const titleDiv = item.querySelector('.fw-bold');
-                if (!titleDiv) return;
+                const textMutedDiv = item.querySelector('.small.text-muted');
+                if (!textMutedDiv) return;
                 
-                const existingBadge = titleDiv.querySelector('.binding-badge');
+                const existingBadge = textMutedDiv.querySelector('.binding-badge');
                 const isBound = boundTrainingIds.has(trainingId);
                 
                 if (isBound && !existingBadge) {
@@ -3349,7 +3390,7 @@
                     badge.setAttribute('title', titleText);
                     badge.style.cssText = 'font-size: 0.6rem; cursor: help;';
                     badge.innerHTML = `<i class="bi bi-link"></i> ${t('binded')}`;
-                    titleDiv.appendChild(badge);
+                    textMutedDiv.appendChild(badge);
                 } else if (!isBound && existingBadge) {
                     existingBadge.remove();
                 }
@@ -3361,7 +3402,7 @@
             const container = document.getElementById('multiTrainingList');
             if (!container) return;
             
-            container.querySelectorAll('.binding-badge').forEach(badge => {
+            container.querySelectorAll('.small.text-muted .binding-badge').forEach(badge => {
                 badge.remove();
             });
         },
@@ -3432,9 +3473,6 @@
                                 <div style="min-width: 0;">
                                     <div class="fw-bold text-truncate" title="${escapeHtml(e.title)}">
                                         ${idBadge}${escapeHtml(e.title)}
-                                        {# ${statusIcon} 
-                                        ${submittedBadge}
-                                        ${bindingBadge} #}
                                     </div>
                                     <div class="small text-muted">
                                         <span><i class="bi bi-globe2"></i> ${escapeHtml(countriesDisplay)}</span>
@@ -4504,7 +4542,7 @@
         } catch (err) {
             console.error('加载用户列表失败:', err);
             const tbody = document.getElementById('userListBody');
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败，请重试</td></tr>';
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">${t('failed_to_load_try_again')}</td></tr>`;
         }
     }
 
@@ -6110,9 +6148,20 @@
             `;
             container.appendChild(loadMore);
             
-            loadMore.querySelector('.load-more-btn').addEventListener('click', () => {
+            loadMore.querySelector('.load-more-btn').addEventListener('click', function(e)  {
+                e.preventDefault();
+                e.stopPropagation();  // 阻止冒泡，防止下拉菜单关闭
+
+                // 防止重复点击
+                if (this.disabled) return;
+                
+                this.disabled = true;
+                this.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('loading')}`;
                 messagePage++;
-                loadMessages(true);
+                loadMessages(true).finally(() => {
+                    this.disabled = false;
+                    this.innerHTML = `<span>${t('load_more')}</span>`;
+                });
             });
         }
         // 重新初始化全选功能
@@ -6216,7 +6265,20 @@
             const res = await fetch('/api/admin/messages/read_all', { method: 'POST' });
             const data = await res.json();
             if (data.success) {
-                showToast(data.message || '全部已标记为已读', 'success');
+                // 正确处理 params
+                let message = data.message;
+                if (data.params) {
+                    // 如果是数组，转换为对象
+                    let params = data.params;
+                    if (Array.isArray(params)) {
+                        // 假设第一个元素是 count
+                        params = { count: params[0] };
+                    }
+                    message = t(message, params);
+                } else {
+                    message = t(message);
+                }
+                showToast(message, 'success');
                 // 刷新消息列表
                 messageCache = [];
                 await loadMessages();
@@ -6236,13 +6298,55 @@
     });
 
     // 查看全部消息
-    document.getElementById('viewAllMessagesBtn')?.addEventListener('click', (e) => {
+    document.getElementById('viewAllMessagesBtn')?.addEventListener('click', function(e) {
         e.preventDefault();
-        // 可以跳转到专门的消息页面，或者展开所有消息
+        e.stopPropagation();  // 阻止冒泡，防止下拉菜单关闭
+        
+        if (this.disabled) return;
+        
+        this.disabled = true;
+        const originalText = this.innerHTML;
+        this.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('loading')}`;
+        
         messageCache = [];
         messagePage = 1;
-        loadMessages();
+        hasMoreMessages = true;
+        
+        loadAllMessages().finally(() => {
+            this.disabled = false;
+            this.innerHTML = originalText;
+        });
     });
+
+    // 加载全部消息
+    async function loadAllMessages() {
+        const container = document.getElementById('messageList');
+        if (!container) return;
+        
+        try {
+            const params = new URLSearchParams({
+                page: 1,
+                per_page: 1000,  // 一次性加载全部
+                unread_only: false
+            });
+            
+            const res = await fetch(`/api/admin/messages?${params}`);
+            const data = await res.json();
+            
+            if (data.success) {
+                const messages = data.data || [];
+                const total = data.total || 0;
+                
+                messageCache = messages;
+                hasMoreMessages = false;
+                
+                renderMessages(messageCache);
+                updateUnreadBadge();
+            }
+        } catch (err) {
+            console.error('加载全部消息失败:', err);
+        }
+    }
 
     // 下拉菜单打开时加载消息
     document.getElementById('messageDropdown')?.addEventListener('show.bs.dropdown', async function() {
