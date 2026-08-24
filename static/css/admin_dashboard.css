@@ -597,3 +597,82 @@
 .name-input.loaded .status-text {
     opacity: 0.7;
 }
+
+/* ============================================================
+   绑定培训相关样式（与培训管理页面保持一致）
+   ============================================================ */
+
+/* 绑定图标 - 悬浮效果 */
+.binding-expand-icon {
+    cursor: pointer;
+    transition: color 0.2s ease, transform 0.2s ease;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.binding-expand-icon:hover {
+    color: #198754 !important;
+    transform: scale(1.05);
+}
+
+.binding-toggle-icon {
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    user-select: none;
+    font-size: 0.65rem;
+    color: #6c757d;
+    display: inline-flex;
+    align-items: center;
+}
+
+.binding-toggle-icon:hover {
+    color: #0d6efd;
+}
+
+/* 绑定数量徽章 - 与培训管理页面一致 */
+.binding-expand-icon + .badge {
+    font-size: 0.55rem;
+    padding: 1px 6px;
+    border-radius: 10px;
+    transition: all 0.2s ease;
+    cursor: default;
+}
+
+/* 绑定培训详情行 */
+.binding-detail-row td {
+    padding: 4px 0 !important;
+    background-color: #f8f9fa;
+}
+
+.binding-training-item {
+    transition: background-color 0.15s ease;
+    border-radius: 4px;
+    padding: 4px 8px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+}
+
+.binding-training-item:hover {
+    background-color: #f0f7ff;
+}
+
+.binding-training-item .badge {
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.binding-training-item .btn-outline-info {
+    padding: 0px 6px;
+    font-size: 0.6rem;
+    line-height: 1.5;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+
+.binding-training-item .text-muted.small {
+    font-size: 0.7rem;
+    white-space: nowrap;
+}

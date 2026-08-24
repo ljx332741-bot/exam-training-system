@@ -1480,5 +1480,10 @@
 "complete_total": "已完成/总数",
 "completion_rate_details": "完成率详情",
 "total_items": "总项目数",
-"completed_items": "已完成项目数"
+"completed_items": "已完成项目数",
+"binding_expand_tooltip": "已绑定 {count} 个培训（点击展开查看详情）",
+"binded_training_row": "已绑定 {0} 个培训",
+"binding_collapse_tooltip": "点击收起绑定培训",
+"binding_expand_aria": "展开绑定培训详情，共 {0} 个培训",
+"binding_collapse_aria": "收起绑定培训详情"
 }

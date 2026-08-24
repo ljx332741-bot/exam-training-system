@@ -197,6 +197,24 @@ class I18n {
                 el.alt = this.translations[key];
             }
         });
+        // 5. 翻译 data-i18n-aria
+        document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+            const key = el.getAttribute('data-i18n-aria');
+            if (!key) return;
+            
+            let params = {};
+            const paramsAttr = el.getAttribute('data-i18n-aria-params');
+            if (paramsAttr) {
+                try {
+                    params = JSON.parse(paramsAttr);
+                } catch(e) {}
+            }
+            
+            const translated = this.t(key, params);
+            if (translated && translated !== key) {
+                el.setAttribute('aria-label', translated);
+            }
+        });
     }
 
     // ============================================================

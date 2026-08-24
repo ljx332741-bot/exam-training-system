@@ -17,6 +17,7 @@ from utils.common import match_country_code, quarter_to_date_range, get_reviewer
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.cache_manager import cache_get, clear_all_assignment_caches
 from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
+from utils.training_helpers import parse_training_countries
 from utils.permissions import (
     is_developer, 
     get_admin_allowed_countries, 
@@ -1663,6 +1664,7 @@ def admin_push_exam(exam_id):
 def api_admin_exams_list():
     """获取考试列表（支持原有所有筛选 + 级联筛选）"""
     db = get_supabase()
+    admin_db = get_supabase_admin()
     include_deleted = request.args.get('include_deleted', 'false').lower() == 'true'
     
     # 获取过滤参数（保留所有原有参数）
@@ -1786,10 +1788,12 @@ def api_admin_exams_list():
             except ValueError:
                 logger.warning(f"training_id 参数无效: {training_id}")
         
-        # ========== 9. 批量获取统计数据 ==========
+        # ========== 9. 批量获取统计数据 及绑定信息==========
+        binding_trainings_map = {}
         if all_exams:
             exam_ids = [exam['id'] for exam in all_exams]
 
+            # -----------考试统计数据---------
             # 1. 批量获取所有成绩记录
             all_results = db.table("exam_results") \
                 .select("exam_id, user_id, total_score") \
@@ -1863,6 +1867,102 @@ def api_admin_exams_list():
             except Exception as e:
                 logger.warning(f"获取提交数量失败: {e}")
                 submitted_counts = {eid: 0 for eid in exam_ids}
+
+            # --------批量获取绑定信息-------
+            # 1. 获取所有绑定关系
+            bindings_res = admin_db.table("training_exam_bindings") \
+                .select("exam_id, training_id") \
+                .in_("exam_id", exam_ids) \
+                .is_("deleted_at", "null") \
+                .execute()
+            
+            # 按 exam_id 分组
+            bindings_map = {}
+            for b in (bindings_res.data or []):
+                eid = b['exam_id']
+                if eid not in bindings_map:
+                    bindings_map[eid] = []
+                bindings_map[eid].append(b['training_id'])
+            
+            # 2. 批量获取培训信息
+            all_training_ids = set()
+            for ids in bindings_map.values():
+                all_training_ids.update(ids)
+
+            # ✅ 第一步确认：打印培训ID列表
+            logger.info(f"第一步确认 📋 绑定培训ID列表: {all_training_ids}")
+
+            training_map = {}
+            if all_training_ids:
+                trainings_res = db.table("trainings") \
+                    .select("id, name, country, countries, start_time, end_time, dynamic_status") \
+                    .in_("id", list(all_training_ids)) \
+                    .is_("deleted_at", "null") \
+                    .execute()
+                for t in (trainings_res.data or []):
+                    t['countries_list'] = parse_training_countries(t)
+                    training_map[t['id']] = t
+
+                # 批量查询签到人数
+                att_res = db.table("training_attendances") \
+                    .select("training_id, user_id") \
+                    .in_("training_id", list(all_training_ids)) \
+                    .is_("deleted_at", "null") \
+                    .execute()
+
+                # 获取所有签到用户ID
+                all_user_ids = set()
+                for att in (att_res.data or []):
+                    all_user_ids.add(att['user_id'])
+
+                # 查询在职用户
+                active_user_ids = set()
+                if all_user_ids:
+                    users_res = db.table("users") \
+                        .select("id") \
+                        .in_("id", list(all_user_ids)) \
+                        .eq("is_resign", False) \
+                        .execute()
+                    active_user_ids = {u['id'] for u in (users_res.data or [])}
+
+                # 统计有效签到人数（只统计在职人员）
+                signed_counts = {}
+                signed_counts_temp = {}
+                for att in (att_res.data or []):
+                    uid = att['user_id']
+                    if uid in active_user_ids:
+                        tid = att['training_id']
+                        if tid not in signed_counts_temp:
+                            signed_counts_temp[tid] = set()
+                        signed_counts_temp[tid].add(uid)
+
+                signed_counts = {tid: len(users) for tid, users in signed_counts_temp.items()}
+
+                # ✅ 调试日志
+                logger.info(f"📋 signed_counts: {signed_counts}")
+
+                # 3. 组装绑定培训信息
+                for eid, training_ids in bindings_map.items():
+                    binding_trainings_map[eid] = []
+                    for tid in training_ids:
+                        if tid in training_map:
+                            t = training_map[tid]
+                            signed_count = signed_counts.get(tid, 0) if 'signed_counts' in locals() else 0
+                            binding_trainings_map[eid].append({
+                                "training_id": tid,
+                                "training_name": t.get('name', f'培训 #{tid}'),
+                                "country": t.get('countries_list', [t.get('country', '')])[0] if t.get('countries_list') else t.get('country', ''),
+                                "countries": t.get('countries_list', []),
+                                "start_time": t.get('start_time'),
+                                "end_time": t.get('end_time'),
+                                "signed_count": signed_count,
+                                "training_status": t.get('dynamic_status', 'draft')
+                            })
+
+                logger.info(f"绑定关系映射: {binding_trainings_map}")
+                for eid, trainings in binding_trainings_map.items():
+                    logger.info(f"考试 {eid} 绑定了 {len(trainings)} 个培训: {[t['training_name'] for t in trainings]}")
+
         else:
             questions_counts = assigned_counts = submitted_counts = {}
         
@@ -1908,10 +2008,15 @@ def api_admin_exams_list():
             status = get_exam_status(exam)
             can_show_reopen_button = is_super_admin and reopen_mode and status == 'closed'
             
-            # 新增：为前端添加格式化字段
+            # 为前端添加格式化字段
             created_date = exam.get('created_at', '')[:10] if exam.get('created_at') else ''
             quarter_val = _get_quarter_from_date(exam.get('created_at'))
             stats = stats_by_exam.get(exam_id, {'max_score': None, 'min_score': None, 'retake_count': 0})
+
+            # 获取绑定培训信息
+            binding_trainings = binding_trainings_map.get(exam_id, [])
+            binding_count = len(binding_trainings)
+            has_binding = binding_count > 0
             
             exams_with_status.append({
                 "id": exam_id,
@@ -1933,7 +2038,11 @@ def api_admin_exams_list():
                 "retake_count": stats.get('retake_count', 0),
                 "reviewer": exam.get('reviewer', ''),
                 "deleted_at": exam.get('deleted_at'),
-                "can_show_reopen_button": can_show_reopen_button
+                "can_show_reopen_button": can_show_reopen_button,
+                # ... 绑定字段 ...
+                "has_binding": has_binding,
+                "binding_count": binding_count,
+                "binding_trainings": binding_trainings
             })
         
         # 分页
