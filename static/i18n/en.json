@@ -1491,5 +1491,10 @@
 "complete_total": "Complete/Total",
 "completion_rate_details": "Completion rate details",
 "total_items": "Total items",
-"completed_items": "Completed items"
+"completed_items": "Completed items",
+"binding_expand_tooltip": "Binded {count} training(s)(Click to view details)",
+"binded_training_row": "Binded {0} training(s)",
+"binding_collapse_tooltip": "Click to collapse binding training",
+"binding_expand_aria": "Expand to view training details, total {0} training(s)",
+"binding_collapse_aria": "Collapse binding training details"
 }

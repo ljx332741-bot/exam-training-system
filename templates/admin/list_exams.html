@@ -46,6 +46,77 @@
     .exam-name-link:hover {
         text-decoration: underline;
     }
+/* ============================================================
+   绑定包装器 - 整体交互样式
+   ============================================================ */
+
+/* 整体悬浮效果 */
+.binding-wrapper {
+    cursor: pointer;
+    transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), 
+                background-color 0.25s ease,
+                box-shadow 0.25s ease;
+    border-radius: 8px;
+    padding: 3px 4px;
+    background-color: transparent;
+}
+
+.binding-wrapper:hover {
+    transform: scale(1.2);
+    background-color: rgba(13, 110, 253, 0.08);
+    box-shadow: 0 2px 8px rgba(13, 110, 253, 0.15);
+}
+
+/* 展开状态下的悬浮效果 */
+.binding-wrapper.expanded {
+    background-color: rgba(25, 135, 84, 0.08);
+    box-shadow: 0 2px 8px rgba(25, 135, 84, 0.15);
+}
+
+.binding-wrapper.expanded:hover {
+    transform: scale(1.2);
+    background-color: rgba(25, 135, 84, 0.15);
+}
+
+/* 数量徽章样式 */
+.binding-count-badge {
+    font-size: 0.5rem;
+    padding: 0px 4px;
+    border-radius: 8px;
+    margin-bottom: 1px;
+    min-width: 16px;
+    text-align: center;
+    transition: all 0.25s ease;
+    line-height: 1.4;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+/* 展开状态下的徽章 */
+.binding-wrapper.expanded .binding-count-badge {
+    background-color: #ffc107 !important;
+    color: #212529 !important;
+}
+
+/* 图标样式 */
+.binding-icon {
+    font-size: 1rem;
+    color: #0d6efd;
+    display: block;
+    line-height: 1;
+    transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), 
+                color 0.25s ease;
+}
+
+/* 展开状态下的图标 */
+.binding-wrapper.expanded .binding-icon {
+    color: #198754;
+}
+
+/* 悬浮时包装器的 tooltip 样式（保持默认） */
+.binding-wrapper[data-bs-toggle="tooltip"] {
+    cursor: pointer;
+}
 </style>
 {% endblock %}
 
@@ -904,6 +975,95 @@
             btn.removeEventListener('click', handleReopenPush);
             btn.addEventListener('click', handleReopenPush);
         });
+
+        // 绑定绑定培训展开事件
+        bindBindingExpandEvents();
+    }
+
+    function bindBindingExpandEvents() {
+        // ✅ 绑定整个 wrapper 的点击事件
+        document.querySelectorAll('.binding-wrapper').forEach(el => {
+            el.removeEventListener('click', handleBindingToggle);
+            el.addEventListener('click', handleBindingToggle);
+        });
+        
+        // ✅ 初始化 tooltip（在 wrapper 上）
+        document.querySelectorAll('.binding-wrapper[data-bs-toggle="tooltip"]').forEach(el => {
+            const oldTooltip = bootstrap.Tooltip.getInstance(el);
+            if (oldTooltip) {
+                oldTooltip.dispose();
+            }
+            new bootstrap.Tooltip(el, {
+                container: 'body',
+                trigger: 'hover focus',
+                placement: 'top',
+                delay: { show: 200, hide: 100 }
+            });
+        });
+    }
+
+    function handleBindingToggle(e) {
+        e.stopPropagation();
+        // ✅ 获取整个 wrapper
+        const wrapper = this.closest ? this.closest('.binding-wrapper') : this;
+        if (!wrapper) return;
+        
+        const examId = wrapper.dataset.examId;
+        const bindingCount = parseInt(wrapper.dataset.bindingCount) || 0;
+        const detailRow = document.getElementById(`binding-detail-${examId}`);
+        const icon = wrapper.querySelector('.binding-icon');
+        const badge = wrapper.querySelector('.binding-count-badge');
+        
+        if (!detailRow) {
+            console.warn(`绑定详情行不存在: binding-detail-${examId}`);
+            return;
+        }
+        
+        if (detailRow.style.display === 'none' || detailRow.style.display === '') {
+            // ✅ 展开
+            detailRow.style.display = 'table-row';
+            wrapper.setAttribute('data-i18n-aria', 'binding_collapse_tooltip');
+            wrapper.removeAttribute('data-i18n-aria-params');
+            wrapper.setAttribute('aria-label', safeT('binding_collapse_tooltip'));
+            // 图标旋转
+            if (icon) {
+                icon.style.transform = 'rotate(90deg)';
+                icon.style.color = '#198754';
+            }
+            // 更新 badge
+            if (badge) {
+                badge.classList.remove('bg-success');
+                badge.classList.add('bg-warning', 'text-dark');
+                badge.textContent = `${t('expand')}`;
+            }
+            // 更新 tooltip
+            const tooltip = bootstrap.Tooltip.getInstance(wrapper);
+            if (tooltip) {
+                tooltip.setContent({ '.tooltip-inner': `${safeT('binding_collapse_tooltip')}` });
+            }
+        } else {
+            // ✅ 折叠
+            detailRow.style.display = 'none';
+            wrapper.setAttribute('data-i18n-aria', 'binding_expand_tooltip');
+            wrapper.setAttribute('data-i18n-aria-params', `{"count": ${bindingCount}}`);
+            wrapper.setAttribute('aria-label', safeT('binding_expand_tooltip', { count: bindingCount }));
+            // 图标恢复
+            if (icon) {
+                icon.style.transform = 'rotate(0deg)';
+                icon.style.color = '#0d6efd';
+            }
+            // 恢复 badge
+            if (badge) {
+                badge.classList.remove('bg-warning', 'text-dark');
+                badge.classList.add('bg-success');
+                badge.textContent = bindingCount;
+            }
+            // 恢复 tooltip.setContent({ '.tooltip-inner': `已绑定 ${bindingCount} 个培训（点击展开查看详情）` });
+            const tooltip = bootstrap.Tooltip.getInstance(wrapper);
+            if (tooltip) {
+                tooltip.setContent({ '.tooltip-inner': `${safeT('binding_expand_tooltip', { count: bindingCount })}` });
+            }
+        }
     }
 
     // ========== 构建单行 HTML（提取为独立函数） ==========
@@ -930,56 +1090,254 @@
 
         // 使用 getStatusBadge 生成状态徽章
         const statusBadge = getStatusBadge(ex.status);
+
+        // ============================================================
+        // 绑定培训信息 - 修复版（不换行 + 点击旋转 + tooltip）
+        // ============================================================
+        const hasBinding = ex.has_binding === true;
+        const bindingCount = ex.binding_count || 0;
+        const bindingTrainings = ex.binding_trainings || [];
         
-        let actionButtons = '';
-        if (isDeleted) {
-            actionButtons = `<button class="btn btn-sm btn-outline-success restore-exam-btn" data-id="${ex.id}">${t('t_recover')}</button>`;
-        } else {
-            actionButtons = `
-                ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${t('t_details')}</button>` : ''}
-                ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${t('t_push')}</button>` : ''}
-                ${showReopenBtn ? `
-                    <button class="btn btn-sm btn-outline-warning reopen-push-btn" data-id="${ex.id}" data-title="${escapeHtml(ex.title)}">
-                        <i class="bi bi-bootstrap-reboot spin-icon"></i>
-                        ${t('reopen') || '重新打开'}
-                    </button>` : ''}
-                <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${t('copy')}</button>
-                ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}"
-                    onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
-                    ${t('edit')}</button>` : ''}
-                ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${t('batch_export_pdf')}</button>` : ''}
-                ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${t('delete')}</button>` : ''}
+        // 绑定标记 HTML
+        let bindingHtml = '';
+        /*
+        if (hasBinding && bindingCount > 0) {
+            // 图标：有绑定时显示 🔗，同时作为展开/折叠按钮
+            const tooltipText = `已绑定 ${bindingCount} 个培训`;
+            bindingHtml = `
+                <span class="binding-expand-icon" 
+                    data-exam-id="${ex.id}"
+                    data-binding-count="${bindingCount}"
+                    data-bs-toggle="tooltip"
+                    data-bs-title="${tooltipText}"
+                    style="cursor: pointer; margin-right: 2px; color: #0d6efd; font-size: 0.9rem; user-select: none;">
+                    <i class="bi bi-link-45deg"></i>
+                </span>
+                <span class="binding-toggle-icon" 
+                    data-exam-id="${ex.id}"
+                    style="cursor: pointer; font-size: 0.65rem; color: #6c757d; margin-right: 2px; user-select: none;">
+                    ▶
+                </span>
+                
+                <span class="badge bg-success ms-1" style="font-size: 0.55rem; padding: 1px 6px; border-radius: 10px;">
+                    ${bindingCount}
+                </span>
             `;
         }
+        */
 
-        // 构建考试名称链接
+        // const tooltipText = `已绑定 ${bindingCount} 个培训`;
+        if (hasBinding && bindingCount > 0) {
+            const tooltipText = `${safeT('binding_expand_aria', bindingCount )}`;
+            bindingHtml = `
+                <span class="binding-wrapper" 
+                    data-exam-id="${ex.id}"
+                    data-binding-count="${bindingCount}"
+                    data-i18n-title="binding_expand_tooltip"
+                    data-i18n-aria-params='{"count": ${bindingCount}}'
+                    data-i18n-aria="binding_expand_tooltip"
+                    data-i18n-aria-params='{"count": ${bindingCount}}'
+                    role="button"
+                    tabindex="0"
+                    style="
+                        display: inline-flex; 
+                        flex-direction: column; 
+                        align-items: center; 
+                        justify-content: center; 
+                        flex-shrink: 0; 
+                        margin-right: 4px; 
+                        width: 24px; 
+                        line-height: 1.2;
+                        cursor: pointer;
+                        transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+                        user-select: none;
+                        padding: 2px 0;
+                        border-radius: 6px;
+                    "
+                    data-bs-toggle="tooltip"
+                    data-bs-title="${tooltipText}"
+                    data-bs-placement="top"
+                    role="button"
+                    tabindex="0"
+                    aria-label="展开绑定培训详情">
+                    <span class="badge bg-success binding-count-badge" 
+                        style="
+                            font-size: 0.5rem; 
+                            padding: 0px 4px; 
+                            border-radius: 8px; 
+                            margin-bottom: 1px; 
+                            min-width: 16px; 
+                            text-align: center;
+                            transition: all 0.25s ease;
+                            line-height: 1.4;
+                            font-weight: 600;
+                        ">
+                        ${bindingCount}
+                    </span>
+                    <i class="bi bi-link-45deg binding-icon" 
+                        style="
+                            font-size: 1rem; 
+                            color: #0d6efd; 
+                            display: block; 
+                            line-height: 1;
+                            transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), color 0.25s ease;
+                        ">
+                    </i>
+                </span>
+            `;
+        }
+        
+        // 考试名称 HTML
         let examNameHtml;
         if (isClickable) {
             examNameHtml = `<a href="#" class="exam-detail-link exam-name-link" data-id="${ex.id}" data-status="${ex.status}">${escapeHtml(ex.title)}</a>`;
         } else if (isDraft) {
-            examNameHtml = `<span class="exam-name-draft" title="${t('draft_exam_no_details') || '草稿考试暂无详情，请先发布考试'}" style="color: #6c757d; cursor: not-allowed; opacity: 0.6;">${escapeHtml(ex.title)}</span>`;
+            examNameHtml = `<span class="exam-name-draft" title="${safeT('draft_exam_no_details') || '草稿考试暂无详情，请先发布考试'}" style="color: #6c757d; cursor: not-allowed; opacity: 0.6;">${escapeHtml(ex.title)}</span>`;
         } else {
-            examNameHtml = `<span class="text-muted" title="${t('deleted_exam_no_details') || '已删除考试'}" style="cursor: not-allowed; opacity: 0.5;">${escapeHtml(ex.title)}</span>`;
+            examNameHtml = `<span class="text-muted" title="${safeT('deleted_exam_no_details') || '已删除考试'}" style="cursor: not-allowed; opacity: 0.5;">${escapeHtml(ex.title)}</span>`;
+        }
+        
+        // 绑定培训详情行（展开时显示）
+        let bindingDetailRowHtml = '';
+        if (hasBinding && bindingCount > 0) {
+            let trainingsHtml = '';
+            if (bindingTrainings && bindingTrainings.length > 0) {
+                trainingsHtml = bindingTrainings.map(t => {
+                    // 国家显示
+                    const countryDisplay = t.countries && t.countries.length > 0 
+                        ? t.countries.join(', ') 
+                        : (t.country || '-');
+                    
+                    // 有效期
+                    const startLocal = t.start_time ? formatLocalTime(t.start_time) : '-';
+                    const endLocal = t.end_time ? formatLocalTime(t.end_time) : '-';
+                    const periodDisplay = `${startLocal} → ${endLocal}`;
+                    
+                    // 签到人数
+                    const signedCount = t.signed_count || 0;
+                    const signedDisplay = signedCount > 0 
+                        ? `<span style="color: #0dcaf0;"><i class="bi bi-person"></i> ${signedCount}</span>`
+                        : `<span style="color: #adb5bd;"><i class="bi bi-person"></i> 0</span>`;
+                    
+                    // 培训状态徽章
+                    const statusMap = {
+                        'draft': 'bg-secondary',
+                        'pending': 'bg-info',
+                        'active': 'bg-success',
+                        'closed': 'bg-danger'
+                    };
+                    const statusClass = statusMap[t.training_status] || 'bg-secondary';
+                    const statusText = {
+                        'draft': `${safeT('draft') || '草稿'}`,
+                        'pending': `${safeT('pending') || '未开始'}`,
+                        'active': `${safeT('active') || '进行中'}`,
+                        'closed': `${safeT('closed') || '已关闭'}`
+                    }[t.training_status] || t.training_status;
+                    
+                    // 可点击跳转（有签到人员时）
+                    const canViewAttendance = signedCount > 0;
+                    const attendanceLink = canViewAttendance 
+                        ? `<a href="/admin/training/${t.training_id}/attendance?from=exam_binding" target="_blank" class="text-decoration-none" 
+                            style="color: #0d6efd; font-weight: 500;">
+                            ${escapeHtml(t.training_name)}
+                            <span class="badge bg-secondary ms-1" style="font-size: 0.55rem;">↗</span>
+                        </a>`
+                        : `<span class="text-muted" style="cursor: not-allowed;" 
+                            title="暂无签到人员，无法查看详情">${escapeHtml(t.training_name)}</span>`;
+                    
+                    return `
+                        <div class="binding-training-item d-flex align-items-center gap-3 py-1" 
+                            style="border-bottom: 1px solid #f5f5f5; padding-left: 28px; font-size: 0.85rem;">
+                            <span class="badge bg-secondary" style="font-size: 0.55rem; padding: 1px 6px;">${t.training_id}</span>
+                            <span class="badge bg-light text-dark border" style="font-size: 0.55rem; padding: 1px 6px;">${escapeHtml(countryDisplay)}</span>
+                            ${attendanceLink}
+                            <span class="text-muted small">${periodDisplay}</span>
+                            ${signedDisplay}
+                            <span class="badge ${statusClass}" style="font-size: 0.55rem;">${statusText}</span>
+                            ${canViewAttendance ? 
+                                `<a href="/admin/training/${t.training_id}/attendance" target="_blank" 
+                                    class="btn btn-sm btn-outline-info" style="padding: 0px 6px; font-size: 0.6rem;">
+                                    <i class="bi bi-eye"></i> ${safeT('sign_in_details') || '签到详情'}
+                                </a>` : ''
+                            }
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                // 如果培训列表为空（理论上不会发生），显示提示
+                trainingsHtml = `
+                    <div class="text-muted small py-1" style="padding-left: 28px;">
+                        <i class="bi bi-info-circle me-1"></i> 暂无培训详情
+                    </div>
+                `;
+            }
+            
+            // 构建独立的详情行（不是嵌套在 td 内）
+            bindingDetailRowHtml = `
+                <tr class="binding-detail-row" id="binding-detail-${ex.id}" style="display: none;">
+                    <td colspan="15" style="padding: 4px 0; background-color: #f8f9fa;">
+                        <div style="padding: 8px 16px 8px 40px;">
+                            <div class="fw-bold small text-muted mb-1" style="font-size: 0.7rem;">
+                                <i class="bi bi-link-45deg me-1"></i> 
+                                <!-- 已绑定 ${bindingCount} 个培训 -->
+                                ${safeT('binded_training_row', bindingCount)}
+                                <span class="text-muted ms-2" style="font-weight: 400;">${safeT('click_to_view_details')}</span>
+                            </div>
+                            ${trainingsHtml}
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+        
+        let actionButtons = '';
+        if (isDeleted) {
+            actionButtons = `<button class="btn btn-sm btn-outline-success restore-exam-btn" data-id="${ex.id}">${safeT('t_recover')}</button>`;
+        } else {
+            actionButtons = `
+                ${showDetail ? `<button class="btn btn-sm btn-outline-info detail-btn" data-id="${ex.id}">${safeT('t_details')}</button>` : ''}
+                ${showPush ? `<button class="btn btn-sm btn-outline-primary push-btn" data-id="${ex.id}">${safeT('t_push')}</button>` : ''}
+                ${showReopenBtn ? `
+                    <button class="btn btn-sm btn-outline-warning reopen-push-btn" data-id="${ex.id}" data-title="${escapeHtml(ex.title)}">
+                        <i class="bi bi-bootstrap-reboot spin-icon"></i>
+                        ${safeT('reopen') || '重新打开'}
+                    </button>` : ''}
+                <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${safeT('copy')}</button>
+                ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}"
+                    onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
+                    ${safeT('edit')}</button>` : ''}
+                ${showExport ? `<button class="btn btn-sm btn-outline-secondary batch-export" data-id="${ex.id}">${safeT('batch_export_pdf')}</button>` : ''}
+                ${showDelete ? `<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="${ex.id}">${safeT('delete')}</button>` : ''}
+            `;
         }
 
         return `
-        <tr>
-            <td>${globalIdx}</td>
-            <td>${escapeHtml(countryDisplay)}</td>
-            <td>${examNameHtml}</td>
-            <td>${ex.id}</td>
-            <td>${quarter}</td>
-            <td>${statusBadge}</td>  <!-- ✅ 使用状态徽章 -->
-            <td>${formatLocalTime(ex.created_at)}</td>
-            <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
-            <td>${ex.question_count}</td>
-            <td>${ex.duration}</td>
-            <td>${ex.assigned_count}/${ex.submitted_count}</td>
-            <td>${ex.max_score ?? '-'}</td>
-            <td>${ex.min_score ?? '-'}</td>
-            <td>${ex.retake_count}</td>
-            <td>${actionButtons}</td>
-        </tr>
+            <tr>
+                <td>${globalIdx}</td>
+                <td>${escapeHtml(countryDisplay)}</td>
+                <td>
+                    <div style="display: flex; align-items: center; gap: 2px; flex-wrap: nowrap;">
+                        ${bindingHtml}
+                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;">
+                            ${examNameHtml}
+                        </span>
+                    </div>
+                    ${bindingDetailRowHtml ? `<div id="binding-detail-container-${ex.id}"></div>` : ''}
+                </td>
+                <td>${ex.id}</td>
+                <td>${quarter}</td>
+                <td>${statusBadge}</td>  <!-- 使用状态徽章 -->
+                <td>${formatLocalTime(ex.created_at)}</td>
+                <td>${formatLocalTime(ex.start_time)} - ${formatLocalTime(ex.end_time)}</td>
+                <td>${ex.question_count}</td>
+                <td>${ex.duration}</td>
+                <td>${ex.assigned_count}/${ex.submitted_count}</td>
+                <td>${ex.max_score ?? '-'}</td>
+                <td>${ex.min_score ?? '-'}</td>
+                <td>${ex.retake_count}</td>
+                <td>${actionButtons}</td>
+            </tr>
+            ${bindingDetailRowHtml}
         `;
     }
 
@@ -994,7 +1352,7 @@
             return;
         }
         
-        // ✅ 使用 DocumentFragment 批量构建 DOM（性能优化）
+        // 使用 DocumentFragment 批量构建 DOM（性能优化）
         const fragment = document.createDocumentFragment();
         const perPage = 20;
         const startIdx = (currentPage - 1) * perPage;
@@ -1004,7 +1362,10 @@
             // 创建临时容器解析 HTML
             const temp = document.createElement('tbody');
             temp.innerHTML = buildExamRow(ex, globalIdx);
-            fragment.appendChild(temp.firstElementChild);
+            // 将所有子节点（主行 + 详情行）都添加到 fragment
+            while (temp.firstChild) {
+                fragment.appendChild(temp.firstChild);
+            }
         });
         
         // 清空并追加
@@ -1013,6 +1374,10 @@
         
         // 绑定所有按钮事件
         bindExamTableButtons();
+        // 初始化 tooltip
+        setTimeout(() => {
+            initBindingTooltips();
+        }, 100);
     }
 
     // ========== 调试推送处理（增强版） ==========
@@ -1246,6 +1611,9 @@
         
         // 强制推送全部
         document.getElementById('forcePushAllBtn')?.addEventListener('click', forcePushAllUsers);
+
+        // 存储当前考试列表页面 URL，供签到详情页返回使用
+        sessionStorage.setItem('exam_list_return_url', window.location.href);
     });
 
     // ========== 获取考试信息并回显 ==========
@@ -2247,5 +2615,21 @@
             window.i18n.applyTranslations();
         }
     });
+
+    function initBindingTooltips() {
+        document.querySelectorAll('.binding-expand-icon[data-bs-toggle="tooltip"]').forEach(el => {
+            // 移除旧的 tooltip 实例
+            const oldTooltip = bootstrap.Tooltip.getInstance(el);
+            if (oldTooltip) {
+                oldTooltip.dispose();
+            }
+            // 创建新的 tooltip
+            new bootstrap.Tooltip(el, {
+                container: 'body',
+                trigger: 'hover focus',
+                placement: 'top'
+            });
+        });
+    }
 </script>
 {% endblock %}

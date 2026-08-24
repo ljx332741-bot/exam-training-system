@@ -254,7 +254,7 @@
             <a id="pdfExportBtn" class="btn btn-success" href="#" target="_blank">
                 <i class="bi bi-download"></i> <span data-i18n="expert_pdf">PDF专用</span>
             </a>
-            <button class="btn btn-sm btn-outline-secondary" onclick="history.back();">
+            <button class="btn btn-sm btn-outline-secondary" id="backButton">
                 <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
             </button>
         </div> 
@@ -594,13 +594,6 @@
         }
     }
 
-    // 初始化
-    document.addEventListener('DOMContentLoaded', async () => {
-        await waitForI18n(); // 等待国际化资源加载完成
-        loadDetail();
-        addBatchDeleteButton();
-    });
-
     // 更新批量删除按钮文本（语言切换时调用）
     function updateBatchDeleteButtonText() {
         const batchDeleteBtn = document.getElementById('batchDeleteBtn');
@@ -638,5 +631,51 @@
     }
 
     loadDetail();
+
+    // ============================================================
+    // 来源检测和返回逻辑
+    // ============================================================
+    // ============================================================
+    // 来源检测和返回逻辑（修复版）
+    // ============================================================
+    function initBackButton() {
+        const backBtn = document.getElementById('backButton');
+        if (!backBtn) return;
+        
+        // 检查是否有来源信息（URL 参数）
+        const urlParams = new URLSearchParams(window.location.search);
+        const from = urlParams.get('from');
+        
+        // 检查是否从考试绑定进入
+        const isFromExamBinding = from === 'exam_binding';
+        
+        if (isFromExamBinding) {
+            // ✅ 从考试绑定进入 → 改为"关闭"按钮（关闭当前标签页或返回考试列表）
+            backBtn.innerHTML = `<i class="bi bi-x-lg me-1"></i> <span data-i18n="close">${t('close')}</span>`;
+            backBtn.onclick = function(e) {
+                e.preventDefault();
+                // 尝试关闭当前标签页
+                window.close();
+                // 如果无法关闭（某些浏览器限制），尝试跳转到考试列表
+                setTimeout(function() {
+                    window.location.href = '/admin/exams';
+                }, 100);
+            };
+        } else {
+            // 从培训管理页面进入 → 正常返回上一页
+            backBtn.onclick = function(e) {
+                e.preventDefault();
+                history.back();
+            };
+        }
+    }
+
+    // 在页面加载时初始化
+    document.addEventListener('DOMContentLoaded', async () => {
+        await waitForI18n();
+        initBackButton();  // ✅ 初始化返回按钮
+        loadDetail();
+        addBatchDeleteButton();
+    });
 </script>
 {% endblock %}
