@@ -126,7 +126,7 @@ class TimedRotatingFileHandlerWithCleanup(logging.handlers.TimedRotatingFileHand
 # ============================================================
 # 3. 统一的日志设置函数（增强版）
 # ============================================================
-def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2, 
+def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=7, 
                    console_level=None, file_level=None, is_production=None):
     """
     配置日志系统（支持自动清理和脱敏）
@@ -242,7 +242,7 @@ def setup_logging(app=None, log_level=None, log_dir='logs', keep_days=2,
 # ============================================================
 # 4. 清理旧日志函数（修复版）
 # ============================================================
-def clean_old_logs(log_dir='logs', keep_days=2):
+def clean_old_logs(log_dir='logs', keep_days=7):
     """
     手动清理旧的日志文件
     
@@ -285,7 +285,7 @@ def init_default_logging():
     return setup_logging(
         app=None,
         log_dir='logs',
-        keep_days=2
+        keep_days=7
     )
 
 
