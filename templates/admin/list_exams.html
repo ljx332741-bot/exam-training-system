@@ -1255,7 +1255,7 @@
                             ${signedDisplay}
                             <span class="badge ${statusClass}" style="font-size: 0.55rem;">${statusText}</span>
                             ${canViewAttendance ? 
-                                `<a href="/admin/training/${t.training_id}/attendance" target="_blank" 
+                                `<a href="/admin/training/${t.training_id}/attendance?from=exam_binding" target="_blank" 
                                     class="btn btn-sm btn-outline-info" style="padding: 0px 6px; font-size: 0.6rem;">
                                     <i class="bi bi-eye"></i> ${safeT('sign_in_details') || '签到详情'}
                                 </a>` : ''

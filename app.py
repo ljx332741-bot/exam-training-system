@@ -53,7 +53,7 @@ console_level = level_map.get(LOG_LEVEL.upper(), logging.INFO)
 logger = setup_logging(
     app=None,
     log_dir='logs',
-    keep_days=2,
+    keep_days=7,
     console_level=console_level,
     file_level=logging.DEBUG if console_level == logging.INFO else logging.INFO,
     is_production=console_level >= logging.WARNING
