@@ -3,7 +3,7 @@ import json
 import logging
 from typing import List, Union, Optional, Any
 from datetime import datetime, timezone 
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 
 logger = logging.getLogger(__name__)
 
@@ -355,3 +355,102 @@ def calculate_dynamic_status(start_time, end_time):
             return 'active'
     except Exception:
         return 'draft'
+
+"""
+及格分数同步工具模块
+确保 exams 表和 training_exam_bindings 表的 pass_score 保持一致
+"""
+logger = logging.getLogger(__name__)
+
+def sync_pass_score_to_bindings(exam_id, new_pass_score, db=None):
+    """
+    当考试自身的及格分数更新时，同步更新所有关联的绑定记录
+    
+    Args:
+        exam_id: 考试ID
+        new_pass_score: 新的及格分数
+        db: 数据库连接（可选，如果没有则新建）
+    
+    Returns:
+        int: 更新的绑定记录数量
+    """
+    if db is None:
+        db = get_supabase_admin()
+    
+    try:
+        # 更新所有未删除的绑定记录
+        result = db.table("training_exam_bindings")\
+            .update({
+                "pass_score": new_pass_score,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            })\
+            .eq("exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        updated_count = len(result.data) if result.data else 0
+        logger.info(f"✅ 同步及格分数: 考试 {exam_id} -> {new_pass_score}, 更新了 {updated_count} 条绑定记录")
+        return updated_count
+    except Exception as e:
+        logger.error(f"❌ 同步及格分数失败: exam_id={exam_id}, error={e}")
+        raise
+
+
+def sync_binding_pass_score_to_exam(binding_id, new_pass_score, db=None):
+    """
+    当绑定关系的及格分数更新时，同步更新考试自身的及格分数
+    但仅在考试没有被其他培训绑定时才同步（避免意外覆盖）
+    
+    Args:
+        binding_id: 绑定关系ID
+        new_pass_score: 新的及格分数
+        db: 数据库连接（可选）
+    
+    Returns:
+        dict: 包含同步结果的字典
+    """
+    if db is None:
+        db = get_supabase_admin()
+    
+    try:
+        # 1. 获取绑定信息
+        binding_res = db.table("training_exam_bindings")\
+            .select("exam_id, training_id")\
+            .eq("id", binding_id)\
+            .is_("deleted_at", "null")\
+            .maybe_single()\
+            .execute()
+        
+        if not binding_res.data:
+            return {"synced": False, "reason": "绑定关系不存在"}
+        
+        exam_id = binding_res.data['exam_id']
+        
+        # 2. 检查该考试是否被多个培训绑定
+        count_res = db.table("training_exam_bindings")\
+            .select("id", count="exact")\
+            .eq("exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        binding_count = count_res.count or 0
+        
+        # 3. 如果考试只被当前这一个培训绑定，同步更新 exam 表
+        if binding_count <= 1:
+            db.table("exams")\
+                .update({
+                    "pass_score": new_pass_score,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                })\
+                .eq("id", exam_id)\
+                .execute()
+            logger.info(f"✅ 绑定及格分数反向同步到考试: exam_id={exam_id}, pass_score={new_pass_score}")
+            return {"synced": True, "reason": f"考试仅被 {binding_count} 个培训绑定，已同步更新"}
+        else:
+            logger.info(f"⏭️ 跳过反向同步: 考试 {exam_id} 被 {binding_count} 个培训绑定，不覆盖考试默认分数")
+            return {"synced": False, "reason": f"考试被 {binding_count} 个培训绑定，不自动覆盖默认分数"}
+            
+    except Exception as e:
+        logger.error(f"❌ 反向同步及格分数失败: binding_id={binding_id}, error={e}")
+        return {"synced": False, "reason": str(e)}
+

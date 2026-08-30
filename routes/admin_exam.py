@@ -8,6 +8,9 @@ from flask import (
     current_app as app, 
     Flask, request, jsonify, redirect, url_for, render_template, session, flash, send_file, make_response
 )
+from io import BytesIO
+import openpyxl
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from . import admin_exam_bp
 from services.db import get_supabase, get_supabase_admin, safe_table
 from services import auth, exam, export
@@ -17,7 +20,7 @@ from utils.common import match_country_code, quarter_to_date_range, get_reviewer
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.cache_manager import cache_get, clear_all_assignment_caches
 from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
-from utils.training_helpers import parse_training_countries
+from utils.training_helpers import parse_training_countries, sync_pass_score_to_bindings
 from utils.permissions import (
     is_developer, 
     get_admin_allowed_countries, 
@@ -343,7 +346,7 @@ def admin_import():
     """Word 题库导入页面"""
     print(f"\n🔥🔥🔥 admin_import 被调用！method={request.method} 🔥🔥🔥\n", flush=True)
 
-    # 获取 from_binding 参数（GET 和 POST 都需要） 0722新增
+    # 获取 from_binding 参数（GET 和 POST 都需要）
     from_binding = request.args.get('from_binding') == 'true'
     training_id = request.args.get('training_id')
     training_country = request.args.get('country')
@@ -379,7 +382,7 @@ def admin_import():
                 return render_template('admin/import.html')
 
             if qs:
-                # ✅ 获取来源 URL
+                # 获取来源 URL
                 return_url = request.referrer or url_for('admin_exam.admin_dashboard')
                 if return_url and '/admin/import' in return_url:
                     return_url = url_for('admin_exam.admin_dashboard')
@@ -388,7 +391,7 @@ def admin_import():
             
             # 获取默认值
             defaults = get_default_exam_values(request)
-            can_edit_questions = True # 0722 新增
+            can_edit_questions = True
 
             return render_template('admin/import_preview.html', 
                 questions=qs, 
@@ -397,7 +400,7 @@ def admin_import():
                 copy_mode=False,
                 original_exam_id=0,
                 exam_status='draft',
-                can_edit_questions=can_edit_questions,  # 0722 新增
+                can_edit_questions=can_edit_questions,
                 exam_duration=60,
                 exam_reviewer='',
                 exam_start_time=defaults['exam_start_time'],
@@ -962,7 +965,7 @@ def update_exam_full(exam_id):
     original = exam_res.data
     current_status = get_exam_status(original)
 
-    # ✅ 获取 return_url 参数
+    # 获取 return_url 参数
     return_url = request.args.get('return_url', url_for('admin_exam.admin_exams_page'))
 
     # 已关闭的考试不能编辑
@@ -992,7 +995,15 @@ def update_exam_full(exam_id):
     if 'country_code' in data:
         update_data['country'] = data['country_code']
     if 'pass_score' in data:
-        update_data['pass_score'] = data['pass_score']
+        new_pass_score = data['pass_score']
+        update_data['pass_score'] = new_pass_score
+        # 异步或同步更新绑定记录
+        try:
+            updated_count = sync_pass_score_to_bindings(exam_id, new_pass_score)
+            logger.info(f"考试 {exam_id} 及格分数更新，已同步 {updated_count} 条绑定记录")
+        except Exception as sync_err:
+            logger.error(f"同步及格分数失败: {sync_err}")
+            
     if 'max_retake' in data:
         update_data['max_retake'] = data['max_retake']
     # 有效期（只有草稿和未开始状态可更新）
@@ -3704,3 +3715,174 @@ def unassign_exam_batch():
     except Exception as e:
         logger.error(f"取消考试分配失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_exam_bp.route('/api/admin/exams/export_excel', methods=['POST'])
+@login_required
+@admin_required
+def export_exams_excel():
+    """导出考试列表为 Excel"""
+    try:
+        data = request.json or {}
+        # 获取当前筛选条件
+        name = data.get('name', '')
+        status = data.get('status', '')
+        quarter = data.get('quarter', '')
+        country = data.get('country', '')
+        
+        db = get_supabase()
+        admin_db = get_supabase_admin()
+        
+        # 构建查询
+        query = db.table("exams").select("*").is_("deleted_at", "null")
+        if name:
+            query = query.ilike("title", f"%{name}%")
+        if status:
+            query = query.eq("status", status)
+        
+        all_exams = query.execute().data or []
+        
+        # 权限过滤
+        allowed_countries = get_admin_allowed_countries()
+        if allowed_countries is not None and allowed_countries:
+            filtered = []
+            for exam in all_exams:
+                exam_countries = parse_exam_countries(exam)
+                if any(c in allowed_countries for c in exam_countries):
+                    filtered.append(exam)
+            all_exams = filtered
+        
+        # 季度过滤
+        if quarter:
+            q_start, q_end = quarter_to_date_range(quarter)
+            if q_start and q_end:
+                q_start_dt = datetime.fromisoformat(q_start)
+                q_end_dt = datetime.fromisoformat(q_end)
+                temp = []
+                for exam in all_exams:
+                    start, end = exam.get('start_time'), exam.get('end_time')
+                    if start and end:
+                        try:
+                            start_dt = datetime.fromisoformat(start)
+                            end_dt = datetime.fromisoformat(end)
+                            if start_dt <= q_end_dt and end_dt >= q_start_dt:
+                                temp.append(exam)
+                        except:
+                            pass
+                all_exams = temp
+        
+        # 国家筛选
+        if country:
+            all_exams = [e for e in all_exams if country in parse_exam_countries(e)]
+
+        # 获取培训ID列表（用于统计绑定数量）
+        exam_ids = [exam['id'] for exam in all_exams]
+        binding_counts = {}
+        if exam_ids:
+            bind_res = admin_db.table("training_exam_bindings") \
+                .select("exam_id") \
+                .in_("exam_id", exam_ids) \
+                .is_("deleted_at", "null") \
+                .execute()
+            for b in (bind_res.data or []):
+                eid = b['exam_id']
+                binding_counts[eid] = binding_counts.get(eid, 0) + 1
+        
+        # 创建 Excel
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "考试列表"
+        
+        # 表头
+        headers = ['序号', '考试名称', 'exid', '国家', '季度', '状态', '创建时间', 
+                   '开始时间', '结束时间', '题目数量', '时长(分钟)', '应考人数', '实考人数', 
+                   '最高分', '最低分', '复考人数', '阅卷人', '绑定培训数量']
+        
+        # 表头样式
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        thin_border = Border(
+            left=Side(style="thin"), right=Side(style="thin"),
+            top=Side(style="thin"), bottom=Side(style="thin")
+        )
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+        
+        # 数据行
+        status_map = {
+            'draft': '草稿',
+            'created': '未开始',
+            'active': '进行中',
+            'closed': '已关闭'
+        }
+        
+        for idx, exam in enumerate(all_exams, 1):
+            exam_id = exam['id']
+            exam_countries = parse_exam_countries(exam)
+            countries_display = ', '.join(exam_countries) if exam_countries else (exam.get('country') or '-')
+            
+            # 获取统计数据
+            assigned_count = db.table("exam_assignments").select("user_id", count="exact").eq("exam_id", exam_id).execute().count or 0
+            submitted_count = db.table("exam_results").select("user_id", count="exact").eq("exam_id", exam_id).execute().count or 0
+            question_count = db.table("questions").select("id", count="exact").eq("exam_id", exam_id).execute().count or 0
+            
+            # 最高分/最低分
+            results = db.table("exam_results").select("total_score").eq("exam_id", exam_id).execute()
+            scores = [r['total_score'] for r in (results.data or []) if r.get('total_score') is not None]
+            max_score = max(scores) if scores else None
+            min_score = min(scores) if scores else None
+            
+            row = idx + 1
+            ws.cell(row=row, column=1, value=idx)
+            ws.cell(row=row, column=2, value=exam.get('title', ''))
+            ws.cell(row=row, column=3, value=exam_id)
+            ws.cell(row=row, column=4, value=countries_display)
+            ws.cell(row=row, column=5, value=_get_quarter_from_date(exam.get('created_at')))
+            ws.cell(row=row, column=6, value=status_map.get(exam.get('status'), exam.get('status', '')))
+
+            # 时间字段转换为本地24小时制
+            created_at = exam.get('created_at')
+            ws.cell(row=row, column=7, value=utc_string_to_local(created_at, format_str='%Y-%m-%d %H:%M:%S') if created_at else '')
+            start_time = exam.get('start_time')
+            ws.cell(row=row, column=8, value=utc_string_to_local(start_time, format_str='%Y-%m-%d %H:%M:%S') if start_time else '')
+            end_time = exam.get('end_time')
+            ws.cell(row=row, column=9, value=utc_string_to_local(end_time, format_str='%Y-%m-%d %H:%M:%S') if end_time else '')
+
+            ws.cell(row=row, column=10, value=question_count)
+            ws.cell(row=row, column=11, value=exam.get('duration', 60))
+            ws.cell(row=row, column=12, value=assigned_count)
+            ws.cell(row=row, column=13, value=submitted_count)
+            ws.cell(row=row, column=14, value=max_score if max_score is not None else '-')
+            ws.cell(row=row, column=15, value=min_score if min_score is not None else '-')
+            ws.cell(row=row, column=16, value=0)  # 复考人数（简化处理）
+            ws.cell(row=row, column=17, value=exam.get('reviewer', ''))
+
+            ws.cell(row=row, column=18, value=binding_counts.get(exam_id, 0))
+        
+        # 调整列宽
+        column_widths = [8, 30, 10, 20, 12, 12, 20, 20, 20, 12, 14, 12, 12, 12, 12, 12, 15, 15]
+        for col, width in enumerate(column_widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+        
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"考试列表_{timestamp}.xlsx"
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"导出考试列表失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+

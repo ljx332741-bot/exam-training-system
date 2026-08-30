@@ -70,11 +70,7 @@
 .expand-icon:hover {
     color: #0a58ca;
 }
-/*
-.expand-icon.expanded {
-    transform: rotate(90deg);
-}
-*/
+
 .binding-detail-row {
     background-color: #f8f9fc;
 }

@@ -1,5 +1,6 @@
 # routes/__init__.py
 from flask import Blueprint, url_for
+from .admin_logs import admin_logs_bp
 from .admin_stats import (
     get_user_stats,
     get_exam_stats,
@@ -180,6 +181,7 @@ def register_blueprints(app):
     app.register_blueprint(admin_privacy_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(admin_cms_bp)
+    app.register_blueprint(admin_logs_bp)
 
     # 注册 API 蓝图
     app.register_blueprint(api_auth.auth_bp)

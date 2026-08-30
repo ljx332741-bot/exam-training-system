@@ -1,4 +1,4 @@
-/* static/css/exam_dashboard.css */
+/* static/css/dashboard.css */
 /* ==================== 统计数据卡片 ==================== */
 .stat-card {
     background: rgba(255, 255, 255, 0.08);
@@ -582,4 +582,122 @@
 /* 当有数据时显示 */
 .badge-soft.show {
     display: inline-flex;
+}
+
+/* ==================== 培训统计 - 照片数量行（水平排列） ==================== */
+.stat-number-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.stat-number-row .stat-number {
+    flex-shrink: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1a1a2e;
+    line-height: 1.2;
+}
+
+/* ✅ 照片统计 - 只在小范围内触发 hover，不干扰卡片点击 */
+.stat-number-row .stat-photo-count-wrapper {
+    flex-shrink: 0;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 20px;
+    transition: background 0.2s ease;
+    /* 阻止事件冒泡到卡片 */
+    pointer-events: auto;
+    position: relative;
+    z-index: 5;
+}
+
+.stat-number-row .stat-photo-count-wrapper:hover {
+    background: rgba(13, 110, 253, 0.08);
+}
+
+.stat-number-row .stat-photo-count {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.85rem;
+    color: #6c757d;
+    transition: transform 0.2s ease;
+    white-space: nowrap;
+    padding: 2px 4px;
+    border-radius: 16px;
+}
+
+/* ✅ Hover 效果：图标和数字放大（独立于卡片 hover） */
+.stat-number-row .stat-photo-count-wrapper:hover .stat-photo-count {
+    transform: scale(1.10);
+    color: #0d6efd;
+}
+
+.stat-number-row .stat-photo-count i {
+    font-size: 0.95rem;
+    color: #0d6efd;
+    transition: color 0.2s ease;
+}
+
+.stat-number-row .stat-photo-count-wrapper:hover .stat-photo-count i {
+    color: #0a58ca;
+}
+
+.stat-number-row .stat-photo-count .photo-count-value {
+    font-weight: 600;
+    color: #212529;
+    min-width: 14px;
+    text-align: center;
+    transition: color 0.2s ease;
+}
+
+.stat-number-row .stat-photo-count-wrapper:hover .stat-photo-count .photo-count-value {
+    color: #0d6efd;
+}
+
+.stat-number-row .stat-photo-count .photo-unit {
+    font-size: 0.7rem;
+    color: #adb5bd;
+    transition: color 0.2s ease;
+}
+
+.stat-number-row .stat-photo-count-wrapper:hover .stat-photo-count .photo-unit {
+    color: #6c757d;
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 576px) {
+    .stat-number-row .stat-number {
+        font-size: 1.5rem;
+    }
+    
+    .stat-number-row .stat-photo-count {
+        font-size: 0.75rem;
+    }
+    
+    .stat-number-row .stat-photo-count i {
+        font-size: 0.8rem;
+    }
+    
+    .stat-number-row .stat-photo-count-wrapper {
+        padding: 1px 4px;
+    }
+}
+
+@media (max-width: 400px) {
+    .stat-number-row {
+        flex-wrap: wrap;
+        gap: 2px;
+    }
+    
+    .stat-number-row .stat-number {
+        font-size: 1.3rem;
+    }
+    
+    .stat-number-row .stat-photo-count {
+        font-size: 0.7rem;
+    }
 }

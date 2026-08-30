@@ -73,7 +73,7 @@
         <!-- 更多信息下拉菜单 -->
         <div class="dropdown">
             <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="bi bi-three-dots-vertical"></i> <span data-i18n="more_info">更多信息</span>
+                <i class="bi bi-three-dots-vertical"></i> <span data-i18n="more_functions">更多功能</span>
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li>
@@ -91,6 +91,13 @@
                 <li>
                     <a class="dropdown-item" href="{{ url_for('admin_training.completion_report_page') }}" target="_blank">
                         <i class="bi bi-bar-chart-steps me-2"></i> <span data-i18n="training_completion_report">培训完成度报表</span>
+                    </a>
+                </li>
+                <!-- 新增：日志配置 -->
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <a class="dropdown-item" href="#" onclick="openLogConfigModal(); return false;">
+                        <i class="bi bi-file-earmark-text me-2"></i> <span data-i18n="log_config">日志配置</span>
                     </a>
                 </li>
                 <!-- 隐私声明管理（仅超管/开发者可见） -->
@@ -917,6 +924,120 @@
 			</div>
 		</div>
 	</div>
+</div>
+
+<!-- 日志配置模态框 - 修改版 -->
+<div class="modal fade" id="logConfigModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-earmark-text me-2"></i>
+                    <span data-i18n="log_config">日志配置</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 加载状态 -->
+                <div id="logConfigLoading" class="text-center py-4">
+                    <span class="spinner-border spinner-border-sm me-2"></span>
+                    <span data-i18n="loading">加载中...</span>
+                </div>
+                
+                <!-- 主要内容 -->
+                <div id="logConfigContent" style="display: none;">
+                    <!-- 第一行：配置 -->
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title"><i class="bi bi-gear me-1"></i> <span data-i18n="log_retention_config">日志保留配置</span></h6>
+                                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                                        <label class="form-label fw-bold mb-0" for="retentionDaysInput">
+                                            <span data-i18n="retention_days">保留天数</span>:
+                                        </label>
+                                        <input type="number" id="retentionDaysInput" class="form-control form-control-sm" 
+                                               style="width: 50px;" min="1" max="90">
+                                        <button class="btn btn-primary btn-sm" id="saveRetentionBtn">
+                                            <i class="bi bi-save me-1"></i> <span data-i18n="save">保存</span>
+                                        </button>
+                                        <button class="btn btn-outline-danger btn-sm" id="cleanLogsBtn">
+                                            <i class="bi bi-trash me-1"></i> <span data-i18n="clean_now">立即清理</span>
+                                        </button>
+                                    </div>
+                                    <div id="saveRetentionStatus" class="small mt-1"></div>
+                                    <div class="mt-1">
+                                        <span class="text-muted" style="font-size: 0.75rem;">
+                                            <i class="bi bi-info-circle"></i> 
+                                            <span data-i18n="backup_count_hint">保留天数必须是1-90之间的整数，当前保留: <span id="currentBackupCount">-</span> <span data-i18n="days_backup_file">个备份文件</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6 class="card-title"><i class="bi bi-info-circle me-1"></i> <span data-i18n="log_stats">日志统计</span></h6>
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <span class="text-muted"><span data-i18n="current_log">当前日志</span>:</span>
+                                            <span class="fw-bold" id="currentLogName" style="font-size: 0.85rem;">-</span>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted"><span data-i18n="current_log_size">大小</span>:</span>
+                                            <span class="fw-bold" id="currentLogSize">-</span>
+                                        </div>
+                                    </div>
+                                    <div class="row mt-1">
+                                        <div class="col-6">
+                                            <span class="text-muted"><span data-i18n="backup_files">备份文件</span>:</span>
+                                            <span class="fw-bold" id="backupFileCount">-</span>
+                                        </div>
+                                        <div class="col-6">
+                                            <span class="text-muted"><span data-i18n="total_size">总大小</span>:</span>
+                                            <span class="fw-bold" id="logTotalSize">-</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 第二行：备份文件列表 -->
+                    <div class="card">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-files me-1"></i> <span data-i18n="backup_files_list">备份文件列表</span></span>
+                            <span class="badge bg-secondary" id="backupFileCountBadge">0</span>
+                        </div>
+                        <div class="card-body p-0" style="max-height: 350px; overflow-y: auto;">
+                            <div id="backupFileList" class="list-group list-group-flush">
+                                <div class="list-group-item text-center text-muted py-3">
+                                    <span data-i18n="no_backup_files">暂无备份文件</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- 说明信息 -->
+                    <div class="mt-2 text-muted" style="font-size: 0.75rem;">
+                        <i class="bi bi-info-circle me-1"></i>
+                        <span data-i18n="log_file_hint">
+                            当前日志文件为 exam_app.log，备份文件按日期轮转。点击"查看"按钮将用系统默认编辑器打开文件。
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+                <button class="btn btn-primary" id="refreshLogConfigBtn">
+                    <i class="bi bi-arrow-clockwise me-1"></i> <span data-i18n="refresh">刷新</span>
+                </button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
@@ -6364,5 +6485,308 @@
     // 定时刷新未读数量（每30秒）
     setInterval(updateUnreadBadge, 30000);
 
+    // ==================== 日志配置功能（修改版） ====================
+
+    /**
+     * 打开日志配置模态框
+     */
+    async function openLogConfigModal() {
+        const modal = new bootstrap.Modal(document.getElementById('logConfigModal'));
+        modal.show();
+        await loadLogConfigData();
+    }
+
+    /**
+     * 加载日志配置数据
+     */
+    async function loadLogConfigData() {
+        const loading = document.getElementById('logConfigLoading');
+        const content = document.getElementById('logConfigContent');
+        
+        loading.style.display = 'block';
+        content.style.display = 'none';
+        
+        try {
+            const res = await fetch('/api/admin/logs/info');
+            const result = await res.json();
+            
+            if (result.success) {
+                renderLogConfigData(result.data);
+                loading.style.display = 'none';
+                content.style.display = 'block';
+            } else {
+                throw new Error(result.message || '加载失败');
+            }
+        } catch (err) {
+            console.error('加载日志配置失败:', err);
+            loading.innerHTML = `
+                <div class="text-danger">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    ${t('load_failed')}: ${err.message}
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * 渲染日志配置数据
+     */
+    function renderLogConfigData(data) {
+        const config = data.config || {};
+        const currentLog = data.current_log || null;
+        const backupFiles = data.backup_files || [];
+        const backupCount = data.backup_count || 2;
+        
+        // 1. 保留天数
+        const retentionInput = document.getElementById('retentionDaysInput');
+        if (retentionInput) {
+            retentionInput.value = config.retention_days || 2;
+        }
+        
+        // 2. 当前备份数量显示
+        document.getElementById('currentBackupCount').textContent = backupCount;
+        
+        // 3. 当前日志信息
+        if (currentLog) {
+            document.getElementById('currentLogName').textContent = currentLog.name;
+            document.getElementById('currentLogSize').textContent = currentLog.size_kb + ' KB';
+        } else {
+            document.getElementById('currentLogName').textContent = '-';
+            document.getElementById('currentLogSize').textContent = '-';
+        }
+        
+        // 4. 统计信息
+        document.getElementById('backupFileCount').textContent = backupFiles.length;
+        document.getElementById('logTotalSize').textContent = (data.total_size_mb || 0) + ' MB';
+        document.getElementById('backupFileCountBadge').textContent = backupFiles.length;
+        
+        // 5. 备份文件列表
+        const fileList = document.getElementById('backupFileList');
+        if (backupFiles.length === 0) {
+            fileList.innerHTML = `
+                <div class="list-group-item text-center text-muted py-3">
+                    <span data-i18n="no_backup_files">暂无备份文件</span>
+                </div>
+            `;
+            return;
+        }
+        
+        const lang = window.i18n?.currentLang || 'zh';
+        const sizeLabel = lang === 'zh' ? '大小' : 'Size';
+        const modifiedLabel = lang === 'zh' ? '修改时间' : 'Modified';
+        const viewLabel = lang === 'zh' ? '📄 查看' : '📄 View';
+        const downloadLabel = lang === 'zh' ? '⬇ 下载' : '⬇ Download';
+        
+        // 分离当前日志和备份文件
+        // 备份文件已经在后端排序，直接使用
+        
+        fileList.innerHTML = backupFiles.map((f, index) => {
+            // 计算是第几个备份（从1开始）
+            const backupIndex = index + 1;
+            const isWithinRetention = backupIndex <= backupCount;
+            
+            return `
+                <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center ${isWithinRetention ? '' : 'bg-light'}">
+                    <div style="min-width: 0; flex: 1;">
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge ${isWithinRetention ? 'bg-success' : 'bg-secondary'}" style="font-size: 0.55rem;">
+                                #${backupIndex}
+                            </span>
+                            <span class="fw-bold" style="font-size: 0.85rem;">${escapeHtml(f.name)}</span>
+                            ${isWithinRetention ? '' : '<span class="badge bg-warning text-dark" style="font-size: 0.55rem;">已过期</span>'}
+                        </div>
+                        <div class="text-muted" style="font-size: 0.7rem;">
+                            <span>${sizeLabel}: ${f.size_kb} KB</span>
+                            <span class="mx-1">|</span>
+                            <span>${modifiedLabel}: ${f.modified_str}</span>
+                            ${isWithinRetention ? '' : `<span class="mx-1">|</span><span class="text-danger">${t('will_be_cleaned') || '将被清理'}</span>`}
+                        </div>
+                    </div>
+                    <div class="d-flex gap-1 flex-shrink-0">
+                        <button class="btn btn-sm btn-outline-info view-log-btn" data-file="${escapeHtml(f.name)}" title="${viewLabel}">
+                            <i class="bi bi-eye"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary download-log-btn" data-file="${escapeHtml(f.name)}" title="${downloadLabel}">
+                            <i class="bi bi-download"></i>
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        // 绑定"查看日志"按钮事件 - 调用记事本打开
+        fileList.querySelectorAll('.view-log-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const fileName = this.dataset.file;
+                openLogWithNotepad(fileName);
+            });
+        });
+        
+        // 绑定"下载日志"按钮事件
+        fileList.querySelectorAll('.download-log-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const fileName = this.dataset.file;
+                downloadLogFile(fileName);
+            });
+        });
+    }
+
+    /**
+     * 用记事本/默认编辑器打开日志文件
+     */
+    async function openLogWithNotepad(fileName) {
+        const btn = document.querySelector(`.view-log-btn[data-file="${fileName}"]`);
+        const originalHtml = btn ? btn.innerHTML : '';
+        
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        }
+        
+        try {
+            const res = await fetch('/api/admin/logs/open_with_notepad', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file: fileName })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                if (typeof showToast === 'function') {
+                    showToast(result.message, 'success');
+                } else {
+                    alert(result.message);
+                }
+            } else {
+                // 如果服务器端打开失败，尝试下载
+                if (result.message.includes('not found') || result.message.includes('不存在')) {
+                    if (confirm('服务器端无法打开文件，是否下载到本地查看？')) {
+                        downloadLogFile(fileName);
+                    }
+                } else {
+                    if (typeof showToast === 'function') {
+                        showToast(result.message, 'error');
+                    } else {
+                        alert(result.message);
+                    }
+                }
+            }
+        } catch (err) {
+            console.error('打开日志失败:', err);
+            // 出错时尝试下载
+            if (confirm('打开失败，是否下载到本地查看？')) {
+                downloadLogFile(fileName);
+            }
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalHtml || '<i class="bi bi-eye"></i>';
+            }
+        }
+    }
+
+    /**
+     * 下载日志文件
+     */
+    function downloadLogFile(fileName) {
+        const url = `/api/admin/logs/download?file=${encodeURIComponent(fileName)}`;
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        
+        if (typeof showToast === 'function') {
+            showToast(`正在下载: ${fileName}`, 'info');
+        }
+    }
+
+    /**
+     * 保存日志保留天数
+     */
+    document.getElementById('saveRetentionBtn')?.addEventListener('click', async function() {
+        const input = document.getElementById('retentionDaysInput');
+        const status = document.getElementById('saveRetentionStatus');
+        const days = parseInt(input.value);
+        
+        if (isNaN(days) || days < 1 || days > 365) {
+            status.innerHTML = `<span class="text-danger">${t('retention_days_invalid') || '请输入 1-365 之间的整数'}</span>`;
+            setTimeout(() => { status.innerHTML = ''; }, 3000);
+            return;
+        }
+        
+        const originalText = this.innerHTML;
+        this.disabled = true;
+        this.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('saving') || '保存中...'}`;
+        status.innerHTML = '';
+        
+        try {
+            const res = await fetch('/api/admin/logs/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ retention_days: days })
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                status.innerHTML = `<span class="text-success">✅ ${result.message}</span>`;
+                // 刷新列表
+                setTimeout(() => loadLogConfigData(), 1000);
+            } else {
+                status.innerHTML = `<span class="text-danger">❌ ${result.message || t('save_failed')}</span>`;
+            }
+        } catch (err) {
+            console.error('保存配置失败:', err);
+            status.innerHTML = `<span class="text-danger">❌ ${t('network_error') || '网络错误'}</span>`;
+        } finally {
+            this.disabled = false;
+            this.innerHTML = originalText;
+        }
+    });
+
+    /**
+     * 立即清理日志
+     */
+    document.getElementById('cleanLogsBtn')?.addEventListener('click', async function() {
+        const status = document.getElementById('saveRetentionStatus');
+        
+        if (!confirm(t('confirm_clean_logs') || '确定要立即清理旧日志吗？')) return;
+        
+        const originalText = this.innerHTML;
+        this.disabled = true;
+        this.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('cleaning') || '清理中...'}`;
+        status.innerHTML = '';
+        
+        try {
+            const res = await fetch('/api/admin/logs/clean', {
+                method: 'POST'
+            });
+            const result = await res.json();
+            
+            if (result.success) {
+                status.innerHTML = `<span class="text-success">✅ ${result.message}</span>`;
+                setTimeout(() => loadLogConfigData(), 1000);
+            } else {
+                status.innerHTML = `<span class="text-danger">❌ ${result.message || t('operation_failed')}</span>`;
+            }
+        } catch (err) {
+            console.error('清理日志失败:', err);
+            status.innerHTML = `<span class="text-danger">❌ ${t('network_error') || '网络错误'}</span>`;
+        } finally {
+            this.disabled = false;
+            this.innerHTML = originalText;
+        }
+    });
+
+    /**
+     * 刷新日志配置
+     */
+    document.getElementById('refreshLogConfigBtn')?.addEventListener('click', function() {
+        loadLogConfigData();
+    });
+
+    // 暴露函数给全局
+    window.openLogConfigModal = openLogConfigModal;
 </script>
 {% endblock %}

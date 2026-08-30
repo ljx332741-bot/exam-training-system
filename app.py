@@ -19,9 +19,17 @@ from services.scheduler import init_scheduler
 from utils.permissions import is_developer
 from utils.common import utc_to_local, format_datetime_local
 from utils.i18n_messages import I18nMessages
-from utils.timezone_utils import get_user_timezone, format_datetime, utc_string_to_local, format_datetime_24h, format_datetime_24h_short, set_user_timezone
 from utils.cache_manager import training_cache
 from utils.logger import setup_logging, clean_old_logs, init_default_logging
+from utils.logger import setup_logging, clean_old_logs, init_default_logging, get_retention_days_from_config
+from utils.timezone_utils import (
+    get_user_timezone, 
+    format_datetime, 
+    utc_string_to_local, 
+    format_datetime_24h, 
+    format_datetime_24h_short, 
+    set_user_timezone
+)
 
 
 IS_PRODUCTION = Config.is_production()
@@ -35,7 +43,7 @@ if IS_RENDER:
     if 'LOG_LEVEL' not in os.environ:
         LOG_LEVEL = 'WARNING'
     else:
-        # ✅ 生产环境最低只能设置到 INFO，不能 DEBUG
+        # 生产环境最低只能设置到 INFO，不能 DEBUG
         if LOG_LEVEL.upper() == 'DEBUG':
             LOG_LEVEL = 'INFO'
             print("⚠️ Render 环境不允许 DEBUG 级别，已自动降级为 INFO")
@@ -50,10 +58,14 @@ level_map = {
 }
 console_level = level_map.get(LOG_LEVEL.upper(), logging.INFO)
 
+# ⭐ 从配置文件读取保留天数
+LOG_RETENTION_DAYS = get_retention_days_from_config()
+print(f"📋 日志保留天数: {LOG_RETENTION_DAYS} 天 (从 log_config.json 读取)")
+
 logger = setup_logging(
     app=None,
     log_dir='logs',
-    keep_days=7,
+    keep_days=LOG_RETENTION_DAYS,  # 从配置文件读取
     console_level=console_level,
     file_level=logging.DEBUG if console_level == logging.INFO else logging.INFO,
     is_production=console_level >= logging.WARNING
@@ -70,6 +82,7 @@ print(f"   🔹 IS_RENDER: {IS_RENDER}")
 print(f"   🔹 LOG_LEVEL: {LOG_LEVEL}")
 print(f"   🔹 console_level: {logging.getLevelName(console_level)}")
 print(f"   🔹 Root logger level: {logging.getLevelName(logging.getLogger().level)}")
+print(f"   🔹 Retention days: {LOG_RETENTION_DAYS} (from log_config.json)")
 print("=" * 60)
 
 # ========== 2. 应用配置 ==========

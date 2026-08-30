@@ -415,7 +415,6 @@
                     user_id: {{ session.get('user_id', '')|tojson|safe }},
                     is_developer: {{ 'true' if session.get('role') == 'developer' else 'false' }}
                 };
-                console.log('📋 用户权限已加载:', window.USER_PERMISSIONS);
             })();
         </script>
         <!-- 🧭 顶部导航栏 -->
@@ -2915,7 +2914,6 @@
             function getPhotoChannel() {
                 if (!window._photoChannel) {
                     try {
-                        console.log('📸 创建新的 BroadcastChannel');
                         window._photoChannel = new BroadcastChannel(PHOTO_CHANNEL_NAME);
                         // ...
                     } catch (e) {

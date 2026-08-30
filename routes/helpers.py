@@ -8,7 +8,7 @@ from dateutil import parser
 from datetime import datetime, timezone, timedelta
 from functools import wraps
 from flask import session, redirect, url_for, flash, jsonify
-from services.db import get_supabase
+from services.db import get_supabase, get_supabase_admin
 from utils.permissions import get_allowed_countries, get_admin_allowed_countries, is_developer
 from utils.timezone_utils import get_current_local_time, format_datetime_24h_short, format_datetime
 
@@ -144,32 +144,85 @@ def convert_time_for_export(time_str, timezone_param=None):
 def get_attendance_data(training_id, country=''):
     """获取培训签到数据"""
     db = get_supabase()
+    admin_db = get_supabase_admin()
+
+    # 1. 获取培训信息
     training_res = db.table("trainings").select("*").eq("id", training_id).maybe_single().execute()
     if not training_res.data:
         return None
     training = training_res.data
-    att_res = db.table("training_attendances").select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company)").eq("training_id", training_id).execute()
+
+    # 2. 获取表头模板（优先使用国家模板）
+    header_template = None
+    if country:
+        # 查询国家模板
+        ct_res = admin_db.table("training_country_templates")\
+            .select("header_template")\
+            .eq("training_id", training_id)\
+            .eq("country", country)\
+            .execute()
+        if ct_res.data and len(ct_res.data) > 0:
+            header_template = ct_res.data[0].get('header_template', {})
+            logger.info(f"✅ PDF: 加载国家模板: training_id={training_id}, country={country}")
+    
+    if not header_template:
+        header_template = training.get('header_template', {})
+        logger.info(f"✅ PDF: 加载主表头模板: training_id={training_id}")
+    
+    # 3. 获取签到记录
+    att_res = db.table("training_attendances") \
+        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company, is_resign)") \
+        .eq("training_id", training_id) \
+        .execute()
+
     att_list = att_res.data or []
+
+    # 过滤离职人员
+    att_list = [rec for rec in att_list if not rec.get('users', {}).get('is_resign', False)]
+    
+    # 国家权限过滤（如果有）
+    allowed_countries = get_admin_allowed_countries()
+    if allowed_countries is not None:
+        if allowed_countries:
+            filtered_list = []
+            for rec in att_list:
+                user = rec.get('users', {})
+                user_country = user.get('country')
+                if user_country and user_country in allowed_countries:
+                    filtered_list.append(rec)
+            att_list = filtered_list
+        else:
+            att_list = []
+    
+    # 按国家过滤（如果指定）
     if country:
         att_list = [rec for rec in att_list if rec.get('users', {}).get('country') == country]
+    
+    # 构建返回数据
     attendance_list = []
     for rec in att_list:
         user = rec.get('users') or {}
+        if user is None:
+            user = {}
         attendance_list.append({
-            "id": rec['id'], "user_id": rec['user_id'], "department": user.get('department', ''),
-            "name_cn": user.get('name_cn', ''), "name_en": user.get('name_en', ''),
-            "employee_id": user.get('employee_id', ''), "signed_name": rec.get('signed_name', ''),
-            "signature_url": rec.get('signature_url', ''), "sign_time": rec.get('sign_time'),
-            "company": user.get('company', ''), "country": user.get('country', '')
+            "id": rec['id'], 
+            "user_id": rec['user_id'], 
+            "department": user.get('department', ''),
+            "name_cn": user.get('name_cn', ''), 
+            "name_en": user.get('name_en', ''),
+            "employee_id": user.get('employee_id', ''), 
+            "signed_name": rec.get('signed_name', ''),
+            "signature_url": rec.get('signature_url', ''), 
+            "sign_time": rec.get('sign_time'),
+            "company": user.get('company', ''), 
+            "country": user.get('country', '')
         })
-    header_template = None
-    if country:
-        ct_res = db.table("training_country_templates").select("header_template").eq("training_id", training_id).eq("country", country).execute()
-        if ct_res.data:
-            header_template = ct_res.data[0].get('header_template')
-    if not header_template:
-        header_template = training.get('header_template', {})
-    return {"training": training, "attendances": attendance_list, "header_template": header_template}
+        
+    return {
+        "training": training, 
+        "attendances": attendance_list, 
+        "header_template": header_template
+    }
 
 
 def get_default_exam_values(request=None):

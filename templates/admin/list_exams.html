@@ -135,7 +135,7 @@
                         data-bs-placement="bottom"
                         data-i18n-title="title_advanced_mode_allow_repush"
                         title="启用高级模式后，可以重新推送已关闭的考试">
-                        <i class="bi bi-arrow-repeat spin-icon" id="reopenSpinIcon"></i>
+                        <i class="bi bi-wrench-adjustable spin-icon" id="reopenSpinIcon"></i>
                         <span data-i18n="advanced_mode">高级模式</span>
                     </label>
                 </div>
@@ -186,12 +186,25 @@
                 </div>
                 <div class="col-md-3 d-flex gap-2">
                     <button id="resetFiltersBtn" class="btn btn-outline-secondary flex-grow-1">
-                        <i class="bi bi-circle"></i> <span data-i18n="reset">重置</span>
+                        <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
+                    </button>
+                    <!-- 导出Excel按钮 -->
+                    <button id="exportExamsExcelBtn" 
+                        class="btn btn-outline-success"
+                        data-i18n-title="export_list"
+                        title="导出列表">
+                        <i class="bi bi-download"></i> 
+                        <!-- <span data-i18n="export_excel">导出Excel</span> -->
                     </button>
                     <div class="form-check form-switch d-flex align-items-center ms-2">
-                        <input type="checkbox" id="includeDeletedCheckbox" class="form-check-input" style="width: 2.5rem; height: 1.2rem;">
-                        <label class="form-check-label ms-1 small" for="includeDeletedCheckbox">
-                            <span data-i18n="show_deleted_exam">显示已删除</span>
+                        <input type="checkbox" 
+                            id="includeDeletedCheckbox" 
+                            class="form-check-input" 
+                            style="width: 2.5rem; height: 1.2rem;">
+                        <label class="form-check-label ms-1 small" for="includeDeletedCheckbox"
+                            data-i18n-title="show_deleted_exam"
+                            title="显示已删除考试清单">
+                            <span data-i18n="deleted">已删除</span>
                         </label>
                     </div>
                 </div>
@@ -702,8 +715,6 @@
                     });
                     const data = await res.json();
                     if (data.success) {
-                        console.log('调试模式:', reopenModeEnabled ? '开启' : '关闭');
-                        // 更新缓存中的 can_show_reopen_button 字段，无需刷新页面
                         const isSuperAdmin = CURRENT_USER_ROLE === 'super_admin' || CURRENT_USER_ROLE === 'developer';
                         allData = allData.map(exam => {
                             // 只有关闭状态的考试才显示调试推送按钮
@@ -718,7 +729,6 @@
                         applyFilters();
                     }
                 } catch (err) {
-                    console.error('切换调试模式失败:', err);
                     reopenSwitch.checked = !reopenModeEnabled;
                     reopenModeEnabled = !reopenModeEnabled;
                 }
@@ -794,6 +804,13 @@
                 return countryDisplay.includes(countryLower);
             });
         }
+
+        // 5. 强制排序：按创建时间倒序（最新的在前）
+        filtered.sort((a, b) => {
+            const dateA = a.created_at || '';
+            const dateB = b.created_at || '';
+            return dateB.localeCompare(dateA);
+        });
         
         filteredData = filtered;
         cachedTotal = filtered.length;
@@ -883,6 +900,13 @@
                 // 缓存所有数据
                 allData = data.data || [];
                 cachedTotal = data.total || 0;
+
+                // 强制排序：按创建时间倒序（最新的在前）
+                allData.sort((a, b) => {
+                    const dateA = a.created_at || '';
+                    const dateB = b.created_at || '';
+                    return dateB.localeCompare(dateA);
+                });
 
                 updateProgress(80, t('preparing_render'));
                 
@@ -981,13 +1005,13 @@
     }
 
     function bindBindingExpandEvents() {
-        // ✅ 绑定整个 wrapper 的点击事件
+        // 绑定整个 wrapper 的点击事件
         document.querySelectorAll('.binding-wrapper').forEach(el => {
             el.removeEventListener('click', handleBindingToggle);
             el.addEventListener('click', handleBindingToggle);
         });
         
-        // ✅ 初始化 tooltip（在 wrapper 上）
+        // 初始化 tooltip（在 wrapper 上）
         document.querySelectorAll('.binding-wrapper[data-bs-toggle="tooltip"]').forEach(el => {
             const oldTooltip = bootstrap.Tooltip.getInstance(el);
             if (oldTooltip) {
@@ -997,14 +1021,16 @@
                 container: 'body',
                 trigger: 'hover focus',
                 placement: 'top',
-                delay: { show: 200, hide: 100 }
+                delay: { show: 200, hide: 100 },
+                // 添加 autoHide 确保鼠标移出后自动隐藏
+                autoHide: true
             });
         });
     }
 
     function handleBindingToggle(e) {
         e.stopPropagation();
-        // ✅ 获取整个 wrapper
+        // 获取整个 wrapper
         const wrapper = this.closest ? this.closest('.binding-wrapper') : this;
         if (!wrapper) return;
         
@@ -1039,7 +1065,17 @@
             // 更新 tooltip
             const tooltip = bootstrap.Tooltip.getInstance(wrapper);
             if (tooltip) {
-                tooltip.setContent({ '.tooltip-inner': `${safeT('binding_collapse_tooltip')}` });
+                // 先隐藏再更新内容，确保显示最新
+                tooltip.hide();
+                // 延迟更新内容，避免闪烁
+                setTimeout(() => {
+                    if (tooltip) {
+                        // 更新 data-bs-title 属性
+                        wrapper.setAttribute('data-bs-title', safeT('binding_collapse_tooltip'));
+                        // 更新 tooltip 内容
+                        tooltip.setContent({ '.tooltip-inner': safeT('binding_collapse_tooltip') });
+                    }
+                }, 50);
             }
         } else {
             // ✅ 折叠
@@ -1061,7 +1097,16 @@
             // 恢复 tooltip.setContent({ '.tooltip-inner': `已绑定 ${bindingCount} 个培训（点击展开查看详情）` });
             const tooltip = bootstrap.Tooltip.getInstance(wrapper);
             if (tooltip) {
-                tooltip.setContent({ '.tooltip-inner': `${safeT('binding_expand_tooltip', { count: bindingCount })}` });
+                // 先隐藏再更新内容
+                tooltip.hide();
+                setTimeout(() => {
+                    if (tooltip) {
+                        // 更新 data-bs-title 属性
+                        wrapper.setAttribute('data-bs-title', safeT('binding_expand_tooltip', { count: bindingCount }));
+                        // 更新 tooltip 内容
+                        tooltip.setContent({ '.tooltip-inner': safeT('binding_expand_tooltip', { count: bindingCount }) });
+                    }
+                }, 50);
             }
         }
     }
@@ -1100,33 +1145,6 @@
         
         // 绑定标记 HTML
         let bindingHtml = '';
-        /*
-        if (hasBinding && bindingCount > 0) {
-            // 图标：有绑定时显示 🔗，同时作为展开/折叠按钮
-            const tooltipText = `已绑定 ${bindingCount} 个培训`;
-            bindingHtml = `
-                <span class="binding-expand-icon" 
-                    data-exam-id="${ex.id}"
-                    data-binding-count="${bindingCount}"
-                    data-bs-toggle="tooltip"
-                    data-bs-title="${tooltipText}"
-                    style="cursor: pointer; margin-right: 2px; color: #0d6efd; font-size: 0.9rem; user-select: none;">
-                    <i class="bi bi-link-45deg"></i>
-                </span>
-                <span class="binding-toggle-icon" 
-                    data-exam-id="${ex.id}"
-                    style="cursor: pointer; font-size: 0.65rem; color: #6c757d; margin-right: 2px; user-select: none;">
-                    ▶
-                </span>
-                
-                <span class="badge bg-success ms-1" style="font-size: 0.55rem; padding: 1px 6px; border-radius: 10px;">
-                    ${bindingCount}
-                </span>
-            `;
-        }
-        */
-
-        // const tooltipText = `已绑定 ${bindingCount} 个培训`;
         if (hasBinding && bindingCount > 0) {
             const tooltipText = `${safeT('binding_expand_aria', bindingCount )}`;
             bindingHtml = `
@@ -1134,7 +1152,6 @@
                     data-exam-id="${ex.id}"
                     data-binding-count="${bindingCount}"
                     data-i18n-title="binding_expand_tooltip"
-                    data-i18n-aria-params='{"count": ${bindingCount}}'
                     data-i18n-aria="binding_expand_tooltip"
                     data-i18n-aria-params='{"count": ${bindingCount}}'
                     role="button"
@@ -1235,10 +1252,11 @@
                     }[t.training_status] || t.training_status;
                     
                     // 可点击跳转（有签到人员时）
+                    const trainingCountry = t.country || (t.countries && t.countries.length > 0 ? t.countries[0] : '');
                     const canViewAttendance = signedCount > 0;
                     const attendanceLink = canViewAttendance 
-                        ? `<a href="/admin/training/${t.training_id}/attendance?from=exam_binding" target="_blank" class="text-decoration-none" 
-                            style="color: #0d6efd; font-weight: 500;">
+                        ? `<a href="/admin/training/${t.training_id}/attendance?from=exam_binding${trainingCountry ? '&country=' + encodeURIComponent(trainingCountry) : ''}" target="_blank" class="text-decoration-none" 
+                            style="color: #7b2fde; font-weight: 500;">
                             ${escapeHtml(t.training_name)}
                             <span class="badge bg-secondary ms-1" style="font-size: 0.55rem;">↗</span>
                         </a>`
@@ -1255,8 +1273,8 @@
                             ${signedDisplay}
                             <span class="badge ${statusClass}" style="font-size: 0.55rem;">${statusText}</span>
                             ${canViewAttendance ? 
-                                `<a href="/admin/training/${t.training_id}/attendance?from=exam_binding" target="_blank" 
-                                    class="btn btn-sm btn-outline-info" style="padding: 0px 6px; font-size: 0.6rem;">
+                                `<a href="/admin/training/${t.training_id}/attendance?from=exam_binding${trainingCountry ? '&country=' + encodeURIComponent(trainingCountry) : ''}" target="_blank" 
+                                    class="btn btn-sm btn-outline-info" style="color: #7b2fde; padding: 0px 6px; font-size: 0.6rem;">
                                     <i class="bi bi-eye"></i> ${safeT('sign_in_details') || '签到详情'}
                                 </a>` : ''
                             }
@@ -1343,6 +1361,15 @@
 
     // ========== 渲染表格 ==========
     function renderExamsTable(exams) {
+        // 确保传入的数据按创建时间排序
+        if (exams && exams.length > 1) {
+            exams.sort((a, b) => {
+                const dateA = a.created_at || '';
+                const dateB = b.created_at || '';
+                return dateB.localeCompare(dateA);
+            });
+        }
+        
         const tbody = document.getElementById('examsTbody');
         if (!tbody) return;
         window.hideTableProgress('examsTbody');
@@ -2602,6 +2629,51 @@
                 }
             } catch (err) {
                 console.warn('语言切换处理出错:', err);
+            }
+        });
+        
+        document.getElementById('exportExamsExcelBtn')?.addEventListener('click', async function() {
+            const btn = this;
+            const originalText = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('exporting') || '导出中...'}`;
+            
+            try {
+                const response = await fetch('/api/admin/exams/export_excel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: filters.name,
+                        status: filters.status,
+                        quarter: filters.quarter,
+                        country: filters.country
+                    })
+                });
+                
+                if (!response.ok) throw new Error('导出失败');
+                
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+                a.download = `考试列表_${timestamp}.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                
+                if (typeof showToast === 'function') {
+                    showToast(t('export_success'), 'success');
+                }
+            } catch (err) {
+                console.error('导出失败:', err);
+                if (typeof showToast === 'function') {
+                    showToast(t('export_failed') + ': ' + err.message, 'error');
+                }
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
             }
         });
     });
