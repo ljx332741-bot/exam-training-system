@@ -2,6 +2,31 @@
 {% extends "base.html" %}
 {% block title %}离职人员管理{% endblock %}
 
+{% block extra_css %}
+{{ super() }}
+<style>
+/* 复选框列宽 */
+#resignedTableBody td:first-child,
+#resignedTableBody th:first-child {
+    width: 40px;
+    text-align: center;
+}
+
+/* 禁用复选框样式 */
+.resigned-user-checkbox:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+/* 批量复职按钮计数徽章 */
+#selectedResignedCount {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    min-width: 20px;
+    display: none;
+}
+</style>
+{% endblock %}
 {% block content %}
 <div class="container-fluid">
     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -14,7 +39,7 @@
     <!-- 筛选栏 -->
     <div class="card mb-3">
         <div class="card-body">
-            <div class="row g-3">
+            <div class="row g-3 align-items-center">
                 <div class="col-md-3">
                     <input type="text" id="searchInput" class="form-control" 
                         data-i18n-placeholder="placeholder_mail_name" placeholder="姓名/邮箱" autocomplete="off">
@@ -34,6 +59,12 @@
                 <div class="col-md-2">
                     <button id="searchBtn" class="btn btn-primary w-100" data-i18n="search">搜索</button>
                 </div>
+                <div class="col-md-3 text-end">
+                    <button class="btn btn-success btn-sm" id="batchRehireFromResignedBtn">
+                        <i class="bi bi-person-check"></i> <span data-i18n="batch_rehire">批量复职</span>
+                        <span class="badge bg-light text-dark ms-1" id="selectedResignedCount">0</span>
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -45,6 +76,7 @@
                 <table class="table table-hover align-middle mb-0">
                     <thead class="table-light">
                         <tr>
+                            <th style="width: 40px;"><input type="checkbox" id="selectAllResigned"></th>
                             <th><span data-i18n="sequence">序号</span></th>
                             <th><span data-i18n="name_en">姓名</span></th>
                             <th><span data-i18n="email">邮箱</span></th>
@@ -190,6 +222,10 @@
 <script>
     let currentPage = 1;
     let currentUserId = null;
+    // 存储选中的离职用户ID
+    let selectedResignedIds = new Set();
+    // 存储所有用户数据（用于获取用户名）
+    let allResignedUsers = [];
     
     // 加载离职人员列表
     async function loadResignedUsers() {
@@ -207,7 +243,11 @@
         
         const res = await fetch(`/api/admin/users/resigned?${params}`);
         const data = await res.json();
-        renderTable(data.data);
+
+        // ✅ 存储所有用户数据
+        allResignedUsers = data.data || [];
+        
+        renderTable(allResignedUsers);
         document.getElementById('totalCount').innerText = data.total;
         renderPagination(data.page, Math.ceil(data.total / data.per_page));
     }
@@ -223,9 +263,19 @@
             const statusBadge = u.is_rehire ? 
                 `<span class="badge bg-info">${t('rehired')}</span>` : 
                 `<span class="badge bg-danger">${t('resigned')}</span>`;
+
+            // 只有已离职（未复职）的用户才可选中
+            const canSelect = !u.is_rehire;
+            const isChecked = selectedResignedIds.has(u.id) && canSelect;
             
             return `
                 <tr>
+                    <td>
+                        <input type="checkbox" class="resigned-user-checkbox" 
+                            data-user-id="${u.id}" 
+                            ${isChecked ? 'checked' : ''} 
+                            ${!canSelect ? 'disabled' : ''}>
+                    </td>
                     <td>${(currentPage-1)*20 + idx + 1}<\/td>
                     <td>${escapeHtml(u.name_en || '-')}<\/td>
                     <td>${escapeHtml(u.email || '-')}<\/td>
@@ -240,6 +290,22 @@
                 </tr>
             `;
         }).join('');
+
+        // 绑定复选框事件
+        document.querySelectorAll('.resigned-user-checkbox').forEach(cb => {
+            cb.removeEventListener('change', handleResignedCheckboxChange);
+            cb.addEventListener('change', handleResignedCheckboxChange);
+        });
+        
+        // 绑定全选事件
+        const selectAll = document.getElementById('selectAllResigned');
+        if (selectAll) {
+            selectAll.removeEventListener('change', handleSelectAllResigned);
+            selectAll.addEventListener('change', handleSelectAllResigned);
+        }
+        
+        // 更新选中数量
+        updateSelectedCount();
         
         // 绑定查看详情事件
         document.querySelectorAll('.view-detail-btn').forEach(btn => {
@@ -255,7 +321,152 @@
             });
         });
     }
-    
+
+    // ==================== 复选框事件处理 ====================
+
+    function handleResignedCheckboxChange(e) {
+        const cb = e.target;
+        const userId = cb.dataset.userId;
+        if (cb.checked) {
+            selectedResignedIds.add(userId);
+        } else {
+            selectedResignedIds.delete(userId);
+        }
+        updateSelectedCount();
+        updateSelectAllState();
+    }
+
+    function handleSelectAllResigned(e) {
+        const isChecked = e.target.checked;
+        document.querySelectorAll('.resigned-user-checkbox:not(:disabled)').forEach(cb => {
+            cb.checked = isChecked;
+            const userId = cb.dataset.userId;
+            if (isChecked) {
+                selectedResignedIds.add(userId);
+            } else {
+                selectedResignedIds.delete(userId);
+            }
+        });
+        updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+        const count = selectedResignedIds.size;
+        const badge = document.getElementById('selectedResignedCount');
+        if (badge) {
+            badge.textContent = count;
+            badge.style.display = count > 0 ? 'inline-block' : 'none';
+        }
+        // 更新批量复职按钮状态
+        const btn = document.getElementById('batchRehireFromResignedBtn');
+        if (btn) {
+            btn.disabled = count === 0;
+        }
+    }
+
+    function updateSelectAllState() {
+        const selectAll = document.getElementById('selectAllResigned');
+        if (!selectAll) return;
+        
+        const checkboxes = document.querySelectorAll('.resigned-user-checkbox:not(:disabled)');
+        const checkedCount = document.querySelectorAll('.resigned-user-checkbox:checked:not(:disabled)').length;
+        
+        if (checkboxes.length === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+            return;
+        }
+        
+        if (checkedCount === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        } else if (checkedCount === checkboxes.length) {
+            selectAll.checked = true;
+            selectAll.indeterminate = false;
+        } else {
+            selectAll.checked = false;
+            selectAll.indeterminate = true;
+        }
+    }
+
+    // ==================== 批量复职功能 ====================
+
+    async function batchRehireFromResigned() {
+        const userIds = Array.from(selectedResignedIds);
+        
+        if (userIds.length === 0) {
+            showToast(t('select_at_least_one'), 'warning');
+            return;
+        }
+        
+        // 确认对话框
+        if (!confirm(t('confirm_batch_rehire_users', userIds.length))) {
+            return;
+        }
+        
+        // 显示加载状态
+        const btn = document.getElementById('batchRehireFromResignedBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('processing')}...`;
+        
+        try {
+            let successCount = 0;
+            let failCount = 0;
+            const failedUsers = [];
+            
+            // 逐个执行复职
+            for (const userId of userIds) {
+                try {
+                    const response = await fetch(`/api/admin/users/${userId}/rehire`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        // 获取用户名
+                        const user = allResignedUsers.find(u => u.id === userId);
+                        failedUsers.push(user?.name_en || userId);
+                    }
+                } catch (err) {
+                    failCount++;
+                    const user = allResignedUsers.find(u => u.id === userId);
+                    failedUsers.push(user?.name_en || userId);
+                    console.error(`复职用户 ${userId} 失败:`, err);
+                }
+            }
+            
+            // 清空选中
+            selectedResignedIds.clear();
+            updateSelectedCount();
+            
+            // 显示结果
+            let resultMsg = t('batch_rehire_complete')
+                .replace('{success}', successCount)
+                .replace('{failed}', failCount);
+            
+            if (failedUsers.length > 0) {
+                resultMsg += '\n\n' + t('failed_users_list') + '\n' + failedUsers.join(', ');
+            }
+            
+            showToast(resultMsg, successCount > 0 ? 'success' : 'error');
+            
+            // 刷新列表
+            await loadResignedUsers();
+            
+        } catch (err) {
+            console.error('批量复职失败:', err);
+            showToast(t('operation_failed') + err.message, 'error');
+        } finally {
+            // 恢复按钮
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+
     // 查看离职人员详情
     async function showUserDetail(userId, userName) {
         currentUserId = userId;
@@ -875,7 +1086,10 @@
         waitForI18n();
         window.i18n.applyTranslations();  // 处理静态文本
         loadResignedUsers();
-        
+
+        // 绑定批量复职按钮
+        document.getElementById('batchRehireFromResignedBtn')?.addEventListener('click', batchRehireFromResigned);
+
         // 语言切换时重新加载列表
         if (window.i18n && window.i18n.subscribe) {
             window.i18n.subscribe(() => {
