@@ -892,8 +892,8 @@
                 });
             }
 
-            // const total = data.total || users.length;
-            const total = users.length;
+            const total = data.total || users.length;
+            // const total = users.length;
             document.getElementById('totalCount').innerText = total;
             const totalPages = Math.ceil(total / 20);
             const current = data.page || 1;

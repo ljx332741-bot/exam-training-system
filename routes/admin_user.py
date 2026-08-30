@@ -271,7 +271,7 @@ def api_admin_users():
     # 先按创建时间倒序（最新在前）
     filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
     # 再按国家正序（A-Z），稳定排序保持同国家内创建时间倒序
-    filtered_users.sort(key=lambda x: x.get('country', 'ZZZ'))
+    filtered_users.sort(key=lambda x: x.get('country') or '')
     
     logger.info(f"排序完成: 按国家+创建时间倒序")
     

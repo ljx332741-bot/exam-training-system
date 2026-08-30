@@ -1328,6 +1328,7 @@
 "select_push_target": "Select push target",
 "select_valid_country": "Select valid country",
 "selected_country": "Selected {count} Country",
+"training_updated_successfully": "Training updated successfully",
 "training_created_as_draft": "Training created as draft and can be scheduled later",
 "help_push_training": "Click the 'Push' button to set the sign-in validity period and select the push target:",
 "help_push_all": "<strong>Push All</strong>: Notify all registered users with matching countries.",
