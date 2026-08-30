@@ -13,7 +13,23 @@
                 <span data-i18n="training_statistics">签到统计</span>
             </div>
             <div class="stat-card-body">
-                <div class="stat-number" id="trainingTotal">0</div>
+                <!-- 水平排列 -->
+                <div class="stat-number-row">
+                    <div class="stat-number" id="trainingTotal">0</div>
+                    <div class="stat-photo-count-wrapper" 
+                        id="trainingPhotoCountWrapper"
+                        onclick="event.stopPropagation(); window.open('/training/photos', '_blank')"
+                        data-bs-toggle="tooltip" 
+                        data-i18n-title="click_to_manage_photos"
+                        title="点击管理培训照片">
+                        <div class="stat-photo-count" id="trainingPhotoCount">
+                            <i class="bi bi-images"></i>
+                            <span class="photo-count-value" id="trainingPhotoCountValue">0</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 详情行保持不变 -->
                 <div class="stat-details">
                     <span class="stat-item" id="trainingPending" 
                         data-bs-toggle="tooltip" 
@@ -132,7 +148,7 @@
     <div class="col-12">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-white">
-                <!-- 培训照片按钮独立一行靠右 -->
+                <!-- 培训照片按钮独立一行靠右
                 <div class="d-flex justify-content-start">
                     <button class="btn btn-sm btn-outline-success glow-icon-wrapper" 
                             id="viewTrainingPhotosBtn" 
@@ -146,6 +162,7 @@
                         <span class="badge-soft" id="photoCountBadge" style="display: none;">0</span>
                     </button>
                 </div>
+                 -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
                     <div class="d-flex align-items-center fw-bold">
                         <i class="bi bi-calendar-check me-2"></i>
@@ -1545,7 +1562,10 @@
             const res = await fetch('/api/user/role');
             const data = await res.json();
             if (data.success && data.is_admin) {
-                document.getElementById('viewTrainingPhotosBtn').style.display = 'inline-flex';
+                const btn = document.getElementById('viewTrainingPhotosBtn');
+                if (btn) {
+                    btn.style.display = 'inline-flex';
+                }
             }
         } catch (err) {
             console.error('获取用户权限失败:', err);
@@ -1686,6 +1706,26 @@
                 }
             }
             updateBadge('photoCountBadge', totalPhotos, '#fef3c7', '#b45309');
+
+            // 更新统计卡片中的照片数量
+            const photoCountValue = document.getElementById('trainingPhotoCountValue');
+            if (photoCountValue) {
+                photoCountValue.textContent = totalPhotos;
+            }
+            
+            // Tooltip 绑定到 wrapper（而不是内部元素）
+            const wrapper = document.getElementById('trainingPhotoCountWrapper');
+            if (wrapper) {
+                // 移除旧的 tooltip
+                const oldTooltip = bootstrap.Tooltip.getInstance(wrapper);
+                if (oldTooltip) oldTooltip.dispose();
+                
+                // 创建新的 tooltip
+                new bootstrap.Tooltip(wrapper, {
+                    placement: 'top',
+                    title: `${t('click_to_manage_photos')}`
+                });
+            }
         } catch (err) {
             console.error('加载照片数量失败:', err);
         }
@@ -1937,7 +1977,7 @@
             
             if (type === 'exam') {
                 if (item.is_submitted) {
-                    statusBadge = `<span class="badge bg-success">${safeT('completed') || '已完成'} ${item.score !== null && item.score !== undefined ? `(${item.score}分)` : ''}</span>`;
+                    statusBadge = `<span class="badge bg-success">${safeT('completed') || '已完成'} ${item.score !== null && item.score !== undefined ? `(${item.score}')` : ''}</span>`;
                 } else if (item.started) {
                     statusBadge = `<span class="badge bg-warning text-dark">${safeT('in_progress') || '进行中'}</span>`;
                 } else {

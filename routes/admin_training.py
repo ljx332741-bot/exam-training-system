@@ -15,6 +15,7 @@ from datetime import datetime, timezone, timedelta
 from services.db import get_supabase, get_supabase_admin
 from services import auth
 from services.export import find_wkhtmltopdf
+from utils.timezone_utils import utc_string_to_local
 from utils.status import get_exam_status, get_training_status
 from utils.common import match_country_code, quarter_to_date_range
 from utils.email_notifier import  _send_training_notifications
@@ -30,7 +31,8 @@ from utils.training_helpers import (
     filter_trainings_by_country,
     get_training_countries_display,
     normalize_training_countries,
-    parse_country_list
+    parse_country_list,
+    sync_binding_pass_score_to_exam
 )
 
 from routes.helpers import (
@@ -313,6 +315,78 @@ def _get_trainings_list(db):
             tid = p['training_id']
             photo_counts[tid] = photo_counts.get(tid, 0) + 1
 
+    # 7.5 批量获取绑定关系（新增）
+    training_bindings_map = {}
+    exam_info_map = {}
+    exam_stats_map = {}
+    if training_ids:
+        # 获取所有培训的绑定关系
+        bindings_res = db.table("training_exam_bindings") \
+            .select("id, training_id, exam_id, pass_score, is_auto_assign") \
+            .in_("training_id", training_ids) \
+            .is_("deleted_at", "null") \
+            .execute()
+        
+        # 按 training_id 分组
+        all_exam_ids = set()
+        for b in (bindings_res.data or []):
+            tid = b['training_id']
+            if tid not in training_bindings_map:
+                training_bindings_map[tid] = []
+            training_bindings_map[tid].append({
+                'binding_id': b['id'],  #
+                'exam_id': b['exam_id'],
+                'pass_score': b.get('pass_score', 85),
+                'is_auto_assign': b.get('is_auto_assign', True),
+                'is_required': b.get('is_required', True)
+            })
+            all_exam_ids.add(b['exam_id'])
+        
+        # 获取绑定的考试信息（标题、状态等）
+        if all_exam_ids:
+            exams_res = db.table("exams") \
+                .select("id, title, status, countries, pass_score, start_time, end_time, duration") \
+                .in_("id", list(all_exam_ids)) \
+                .is_("deleted_at", "null") \
+                .execute()
+            for e in (exams_res.data or []):
+                e['countries_list'] = parse_exam_countries(e)
+                exam_info_map[e['id']] = e
+
+            # 批量获取考试统计信息（completed_count, assigned_count）
+            # 已完成人数
+            completed_res = db.table("exam_results") \
+                .select("exam_id, user_id") \
+                .in_("exam_id", list(all_exam_ids)) \
+                .is_("deleted_at", "null") \
+                .execute()
+            completed_counts = {}
+            for r in (completed_res.data or []):
+                eid = r['exam_id']
+                if eid not in completed_counts:
+                    completed_counts[eid] = set()
+                completed_counts[eid].add(r['user_id'])
+            
+            # 已分配人数
+            assigned_res = db.table("exam_assignments") \
+                .select("exam_id, user_id") \
+                .in_("exam_id", list(all_exam_ids)) \
+                .is_("deleted_at", "null") \
+                .execute()
+            assigned_counts = {}
+            for r in (assigned_res.data or []):
+                eid = r['exam_id']
+                if eid not in assigned_counts:
+                    assigned_counts[eid] = set()
+                assigned_counts[eid].add(r['user_id'])
+            
+            # 存储统计信息
+            for eid in all_exam_ids:
+                exam_stats_map[eid] = {
+                    'completed_count': len(completed_counts.get(eid, set())),
+                    'assigned_count': len(assigned_counts.get(eid, set()))
+                }
+
     # 8. 组装返回数据
     for t in paginated:
         tid = t['id']
@@ -322,9 +396,33 @@ def _get_trainings_list(db):
         signed_count = len([uid for uid in user_ids if uid in active_user_ids])
         t['signed_count'] = signed_count
         
-        # 绑定数量
-        t['binding_count'] = binding_counts.get(tid, 0)
+        # 添加绑定考试信息（预加载）
+        binding_exams_data = training_bindings_map.get(tid, [])
+        binding_exams = []
+        stats = exam_stats_map.get(eid, {})
+        for b in binding_exams_data:
+            exam_id = b['exam_id']
+            exam_info = exam_info_map.get(exam_id)
+            if exam_info:
+                binding_exams.append({
+                    "binding_id": b['binding_id'],
+                    "exam_id": exam_id,
+                    "exam_title": exam_info.get('title', f'考试 #{exam_id}'),
+                    "exam_status": exam_info.get('status', 'draft'),
+                    "exam_countries": exam_info.get('countries_list', []),
+                    "pass_score": b.get('pass_score', 85),
+                    "is_auto_assign": b.get('is_auto_assign', True),
+                    "is_required": b.get('is_required', True),
+                    "start_time": exam_info.get('start_time'),
+                    "end_time": exam_info.get('end_time'),
+                    "duration": exam_info.get('duration', 60),
+                    "completed_count": stats.get('completed_count', 0),
+                    "assigned_count": stats.get('assigned_count', 0)
+                })
         
+        t['binding_exams'] = binding_exams
+        t['binding_count'] = len(binding_exams)  # 覆盖之前从 binding_counts 获取的值
+
         # 照片数量
         t['photo_count'] = photo_counts.get(tid, 0)
 
@@ -362,6 +460,7 @@ def _get_trainings_list(db):
         else:
             t['has_inconsistent_templates'] = False
 
+    paginated.sort(key=lambda x: x.get('created_at') or '', reverse=True)
     return {
         "data": paginated,
         "total": total,
@@ -722,6 +821,7 @@ def get_training_cache_stats():
 @admin_required
 def api_training_attendance(training_id):
     db = get_supabase()
+    admin_db = get_supabase_admin() 
     country = request.args.get('country', '')
 
     # 获取当前管理员的权限范围
@@ -798,15 +898,17 @@ def api_training_attendance(training_id):
     header_template = None
     if country:
         # 查询国家模板
-        ct_res = db.table("training_country_templates")\
+        ct_res = admin_db.table("training_country_templates")\
             .select("header_template")\
             .eq("training_id", training_id)\
             .eq("country", country)\
             .execute()
         if ct_res.data and len(ct_res.data) > 0:
-            header_template = ct_res.data[0].get('header_template')
+            header_template = ct_res.data[0].get('header_template', {})
+            logger.info(f"✅ 加载国家模板: training_id={training_id}, country={country}")
     if not header_template:
         header_template = training.get('header_template', {})
+        logger.info(f"✅ 加载主表头模板: training_id={training_id}")
 
     return jsonify({
         "training": training,
@@ -3150,10 +3252,18 @@ def bind_exam_to_training():
         
         if exam_status == 'draft':
             logger.warning(f"⚠️ 尝试绑定草稿考试: {exam_id}")
-            # ✅ 允许绑定，但记录警告（或者可以选择阻止绑定）
+            # 允许绑定，但记录警告（或者可以选择阻止绑定）
             # 这里选择允许绑定，但在补分配时阻止
             pass
-            
+
+        # 使用考试自身的及格分数作为默认值
+        default_pass_score = exam_check.data.get('pass_score', 85)
+    else:
+        default_pass_score = 85
+    
+    # 如果前端没有传递 pass_score，使用考试默认值
+    pass_score = data.get('pass_score', default_pass_score)
+
     # ========== 权限验证 ==========
     # 检查当前用户是否有权限操作此培训
     training_check = db.table("trainings").select("country").eq("id", training_id).maybe_single().execute()
@@ -3258,7 +3368,7 @@ def bind_exam_to_training():
     binding_id = result.data[0]['id']
     logger.info(f"✅ 绑定成功: binding_id={binding_id}")
 
-    # ✅ 只有非草稿培训才激活
+    # 只有非草稿培训才激活
     start_time = training_data.get('start_time')
     end_time = training_data.get('end_time')
     current_status = training_data.get('dynamic_status', 'draft')
@@ -3644,7 +3754,10 @@ def update_training_binding(binding_id):
     
     update_data = {}
     if 'pass_score' in data:
-        update_data['pass_score'] = data['pass_score']
+        new_pass_score = data['pass_score']
+        update_data['pass_score'] = new_pass_score
+        sync_exam = True
+
     if 'is_auto_assign' in data:
         update_data['is_auto_assign'] = data['is_auto_assign']
     if 'is_required' in data:
@@ -3664,6 +3777,11 @@ def update_training_binding(binding_id):
         .execute()
     
     if result.data:
+        # 如果及格分数被更新，尝试反向同步到考试表
+        if sync_exam and new_pass_score is not None:
+            sync_result = sync_binding_pass_score_to_exam(binding_id, new_pass_score)
+            logger.info(f"绑定 {binding_id} 及格分数反向同步结果: {sync_result}")
+        
         return jsonify({"success": True})
     else:
         return jsonify({"success": False, "message": "更新失败"}), 500
@@ -4399,3 +4517,184 @@ def push_training_to_users(training_id):
     except Exception as e:
         logger.error(f"推送培训失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_training_bp.route('/api/admin/trainings/export_excel', methods=['POST'])
+@login_required
+@admin_required
+def export_trainings_excel():
+    """导出培训列表为 Excel"""
+    try:
+        data = request.json or {}
+        name = data.get('name', '')
+        country = data.get('country', '')
+        quarter = data.get('quarter', '')
+
+        user_timezone = request.cookies.get('user_timezone') or request.headers.get('X-Timezone') or 'Asia/Calcutta'
+        
+        db = get_supabase()
+        admin_db = get_supabase_admin()
+        
+        # 构建查询
+        query = db.table("trainings").select("*").is_("deleted_at", "null")
+        if name:
+            query = query.ilike("name", f"%{name}%")
+        
+        all_trainings = query.execute().data or []
+        
+        # 权限过滤
+        allowed_countries = get_admin_allowed_countries()
+        if allowed_countries is not None and allowed_countries:
+            filtered = []
+            for t in all_trainings:
+                t_countries = parse_training_countries(t)
+                if any(c in allowed_countries for c in t_countries):
+                    filtered.append(t)
+            all_trainings = filtered
+        
+        # 国家过滤
+        if country:
+            all_trainings = [t for t in all_trainings if country in parse_training_countries(t)]
+        
+        # 季度过滤
+        if quarter:
+            q_start, q_end = quarter_to_date_range(quarter)
+            if q_start and q_end:
+                q_start_dt = datetime.fromisoformat(q_start)
+                q_end_dt = datetime.fromisoformat(q_end)
+                temp = []
+                for t in all_trainings:
+                    start, end = t.get('start_time'), t.get('end_time')
+                    if start and end:
+                        try:
+                            start_dt = datetime.fromisoformat(start)
+                            end_dt = datetime.fromisoformat(end)
+                            if start_dt <= q_end_dt and end_dt >= q_start_dt:
+                                temp.append(t)
+                        except:
+                            pass
+                all_trainings = temp
+        
+        # 获取培训ID列表
+        training_ids = [t['id'] for t in all_trainings]
+        logger.info(f"📋 导出培训ID列表: {training_ids}")
+        
+        # 批量获取统计信息
+        signed_counts = {}
+        binding_counts = {}
+        photo_counts = {}
+        
+        if training_ids:
+            # 1. 签到人数
+            att_res = db.table("training_attendances") \
+                .select("training_id, user_id") \
+                .in_("training_id", training_ids) \
+                .execute()
+            for att in (att_res.data or []):
+                tid = att['training_id']
+                if tid not in signed_counts:
+                    signed_counts[tid] = set()
+                signed_counts[tid].add(att['user_id'])
+            signed_counts = {tid: len(users) for tid, users in signed_counts.items()}
+            logger.info(f"📋 签到统计: {signed_counts}")
+            
+            # 2. 绑定考试数量（修复）
+            bind_res = admin_db.table("training_exam_bindings") \
+                .select("training_id") \
+                .in_("training_id", training_ids) \
+                .is_("deleted_at", "null") \
+                .execute()
+            logger.info(f"📋 绑定查询结果: {bind_res.data}")
+            for b in (bind_res.data or []):
+                tid = b['training_id']
+                binding_counts[tid] = binding_counts.get(tid, 0) + 1
+            logger.info(f"📋 绑定统计: {binding_counts}")
+            
+            # 3. 照片数量
+            photo_res = admin_db.table("training_photos") \
+                .select("training_id") \
+                .in_("training_id", training_ids) \
+                .eq("is_deleted", False) \
+                .execute()
+            for p in (photo_res.data or []):
+                tid = p['training_id']
+                photo_counts[tid] = photo_counts.get(tid, 0) + 1
+            logger.info(f"📋 照片统计: {photo_counts}")
+        
+        # 创建 Excel
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "培训列表"
+        
+        # 表头
+        headers = ['序号', '培训名称', '培训ID', '国家', '季度', '状态', '创建时间', 
+                   '开始时间', '结束时间', '签到人数', '绑定考试数', '照片数']
+        
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        thin_border = Border(
+            left=Side(style="thin"), right=Side(style="thin"),
+            top=Side(style="thin"), bottom=Side(style="thin")
+        )
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center", vertical="center")
+            cell.border = thin_border
+        
+        status_map = {
+            'draft': '草稿',
+            'pending': '未开始',
+            'active': '进行中',
+            'closed': '已关闭'
+        }
+        
+        for idx, t in enumerate(all_trainings, 1):
+            tid = t['id']
+            t_countries = parse_training_countries(t)
+            countries_display = ', '.join(t_countries) if t_countries else (t.get('country') or '-')
+            
+            row = idx + 1
+            ws.cell(row=row, column=1, value=idx)
+            ws.cell(row=row, column=2, value=t.get('name', ''))
+            ws.cell(row=row, column=3, value=tid)
+            ws.cell(row=row, column=4, value=countries_display)
+            ws.cell(row=row, column=5, value=_get_quarter_from_date(t.get('created_at')))
+            ws.cell(row=row, column=6, value=status_map.get(t.get('dynamic_status', 'draft'), t.get('dynamic_status', '')))
+
+            # 时间字段转换为本地24小时制
+            created_at = t.get('created_at')
+            ws.cell(row=row, column=7, value=utc_string_to_local(created_at, format_str='%Y-%m-%d %H:%M:%S') if created_at else '')
+            start_time = t.get('start_time')
+            ws.cell(row=row, column=8, value=utc_string_to_local(start_time, format_str='%Y-%m-%d %H:%M:%S') if start_time else '')
+            end_time = t.get('end_time')
+            ws.cell(row=row, column=9, value=utc_string_to_local(end_time, format_str='%Y-%m-%d %H:%M:%S') if end_time else '')
+
+            ws.cell(row=row, column=10, value=signed_counts.get(tid, 0))
+            ws.cell(row=row, column=11, value=binding_counts.get(tid, 0))
+            ws.cell(row=row, column=12, value=photo_counts.get(tid, 0))
+        
+        # 调整列宽
+        column_widths = [8, 35, 10, 20, 12, 12, 20, 20, 20, 14, 14, 12]
+        for col, width in enumerate(column_widths, 1):
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col)].width = width
+        
+        buffer = BytesIO()
+        wb.save(buffer)
+        buffer.seek(0)
+        
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"培训列表_{timestamp}.xlsx"
+        
+        return send_file(
+            buffer,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"导出培训列表失败: {e}", exc_info=True)
+        return jsonify({"success": False, "message": str(e)}), 500
+        

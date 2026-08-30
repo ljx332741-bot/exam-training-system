@@ -267,10 +267,15 @@ def api_admin_users():
     for u in filtered_users:
         logger.info(f"  ✅ 保留: {u.get('name_en')}, role={u.get('role')}, country={u.get('country')}")
         
-    # 按创建时间倒序排序
+    # ========== 7. 排序：按国家 + 创建时间 ==========
+    # 先按创建时间倒序（最新在前）
     filtered_users.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+    # 再按国家正序（A-Z），稳定排序保持同国家内创建时间倒序
+    filtered_users.sort(key=lambda x: x.get('country', 'ZZZ'))
     
-    # 内存分页
+    logger.info(f"排序完成: 按国家+创建时间倒序")
+    
+    # ========== 8. 内存分页 ==========
     total = len(filtered_users)
     start = (page - 1) * per_page
     end = start + per_page
