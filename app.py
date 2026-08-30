@@ -157,6 +157,11 @@ def utility_processor():
         'has_permission': has_permission,
         'app_version': Config.APP_VERSION,
         'now': time,
+        # 环境检测变量
+        'IS_PRODUCTION': Config.is_production(),
+        'IS_RENDER': os.environ.get('RENDER', '').lower() == 'true',
+        'IS_DEVELOPMENT': Config.is_development(),
+        'SHOW_LOG_CONFIG': Config.is_development() and not os.environ.get('RENDER', '').lower() == 'true'
     }
 
 
