@@ -4,32 +4,92 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <h2><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
-        <div>
-            <button class="btn btn-outline-info me-2" data-help="help-users" title="帮助 / Help">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-2">
+        <h2 class="mb-0"><i class="bi bi-people"></i> <span data-i18n="user_management">用户管理</span></h2>
+        
+        <!-- 桌面端完整按钮组 + 移动端折叠菜单 -->
+        <div class="d-flex align-items-center gap-2">
+            <!-- 帮助按钮 - 始终显示 -->
+            <button class="btn btn-outline-info btn-sm" data-help="help-users" title="帮助 / Help">
                 <i class="bi bi-question-circle-fill me-1"></i>
-                <span data-i18n="help">帮助</span>
+                <span class="d-none d-sm-inline" data-i18n="help">帮助</span>
             </button>
-            {% if has_permission('batch_delete') %}
-            <button class="btn btn-outline-danger me-2" id="batchDeleteActiveBtn">
-                <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
-            </button>
-            {% endif %}
-            {% if has_permission('view_deleted_list') %}
-            <button class="btn btn-outline-secondary" id="showDeletedUsersBtn">
-                <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
-            </button>
-            {% endif %}
-            <!-- 离职人员管理按钮（仅超管/开发者可见） -->
-            {% if session.get('role') in ['super_admin', 'developer'] %}
-            <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary me-2" target="_blank">
-                <i class="bi bi-person-x"></i> <span data-i18n="resigned_users_management">离职人员管理</span>
-            </a>
-            {% endif %}
-            <button class="btn btn-secondary" onclick="window.close()">
-                <i class="bi bi-x-lg"></i> <span data-i18n="close">关闭</span>
-            </button>
+            
+            <!-- 批量操作按钮组（桌面端显示） -->
+            <div class="btn-group d-none d-md-inline-flex" role="group">
+                {% if has_permission('batch_delete') %}
+                <button class="btn btn-outline-danger btn-sm" id="batchDeleteActiveBtn">
+                    <i class="bi bi-trash3"></i> <span data-i18n="batch_delete">批量删除</span>
+                </button>
+                <button class="btn btn-outline-warning btn-sm" id="batchResignActiveBtn">
+                    <i class="bi bi-person-x"></i> <span data-i18n="batch_resign">批量离职</span>
+                </button>
+                {% endif %}
+            </div>
+            
+            <!-- 其他按钮组（桌面端显示） -->
+            <div class="d-none d-md-inline-flex gap-2">
+                {% if has_permission('view_deleted_list') %}
+                <button class="btn btn-outline-secondary btn-sm" id="showDeletedUsersBtn">
+                    <i class="bi bi-trash"></i> <span data-i18n="deleted_users">已删除人员</span>
+                </button>
+                {% endif %}
+                {% if session.get('role') in ['super_admin', 'developer'] %}
+                <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary btn-sm" target="_blank">
+                    <i class="bi bi-person-x"></i> <span data-i18n="resigned_users_management">离职管理</span>
+                </a>
+                {% endif %}
+                <button class="btn btn-secondary btn-sm" onclick="window.close()">
+                    <i class="bi bi-x-lg"></i> <span class="d-none d-sm-inline" data-i18n="close">关闭</span>
+                </button>
+            </div>
+            
+            <!-- ====== 移动端折叠菜单（汉堡按钮） ====== -->
+            <div class="d-md-none">
+                <button class="btn btn-outline-secondary btn-sm" type="button" 
+                        data-bs-toggle="collapse" data-bs-target="#mobileActionMenu" 
+                        aria-expanded="false" aria-controls="mobileActionMenu">
+                    <i class="bi bi-three-dots-vertical fs-5"></i>
+                    <span class="badge bg-danger rounded-pill ms-1" id="mobileBatchCount" style="display:none;">0</span>
+                </button>
+                
+                <div class="collapse position-absolute end-0 mt-1 p-2 bg-white border rounded shadow-lg" 
+                    id="mobileActionMenu" style="z-index: 1050; min-width: 200px;">
+                    <div class="d-flex flex-column gap-1">
+                        <!-- 批量删除 -->
+                        {% if has_permission('batch_delete') %}
+                        <button class="btn btn-outline-danger btn-sm w-100 text-start" id="mobileBatchDeleteBtn">
+                            <i class="bi bi-trash3 me-2"></i> <span data-i18n="batch_delete">批量删除</span>
+                            <span class="badge bg-danger rounded-pill ms-1" id="mobileDeleteCount" style="display:none;">0</span>
+                        </button>
+                        <button class="btn btn-outline-warning btn-sm w-100 text-start" id="mobileBatchResignBtn">
+                            <i class="bi bi-person-x me-2"></i> <span data-i18n="batch_resign">批量离职</span>
+                            <span class="badge bg-warning rounded-pill ms-1" id="mobileResignCount" style="display:none;">0</span>
+                        </button>
+                        <hr class="my-1">
+                        {% endif %}
+                        
+                        <!-- 已删除人员 -->
+                        {% if has_permission('view_deleted_list') %}
+                        <button class="btn btn-outline-secondary btn-sm w-100 text-start" id="mobileShowDeletedBtn">
+                            <i class="bi bi-trash me-2"></i> <span data-i18n="deleted_users">已删除人员</span>
+                        </button>
+                        {% endif %}
+                        
+                        <!-- 离职人员管理 -->
+                        {% if session.get('role') in ['super_admin', 'developer'] %}
+                        <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary btn-sm w-100 text-start" target="_blank">
+                            <i class="bi bi-person-x me-2"></i> <span data-i18n="resigned_users_management">离职管理</span>
+                        </a>
+                        {% endif %}
+                        
+                        <hr class="my-1">
+                        <button class="btn btn-secondary btn-sm w-100 text-start" onclick="window.close()">
+                            <i class="bi bi-x-lg me-2"></i> <span data-i18n="close">关闭</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1200,16 +1260,12 @@
     * 使用 !important 和类名控制，确保样式生效
     */
     function initActionColumnResponsive() {
-        console.log('🔄 初始化操作列响应式...');
-        
         // 获取所有操作列单元格
         const cells = document.querySelectorAll('.action-cell');
         if (!cells.length) {
             console.warn('⚠️ 未找到 .action-cell 元素');
             return;
         }
-        
-        console.log(`✅ 找到 ${cells.length} 个操作列`);
         
         // 为每个单元格设置初始状态
         cells.forEach((cell, index) => {
@@ -1223,15 +1279,11 @@
                 return;
             }
             
-            console.log(`📏 单元格 ${index} 宽度: ${cellWidth}px`);
-            
             // 应用初始状态
             if (cellWidth < 180) {
                 cell.classList.add('is-collapsed');
-                console.log(`📎 单元格 ${index} 折叠状态 (宽度: ${cellWidth}px)`);
             } else {
                 cell.classList.remove('is-collapsed');
-                console.log(`📎 单元格 ${index} 展开状态 (宽度: ${cellWidth}px)`);
             }
         });
         
@@ -1264,12 +1316,10 @@
                 if (cellWidth < 180 && cellWidth > 0) {
                     if (!cell.classList.contains('is-collapsed')) {
                         cell.classList.add('is-collapsed');
-                        console.log(`📎 折叠单元格 (宽度: ${cellWidth}px)`);
                     }
                 } else {
                     if (cell.classList.contains('is-collapsed')) {
                         cell.classList.remove('is-collapsed');
-                        console.log(`📎 展开单元格 (宽度: ${cellWidth}px)`);
                     }
                 }
             }
@@ -1282,8 +1332,6 @@
         
         // 保存 observer 以便后续清理
         window._actionCellObserver = observer;
-        
-        console.log('✅ 操作列响应式初始化完成');
     }
 
     // ==================== 强制重新检查操作列状态 ====================
@@ -1730,7 +1778,6 @@
     }
 
     function handleCheckboxChange(e) {
-        console.log('复选框变化, 选中数量:', selectedUserIds.size);
         const cb = e.target;
         const id = cb.dataset.id;
         if (cb.checked) {
@@ -1742,7 +1789,6 @@
     }
 
     function handleSelectAll(e) {
-        console.log('全选变化, isChecked:', e.target.checked);
         const isChecked = e.target.checked;
         document.querySelectorAll('.user-checkbox').forEach(cb => {
             cb.checked = isChecked;
@@ -1825,61 +1871,110 @@
         }
     };
 
-    /*
-    function renderPagination(current, totalPages) {
-        const pagination = document.getElementById('pagination');
-        if (!pagination) {
-            console.error('分页容器不存在');
+    // ==================== 批量离职功能 ====================
+    async function batchResignSelected() {
+        if (selectedUserIds.size === 0) {
+            alert(t('select_at_least_one'));
             return;
         }
         
-        if (totalPages <= 1) {
-            pagination.innerHTML = '';
+        // 过滤出在职的用户（已离职的不能再离职）
+        const activeUserIds = [];
+        const resignedUserIds = [];
+        
+        for (const userId of selectedUserIds) {
+            const user = currentUsersData.find(u => u.id === userId);
+            if (user) {
+                if (user.is_resign) {
+                    resignedUserIds.push(user.name_en || userId);
+                } else {
+                    activeUserIds.push(userId);
+                }
+            }
+        }
+        
+        if (activeUserIds.length === 0) {
+            showToast(t('no_active_users_selected') || '所选用户均已离职，无需重复操作');
             return;
         }
         
-        let html = '';
-        // 上一页
-        html += `<li class="page-item ${current <= 1 ? 'disabled' : ''}">
-            <a class="page-link" href="#" data-page="${current - 1}" ${current <= 1 ? 'tabindex="-1"' : ''}>&laquo;</a>
-        </li>`;
+        let message = t('confirm_batch_resign_users')
+            .replace('{count}', activeUserIds.length);
         
-        // 页码
-        for (let i = 1; i <= totalPages; i++) {
-            html += `<li class="page-item ${i === current ? 'active' : ''}">
-                <a class="page-link" href="#" data-page="${i}">${i}</a>
-            </li>`;
+        if (resignedUserIds.length > 0) {
+            message += '\n\n' + t('skip_resigned_users')
+                .replace('{count}', resignedUserIds.length);
         }
         
-        // 下一页
-        html += `<li class="page-item ${current >= totalPages ? 'disabled' : ''}">
-            <a class="page-link" href="#" data-page="${current + 1}" ${current >= totalPages ? 'tabindex="-1"' : ''}>&raquo;</a>
-        </li>`;
+        if (!confirm(message)) return;
         
-        pagination.innerHTML = html;
+        // 显示加载状态
+        const btn = document.getElementById('batchResignActiveBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> ' + (t('processing') || '处理中...');
         
-        // ✅ 使用事件委托，避免重复绑定
-        pagination.querySelectorAll('.page-link').forEach(link => {
-            // 移除旧事件
-            link.removeEventListener('click', pagination._clickHandler);
+        try {
+            const results = [];
+            let successCount = 0;
+            let failCount = 0;
+            const failedUsers = [];
             
-            link._clickHandler = function(e) {
-                e.preventDefault();
-                const page = parseInt(this.dataset.page);
-                if (isNaN(page) || page < 1 || page > totalPages) return;
-                
-                console.log('分页点击 - 跳转到第', page, '页');
-                currentPage = page;
-                loadUsers();
-            };
+            // 逐个执行离职操作
+            for (const userId of activeUserIds) {
+                try {
+                    const response = await fetch(`/api/admin/users/${userId}/resign`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        successCount++;
+                    } else {
+                        failCount++;
+                        const user = currentUsersData.find(u => u.id === userId);
+                        failedUsers.push(user?.name_en || userId);
+                    }
+                } catch (err) {
+                    failCount++;
+                    const user = currentUsersData.find(u => u.id === userId);
+                    failedUsers.push(user?.name_en || userId);
+                    console.error(`离职用户 ${userId} 失败:`, err);
+                }
+            }
             
-            link.addEventListener('click', link._clickHandler);
-        });
-        
-        // 存储 totalPages 供事件使用
-        pagination._totalPages = totalPages;
+            // 清空选中集合
+            selectedUserIds.clear();
+            updateBatchDeleteButton();
+            
+            // 显示结果
+            let resultMsg = t('batch_resign_complete')
+                .replace('{success}', successCount)
+                .replace('{failed}', failCount);
+            
+            if (failedUsers.length > 0) {
+                resultMsg += '\n\n' + t('failed_users_list') + '\n' + failedUsers.join(', ');
+            }
+            
+            if (resignedUserIds.length > 0) {
+                resultMsg += '\n\n' + t('skipped_already_resigned')
+                    .replace('{count}', resignedUserIds.length);
+            }
+            
+            alert(resultMsg);
+            
+            // 刷新列表
+            loadUsers();
+            
+        } catch (err) {
+            console.error('批量离职失败:', err);
+            showToast(t('operation_failed') + err.message);
+        } finally {
+            // 恢复按钮
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
     }
-    */
 
     async function batchDeleteSelected() {
         if (selectedUserIds.size === 0) {
@@ -3401,7 +3496,10 @@
         
         // 批量删除按钮
         document.getElementById('batchDeleteActiveBtn')?.addEventListener('click', batchDeleteSelected);
-        
+
+        // 批量离职按钮
+        document.getElementById('batchResignActiveBtn')?.addEventListener('click', batchResignSelected);
+
         // 打开已删除模态框
         document.getElementById('showDeletedUsersBtn')?.addEventListener('click', async () => {
             await loadDeletedUsers();
@@ -3411,7 +3509,7 @@
         document.getElementById('batchRestoreBtn')?.addEventListener('click', batchRestoreUsers);
         document.getElementById('batchPermanentDeleteBtn')?.addEventListener('click', batchPermanentDeleteUsers);
         
-        // ✅ 监听表格渲染完成事件
+        // 监听表格渲染完成事件
         const table = document.getElementById('userTable');
         if (table) {
             table.addEventListener('tableRendered', function() {
@@ -3420,8 +3518,40 @@
                 }, 100);
             });
         }
+
+        const mobileMenu = document.getElementById('mobileActionMenu');
+        if (mobileMenu) {
+            // 点击菜单内的按钮时关闭菜单
+            mobileMenu.querySelectorAll('button, a').forEach(el => {
+                el.addEventListener('click', function() {
+                    const bsCollapse = bootstrap.Collapse.getInstance(mobileMenu);
+                    if (bsCollapse) {
+                        bsCollapse.hide();
+                    }
+                });
+            });
+        }
         
-        // ✅ 也监听窗口变化
+        // 移动端批量删除
+        const mobileDeleteBtn = document.getElementById('mobileBatchDeleteBtn');
+        if (mobileDeleteBtn) {
+            mobileDeleteBtn.addEventListener('click', batchDeleteSelected);
+        }
+        
+        // 移动端批量离职
+        const mobileResignBtn = document.getElementById('mobileBatchResignBtn');
+        if (mobileResignBtn) {
+            mobileResignBtn.addEventListener('click', batchResignSelected);
+        }
+        
+        // 移动端已删除人员
+        const mobileShowDeletedBtn = document.getElementById('mobileShowDeletedBtn');
+        if (mobileShowDeletedBtn) {
+            mobileShowDeletedBtn.addEventListener('click', function() {
+                document.getElementById('showDeletedUsersBtn')?.click();
+            });
+        }
+        // 也监听窗口变化
         let resizeTimer;
         window.addEventListener('resize', function() {
             clearTimeout(resizeTimer);
@@ -3430,5 +3560,94 @@
             }, 300);
         });
     });
+
+    // ==================== 移动端菜单事件绑定 ====================
+
+    // 点击菜单项时自动关闭折叠菜单
+    document.addEventListener('DOMContentLoaded', function() {
+        const mobileMenu = document.getElementById('mobileActionMenu');
+        if (mobileMenu) {
+            // 点击菜单内的按钮时关闭菜单
+            mobileMenu.querySelectorAll('button, a').forEach(el => {
+                el.addEventListener('click', function() {
+                    const bsCollapse = bootstrap.Collapse.getInstance(mobileMenu);
+                    if (bsCollapse) {
+                        bsCollapse.hide();
+                    }
+                });
+            });
+        }
+        
+        // 移动端批量删除
+        const mobileDeleteBtn = document.getElementById('mobileBatchDeleteBtn');
+        if (mobileDeleteBtn) {
+            mobileDeleteBtn.addEventListener('click', batchDeleteSelected);
+        }
+        
+        // 移动端批量离职
+        const mobileResignBtn = document.getElementById('mobileBatchResignBtn');
+        if (mobileResignBtn) {
+            mobileResignBtn.addEventListener('click', batchResignSelected);
+        }
+        
+        // 移动端已删除人员
+        const mobileShowDeletedBtn = document.getElementById('mobileShowDeletedBtn');
+        if (mobileShowDeletedBtn) {
+            mobileShowDeletedBtn.addEventListener('click', function() {
+                document.getElementById('showDeletedUsersBtn')?.click();
+            });
+        }
+    });
+
+    // ==================== 更新移动端批量计数 ====================
+
+    // 在 updateBatchDeleteButton 函数中添加移动端更新
+    function updateBatchDeleteButton() {
+        const btn = document.getElementById('batchDeleteActiveBtn');
+        if (!btn) return;
+
+        const count = selectedUserIds.size;
+        
+        // 桌面端按钮更新
+        let buttonText = t('batch_delete');
+        if (count > 0) {
+            buttonText = `${buttonText} (${count})`;
+        }
+        btn.innerHTML = `<i class="bi bi-trash3"></i> ${buttonText}`;
+        btn.disabled = (count === 0);
+        
+        // ✅ 移动端批量删除按钮更新
+        const mobileDeleteBtn = document.getElementById('mobileBatchDeleteBtn');
+        if (mobileDeleteBtn) {
+            const mobileCount = document.getElementById('mobileDeleteCount');
+            if (count > 0) {
+                mobileDeleteBtn.innerHTML = `<i class="bi bi-trash3 me-2"></i> ${t('batch_delete')} <span class="badge bg-danger rounded-pill ms-1">${count}</span>`;
+            } else {
+                mobileDeleteBtn.innerHTML = `<i class="bi bi-trash3 me-2"></i> ${t('batch_delete')}`;
+            }
+        }
+        
+        // ✅ 移动端批量离职按钮更新
+        const mobileResignBtn = document.getElementById('mobileBatchResignBtn');
+        if (mobileResignBtn) {
+            if (count > 0) {
+                mobileResignBtn.innerHTML = `<i class="bi bi-person-x me-2"></i> ${t('batch_resign')} <span class="badge bg-warning rounded-pill ms-1">${count}</span>`;
+            } else {
+                mobileResignBtn.innerHTML = `<i class="bi bi-person-x me-2"></i> ${t('batch_resign')}`;
+            }
+        }
+        
+        // ✅ 移动端顶部计数徽章
+        const mobileBatchCount = document.getElementById('mobileBatchCount');
+        if (mobileBatchCount) {
+            if (count > 0) {
+                mobileBatchCount.textContent = count;
+                mobileBatchCount.style.display = 'inline-block';
+            } else {
+                mobileBatchCount.style.display = 'none';
+            }
+        }
+    }
+
 </script>
 {% endblock %}

@@ -262,3 +262,85 @@
         margin: 0 auto !important;
         flex: none !important;
     }
+
+/* 移动端折叠菜单优化 */
+@media (max-width: 767.98px) {
+    /* 页面标题和按钮区域 */
+    .d-flex.flex-wrap.justify-content-between {
+        position: relative;
+    }
+    
+    /* 折叠菜单样式 */
+    #mobileActionMenu {
+        right: 0;
+        left: auto !important;
+        min-width: 220px;
+        max-width: 90vw;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.15) !important;
+        border: none !important;
+        border-radius: 12px !important;
+        padding: 8px 12px !important;
+    }
+    
+    #mobileActionMenu .btn {
+        padding: 8px 12px;
+        border-radius: 8px;
+        transition: background 0.15s ease;
+    }
+    
+    #mobileActionMenu .btn:hover,
+    #mobileActionMenu .btn:active {
+        background: #f0f0f0;
+    }
+    
+    #mobileActionMenu hr {
+        margin: 4px 0;
+        opacity: 0.5;
+    }
+    
+    /* 汉堡按钮 */
+    .d-md-none .btn-outline-secondary {
+        padding: 4px 10px;
+        border-radius: 8px;
+    }
+    
+    /* 桌面端按钮在移动端隐藏，但保留帮助按钮 */
+    .d-none.d-md-inline-flex {
+        display: none !important;
+    }
+    
+    /* 移动端显示折叠菜单按钮 */
+    .d-md-none {
+        display: inline-block !important;
+    }
+}
+
+@media (min-width: 768px) {
+    .d-md-none {
+        display: none !important;
+    }
+    .d-none.d-md-inline-flex {
+        display: inline-flex !important;
+    }
+}
+
+/* 移动端菜单动画 */
+#mobileActionMenu.collapsing {
+    transition: all 0.25s ease;
+    transform-origin: top right;
+}
+
+#mobileActionMenu.show {
+    animation: slideDown 0.2s ease forwards;
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(-8px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
+}
