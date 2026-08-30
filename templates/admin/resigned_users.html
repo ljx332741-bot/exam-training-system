@@ -81,6 +81,8 @@
                             <th><span data-i18n="name_en">姓名</span></th>
                             <th><span data-i18n="email">邮箱</span></th>
                             <th><span data-i18n="country">国家</span></th>
+                            <th><span data-i18n="wh_id">库房编码</span></th>
+                            <th><span data-i18n="wh_name_en">库房名称</span></th>
                             <th><span data-i18n="role">角色</span></th>
                             <th><span data-i18n="resigned_date">离职日期</span></th>
                             <th><span data-i18n="status">状态</span></th>
@@ -88,7 +90,7 @@
                         </tr>
                     </thead>
                     <tbody id="resignedTableBody">
-                        <tr><td colspan="8" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="10" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody><!-- 在表格前添加 -->
                 </table>
             </div>
@@ -244,7 +246,7 @@
         const res = await fetch(`/api/admin/users/resigned?${params}`);
         const data = await res.json();
 
-        // ✅ 存储所有用户数据
+        // 存储所有用户数据
         allResignedUsers = data.data || [];
         
         renderTable(allResignedUsers);
@@ -255,7 +257,7 @@
     function renderTable(users) {
         const tbody = document.getElementById('resignedTableBody');
         if (!users.length) {
-            tbody.innerHTML = `<tr><td colspan="8" class="text-center">${t('no_data')}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center">${t('no_data')}</td></tr>`;
             return;
         }
         
@@ -280,6 +282,8 @@
                     <td>${escapeHtml(u.name_en || '-')}<\/td>
                     <td>${escapeHtml(u.email || '-')}<\/td>
                     <td>${escapeHtml(u.country || '-')}<\/td>
+                    <td><code>${escapeHtml(u.wh_id || '-')}<\/code><\/td>
+                    <td>${escapeHtml(u.wh_name_en || '-')}<\/td>
                     <td>${escapeHtml(u.role)}<\/td>
                     <td>${formatDate(u.resigned_at)}<\/td>
                     <td>${statusBadge}<\/td>
@@ -494,6 +498,8 @@
                     <tr><th>${t('name_en')}</th><td>${data.name_en || '-'}</td></tr>
                     <tr><th>${t('email')}</th><td>${data.email || '-'}</td></tr>
                     <tr><th>${t('country')}</th><td>${data.country || '-'}</td></tr>
+                    <tr><th>${t('wh_id')}</th><td><code>${data.wh_id || '-'}</code></td></tr>
+                    <tr><th>${t('wh_name_en')}</th><td>${data.wh_name_en || '-'}</td></tr>
                     <tr><th>${t('role')}</th><td>${data.role}</td></tr>
                 </table>
             </div>
