@@ -94,12 +94,15 @@
                     </a>
                 </li>
                 <!-- 新增：日志配置 -->
+                 {% if SHOW_LOG_CONFIG %}
                 <li><hr class="dropdown-divider"></li>
                 <li>
                     <a class="dropdown-item" href="#" onclick="openLogConfigModal(); return false;">
                         <i class="bi bi-file-earmark-text me-2"></i> <span data-i18n="log_config">日志配置</span>
                     </a>
                 </li>
+                {% endif %}
+
                 <!-- 隐私声明管理（仅超管/开发者可见） -->
                 {% if session.get('role') in ['super_admin', 'developer'] %}
                 <li>
