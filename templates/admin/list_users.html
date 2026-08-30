@@ -441,32 +441,40 @@
 
 {% block extra_js %}
 <script>
-    // ==================== 高级模糊搜索工具函数 ====================    
-    /**
-     * 创建高级模糊搜索输入框
-     * @param {string} inputId - 输入框ID
-     * @param {Function} fetchDataFn - 获取数据的函数，返回 Promise<Array>
-     * @param {Object} options - 配置选项
-     * @param {number} options.delay - 防抖延迟（毫秒），默认300
-     * @param {Function} options.onSelect - 选择回调
-     * @param {Function} options.renderItem - 渲染选项函数
-     * @param {Function} options.onClear - 清空回调
-     */
-    function initAdvancedSearch(inputId, fetchDataFn, options = {}) {
+    // 在文件顶部添加全局变量
+    let _actionCellRetryTimer = null;
+    let _actionCellRetryCount = 0;
+
+    // ==================== 超级搜索组件（替代死代码） ====================
+    function initSuperSearch(inputId, options = {}) {
         const input = document.getElementById(inputId);
-        if (!input) return;
+        if (!input) {
+            console.warn(`输入框 #${inputId} 不存在`);
+            return null;
+        }
         
-        const delay = options.delay || 300;
+        const {
+            fetchData = async (keyword) => [],
+            delay = 300,
+            onSelect = (value) => {},
+            renderItem = (item) => `<div class="super-search-item">${item.label || item}</div>`,
+            onClear = () => {},
+            multiKeyword = true,
+            searchFields = ['name_en', 'email', 'employee_id', 'wh_id'],
+            filterData = null,
+            minChars = 1
+        } = options;
+        
         let debounceTimer;
         let currentValue = '';
+        let dropdown = null;
+        let isActive = false;
         
         // 创建下拉容器
-        let dropdownId = `${inputId}_dropdown`;
-        let dropdown = document.getElementById(dropdownId);
-        if (!dropdown) {
+        function createDropdown() {
+            if (dropdown) return dropdown;
             dropdown = document.createElement('div');
-            dropdown.id = dropdownId;
-            dropdown.className = 'advanced-search-dropdown';
+            dropdown.className = 'super-search-dropdown';
             dropdown.style.cssText = `
                 position: absolute;
                 display: none;
@@ -475,117 +483,167 @@
                 background: white;
                 border: 1px solid #ddd;
                 border-radius: 4px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 8px rgba(0,0,0,0.15);
                 z-index: 1000;
                 min-width: 200px;
             `;
             input.parentNode.style.position = 'relative';
             input.parentNode.appendChild(dropdown);
+            return dropdown;
+        }
+        
+        // 匹配多关键词
+        function matchKeywords(text, keywords) {
+            if (!keywords || keywords.length === 0) return true;
+            const targetLower = text.toLowerCase();
+            return keywords.every(term => targetLower.includes(term.toLowerCase()));
         }
         
         // 输入事件
-        input.addEventListener('input', async (e) => {
-            const value = e.target.value.trim();
+        input.addEventListener('input', async function(e) {
+            const value = this.value.trim();
             currentValue = value;
             
             clearTimeout(debounceTimer);
             
-            if (!value) {
-                dropdown.style.display = 'none';
-                if (options.onClear) options.onClear();
+            if (!value || value.length < minChars) {
+                if (dropdown) dropdown.style.display = 'none';
+                if (onClear) onClear();
                 return;
+            }
+            
+            // 处理关键词
+            let keywords = [];
+            if (multiKeyword) {
+                keywords = value.split(/\s+/).filter(k => k.length > 0);
+            } else {
+                keywords = [value];
             }
             
             debounceTimer = setTimeout(async () => {
                 try {
-                    const results = await fetchDataFn(value);
-                    if (currentValue !== value) return;
+                    let results = await fetchData(value, keywords);
+                    
+                    // 如果提供了自定义过滤函数
+                    if (filterData && typeof filterData === 'function') {
+                        results = filterData(results, keywords);
+                    } 
+                    // 默认多关键词过滤
+                    else if (multiKeyword && keywords.length > 1 && results && results.length > 0) {
+                        results = results.filter(item => {
+                            const searchStr = searchFields.map(field => 
+                                (item[field] || '').toLowerCase()
+                            ).join(' ');
+                            return keywords.every(kw => searchStr.includes(kw.toLowerCase()));
+                        });
+                    }
                     
                     if (!results || results.length === 0) {
-                        dropdown.style.display = 'none';
+                        if (dropdown) dropdown.style.display = 'none';
                         return;
                     }
                     
-                    // 定位下拉框
-                    const rect = input.getBoundingClientRect();
-                    dropdown.style.top = `${rect.bottom + window.scrollY}px`;
-                    dropdown.style.left = `${rect.left + window.scrollX}px`;
-                    dropdown.style.width = `${rect.width}px`;
-                    
-                    // 渲染选项
-                    if (options.renderItem) {
-                        dropdown.innerHTML = results.map(item => options.renderItem(item)).join('');
-                    } else {
-                        dropdown.innerHTML = results.map(item => `
-                            <div class="dropdown-item" data-value="${escapeHtml(item.value || item)}" 
-                                 style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
-                                ${escapeHtml(item.label || item)}
-                            </div>
-                        `).join('');
-                    }
+                    // 渲染下拉
+                    dropdown = createDropdown();
+                    dropdown.innerHTML = results.map((item, index) => 
+                        renderItem(item, keywords, index)
+                    ).join('');
                     
                     // 绑定点击事件
-                    dropdown.querySelectorAll('.dropdown-item').forEach(el => {
+                    dropdown.querySelectorAll('.super-search-item').forEach(el => {
+                        el.addEventListener('mousedown', (e) => {
+                            e.preventDefault(); // 防止失焦
+                        });
                         el.addEventListener('click', () => {
                             const value = el.dataset.value || el.textContent;
                             input.value = value;
                             dropdown.style.display = 'none';
-                            if (options.onSelect) options.onSelect(value);
-                            
-                            // 触发 change 事件
-                            const changeEvent = new Event('change', { bubbles: true });
-                            input.dispatchEvent(changeEvent);
+                            isActive = false;
+                            if (onSelect) onSelect(value, el.dataset);
+                            input.dispatchEvent(new Event('change', { bubbles: true }));
                         });
                     });
                     
+                    // 定位
+                    const rect = input.getBoundingClientRect();
+                    dropdown.style.top = `${rect.bottom + window.scrollY + 2}px`;
+                    dropdown.style.left = `${rect.left + window.scrollX}px`;
+                    dropdown.style.width = `${Math.max(rect.width, 200)}px`;
                     dropdown.style.display = 'block';
+                    isActive = true;
+                    
                 } catch (err) {
-                    console.error(t('t_search_failed'), err);
+                    console.error('超级搜索失败:', err);
                 }
             }, delay);
         });
         
-        // 点击其他地方关闭
-        document.addEventListener('click', (e) => {
-            if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+        // 键盘事件（上下键选择）
+        input.addEventListener('keydown', function(e) {
+            if (!dropdown || dropdown.style.display === 'none') return;
+            
+            const items = dropdown.querySelectorAll('.super-search-item');
+            if (items.length === 0) return;
+            
+            let currentIndex = -1;
+            items.forEach((item, index) => {
+                if (item.classList.contains('active')) {
+                    currentIndex = index;
+                    item.classList.remove('active');
+                }
+            });
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const nextIndex = (currentIndex + 1) % items.length;
+                items[nextIndex].classList.add('active');
+                items[nextIndex].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prevIndex = (currentIndex - 1 + items.length) % items.length;
+                items[prevIndex].classList.add('active');
+                items[prevIndex].scrollIntoView({ block: 'nearest' });
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                const activeItem = dropdown.querySelector('.super-search-item.active');
+                if (activeItem) {
+                    activeItem.click();
+                }
+            } else if (e.key === 'Escape') {
                 dropdown.style.display = 'none';
+                isActive = false;
             }
         });
         
-        // 失焦关闭
-        input.addEventListener('blur', () => {
-            setTimeout(() => {
-                dropdown.style.display = 'none';
-            }, 200);
+        // 点击外部关闭
+        document.addEventListener('click', (e) => {
+            if (!input.contains(e.target) && !dropdown?.contains(e.target)) {
+                if (dropdown) dropdown.style.display = 'none';
+                isActive = false;
+            }
         });
         
-        return dropdown;
+        // 暴露控制方法
+        return {
+            input,
+            dropdown,
+            close: () => {
+                if (dropdown) dropdown.style.display = 'none';
+                isActive = false;
+            },
+            open: () => {
+                if (dropdown && currentValue) {
+                    dropdown.style.display = 'block';
+                    isActive = true;
+                }
+            },
+            destroy: () => {
+                if (dropdown) dropdown.remove();
+                clearTimeout(debounceTimer);
+            }
+        };
     }
-    
-    // ==================== 高级搜索数据获取函数 ====================
-    
-    // 搜索用户（用于主列表）
-    async function searchUsersForAdvanced(keyword) {
-        const response = await fetch(`/api/admin/users?search=${encodeURIComponent(keyword)}&per_page=20`);
-        const data = await response.json();
-        return (data.data || []).map(user => ({
-            value: user.name_en || user.email,
-            label: `${user.name_en || ''} (${user.email || ''}) - ${user.wh_id || ''}`,
-            user: user
-        }));
-    }
-    
-    // 搜索库房
-    async function searchWarehouses(keyword) {
-        const response = await fetch(`/api/admin/wh/search?q=${encodeURIComponent(keyword)}`);
-        const data = await response.json();
-        return (data.data || []).map(wh => ({
-            value: wh.wh_id,
-            label: `${wh.wh_id} - ${wh.wh_name_en || wh.wh_name_cn || ''}`,
-            wh: wh
-        }));
-    }
-    
+
     // ==================== 全局变量 ====================
     const IS_DEVELOPER = {{ is_developer | tojson }};
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
@@ -885,11 +943,129 @@
         return canResignUser(targetUser, currentUserId, currentUserRole, isDeveloper);
     }
 
-    // ==================== 主列表功能 ====================    
+    // ==================== 增强模糊搜索函数 ====================
+    function advancedSearch(text, targetStr) {
+        if (!text || !targetStr) return true;
+        
+        // 将搜索词按空格分割
+        const keywords = text.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+        if (keywords.length === 0) return true;
+        
+        const targetLower = targetStr.toLowerCase();
+        
+        // 所有关键词都必须匹配（AND 逻辑）
+        return keywords.every(keyword => targetLower.includes(keyword));
+    }
+
+    // 在文件顶部添加国家映射缓存
+    let countryMapCache = null;
+    let countryListLoaded = false;
+
+    // 加载国家列表并构建映射
+    async function loadCountryMap() {
+        if (countryListLoaded) return countryMapCache;
+        
+        try {
+            const res = await fetch('/api/countries');
+            const data = await res.json();
+            countryMapCache = {};
+            data.forEach(c => {
+                countryMapCache[c.code] = {
+                    code: c.code,
+                    name_zh: c.name_zh || '',
+                    name_en: c.name_en || '',
+                    name: c.name_zh || c.name_en || c.code
+                };
+            });
+            countryListLoaded = true;
+            return countryMapCache;
+        } catch (e) {
+            console.error('加载国家列表失败:', e);
+            return {};
+        }
+    }
+
+    // 高级国家搜索函数
+    function matchCountryByInput(input, countryMap) {
+        if (!input || !input.trim()) return null;
+        
+        const inputLower = input.trim().toLowerCase();
+        const matchedCodes = [];
+        
+        for (const [code, info] of Object.entries(countryMap)) {
+            const nameZh = (info.name_zh || '').toLowerCase();
+            const nameEn = (info.name_en || '').toLowerCase();
+            const codeLower = code.toLowerCase();
+            
+            // 支持多种匹配方式
+            // 1. 精确匹配国家代码
+            if (codeLower === inputLower) {
+                return [code]; // 精确匹配直接返回
+            }
+            
+            // 2. 包含匹配（支持部分名称）
+            if (nameZh.includes(inputLower) || 
+                nameEn.includes(inputLower) || 
+                codeLower.includes(inputLower)) {
+                matchedCodes.push(code);
+            }
+            
+            // 3. 支持空格分割的多关键词匹配（如 "Sri Lanka"）
+            const keywords = inputLower.split(/\s+/).filter(k => k.length > 0);
+            if (keywords.length > 1) {
+                const fullName = `${nameEn} ${nameZh}`.toLowerCase();
+                const allMatch = keywords.every(kw => fullName.includes(kw));
+                if (allMatch && !matchedCodes.includes(code)) {
+                    matchedCodes.push(code);
+                }
+            }
+        }
+        
+        return matchedCodes.length > 0 ? matchedCodes : null;
+    }
+
+    // ==================== 辅助函数：根据显示名称匹配国家代码 ====================
+    function matchCountryByDisplayName(displayName, countryMap) {
+        if (!displayName || !countryMap) return null;
+        
+        const inputLower = displayName.trim().toLowerCase();
+        const keywords = inputLower.split(/\s+/).filter(k => k.length > 0);
+        
+        if (keywords.length === 0) return null;
+        
+        // 1. 精确匹配国家代码（如 "NP"）
+        if (keywords.length === 1 && /^[A-Z]{2}$/i.test(keywords[0])) {
+            const code = keywords[0].toUpperCase();
+            if (countryMap[code]) {
+                return code;
+            }
+        }
+        
+        // 2. 遍历国家映射进行模糊匹配
+        let matchedCodes = [];
+        for (const [code, info] of Object.entries(countryMap)) {
+            const fullName = `${info.name_en} ${info.name_zh} ${code}`.toLowerCase();
+            // 所有关键词都必须匹配
+            if (keywords.every(kw => fullName.includes(kw.toLowerCase()))) {
+                matchedCodes.push(code);
+            }
+        }
+        
+        // 如果匹配到多个，返回第一个（最匹配的）
+        if (matchedCodes.length > 0) {
+            return matchedCodes[0];
+        }
+        
+        return null;
+    }
+
     async function loadUsers(page) {
         if (page !== undefined && page !== null) {
             currentPage = page;
         }
+
+        renderUserTable([], true);
+        
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
@@ -897,63 +1073,120 @@
             wh_id: filters.wh_id
         });
 
-        const countryFilter = filters.country ? filters.country.trim().toLowerCase() : '';
-
+        const countryInput = filters.country ? filters.country.trim() : '';
+        console.log('🔍 国家输入值:', countryInput);
+        
         try {
-            const res = await fetch(`/api/admin/users?${params}`);
-            const data = await res.json();
-
-            let users = data.data || [];
-            
-            if (countryFilter) {
-                // 加载国家列表用于名称匹配
-                const countries = await loadCountryList();
-                const countryMap = {};
-                countries.forEach(c => {
-                    countryMap[c.code] = c;
-                });
+            let matchedCountryCodes = null;
+            if (countryInput) {
+                const countryMap = await loadCountryMap();
+                const keywords = countryInput.toLowerCase().split(/\s+/).filter(k => k.length > 0);
                 
-                users = users.filter(user => {
-                    const userCountry = user.country || '';
-                    if (!userCountry) return false;
+                if (keywords.length > 0) {
+                    const matchedCodes = [];
+                    for (const [code, info] of Object.entries(countryMap)) {
+                        const searchStr = [
+                            code.toLowerCase(),
+                            (info.name_en || '').toLowerCase(),
+                            (info.name_zh || '').toLowerCase()
+                        ].join(' ');
+                        if (keywords.every(kw => searchStr.includes(kw))) {
+                            matchedCodes.push(code);
+                        }
+                    }
                     
-                    // 获取国家信息
-                    const countryInfo = countryMap[userCountry];
-                    if (!countryInfo) return false;
-                    
-                    // 检查中文名、英文名、代码是否包含搜索词
-                    const nameZh = (countryInfo.name_zh || '').toLowerCase();
-                    const nameEn = (countryInfo.name_en || '').toLowerCase();
-                    const code = (countryInfo.code || '').toLowerCase();
-                    const searchLower = countryFilter.toLowerCase();
-                    
-                    return nameZh.includes(searchLower) || 
-                        nameEn.includes(searchLower) || 
-                        code.includes(searchLower);
-                });
+                    if (matchedCodes.length === 0) {
+                        const tbody = document.getElementById('userTableBody');
+                        if (tbody) {
+                            tbody.innerHTML = `
+                                <tr><td colspan="14" class="text-center text-muted">
+                                    <i class="bi bi-search"></i> 未找到匹配的国家 "${countryInput}"
+                                </td></tr>`;
+                        }
+                        document.getElementById('totalCount').innerText = '0';
+                        return;
+                    }
+                    matchedCountryCodes = matchedCodes;
+                    console.log('✅ 匹配到的国家代码:', matchedCountryCodes);
+                }
             }
             
-            currentUsersData = users;
-            renderUserTable(currentUsersData);
-
-            // 初始化操作列响应式（延迟执行确保 DOM 已更新）
-            setTimeout(() => {
-                initActionColumnResponsive();
-            }, 100);
-
-            // 如果使用了 Container Queries，还需要在列宽调整后重新处理
-            // ✅ 在列宽调整后重新检查
-            const table = document.getElementById('userTable');
-            if (table) {
-                table.addEventListener('columnResized', function() {
-                    setTimeout(() => {
-                        refreshActionColumns();
-                    }, 50);
+            // ========== ✅ 关键修改：使用 countries 参数传递所有匹配的国家 ==========
+            if (matchedCountryCodes && matchedCountryCodes.length > 0) {
+                // 使用 countries 参数（后端需要支持这个参数）
+                params.append('countries', matchedCountryCodes.join(','));
+                console.log('📤 使用 countries 参数:', matchedCountryCodes.join(','));
+            }
+            
+            console.log('📤 请求 URL:', `/api/admin/users?${params.toString()}`);
+            
+            const res = await fetch(`/api/admin/users?${params}`);
+            const data = await res.json();
+            console.log('📦 API 返回数据条数:', data.data?.length || 0);
+            
+            let users = data.data || [];
+            
+            // ========== 前端二次过滤（确保只显示匹配国家的用户） ==========
+            if (matchedCountryCodes && matchedCountryCodes.length > 0) {
+                const beforeFilter = users.length;
+                
+                // 如果后端没有正确过滤，前端再次过滤
+                users = users.filter(user => {
+                    // 1. 检查 country 是否匹配
+                    if (matchedCountryCodes.includes(user.country || '')) {
+                        return true;
+                    }
+                    // 2. 如果 country 为空，检查 wh_id 是否匹配
+                    if (!user.country && user.wh_id) {
+                        const whIdUpper = user.wh_id.toUpperCase();
+                        return matchedCountryCodes.some(code => whIdUpper.startsWith(code));
+                    }
+                    return false;
                 });
+                
+                console.log(`🌍 前端二次过滤: ${beforeFilter} -> ${users.length}`);
+            }
+            
+            // ========== 前端多关键词搜索 ==========
+            if (filters.search) {
+                const keywords = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+                if (keywords.length > 0) {
+                    const beforeSearch = users.length;
+                    users = users.filter(user => {
+                        const searchStr = [
+                            (user.name_en || '').toLowerCase(),
+                            (user.email || '').toLowerCase(),
+                            (user.employee_id || '').toLowerCase(),
+                            (user.wh_id || '').toLowerCase(),
+                            (user.wh_name_en || '').toLowerCase()
+                        ].join(' ');
+                        return keywords.every(kw => searchStr.includes(kw));
+                    });
+                    console.log(`🔍 搜索过滤: ${beforeSearch} -> ${users.length}`);
+                }
+            }
+
+            console.log('📊 最终用户数据:', users.length, '条');
+            currentUsersData = users;
+            renderUserTable(currentUsersData, false);
+
+            if (users.length > 0) {
+                requestAnimationFrame(() => {
+                    setTimeout(() => {
+                        const cells = document.querySelectorAll('.action-cell');
+                        if (cells.length > 0) {
+                            initActionColumnResponsive();
+                        }
+                    }, 100);
+                });
+            } else {
+                if (window._actionCellRetryTimer) {
+                    clearTimeout(window._actionCellRetryTimer);
+                    window._actionCellRetryTimer = null;
+                }
             }
 
             const total = data.total || users.length;
-            // const total = users.length;
             document.getElementById('totalCount').innerText = total;
             const totalPages = Math.ceil(total / 20);
             const current = data.page || 1;
@@ -963,8 +1196,18 @@
 
         } catch (err) {
             console.error('加载用户列表失败:', err);
+            const tbody = document.getElementById('userTableBody');
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="14" class="text-center text-danger" style="padding: 40px 20px;">
+                            <i class="bi bi-exclamation-triangle" style="font-size: 2rem; display: block; margin-bottom: 10px;"></i>
+                            <p>${t('load_failed') || '加载失败，请刷新重试'}</p>
+                        </td>
+                    </tr>`;
+            }
         }
-        // 重新绑定全选事件
+
         setTimeout(() => {
             const selectAllCheckbox = document.getElementById('selectAllActive');
             if (selectAllCheckbox && !selectAllCheckbox._hasListener) {
@@ -1259,17 +1502,67 @@
     * 对操作列应用 ResizeObserver 实现响应式折叠
     * 使用 !important 和类名控制，确保样式生效
     */
-    function initActionColumnResponsive() {
-        // 获取所有操作列单元格
+    function initActionColumnResponsive(retryCount = 0) {
+        const maxRetries = 5;
         const cells = document.querySelectorAll('.action-cell');
-        if (!cells.length) {
-            console.warn('⚠️ 未找到 .action-cell 元素');
+        const tbody = document.getElementById('userTableBody');
+        
+        // ✅ 检测空状态（停止重试）
+        if (tbody) {
+            const emptyText = tbody.textContent || '';
+            // 检测各种空状态提示
+            if (emptyText.includes('暂无数据') || 
+                emptyText.includes('没有匹配项') || 
+                emptyText.includes('加载失败') ||
+                emptyText.includes('未找到匹配的国家')) {
+                console.log('ℹ️ 表格显示空状态，停止操作列初始化重试');
+                if (window._actionCellRetryTimer) {
+                    clearTimeout(window._actionCellRetryTimer);
+                    window._actionCellRetryTimer = null;
+                }
+                return;
+            }
+            
+            // 如果还在加载中，继续等待
+            if (tbody.querySelector('.spinner-border')) {
+                console.log('⏳ 表格正在加载中，等待数据...');
+                if (retryCount < maxRetries) {
+                    const delay = 300 * Math.pow(1.5, retryCount);
+                    window._actionCellRetryTimer = setTimeout(() => {
+                        initActionColumnResponsive(retryCount + 1);
+                    }, delay);
+                }
+                return;
+            }
+        }
+        
+        // 如果找到操作列，初始化
+        if (cells && cells.length > 0) {
+            console.log(`✅ 找到 ${cells.length} 个操作列，初始化响应式`);
+            if (window._actionCellRetryTimer) {
+                clearTimeout(window._actionCellRetryTimer);
+                window._actionCellRetryTimer = null;
+            }
+            initializeCells(cells);
             return;
         }
         
+        // 重试
+        if (retryCount < maxRetries) {
+            const delay = 100 * Math.pow(1.5, retryCount);
+            console.log(`⏳ 等待操作列渲染... (尝试 ${retryCount + 1}/${maxRetries}, 延迟 ${delay}ms)`);
+            window._actionCellRetryTimer = setTimeout(() => {
+                initActionColumnResponsive(retryCount + 1);
+            }, delay);
+        } else {
+            console.warn('⚠️ 达到最大重试次数，停止重试');
+            window._actionCellRetryTimer = null;
+        }
+    }
+
+    function initializeCells(cells) {
         // 为每个单元格设置初始状态
         cells.forEach((cell, index) => {
-            // 获取单元格的实际宽度
             const cellWidth = cell.offsetWidth || cell.getBoundingClientRect().width || 0;
             const fullButtons = cell.querySelector('.action-buttons-full');
             const dropdownWrapper = cell.querySelector('.action-dropdown-wrapper');
@@ -1279,30 +1572,27 @@
                 return;
             }
             
-            // 应用初始状态
-            if (cellWidth < 180) {
+            if (cellWidth < 180 && cellWidth > 0) {
                 cell.classList.add('is-collapsed');
             } else {
                 cell.classList.remove('is-collapsed');
             }
         });
         
-        // 使用 ResizeObserver 监听列宽变化
+        // 设置 ResizeObserver
+        setupResizeObserver(cells);
+    }
+
+    function setupResizeObserver(cells) {
         if (typeof ResizeObserver === 'undefined') {
-            console.warn('⚠️ ResizeObserver 不支持，使用备用方案');
-            // 备用方案：监听窗口变化
-            window.addEventListener('resize', function() {
-                setTimeout(initActionColumnResponsive, 100);
-            });
+            console.warn('⚠️ ResizeObserver 不支持');
             return;
         }
         
-        // 如果已有 observer，先断开
         if (window._actionCellObserver) {
             window._actionCellObserver.disconnect();
         }
         
-        // 创建新的 observer
         const observer = new ResizeObserver(entries => {
             for (const entry of entries) {
                 const cell = entry.target;
@@ -1312,7 +1602,6 @@
                 
                 if (!fullButtons || !dropdownWrapper) continue;
                 
-                // 阈值：小于 180px 时折叠
                 if (cellWidth < 180 && cellWidth > 0) {
                     if (!cell.classList.contains('is-collapsed')) {
                         cell.classList.add('is-collapsed');
@@ -1325,12 +1614,10 @@
             }
         });
         
-        // 观察所有操作列
         cells.forEach(cell => {
             observer.observe(cell);
         });
         
-        // 保存 observer 以便后续清理
         window._actionCellObserver = observer;
     }
 
@@ -1353,7 +1640,7 @@
         });
     }
 
-    function renderUserTable(users) {
+    function renderUserTable(users, isLoading = false) {
         if (typeof currentPage === 'undefined') {
             currentPage = 1;
         }
@@ -1381,18 +1668,50 @@
             displayUsers = users.filter(u => u.role === 'user');
         }
         
-        if (!displayUsers.length) {
-            document.getElementById('userTableBody').innerHTML = `
-                <tr>
-                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
-                        <div class="d-flex flex-column align-items-center justify-content-center">
-                            <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <span class="text-muted">${t('loading') || '加载中...'}</span>
-                        </div>
-                    </td>
-                </tr>`;
+        // ==================== 空数据处理 ====================
+        if (!displayUsers || displayUsers.length === 0) {
+            const tbody = document.getElementById('userTableBody');
+            if (tbody) {
+                let html = '';
+                
+                // ✅ 根据 isLoading 参数决定显示什么
+                if (isLoading) {
+                    // 加载中状态
+                    html = `
+                        <tr>
+                            <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                                <div class="d-flex flex-column align-items-center justify-content-center">
+                                    <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted">${t('loading') || '加载中...'}</span>
+                                </div>
+                            </td>
+                        </tr>`;
+                } else {
+                    // ✅ 非加载状态：显示"暂无数据"或"没有匹配项"
+                    const hasSearch = filters.search || filters.country || filters.wh_id;
+                    const icon = hasSearch ? 'bi-search' : 'bi-inbox';
+                    const message = hasSearch ? 
+                        (t('no_matching_results') || '没有匹配项') : 
+                        (t('no_data') || '暂无数据');
+                    const hint = hasSearch ? 
+                        (t('try_adjust_search') || '💡 试试调整搜索关键词') : 
+                        (t('add_user_hint') || '💡 点击"添加用户"创建新用户');
+                    
+                    html = `
+                        <tr>
+                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                                <i class="bi ${icon}" style="font-size: 2.5rem; display: block; margin-bottom: 10px; color: #adb5bd;"></i>
+                                <p style="color: #6c757d; margin-bottom: 5px;">${message}</p>
+                                <small style="color: #adb5bd;">${hint}</small>
+                            </td>
+                        </tr>`;
+                }
+                tbody.innerHTML = html;
+            }
+            document.getElementById('totalCount').innerText = '0';
+            document.getElementById('pagination').innerHTML = '';
             return;
         }
 
@@ -1502,10 +1821,24 @@
                         cellValue = escapeHtml(u.country || '-');
                         break;
                     case 'name_en':
-                        cellValue = escapeHtml(u.name_en || '-');
+                        let nameDisplay = escapeHtml(u.name_en || '-');
+                        if (filters.search) {
+                            const searchTerms = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+                            if (searchTerms.length > 0) {
+                                nameDisplay = highlightMatch(u.name_en || '-', searchTerms);
+                            }
+                        }
+                        cellValue = nameDisplay;
                         break;
                     case 'email':
-                        cellValue = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
+                        let emailDisplay = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
+                        if (filters.search && emailDisplay && emailDisplay !== '-') {
+                            const searchTerms = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+                            if (searchTerms.length > 0) {
+                                emailDisplay = highlightMatch(u.email || '', searchTerms);
+                            }
+                        }
+                        cellValue = emailDisplay;
                         break;
                     case 'id':
                         const userIdFull = u.id;
@@ -1684,11 +2017,31 @@
             selectAllCheckbox.addEventListener('change', handleSelectAll);
         }
 
-        // ✅ 触发表格渲染完成事件，通知列宽需要重新计算
+        // 触发表格渲染完成事件，通知列宽需要重新计算
         if (table) {
             const event = new CustomEvent('tableRendered', { detail: { tableId: 'userTable' } });
             table.dispatchEvent(event);
         }
+    }
+
+    // 高亮匹配文本的函数
+    function highlightMatch(text, searchTerms) {
+        if (!text || !searchTerms || searchTerms.length === 0) return escapeHtml(text);
+        
+        let result = escapeHtml(text);
+        const terms = searchTerms.filter(t => t.length > 0);
+        
+        for (const term of terms) {
+            // 使用正则表达式进行不区分大小写的替换
+            const regex = new RegExp(`(${escapeRegex(term)})`, 'gi');
+            result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
+        }
+        return result;
+    }
+
+    // 转义正则表达式特殊字符
+    function escapeRegex(str) {
+        return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
     // ==================== 表格点击事件委托 ====================
@@ -2809,13 +3162,13 @@
             };
         }
     }
-    
-    // 筛选事件 - 输入即搜索
+   
     function bindFilterEvents() {
         const searchInput = document.getElementById('searchInput');
         const countryInput = document.getElementById('filterCountry');
         const whInput = document.getElementById('filterWhId');
         const resetBtn = document.getElementById('resetFiltersBtn');
+        const codeHidden = document.getElementById('filterCountryCode');
         
         const debounce = (fn, delay) => {
             let timer;
@@ -2827,9 +3180,8 @@
         
         const updateFilters = () => {
             filters.search = searchInput?.value || '';
-            // ✅ 国家筛选：直接使用输入框的值，进行模糊匹配
+            // ✅ 国家直接使用用户输入的值，不做任何转换
             filters.country = countryInput?.value || '';
-            // ✅ 库房筛选：直接使用输入框的值，进行模糊匹配
             filters.wh_id = whInput?.value || '';
             currentPage = 1;
             loadUsers();
@@ -2837,14 +3189,24 @@
         
         const debouncedUpdate = debounce(updateFilters, 300);
         
-        if (searchInput) searchInput.addEventListener('input', debouncedUpdate);
-        if (countryInput) countryInput.addEventListener('input', debouncedUpdate);
-        if (whInput) whInput.addEventListener('input', debouncedUpdate);
+        // ✅ 所有输入框都绑定 input 事件，逻辑一致
+        if (searchInput) {
+            searchInput.addEventListener('input', debouncedUpdate);
+        }
+        if (countryInput) {
+            countryInput.addEventListener('input', debouncedUpdate);
+        }
+        if (whInput) {
+            whInput.addEventListener('input', debouncedUpdate);
+        }
         
         if (resetBtn) {
             resetBtn.addEventListener('click', () => {
                 if (searchInput) searchInput.value = '';
-                if (countryInput) countryInput.value = '';
+                if (countryInput) {
+                    countryInput.value = '';
+                    if (codeHidden) codeHidden.value = '';
+                }
                 if (whInput) whInput.value = '';
                 filters = { search: '', country: '', wh_id: '' };
                 currentPage = 1;
@@ -2852,7 +3214,7 @@
             });
         }
     }
-        
+
     function bindDeletedFilterEvents() {
         const searchInput = document.getElementById('deletedSearchInput');
         const countryInput = document.getElementById('deletedCountryFilter');
@@ -3482,9 +3844,149 @@
     });
 
     // 初始化国家列表
+    // 初始化国家列表
     document.addEventListener('DOMContentLoaded', async () => {
+        await waitForI18n();
+        window.i18n.applyTranslations();
+        
+        // 初始化超级搜索实例
+        window._superSearchInstances = {};
+        
+        // 1. 姓名/邮箱搜索（带多关键词 + 下拉建议）
+        window._superSearchInstances.search = initSuperSearch('searchInput', {
+            multiKeyword: true,
+            searchFields: ['name_en', 'email', 'employee_id', 'wh_id'],
+            delay: 300,
+            minChars: 1,
+            fetchData: async (keyword) => {
+                return currentUsersData || [];
+            },
+            filterData: (data, keywords) => {
+                if (!keywords || keywords.length === 0) return data;
+                return data.filter(user => {
+                    const searchStr = [
+                        user.name_en || '',
+                        user.email || '',
+                        user.employee_id || '',
+                        user.wh_id || '',
+                        user.wh_name_en || ''
+                    ].join(' ').toLowerCase();
+                    return keywords.every(kw => searchStr.includes(kw.toLowerCase()));
+                });
+            },
+            renderItem: (item, keywords) => {
+                let name = item.name_en || item.email || '未知用户';
+                let email = item.email || '';
+                if (keywords && keywords.length > 0) {
+                    keywords.forEach(kw => {
+                        const regex = new RegExp(`(${kw})`, 'gi');
+                        name = name.replace(regex, '<mark>$1</mark>');
+                    });
+                }
+                return `<div class="super-search-item" data-value="${item.name_en || item.email}" 
+                            style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
+                            <strong>${name}</strong>
+                            ${email ? `<span class="text-muted ms-2">${email}</span>` : ''}
+                        </div>`;
+            },
+            onSelect: (value) => {
+                filters.search = value;
+                currentPage = 1;
+                loadUsers();
+            }
+        });
+        
+        // 2. 国家搜索
+        window._superSearchInstances.country = initSuperSearch('filterCountry', {
+            multiKeyword: true,
+            delay: 300,
+            minChars: 1,
+            fetchData: async (keyword, keywords) => {
+                const countryMap = await loadCountryMap();
+                const results = [];
+                for (const [code, info] of Object.entries(countryMap)) {
+                    const searchStr = `${info.name_en} ${info.name_zh} ${code}`.toLowerCase();
+                    if (keywords.every(kw => searchStr.includes(kw.toLowerCase()))) {
+                        results.push({ code, ...info });
+                    }
+                }
+                return results;
+            },
+            renderItem: (item) => {
+                const lang = window.i18n?.currentLang || 'zh';
+                const displayName = lang === 'zh' ? item.name_zh : item.name_en;
+                return `<div class="super-search-item" data-value="${displayName}" data-code="${item.code}"
+                            style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
+                            <strong>${displayName}</strong>
+                            <span class="text-muted ms-2">(${item.code})</span>
+                        </div>`;
+            },
+            onSelect: (value, dataset) => {
+                // ✅ 简单：直接设置显示值，让 loadUsers 去匹配
+                const displayInput = document.getElementById('filterCountry');
+                if (displayInput) {
+                    displayInput.value = value;
+                }
+                // ✅ 更新 filters.country 为用户选择的值（显示名称）
+                filters.country = value;
+                currentPage = 1;
+                loadUsers();
+            }
+        });
+
+        // 3. 库房搜索
+        window._superSearchInstances.wh = initSuperSearch('filterWhId', {
+            multiKeyword: false,
+            delay: 300,
+            minChars: 1,
+            fetchData: async (keyword) => {
+                const whSet = new Set();
+                currentUsersData.forEach(user => {
+                    if (user.wh_id) whSet.add(user.wh_id);
+                    if (user.wh_name_en) whSet.add(user.wh_name_en);
+                });
+                const results = Array.from(whSet).filter(item => 
+                    item.toLowerCase().includes(keyword.toLowerCase())
+                );
+                return results.map(item => ({ value: item, label: item }));
+            },
+            renderItem: (item) => {
+                return `<div class="super-search-item" data-value="${item.value}" 
+                            style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #eee;">
+                            ${item.label}
+                        </div>`;
+            },
+            onSelect: (value) => {
+                filters.wh_id = value;
+                currentPage = 1;
+                loadUsers();
+            }
+        });
+        
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await setupCountryAutocomplete('deletedCountryFilter', 'deletedCountryDatalist');
+        
+        // ============================================================
+        // ✅ 关键修复：初始化时从隐藏字段同步国家显示名称
+        // ============================================================
+        const codeHidden = document.getElementById('filterCountryCode');
+        const countryDisplay = document.getElementById('filterCountry');
+        if (codeHidden && codeHidden.value && countryDisplay) {
+            try {
+                const countryMap = await loadCountryMap();
+                const info = countryMap[codeHidden.value];
+                if (info) {
+                    const lang = window.i18n?.currentLang || 'zh';
+                    countryDisplay.value = lang === 'zh' ? info.name_zh : info.name_en;
+                } else {
+                    // 如果国家代码不存在，显示代码本身
+                    countryDisplay.value = codeHidden.value;
+                }
+            } catch (e) {
+                console.warn('同步国家显示名称失败:', e);
+                countryDisplay.value = codeHidden.value;
+            }
+        }
         
         // 只需要这两个筛选绑定
         bindFilterEvents();
@@ -3521,7 +4023,6 @@
 
         const mobileMenu = document.getElementById('mobileActionMenu');
         if (mobileMenu) {
-            // 点击菜单内的按钮时关闭菜单
             mobileMenu.querySelectorAll('button, a').forEach(el => {
                 el.addEventListener('click', function() {
                     const bsCollapse = bootstrap.Collapse.getInstance(mobileMenu);

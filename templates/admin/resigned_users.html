@@ -49,6 +49,11 @@
                         data-i18n-placeholder="placeholder_country" placeholder="国家">
                     <datalist id="countryDatalist"></datalist>
                 </div>
+                <!-- 库房搜索输入框 -->
+                <div class="col-12 col-md-2">
+                    <input type="text" id="filterWhId" class="form-control" 
+                        data-i18n-placeholder="wh_id_name" placeholder="库房编码/名称" autocomplete="off">
+                </div>
                 <div class="col-md-2">
                     <select id="filterStatus" class="form-select">
                         <option value="" data-i18n="all_status">全部状态</option>
@@ -59,6 +64,9 @@
                 <div class="col-md-2">
                     <button id="searchBtn" class="btn btn-primary w-100" data-i18n="search">搜索</button>
                 </div>
+                <button id="resetFiltersBtn" class="btn btn-outline-secondary" data-i18n="reset">
+                    <i class="bi bi-arrow-repeat"></i>
+                </button>
                 <div class="col-md-3 text-end">
                     <button class="btn btn-success btn-sm" id="batchRehireFromResignedBtn">
                         <i class="bi bi-person-check"></i> <span data-i18n="batch_rehire">批量复职</span>
@@ -74,7 +82,7 @@
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0">
-                    <thead class="table-light">
+                    <thead class="table-light" style="white-space: nowrap;">
                         <tr>
                             <th style="width: 40px;"><input type="checkbox" id="selectAllResigned"></th>
                             <th><span data-i18n="sequence">序号</span></th>
@@ -229,31 +237,116 @@
     // 存储所有用户数据（用于获取用户名）
     let allResignedUsers = [];
     
+
     // 加载离职人员列表
     async function loadResignedUsers() {
-        const search = document.getElementById('searchInput').value;
-        const country = document.getElementById('filterCountry').value;
-        const status = document.getElementById('filterStatus').value;
+        if (abortController) {
+            abortController.abort();
+        }
+        abortController = new AbortController();
+        
+        const search = document.getElementById('searchInput')?.value || '';
+        const countryInput = document.getElementById('filterCountry')?.value || '';
+        const whId = document.getElementById('filterWhId')?.value || '';
+        const status = document.getElementById('filterStatus')?.value || '';
+        
+        // ✅ 确保国家数据已加载
+        if (!countryListLoaded) {
+            await loadCountries();
+        }
+        
+        // ✅ 匹配国家
+        const countryCode = matchCountry(countryInput);
         
         const params = new URLSearchParams({
             page: currentPage,
             per_page: 20,
             search: search,
-            country: country,
-            status: status
+            country: countryCode,  // 只发送匹配到的国家代码
+            status: status,
+            wh_id: whId,
+            _t: Date.now()
         });
         
-        const res = await fetch(`/api/admin/users/resigned?${params}`);
-        const data = await res.json();
-
-        // 存储所有用户数据
-        allResignedUsers = data.data || [];
+        // 如果用户输入了国家但没匹配到，返回空结果
+        if (countryInput.trim() && !countryCode) {
+            const tbody = document.getElementById('resignedTableBody');
+            tbody.innerHTML = `<tr><td colspan="10" class="text-center">${t('no_matching_country')}</td></tr>`;
+            document.getElementById('totalCount').innerText = '0';
+            return;
+        }
         
-        renderTable(allResignedUsers);
-        document.getElementById('totalCount').innerText = data.total;
-        renderPagination(data.page, Math.ceil(data.total / data.per_page));
+        try {
+            const res = await fetch(`/api/admin/users/resigned?${params}`, {
+                signal: abortController.signal
+            });
+            const data = await res.json();
+            allResignedUsers = data.data || [];
+            renderTable(allResignedUsers);
+            document.getElementById('totalCount').innerText = data.total || 0;
+            renderPagination(data.page, Math.ceil((data.total || 0) / data.per_page));
+        } catch (err) {
+            if (err.name === 'AbortError') return;
+            console.error('加载失败:', err);
+            showToast(t('load_failed'), 'error');
+        }
     }
-    
+
+
+    // 在文件顶部添加
+    let countryMap = {};
+    let countryListLoaded = false;
+
+    // 加载国家数据
+    async function loadCountries() {
+        if (countryListLoaded) return;
+        try {
+            const res = await fetch('/api/countries');
+            const data = await res.json();
+            countryMap = {};
+            data.forEach(c => {
+                countryMap[c.code] = c;
+            });
+            countryListLoaded = true;
+            
+            // 填充 datalist
+            const datalist = document.getElementById('countryDatalist');
+            if (datalist) {
+                datalist.innerHTML = data.map(c => 
+                    `<option value="${c.code}">${c.code} - ${c.name_en}</option>`
+                ).join('');
+            }
+        } catch (e) {
+            console.error('加载国家列表失败:', e);
+        }
+    }
+
+    // 国家输入匹配函数
+    function matchCountry(input) {
+        if (!input || !input.trim()) return '';
+        
+        const inputLower = input.trim().toLowerCase();
+        
+        // 1. 尝试精确匹配国家代码
+        const exactMatch = Object.values(countryMap).find(c => 
+            c.code.toLowerCase() === inputLower
+        );
+        if (exactMatch) return exactMatch.code;
+        
+        // 2. 尝试名称包含匹配
+        const containsMatch = Object.values(countryMap).find(c => {
+            const nameEn = (c.name_en || '').toLowerCase();
+            const nameZh = (c.name_zh || '').toLowerCase();
+            const code = (c.code || '').toLowerCase();
+            return nameEn.includes(inputLower) || 
+                nameZh.includes(inputLower) || 
+                code.includes(inputLower);
+        });
+        if (containsMatch) return containsMatch.code;
+        
+        return ''; // 没有匹配到
+    }
+
     function renderTable(users) {
         const tbody = document.getElementById('resignedTableBody');
         if (!users.length) {
@@ -1087,24 +1180,143 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        // 等待 i18n 就绪后加载列表
-        waitForI18n();
-        window.i18n.applyTranslations();  // 处理静态文本
-        loadResignedUsers();
+    // ==================== 输入即搜索（防抖） ====================
+    // 使用全局变量存储定时器
+    let globalSearchTimer = null;
+    let abortController = null;
 
+    function setupAutoSearch() {
+        console.log('🔧 设置输入即搜索');
+        
+        document.addEventListener('input', function(e) {
+            const target = e.target;
+            const targetId = target.id;
+            
+            // 只处理特定的输入框
+            if (targetId === 'searchInput' || 
+                targetId === 'filterCountry' || 
+                targetId === 'filterWhId') {
+                
+                console.log(`📝 输入: ${targetId} = "${target.value}"`);
+                
+                // 清除之前的定时器
+                if (globalSearchTimer) {
+                    clearTimeout(globalSearchTimer);
+                }
+                
+                // 设置新的定时器
+                globalSearchTimer = setTimeout(function() {
+                    console.log('🚀 执行自动搜索...');
+                    currentPage = 1;
+                    loadResignedUsers();
+                    globalSearchTimer = null;
+                }, 300);
+            }
+        });
+        
+        // 处理下拉选择框
+        document.addEventListener('change', function(e) {
+            if (e.target.id === 'filterStatus') {
+                console.log(`📝 选择状态: "${e.target.value}"`);
+                
+                if (globalSearchTimer) {
+                    clearTimeout(globalSearchTimer);
+                }
+                globalSearchTimer = setTimeout(function() {
+                    console.log('🚀 执行自动搜索（状态变化）...');
+                    currentPage = 1;
+                    loadResignedUsers();
+                    globalSearchTimer = null;
+                }, 300);
+            }
+        });
+    }
+
+
+    // ==================== 重置筛选 ====================
+
+    function resetFilters() {
+        console.log('🔄 重置筛选条件');
+        
+        const searchInput = document.getElementById('searchInput');
+        const countryInput = document.getElementById('filterCountry');
+        const whInput = document.getElementById('filterWhId');
+        const statusSelect = document.getElementById('filterStatus');
+        
+        if (searchInput) searchInput.value = '';
+        if (countryInput) countryInput.value = '';
+        if (whInput) whInput.value = '';
+        if (statusSelect) statusSelect.value = '';
+        
+        currentPage = 1;
+        loadResignedUsers();
+    }
+
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // 确保 i18n 已就绪
+        if (window.i18n && window.i18n._initialized) {
+            initPage();
+        } else if (window.i18n && typeof window.i18n.waitForInit === 'function') {
+            window.i18n.waitForInit().then(initPage);
+        } else {
+            // 降级方案
+            setTimeout(initPage, 500);
+        }
+    });
+
+
+    // 在 initPage 中加载国家数据
+    function initPage() {
+        console.log('🚀 初始化离职人员管理页面');
+        
+        // 应用翻译
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+        
+        // ✅ 加载国家数据
+        loadCountries();
+        
+        // 加载列表
+        loadResignedUsers();
+        
+        // 设置输入即搜索
+        setupAutoSearch();
+        
+        // 重置按钮
+        document.getElementById('resetFiltersBtn')?.addEventListener('click', resetFilters);
+        
+        // 搜索按钮
+        document.getElementById('searchBtn')?.addEventListener('click', function() {
+            currentPage = 1;
+            loadResignedUsers();
+        });
+        
         // 绑定批量复职按钮
         document.getElementById('batchRehireFromResignedBtn')?.addEventListener('click', batchRehireFromResigned);
-
-        // 语言切换时重新加载列表
+        
+        // 语言切换时重新加载
         if (window.i18n && window.i18n.subscribe) {
-            window.i18n.subscribe(() => {
-            loadResignedUsers();  // 重新加载列表，会触发使用新的翻译
+            window.i18n.subscribe(function() {
+                loadResignedUsers();
             });
         }
         window.addEventListener('app:languageChanged', function() {
             loadResignedUsers();
         });
-    });
+    }
+
+    // ==================== 防抖工具函数 ====================
+
+    function debounce(fn, delay) {
+        let timer = null;
+        return function(...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+                fn.apply(this, args);
+            }, delay);
+        };
+    }
 </script>
 {% endblock %}

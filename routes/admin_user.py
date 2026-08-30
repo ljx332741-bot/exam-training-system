@@ -134,12 +134,11 @@ def api_admin_users():
 
     # ========== 2. 国家模糊匹配 ==========
     matched_country_codes = []
-    country_search_term = country or countries_param
-    
-    if country_search_term:
+    # ✅ 处理 country 参数（单个国家，可能是名称或代码）
+    if country:
         countries_res = db.table("countries").select("code, name_zh, name_en").execute()
         all_countries = countries_res.data or []
-        search_lower = country_search_term.lower().strip()
+        search_lower = country.lower().strip()
         
         for c in all_countries:
             code = (c.get('code') or '').lower()
@@ -158,7 +157,26 @@ def api_admin_users():
                 "page": page,
                 "per_page": per_page
             })
-    
+
+    # ✅ 处理 countries 参数（多个国家代码，逗号分隔）
+    if countries_param:
+        # 直接解析为多个国家代码
+        param_codes = [c.strip().upper() for c in countries_param.split(',') if c.strip()]
+        if param_codes:
+            # 验证这些国家代码是否有效
+            countries_res = db.table("countries").select("code").in_("code", param_codes).execute()
+            valid_codes = [c['code'] for c in (countries_res.data or [])]
+            if valid_codes:
+                # 如果是精确匹配，直接使用
+                matched_country_codes = valid_codes
+            else:
+                # 如果没有匹配到任何国家，返回空
+                return jsonify({
+                    "data": [],
+                    "total": 0,
+                    "page": page,
+                    "per_page": per_page
+                })
     # ========== 3. 确定最终国家过滤列表 ==========
     final_countries = []
     
@@ -176,7 +194,7 @@ def api_admin_users():
     
     if not final_countries and allowed_countries is not None and allowed_countries and not is_dev:
         final_countries = allowed_countries
-    '''
+    
     print(f"用户列表请求 - 最终国家过滤: {final_countries}")
 
     print(f"=== 调试国家过滤 ===")
@@ -184,7 +202,7 @@ def api_admin_users():
     print(f"exam_countries: {exam_countries}")
     print(f"training_countries: {training_countries}")
     print(f"final_countries: {final_countries}")
-    '''
+    
     # ========== 4. 基础查询 ==========
     query = db.table("users").select("*", count="exact").is_("deleted_at", "null")
 
@@ -199,35 +217,53 @@ def api_admin_users():
 
     # ========== 5. 内存过滤 ==========
     exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
-    
+
+    # ✅ 判断是否有国家筛选参数
+    has_country_filter = bool(country or countries_param)
+
     filtered = []
     for user in all_users:
-        # 姓名/邮箱/工号搜索
+        # ========== 增强组合模糊搜索 ==========
         if search:
-            search_lower = search.lower()
+            search_lower = search.lower().strip()
+            keywords = search_lower.split()
+            
             name = (user.get('name_en') or '').lower()
             email = (user.get('email') or '').lower()
             emp_id = (user.get('employee_id') or '').lower()
-            if search_lower not in name and search_lower not in email and search_lower not in emp_id:
+            wh_id_field = (user.get('wh_id') or '').lower()
+            wh_name = (user.get('wh_name_en') or '').lower()
+            
+            target_str = f"{name} {email} {emp_id} {wh_id_field} {wh_name}"
+            
+            all_match = True
+            for kw in keywords:
+                if kw not in target_str:
+                    all_match = False
+                    break
+            
+            if not all_match:
                 continue
 
-        # 国家筛选（支持已导入用户通过创建者国家过滤）
+        # ========== 国家筛选（修复版） ==========
         if final_countries:
             user_country = user.get('country') or ''
             user_status = user.get('user_status', '')
             created_by = user.get('created_by')
             user_id = user.get('id')
 
-            # 开发者：永远可以看到自己（即使自己的国家不属于该考试/访谈）
+            # 开发者：永远可以看到自己
             if is_dev and user_id == current_user_id:
-                # 开发者看到自己，跳过国家检查
                 pass
-            # 情况1：用户有国家且在权限范围内
+            # 用户自己的 country 匹配
             elif user_country and user_country in final_countries:
                 pass
-            # 情况2：已导入用户，检查创建者国家
+            # ✅ 如果有明确的国家筛选参数（用户输入了国家），不通过创建者匹配
+            elif has_country_filter:
+                # 用户有国家筛选，但当前用户不匹配，跳过
+                continue
+            # ✅ 没有国家筛选参数时，才通过创建者国家匹配（用于权限过滤）
             elif user_status == 'imported' and created_by:
-                # 获取创建者国家
                 creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
                 if creator_res.data:
                     creator_country = creator_res.data.get('country')
@@ -1544,7 +1580,6 @@ def api_admin_user_employment_history(user_id):
 @admin_required
 def api_admin_resigned_users():
     """获取离职人员列表（仅超管/开发者可见）"""
-    # 权限检查
     if not is_developer() and session.get('role') != 'super_admin':
         return jsonify({"data": [], "total": 0, "message": "权限不足"}), 403
     
@@ -1553,13 +1588,14 @@ def api_admin_resigned_users():
     per_page = request.args.get('per_page', 20, type=int)
     search = request.args.get('search', '').strip()
     country = request.args.get('country', '').strip()
-    status = request.args.get('status', '')  # resigned / rehired
+    status = request.args.get('status', '')
+    wh_id = request.args.get('wh_id', '').strip()
     
-    # 查询离职人员（包括已复职的）
+    # 先获取所有离职人员
     query = db.table("users").select("*").is_("deleted_at", "null").eq("is_resign", True)
     
     if search:
-        query = query.or_(f"name_en.ilike.%{search}%,email.ilike.%{search}%")
+        query = query.filter("name_en", "ilike", f"%{search}%")
     if country:
         query = query.eq("country", country)
     if status == 'rehired':
@@ -1567,28 +1603,41 @@ def api_admin_resigned_users():
     elif status == 'resigned':
         query = query.eq("is_rehire", False)
     
-    # 分页
-    total_res = query.execute()
-    total = len(total_res.data or [])
+    # 执行查询
+    res = query.execute()
+    all_users = res.data or []
     
+    # 内存过滤 wh_id
+    if wh_id:
+        wh_lower = wh_id.lower()
+        all_users = [
+            u for u in all_users 
+            if wh_lower in (u.get('wh_id') or '').lower() 
+            or wh_lower in (u.get('wh_name_en') or '').lower()
+        ]
+    
+    # 排序
+    all_users.sort(key=lambda x: x.get('resigned_at', ''), reverse=True)
+    
+    # 内存分页
+    total = len(all_users)
     start = (page - 1) * per_page
-    end = start + per_page - 1
-    res = query.range(start, end).order("resigned_at", desc=True).execute()
+    end = start + per_page
+    paginated = all_users[start:end]
     
     # 获取创建人姓名
-    users = res.data or []
-    creator_ids = [u.get('created_by') for u in users if u.get('created_by')]
+    creator_ids = [u.get('created_by') for u in paginated if u.get('created_by')]
     creator_names = {}
     if creator_ids:
         creator_res = db.table("users").select("id, name_en").in_("id", creator_ids).execute()
         for c in (creator_res.data or []):
             creator_names[c['id']] = c.get('name_en', '')
     
-    for u in users:
+    for u in paginated:
         u['created_by_name'] = creator_names.get(u.get('created_by'), '')
     
     return jsonify({
-        "data": users,
+        "data": paginated,
         "total": total,
         "page": page,
         "per_page": per_page

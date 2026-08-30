@@ -344,3 +344,19 @@
         transform: scale(1) translateY(0);
     }
 }
+
+/* 搜索高亮样式 */
+.search-highlight {
+    background-color: #ffeb3b;
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: bold;
+}
+
+/* 暗色模式适配 */
+@media (prefers-color-scheme: dark) {
+    .search-highlight {
+        background-color: #f9a825;
+        color: #1a1a2e;
+    }
+}
