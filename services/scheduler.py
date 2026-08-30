@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from services.db import get_supabase, safe_table, retry_on_timeout, batch_query
 from services import exam
 from routes.helpers import safe_parse_datetime
+from utils.training_helpers import is_draft_time, DRAFT_PLACEHOLDER
 from apscheduler.schedulers.background import BackgroundScheduler
 import httpx
 
@@ -325,44 +326,66 @@ def init_scheduler(app):
 # ============================================================
 # 7. 动态更新状态
 # ============================================================
+# services/scheduler.py
+
+from utils.training_helpers import is_draft_time, DRAFT_PLACEHOLDER
+
 def update_all_training_statuses():
-    """定时更新所有培训的 dynamic_status"""
+    """定时更新所有培训的 dynamic_status（完善版）"""
     try:
         db = get_supabase()
         now = datetime.now(timezone.utc).isoformat()
         
         logger.info("🔄 开始更新培训状态...")
         
-        # 1. 更新为 closed（已结束）
+        # 1. 更新为 closed（已结束）- 排除草稿占位符
         result1 = db.table("trainings").update({
             "dynamic_status": "closed"
-        }).lt("end_time", now).execute()
+        }).lt("end_time", now)\
+          .neq("end_time", DRAFT_PLACEHOLDER)\
+          .execute()
         
-        # 2. 更新为 active（进行中）
+        # 2. 更新为 active（进行中）- 排除草稿占位符
         result2 = db.table("trainings").update({
             "dynamic_status": "active",
             "is_active": True
-        }).lte("start_time", now).gte("end_time", now).execute()
+        }).lte("start_time", now)\
+          .gte("end_time", now)\
+          .neq("start_time", DRAFT_PLACEHOLDER)\
+          .neq("end_time", DRAFT_PLACEHOLDER)\
+          .execute()
         
-        # 3. 更新为 pending（未开始）
+        # 3. 更新为 pending（未开始）- 排除草稿占位符
         result3 = db.table("trainings").update({
             "dynamic_status": "pending"
-        }).gt("start_time", now).execute()
+        }).gt("start_time", now)\
+          .neq("start_time", DRAFT_PLACEHOLDER)\
+          .execute()
         
         # 4. 更新为 draft（草稿，没有有效期）
         result4 = db.table("trainings").update({
             "dynamic_status": "draft",
             "is_active": False
-        }).filter("start_time", "is", "null").filter("end_time", "is", "null").execute()
+        }).filter("start_time", "is", "null")\
+          .filter("end_time", "is", "null")\
+          .execute()
+        
+        # 5. 额外修复：将使用占位符的培训强制设为 draft
+        result5 = db.table("trainings").update({
+            "dynamic_status": "draft",
+            "is_active": False
+        }).eq("start_time", DRAFT_PLACEHOLDER)\
+          .eq("end_time", DRAFT_PLACEHOLDER)\
+          .execute()
         
         logger.info(f"✅ 培训状态更新完成: closed={len(result1.data or [])}, "
                    f"active={len(result2.data or [])}, "
                    f"pending={len(result3.data or [])}, "
-                   f"draft={len(result4.data or [])}")
+                   f"draft={len(result4.data or [])}, "
+                   f"草稿修复={len(result5.data or [])}")
         
     except Exception as e:
         logger.error(f"❌ 更新培训状态失败: {e}")
-
 
 def update_all_exam_statuses():
     """定时更新所有考试的状态"""

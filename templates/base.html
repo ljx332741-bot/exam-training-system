@@ -891,9 +891,17 @@
                 return `${year}-${month}-${day}T${hours}:${minutes}`;
             }
             
-            // 将 UTC 时间字符串转换为本地时间字符串(年月日时分)
+            const DRAFT_PLACEHOLDER = '1970-01-01T00:00:00Z';
+
+            // 将 UTC 时间字符串转换为本地时间字符串(年月日时分，将UTC字符串转换为YYYY-MM-DD HH:MM,显示本地时间)
             function formatLocalTime(utcString) {
                 if (!utcString) return '-';
+
+                // 检查是否为草稿占位时间
+                if (utcString === DRAFT_PLACEHOLDER || utcString.startsWith('1970-01-01')) {
+                    return '-';
+                }
+                
                 try {
                     const date = new Date(utcString);
                     if (isNaN(date.getTime())) return utcString;
@@ -908,6 +916,17 @@
                     return utcString;
                 }
             }
+
+            // 将 data对象转换为YYYY-MM-DDTHH:MM填充 datetime-local 输入框
+            function formatDateTimeLocal(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
+            }
+
             // 全局函数：将页面上所有带有 class="local-time" 且 data-utc 属性的元素转换为本地时区显示
             // 转换页面上所有带 data-utc 属性的元素（用于静态显示）
             function convertAllTimesToLocal() {
