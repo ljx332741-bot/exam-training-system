@@ -2372,7 +2372,7 @@
                     countryInstance = new CountryTagInput({
                         container: wrapper,
                         selectedCountries: existingCountries,
-                        placeholder: '输入国家名称或代码搜索...',
+                        placeholder: `${t('placeholder_coutry_search')}`,
                         maxTags: 30,
                         onChange: (selected) => {
                             console.log('编辑-已选国家:', selected);
@@ -2527,13 +2527,9 @@
         });
 
         // 推送
-        // 推送按钮事件（在 attachRowEvents 或初始化中）
         document.querySelectorAll('.push-btn').forEach(btn => {
             btn.onclick = (e) => {
                 currentTrainingId = btn.dataset.id;  // 设置当前培训ID
-                // 填充已有有效期（本地时间）
-                const startTime = btn.dataset.start;
-                const endTime = btn.dataset.end; 
                  
                 // 🔥 获取培训名称
                 const row = btn.closest('tr');
@@ -2546,8 +2542,30 @@
                     nameSpan.textContent = trainingName ? `- ${escapeHtml(trainingName)}` : '';
                 }
 
-                document.getElementById('start_time').value = startTime ? utcToLocalDatetimeLocal(startTime) : '';
-                document.getElementById('end_time').value = endTime ? utcToLocalDatetimeLocal(endTime) : '';
+                // 获取培训状态
+                const statusBadge = row?.querySelector('.badge');
+                const isDraft = statusBadge && statusBadge.textContent.trim() === '草稿';
+                
+                // 获取时间：如果是草稿，自动生成当前时间和30天后；否则使用已有时间
+                let startTime = btn.dataset.start;
+                let endTime = btn.dataset.end;
+                
+                if (isDraft || !startTime || !endTime || startTime.startsWith('1970-01-01')) {
+                    // 草稿培训：使用当前时间作为开始，30天后作为结束
+                    const now = new Date();
+                    const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                    startTime = formatDateTimeLocal(now);
+                    endTime = formatDateTimeLocal(thirtyDaysLater);
+                    
+                    console.log('📝 草稿培训，自动生成时间:', startTime, '→', endTime);
+                } else {
+                    // 非草稿：使用已有时间
+                    startTime = startTime ? utcToLocalDatetimeLocal(startTime) : '';
+                    endTime = endTime ? utcToLocalDatetimeLocal(endTime) : '';
+                }
+
+                document.getElementById('start_time').value = startTime;
+                document.getElementById('end_time').value = endTime;
                 
                 // 清空用户列表并显示加载状态
                 const tbody = document.getElementById('pushUserListBody');
@@ -3522,7 +3540,7 @@
             const instance = new CountryTagInput({
                 container: wrapper,
                 selectedCountries: prefillCountries,
-                placeholder: '输入国家名称或代码搜索...',
+                placeholder: `${t('placeholder_coutry_search')}`,
                 maxTags: 30,
                 onChange: (selected) => {
                     console.log('已选国家:', selected);
@@ -3555,6 +3573,11 @@
             const name = newRow.querySelector('#newName').value.trim();
             const start = newRow.querySelector('#newStartTime').value;
             const end = newRow.querySelector('#newEndTime').value;
+
+            // 统一判断是否填写了完整有效期
+            const hasStartTime = start && start.trim() !== '';
+            const hasEndTime = end && end.trim() !== '';
+            const hasValidPeriod = hasStartTime && hasEndTime;
             
             // 从组件获取选中的国家列表
             const instance = newRow._countryTagInstance;
@@ -3582,13 +3605,13 @@
                 return;
             }
 
-            // 将本地时间转换为 UTC 字符串
-            let startISO = null;
-            let endISO = null;
-            if (start) {
+            // 转换时间：有值则转换，无值则传空字符串（表示草稿）
+            let startISO = '';
+            let endISO = '';
+            if (hasStartTime) {
                 startISO = localDateTimeToUTC(start);
             }
-            if (end) {
+            if (hasEndTime) {
                 endISO = localDateTimeToUTC(end);
             }
 
@@ -3617,8 +3640,19 @@
                 if (res.ok) {
                     const data = await res.json();
                     const newTrainingId = data.id;
+
+                    // 计算动态状态（用于本地显示）
+                    let dynamicStatus = 'draft';
+                    if (hasValidPeriod) {
+                        const now = new Date();
+                        const startDate = new Date(start);
+                        const endDate = new Date(end);
+                        if (now < startDate) dynamicStatus = 'pending';
+                        else if (now > endDate) dynamicStatus = 'closed';
+                        else dynamicStatus = 'active';
+                    }
                     
-                    // ✅ 构建新培训对象（用于本地添加）
+                    // 构建新培训对象（用于本地添加）
                     const newTraining = {
                         id: newTrainingId,
                         name: name,
@@ -3626,7 +3660,7 @@
                         start_time: startISO,
                         end_time: endISO,
                         created_at: new Date().toISOString(),
-                        dynamic_status: 'draft',
+                        dynamic_status: dynamicStatus,
                         signed_count: 0,
                         binding_count: 0,
                         photo_count: 0,
@@ -3635,16 +3669,24 @@
                         ...(data.training || {})
                     };
                     
-                    // ✅ 使用本地添加（不刷新列表）
+                    // 使用本地添加（不刷新列表）
                     addTrainingLocally(newTraining);
                     
-                    if (typeof showToast === 'function') {
-                        showToast(t('training_created_successfully'), 'success');
+                    // 只有非草稿状态才弹出推送对话框
+                    if (hasValidPeriod && dynamicStatus !== 'draft') {
+                        if (typeof showToast === 'function') {
+                            showToast(t('training_created_successfully'), 'success');
+                        }
+                        showPushTargetDialog(newTrainingId, name, selectedCountries);
+                    } else {
+                        if (typeof showToast === 'function') {
+                            const msg = typeof t === 'function' 
+                                ? t('training_created_as_draft') 
+                                : '培训已保存为草稿，可稍后设置有效期并推送';
+                            showToast(msg, 'info');
+                        }
                     }
-                    // 弹出推送对象选择对话框（传递国家列表）
-                    showPushTargetDialog(newTrainingId, name, selectedCountries);
                     
-                    // 移除新增行
                     newRow.remove();
                 } else {
                     const error = await res.json();
@@ -3905,7 +3947,7 @@
                             <div class="form-check mb-2">
                                 <input class="form-check-input" type="radio" name="pushTarget" id="pushAll" value="all" checked>
                                 <label class="form-check-label" for="pushAll">
-                                    📢 ${safeT('push_to_all_users_in_country') || '推送给所有国家用户'}
+                                    📢 ${safeT('push_to_all_users_in_country', countryDisplay) || '推送给所有国家用户'}
                                 </label>
                             </div>
                             <div class="form-check">
@@ -6462,7 +6504,7 @@
             this.container = options.container;
             this.selectedCountries = options.selectedCountries || [];
             this.onChange = options.onChange || null;
-            this.placeholder = options.placeholder || '输入国家名称或代码搜索...';
+            this.placeholder = options.placeholder || `${t('placeholder_coutry_search')}` || '请输入国家名称或代码';
             this.maxTags = options.maxTags || 20;
             this._suggestions = [];
             this._currentIndex = -1;
@@ -6505,10 +6547,10 @@
                             autocorrect="off"
                             autocapitalize="off"
                             spellcheck="false">
-                        <span class="selected-count-hint" id="selectedCountHint">已选 0 个国家</span>
+                        <span class="selected-count-hint" id="selectedCountHint">${t('selected_country', 0)}</span>
                     </div>
                     <div class="country-suggestions-dropdown" id="suggestionsDropdown"></div>
-                    <div class="error-message">请选择有效的国家</div>
+                    <div class="error-message">${t('select_valid_country')}</div>
                     <input type="hidden" class="country-codes-hidden" value="${this.selectedCountries.join(',')}">
                 </div>
             `;
@@ -6523,7 +6565,6 @@
             this._hint = document.getElementById('selectedCountHint');
             this._container = this.container.querySelector('.country-tag-input-container');
             
-            // ✅ 复用已有的 escapeHtml
             this._escapeHtml = escapeHtml || function(text) {
                 if (!text) return '';
                 const div = document.createElement('div');
@@ -6931,7 +6972,7 @@
         _updateSelectedCount() {
             if (this._hint) {
                 const count = this.selectedCountries.length;
-                this._hint.textContent = `已选 ${count} 个国家`;
+                this._hint.textContent = `${t('selected_country', {count: count})}`;
                 this._hint.style.color = count > 0 ? '#198754' : '#6c757d';
             }
         }

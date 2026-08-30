@@ -32,7 +32,10 @@ from utils.training_helpers import (
     get_training_countries_display,
     normalize_training_countries,
     parse_country_list,
-    sync_binding_pass_score_to_exam
+    sync_binding_pass_score_to_exam,
+    calculate_dynamic_status, 
+    is_draft_time, 
+    DRAFT_PLACEHOLDER
 )
 
 from routes.helpers import (
@@ -133,6 +136,7 @@ def _get_trainings_list(db):
     logger.info("=" * 60)
     sys.stdout.flush()
     logger.info("🔥🔥🔥 _get_trainings_list 被调用（应该是第一次或缓存过期）")
+    logger.info("📝 [GET_LIST] 开始获取培训列表")
     logger.info("=" * 60)
     sys.stdout.flush()
 
@@ -430,24 +434,18 @@ def _get_trainings_list(db):
         t['countries_display'] = get_training_countries_display(t, allowed_countries)
         t['countries_list'] = parse_training_countries(t)  # 原始列表
 
+        # ✅ 添加日志：打印每个培训的时间字段
+        logger.info(f"📝 [GET_LIST] 培训 {t.get('id')}: start_time={t.get('start_time')}, end_time={t.get('end_time')}, dynamic_status={t.get('dynamic_status')}")
+        
         # 动态状态
         start_time = t.get('start_time')
         end_time = t.get('end_time')
         if not start_time or not end_time:
-            t['dynamic_status'] = 'draft'
-        else:
-            try:
-                start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                if now < start_dt:
-                    t['dynamic_status'] = 'pending'
-                elif now > end_dt:
-                    t['dynamic_status'] = 'closed'
-                else:
-                    t['dynamic_status'] = 'active'
-            except Exception as e:
-                logger.warning(f"解析培训 {tid} 时间失败: {e}")
-                t['dynamic_status'] = 'draft'
+            # 使用统一的状态计算函数
+            t['dynamic_status'] = calculate_dynamic_status(
+                t.get('start_time'), 
+                t.get('end_time')
+            )
         
         # 模板不一致检查
         templates = templates_by_training.get(tid, [])
@@ -557,14 +555,41 @@ def _create_training(db):
     start_time = data.get('start_time')
     end_time = data.get('end_time')
 
-    # 计算动态状态
-    dynamic_status = _calculate_dynamic_status(start_time, end_time)
+    # 核心修复：区分 None 和空字符串
+    if start_time == '':
+        start_time = None
+    if end_time == '':
+        end_time = None
     
-    if not start_time:
-        start_time = datetime.now(timezone.utc).isoformat()
-    if not end_time:
-        end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+    # 只有完全没有传递时间时，才自动生成（预填模式）
+    if start_time is None and end_time is None:
+        if 'start_time' not in data or 'end_time' not in data:
+            start_time = datetime.now(timezone.utc).isoformat()
+            end_time = (datetime.now(timezone.utc) + timedelta(days=30)).isoformat()
+
+    # 草稿模式：使用占位时间（满足 NOT NULL 约束）
+    if start_time is None:
+        start_time = DRAFT_PLACEHOLDER
+    if end_time is None:
+        end_time = DRAFT_PLACEHOLDER
+
+    # 判断是否为草稿（使用占位时间）
+    is_draft = is_draft_time(start_time) or is_draft_time(end_time)
+    
+    if is_draft:
+        dynamic_status = 'draft'
+        is_active = False
+    else:
+        # ✅ 添加日志：确认调用的是哪个函数
+        logger.info("=" * 60)
+        logger.info("🔍 [CREATE] 进入 else 分支")
+        logger.info(f"🔍 [CREATE] start_time={start_time}, end_time={end_time}")
+        logger.info(f"🔍 [CREATE] calculate_dynamic_status 函数对象: {calculate_dynamic_status}")
+        logger.info("=" * 60)
         
+        dynamic_status = calculate_dynamic_status(start_time, end_time)
+        is_active = True
+
     res = db.table("trainings").insert({
         "name": name,
         "start_time": start_time,
@@ -572,14 +597,16 @@ def _create_training(db):
         "header_template": data.get('header_template', {}),
         "countries": countries_json,
         "quarter": data.get('quarter', ''),
-        "is_active": False,
+        "is_active": is_active,
         "created_by": current_user_id,
         "dynamic_status": dynamic_status
     }).execute()
     
     logger.info(f"创建培训成功: id={res.data[0]['id']}, name={name}")
-    return jsonify({"success": True, "id": res.data[0]['id']})
-    
+
+    # ✅ 添加日志：打印实际插入数据库的值
+    logger.info(f"📝 [CREATE] 插入数据库: id={res.data[0]['id']}, start_time={start_time}, end_time={end_time}, dynamic_status={dynamic_status}")
+
     # 创建成功后清除缓存
     training_cache.clear('training_list')
     
@@ -664,7 +691,17 @@ def _update_training(db):
     if 'start_time' in update_data or 'end_time' in update_data:
         start = update_data.get('start_time') or original.get('start_time')
         end = update_data.get('end_time') or original.get('end_time')
-        update_data['dynamic_status'] = _calculate_dynamic_status(start, end)
+
+        # 检查是否为占位符
+        if is_draft_time(start) or is_draft_time(end):
+            update_data['dynamic_status'] = 'draft'
+            update_data['is_active'] = False
+        elif start and end:
+            update_data['dynamic_status'] = calculate_dynamic_status(start, end)
+            update_data['is_active'] = True
+        else:
+            update_data['dynamic_status'] = 'draft'
+            update_data['is_active'] = False
     
     # 处理多国家更新
     if 'countries' in data:
@@ -733,23 +770,6 @@ def _update_training(db):
     training_cache.clear('training_list')
     
     return jsonify({"success": True})
-
-def _calculate_dynamic_status(start_time, end_time):
-    """计算培训的动态状态（工具函数）"""
-    if not start_time or not end_time:
-        return 'draft'
-    try:
-        now = datetime.now(timezone.utc)
-        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-        if now < start_dt:
-            return 'pending'
-        elif now > end_dt:
-            return 'closed'
-        else:
-            return 'active'
-    except Exception:
-        return 'draft'
 
 def _delete_training(db):
     """删除培训 - 支持多国家 + 创建者权限校验"""

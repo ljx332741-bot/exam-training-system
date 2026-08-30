@@ -1,6 +1,7 @@
 # utils/training_helpers.py
 import json
 import logging
+import traceback
 from typing import List, Union, Optional, Any
 from datetime import datetime, timezone 
 from services.db import get_supabase, get_supabase_admin
@@ -340,10 +341,18 @@ def calculate_dynamic_status(start_time, end_time):
     计算培训的动态状态（工具函数，供其他地方调用）
     如果数据库已有 dynamic_status 字段，可以直接读取
     """
+    logger.info("=" * 60)
+    logger.info("📝 [CALC_STATUS] 被调用")
+    logger.info(f"📝 [CALC_STATUS] start_time={start_time}, end_time={end_time}")
+    logger.info(f"📝 [CALC_STATUS] 调用栈:")
+    for line in traceback.format_stack()[-5:-1]:
+        logger.info(f"    {line.strip()}")
+    logger.info("=" * 60)
+    
     if not start_time or not end_time:
+        logger.info(f"📝 [CALC_STATUS] 检测到占位符，返回 draft")
         return 'draft'
     try:
-        from datetime import datetime, timezone
         now = datetime.now(timezone.utc)
         start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
         end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
@@ -453,4 +462,49 @@ def sync_binding_pass_score_to_exam(binding_id, new_pass_score, db=None):
     except Exception as e:
         logger.error(f"❌ 反向同步及格分数失败: binding_id={binding_id}, error={e}")
         return {"synced": False, "reason": str(e)}
+
+DRAFT_PLACEHOLDER = '1970-01-01T00:00:00+00:00'
+
+def is_draft_time(time_str):
+    """检查是否为草稿占位时间"""
+    if not time_str:
+        return True
+    # ✅ 兼容多种格式
+    return (time_str == '1970-01-01T00:00:00Z' or 
+            time_str == '1970-01-01T00:00:00+00:00' or
+            time_str.startswith('1970-01-01'))
+
+def calculate_dynamic_status(start_time, end_time):
+    """计算培训的动态状态（统一版本）"""
+    # ✅ 添加日志
+    logger.info(f"📝 [CALC_STATUS] 输入: start_time={start_time}, end_time={end_time}")
+
+    # ✅ 检查是否为占位符（草稿）
+    if is_draft_time(start_time) or is_draft_time(end_time):
+        logger.info(f"📝 [CALC_STATUS] 检测到占位符，返回 draft")
+        return 'draft'
+    
+    if not start_time or not end_time:
+        logger.info(f"📝 [CALC_STATUS] 时间为空，返回 draft")
+        return 'draft'
+    
+    try:
+        now = datetime.now(timezone.utc)
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+
+        logger.info(f"📝 [CALC_STATUS] now={now}, start_dt={start_dt}, end_dt={end_dt}")
+
+        if now < start_dt:
+            logger.info(f"📝 [CALC_STATUS] 返回 pending")
+            return 'pending'
+        elif now > end_dt:
+            logger.info(f"📝 [CALC_STATUS] 返回 closed")
+            return 'closed'
+        else:
+            logger.info(f"📝 [CALC_STATUS] 返回 active")
+            return 'active'
+    except Exception:
+        logger.error(f"📝 [CALC_STATUS] 异常: {e}")
+        return 'draft'
 
