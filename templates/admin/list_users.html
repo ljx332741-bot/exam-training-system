@@ -2159,22 +2159,57 @@
     function highlightMatch(text, searchTerms) {
         if (!text || !searchTerms || searchTerms.length === 0) return escapeHtml(text);
         
+        // 先转义 HTML
         let result = escapeHtml(text);
         const terms = searchTerms.filter(t => t.length > 0);
+        if (terms.length === 0) return result;
         
+        // 收集所有匹配位置
+        const positions = [];
         for (const term of terms) {
             const escapedTerm = escapeRegex(term);
             if (!escapedTerm) continue;
-            const regex = new RegExp(`(${escapedTerm})`, 'gi');
-            result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
+            try {
+                const regex = new RegExp(escapedTerm, 'gi');
+                let match;
+                while ((match = regex.exec(result)) !== null) {
+                    positions.push({ start: match.index, end: match.index + match[0].length });
+                }
+            } catch (e) {
+                // 如果正则出错，跳过该关键词
+                console.warn('正则匹配失败:', term, e);
+            }
         }
-        return result;
+        
+        if (positions.length === 0) return result;
+        
+        // 合并重叠或相邻的位置
+        positions.sort((a, b) => a.start - b.start);
+        const merged = [];
+        for (const pos of positions) {
+            if (merged.length === 0 || pos.start > merged[merged.length - 1].end) {
+                merged.push({ start: pos.start, end: pos.end });
+            } else {
+                merged[merged.length - 1].end = Math.max(merged[merged.length - 1].end, pos.end);
+            }
+        }
+        
+        // 从后往前插入标签
+        let html = result;
+        for (let i = merged.length - 1; i >= 0; i--) {
+            const pos = merged[i];
+            const before = html.substring(0, pos.start);
+            const matched = html.substring(pos.start, pos.end);
+            const after = html.substring(pos.end);
+            html = before + '<mark class="search-highlight">' + matched + '</mark>' + after;
+        }
+        
+        return html;
     }
 
     // 转义正则表达式特殊字符
     function escapeRegex(str) {
         if (!str) return '';
-        // ✅ 转义所有正则表达式特殊字符
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 

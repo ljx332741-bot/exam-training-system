@@ -1556,6 +1556,7 @@
 "backup_files": "Backup Files",
 "backup_files_list": "Backup Files List",
 "retrieving_sign_in_data": "Retrieving sign-in data...",
-"rendering_sign_in_list": "Rendering sign-in list..."
-
+"rendering_sign_in_list": "Rendering sign-in list...",
+"try_adjust_search": "Try adjusting the search filter",
+"no_matching_results": "No matching results"
 }
