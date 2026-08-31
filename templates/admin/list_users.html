@@ -433,6 +433,80 @@
         </div>
     </div>
 </div>
+
+<!-- 删除确认模态框 -->
+<div class="modal fade" id="deleteUserModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <span data-i18n="delete_user">删除用户</span>
+                    <span id="deleteUserName" class="text-muted ms-2" style="font-size: 0.9rem;"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3"><span data-i18n="delete_method">请选择删除方式：</span></p>
+                <div class="d-flex flex-wrap gap-2">
+                    <!-- 软删除按钮 -->
+                    <button class="btn btn-warning flex-fill" id="deleteSoftBtn">
+                        <i class="bi bi-trash"></i>
+                        <span data-i18n="soft_delete_recoverable">软删除（可恢复）</span>
+                    </button>
+                    <!-- 硬删除按钮 -->
+                    <button class="btn btn-danger flex-fill" id="deleteHardBtn">
+                        <i class="bi bi-trash3"></i>
+                        <span data-i18n="hard_delete_irreversible">硬删除（不可恢复）</span>
+                    </button>
+                    <!-- 取消按钮 -->
+                    <button class="btn btn-secondary flex-fill" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg"></i>
+                        <span data-i18n="cancel">取消</span>
+                    </button>
+                </div>
+                <!-- 提示信息 -->
+                <div class="mt-3 text-muted small" id="deleteHint">
+                    <span data-i18n="delete_hint">软删除：用户移至回收站，可在"已删除人员"中恢复</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 硬删除二次确认模态框 -->
+<div class="modal fade" id="hardDeleteConfirmModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <span data-i18n="hard_delete_warning_title">⚠️ 永久删除确认</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="fw-bold text-danger">
+                    <span data-i18n="hard_delete_warning">您正在执行永久删除操作！</span>
+                </p>
+                <!-- 使用 id 由 JavaScript 动态设置 -->
+                <p id="hardDeleteWarningDetail"></p>
+                <span id="hardDeleteUserName" style="display:none;"></span>
+                <p class="text-muted small">
+                    <span data-i18n="hard_delete_warning_hint">关联数据（考试记录、培训签到、访谈记录等）也将被永久删除。</span>
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="cancel">取消</span>
+                </button>
+                <button class="btn btn-danger" id="confirmHardDeleteBtn">
+                    <i class="bi bi-trash3"></i>
+                    <span data-i18n="confirm_permanently_delete">确认永久删除</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_css %}
@@ -444,6 +518,8 @@
     // 在文件顶部添加全局变量
     let _actionCellRetryTimer = null;
     let _actionCellRetryCount = 0;
+    let deleteTargetUserId = null;
+    let deleteTargetUserName = '';
 
     // ==================== 超级搜索组件（替代死代码） ====================
     function initSuperSearch(inputId, options = {}) {
@@ -1813,12 +1889,16 @@
             
             for (const field of visibleColumns) {
                 let cellValue = '';
+                let titleValue = '';
+
                 switch (field) {
                     case 'index':
                         cellValue = String(rowIndex);
+                        titleValue = cellValue;
                         break;
                     case 'country':
                         cellValue = escapeHtml(u.country || '-');
+                        titleValue = u.country || '-';
                         break;
                     case 'name_en':
                         let nameDisplay = escapeHtml(u.name_en || '-');
@@ -1829,6 +1909,7 @@
                             }
                         }
                         cellValue = nameDisplay;
+                        titleValue = u.name_en || '-';
                         break;
                     case 'email':
                         let emailDisplay = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
@@ -1839,6 +1920,7 @@
                             }
                         }
                         cellValue = emailDisplay;
+                        titleValue = u.email || '-';
                         break;
                     case 'id':
                         const userIdFull = u.id;
@@ -1855,59 +1937,82 @@
                         break;
                     case 'wh_id':
                         cellValue = escapeHtml(u.wh_id || '-');
+                        titleValue = u.wh_id || '-';
                         break;
                     case 'wh_name_en':
                         cellValue = escapeHtml(u.wh_name_en || '-');
+                        titleValue = u.wh_name_en || '-';
                         break;
                     case 'user_status':
-                        cellValue = u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'));
+                        const statusText = u.user_status === 'imported' ? t('t_imported') : (u.user_status === 'registered' ? t('t_registered') : escapeHtml(u.user_status || '-'));
+                        cellValue = statusText;
+                        titleValue = statusText;
                         break;
                     case 'role':
+                        let roleText = '';
                         if (u.role === 'developer') {
-                            cellValue = t('t_developer');
+                            roleText = t('t_developer');
                         } else if (u.role === 'super_admin') {
-                            cellValue = t('t_super_admin');
+                            roleText = t('t_super_admin');
                         } else if (u.role === 'admin') {
-                            cellValue = t('t_admin');
+                            roleText = t('t_admin');
                         } else {
-                            cellValue = t('t_ordinary_user');
+                            roleText = t('t_ordinary_user');
                         }
+                        cellValue = roleText;
+                        titleValue = roleText;
                         break;
                     case 'is_partner':
-                        cellValue = u.is_partner ? t('t_yes') : t('t_no');
+                        const partnerText = u.is_partner ? t('t_yes') : t('t_no');
+                        cellValue = partnerText;
+                        titleValue = partnerText;
                         break;
                     case 'employment_status':
+                        let empStatusHtml = '';
+                        let empStatusTitle = '';
                         if (u.user_status === 'imported') {
-                            cellValue = `<span class="badge bg-secondary">${t('not_activated') || '未激活'}</span>`;
+                            empStatusHtml = `<span class="badge bg-secondary">${t('not_activated') || '未激活'}</span>`;
+                            empStatusTitle = t('not_activated') || '未激活';
                         } else if (u.is_rehire && u.rehire_at && !u.is_resign) {
                             const rehireLocal = formatLocalTime(u.rehire_at);
                             const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '无';
-                            const title = `${t('resign_rehire_date_marked', { rehireLocal, resignLocal })}`;
-                            cellValue = `<span class="badge bg-info" title="${title}">${t('rehired') || '已复职'}</span>`;
+                            empStatusTitle = `${t('rehired') || '已复职'} (复职: ${rehireLocal})`;
+                            empStatusHtml = `<span class="badge bg-info" title="${empStatusTitle}">${t('rehired') || '已复职'}</span>`;
                         } else if (u.is_resign) {
                             const resignLocal = u.resigned_at ? formatLocalTime(u.resigned_at) : '-';
-                            cellValue = `<span class="badge bg-danger" title="离职日期: ${resignLocal}">${t('resigned') || '已离职'}</span>`;
+                            empStatusTitle = `${t('resigned') || '已离职'} (离职: ${resignLocal})`;
+                            empStatusHtml = `<span class="badge bg-danger" title="${empStatusTitle}">${t('resigned') || '已离职'}</span>`;
                         } else {
-                            cellValue = `<span class="badge bg-success">${t('active_employee') || '在职'}</span>`;
+                            empStatusHtml = `<span class="badge bg-success">${t('active_employee') || '在职'}</span>`;
+                            empStatusTitle = t('active_employee') || '在职';
                         }
+                        cellValue = empStatusHtml;
+                        titleValue = empStatusTitle;
                         break;
                     case 'employee_id':
                         cellValue = escapeHtml(u.employee_id || '-');
+                        titleValue = u.employee_id || '-';
                         break;
                     case 'company':
                         cellValue = escapeHtml(u.company || '-');
+                        titleValue = u.company || '-';
                         break;
                     case 'department':
                         cellValue = escapeHtml(u.department || '-');
+                        titleValue = u.department || '-';
                         break;
                     case 'wh_type':
                         cellValue = escapeHtml(u.wh_type || '-');
+                        titleValue = u.wh_type || '-';
                         break;
                     case 'birthday':
                         cellValue = escapeHtml(u.birthday || '-');
+                        titleValue = u.birthday || '-';
                         break;
                     case 'created_by':
-                        cellValue = escapeHtml(u.created_by_name || u.created_by?.slice(0,8) || '-');
+                        const creatorName = u.created_by_name || u.created_by?.slice(0,8) || '-';
+                        cellValue = escapeHtml(creatorName);
+                        titleValue = u.created_by_name || u.created_by || '-';
                         break;
                     case 'power_scope':
                         let scopeDisplay = '-';
@@ -1927,9 +2032,19 @@
                             }
                         }
                         cellValue = escapeHtml(scopeDisplay);
+                        titleValue = scopeDisplay;
                         break;
                 }
-                bodyHtml += `<td>${cellValue}</td>`;
+                // 添加 title 属性到 td 元素，实现悬浮提示
+                // 如果 cellValue 包含 HTML（如 badge、按钮等），使用 data-title 属性
+                const isHtmlContent = cellValue.includes('<') && cellValue.includes('>');
+                if (isHtmlContent) {
+                    // 对于 HTML 内容，使用 data-title 属性，并通过 CSS 伪元素或 JS 处理
+                    bodyHtml += `<td data-title="${escapeHtml(titleValue)}">${cellValue}</td>`;
+                } else {
+                    // 纯文本内容，直接使用 title 属性
+                    bodyHtml += `<td title="${escapeHtml(titleValue)}">${cellValue}</td>`;
+                }
             }
             
             // 操作列
@@ -2425,25 +2540,260 @@
     }
 
     async function deleteUser(userId) {
-        if (!(await showConfirm(window.i18n.t('delete_user_tip')))) return;
-
-        // ✅ 先从选中集合中移除
-        if (selectedUserIds.has(userId)) {
-            selectedUserIds.delete(userId);
-            updateBatchDeleteButton();
+        const user = currentUsersData.find(u => u.id === userId);
+        if (!user) {
+            showToast(t('user_not_found'), 'error');
+            return;
         }
-
-        fetch(`/api/admin/users/${userId}`, { method: 'DELETE' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    alert(t('delete_success'));
-                    loadUsers();
-                } else {
-                    alert(t('delete_failed') + data.message);
-                }
-            });
+        
+        deleteTargetUserId = userId;
+        deleteTargetUserName = user.name_en || user.email || userId;
+        
+        // 设置用户名
+        document.getElementById('deleteUserName').textContent = `"${deleteTargetUserName}"`;
+        
+        // 根据用户状态显示不同的提示
+        const hint = document.getElementById('deleteHint');
+        if (user.user_status === 'imported') {
+            hint.innerHTML = `${t('delete_hint_imported')}`;
+        } else if (user.user_status === 'registered') {
+            hint.innerHTML = `${t('delete_hint_registered')}`;
+        } else {
+            hint.innerHTML = `${t('delete_hint')}`;
+        }
+        
+        // 应用 i18n 翻译
+        if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
+            window.i18n.applyTranslations();
+        }
+        
+        const modal = new bootstrap.Modal(document.getElementById('deleteUserModal'));
+        modal.show();
     }
+
+    // ✅ 软删除执行函数
+    async function performSoftDelete() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteUserModal'));
+        if (modal) modal.hide();
+        
+        if (!deleteTargetUserId) return;
+        
+        try {
+            const response = await fetch(`/api/admin/users/${deleteTargetUserId}?soft_delete=true`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                if (selectedUserIds.has(deleteTargetUserId)) {
+                    selectedUserIds.delete(deleteTargetUserId);
+                    updateBatchDeleteButton();
+                }
+                showToast(t('soft_delete_success') || `用户 "${deleteTargetUserName}" 已软删除，可在"已删除人员"中恢复`, 'success');
+                loadUsers();
+            } else {
+                showToast(t('soft_delete_failed') + (data.message || ''), 'error');
+            }
+        } catch (err) {
+            showToast(t('soft_delete_failed') + err.message, 'error');
+        } finally {
+            deleteTargetUserId = null;
+            deleteTargetUserName = '';
+        }
+    }
+
+    // ✅ 硬删除执行函数
+    function performHardDelete() {
+        // 先关闭第一个模态框
+        const firstModal = bootstrap.Modal.getInstance(document.getElementById('deleteUserModal'));
+        if (firstModal) {
+            firstModal.hide();
+            // 等待第一个模态框完全关闭后再显示第二个
+            document.getElementById('deleteUserModal')?.addEventListener('hidden.bs.modal', function onFirstHidden() {
+                document.getElementById('deleteUserModal')?.removeEventListener('hidden.bs.modal', onFirstHidden);
+                // 显示硬删除二次确认模态框
+                showHardDeleteConfirm();
+            }, { once: true });
+        } else {
+            showHardDeleteConfirm();
+        }
+    }
+
+    // ✅ 确认硬删除执行函数
+    async function performConfirmHardDelete() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('hardDeleteConfirmModal'));
+        if (modal) modal.hide();
+        
+        if (!deleteTargetUserId) return;
+        
+        try {
+            const response = await fetch(`/api/admin/users/${deleteTargetUserId}/permanent`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                if (selectedUserIds.has(deleteTargetUserId)) {
+                    selectedUserIds.delete(deleteTargetUserId);
+                    updateBatchDeleteButton();
+                }
+                showToast(t('permanent_delete_success') || `用户 "${deleteTargetUserName}" 已永久删除`, 'success');
+                loadUsers();
+            } else {
+                showToast(t('permanent_delete_failed') + (data.message || ''), 'error');
+            }
+        } catch (err) {
+            showToast(t('permanent_delete_failed') + err.message, 'error');
+        } finally {
+            deleteTargetUserId = null;
+            deleteTargetUserName = '';
+        }
+    }
+
+    // ✅ 显示硬删除二次确认对话框
+    function showHardDeleteConfirm() {
+        const lang = window.i18n?.currentLang || 'zh';
+        const userName = escapeHtml(deleteTargetUserName || '');
+        
+        let modalElement = document.getElementById('hardDeleteConfirmModal');
+        if (!modalElement) {
+            console.warn('硬删除确认模态框不存在，动态创建...');
+            modalElement = createHardDeleteModal();
+            if (!modalElement) {
+                if (confirm(`⚠️ 永久删除 "${deleteTargetUserName}"，此操作不可恢复！`)) {
+                    performConfirmHardDelete();
+                }
+                return;
+            }
+        }
+        
+        // 设置内容
+        const detailEl = document.getElementById('hardDeleteWarningDetail');
+        const nameEl = document.getElementById('hardDeleteUserName');
+        
+        if (detailEl) {
+            const warningText = lang === 'zh' 
+                ? `用户 "<strong>${userName}</strong>" 将被永久删除，此操作不可恢复`
+                : `User "<strong>${userName}</strong>" will be permanently deleted, this action cannot be undone.`;
+            detailEl.innerHTML = warningText;
+        }
+        if (nameEl) {
+            nameEl.textContent = deleteTargetUserName || '';
+        }
+        
+        // ✅ 确保之前的模态框已完全关闭，清理残留遮罩
+        cleanupBackdrops();
+        
+        // 显示模态框
+        try {
+            const modal = new bootstrap.Modal(modalElement, {
+                backdrop: true,
+                keyboard: true
+            });
+            modal.show();
+        } catch (e) {
+            console.error('显示硬删除确认模态框失败:', e);
+            if (confirm(`⚠️ 永久删除 "${deleteTargetUserName}"，此操作不可恢复！`)) {
+                performConfirmHardDelete();
+            }
+        }
+    }
+
+    // ✅ 清理残留的遮罩层
+    function cleanupBackdrops() {
+        // 移除所有残留的遮罩层
+        document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+            backdrop.remove();
+        });
+        // 恢复 body 样式
+        document.body.classList.remove('modal-open');
+        document.body.style.overflow = '';
+        document.body.style.paddingRight = '';
+    }
+    
+    // ==================== 删除用户模态框事件 ====================
+
+    // 软删除按钮
+    document.getElementById('deleteSoftBtn')?.addEventListener('click', async function() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteUserModal'));
+        if (modal) modal.hide();
+        
+        if (!deleteTargetUserId) return;
+        
+        try {
+            const response = await fetch(`/api/admin/users/${deleteTargetUserId}?soft_delete=true`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                if (selectedUserIds.has(deleteTargetUserId)) {
+                    selectedUserIds.delete(deleteTargetUserId);
+                    updateBatchDeleteButton();
+                }
+                showToast(t('soft_delete_success') || `用户 "${deleteTargetUserName}" 已软删除`, 'success');
+                loadUsers();
+            } else {
+                showToast(t('soft_delete_failed') + (data.message || ''), 'error');
+            }
+        } catch (err) {
+            showToast(t('soft_delete_failed') + err.message, 'error');
+        } finally {
+            deleteTargetUserId = null;
+            deleteTargetUserName = '';
+        }
+    });
+
+    // 硬删除按钮 → 显示二次确认模态框
+    document.getElementById('deleteHardBtn')?.addEventListener('click', function() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('deleteUserModal'));
+        if (modal) modal.hide();
+        
+        // 显示硬删除二次确认模态框
+        showHardDeleteConfirm();
+    });
+
+    // 确认硬删除按钮
+
+    document.getElementById('confirmHardDeleteBtn')?.addEventListener('click', async function() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('hardDeleteConfirmModal'));
+        if (modal) modal.hide();
+        
+        if (!deleteTargetUserId) return;
+        
+        try {
+            const response = await fetch(`/api/admin/users/${deleteTargetUserId}/permanent`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                if (selectedUserIds.has(deleteTargetUserId)) {
+                    selectedUserIds.delete(deleteTargetUserId);
+                    updateBatchDeleteButton();
+                }
+                showToast(t('permanent_delete_success') || `用户 "${deleteTargetUserName}" 已永久删除`, 'success');
+                loadUsers();
+            } else {
+                showToast(t('permanent_delete_failed') + (data.message || ''), 'error');
+            }
+        } catch (err) {
+            showToast(t('permanent_delete_failed') + err.message, 'error');
+        } finally {
+            deleteTargetUserId = null;
+            deleteTargetUserName = '';
+        }
+    });
+
+    // 模态框关闭时清理状态
+    document.getElementById('deleteUserModal')?.addEventListener('hidden.bs.modal', function() {
+        // 如果用户没有选择任何操作就关闭，清理状态
+        // 但保留 deleteTargetUserId 供后续使用
+    });
 
     // ==================== 编辑用户时加载权限范围 ====================
     document.getElementById('saveUserBtn').addEventListener('click', async () => {
@@ -3967,7 +4317,7 @@
         await setupCountryAutocomplete('deletedCountryFilter', 'deletedCountryDatalist');
         
         // ============================================================
-        // ✅ 关键修复：初始化时从隐藏字段同步国家显示名称
+        // 初始化时从隐藏字段同步国家显示名称
         // ============================================================
         const codeHidden = document.getElementById('filterCountryCode');
         const countryDisplay = document.getElementById('filterCountry');
@@ -4032,7 +4382,23 @@
                 });
             });
         }
-        
+
+        document.getElementById('deleteSoftBtn')?.addEventListener('click', function() {
+            // 调用全局删除函数
+            if (typeof handleSoftDeleteClick === 'function') {
+                handleSoftDeleteClick();
+            } else {
+                // 直接执行软删除逻辑
+                performSoftDelete();
+            }
+        });
+        document.getElementById('deleteHardBtn')?.addEventListener('click', function() {
+            performHardDelete();
+        });
+        document.getElementById('confirmHardDeleteBtn')?.addEventListener('click', function() {
+            performConfirmHardDelete();
+        });
+
         // 移动端批量删除
         const mobileDeleteBtn = document.getElementById('mobileBatchDeleteBtn');
         if (mobileDeleteBtn) {
