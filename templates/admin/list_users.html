@@ -1890,6 +1890,7 @@
             for (const field of visibleColumns) {
                 let cellValue = '';
                 let titleValue = '';
+                let isHtmlContent = false;
 
                 switch (field) {
                     case 'index':
@@ -1905,6 +1906,7 @@
                         if (filters.search) {
                             const searchTerms = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
                             if (searchTerms.length > 0) {
+                                // ✅ 先高亮，再转义（但高亮函数内部已经做了转义处理）
                                 nameDisplay = highlightMatch(u.name_en || '-', searchTerms);
                             }
                         }
@@ -1916,6 +1918,7 @@
                         if (filters.search && emailDisplay && emailDisplay !== '-') {
                             const searchTerms = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
                             if (searchTerms.length > 0) {
+                                // 先高亮，再转义
                                 emailDisplay = highlightMatch(u.email || '', searchTerms);
                             }
                         }
@@ -2036,9 +2039,7 @@
                         break;
                 }
                 // 添加 title 属性到 td 元素，实现悬浮提示
-                // 如果 cellValue 包含 HTML（如 badge、按钮等），使用 data-title 属性
-                const isHtmlContent = cellValue.includes('<') && cellValue.includes('>');
-                if (isHtmlContent) {
+                if (isHtmlContent || cellValue.includes('<') && cellValue.includes('>')) {
                     // 对于 HTML 内容，使用 data-title 属性，并通过 CSS 伪元素或 JS 处理
                     bodyHtml += `<td data-title="${escapeHtml(titleValue)}">${cellValue}</td>`;
                 } else {
@@ -2140,16 +2141,19 @@
     }
 
     // 高亮匹配文本的函数
+    // ✅ 修复：先转义文本，再高亮
     function highlightMatch(text, searchTerms) {
         if (!text || !searchTerms || searchTerms.length === 0) return escapeHtml(text);
         
+        // ✅ 先转义 HTML 特殊字符
         let result = escapeHtml(text);
         const terms = searchTerms.filter(t => t.length > 0);
         
         for (const term of terms) {
             // 使用正则表达式进行不区分大小写的替换
             const regex = new RegExp(`(${escapeRegex(term)})`, 'gi');
-            result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
+            // ✅ 替换时保留原始内容，使用 $& 而不是 $1
+            result = result.replace(regex, '<mark class="search-highlight">$&</mark>');
         }
         return result;
     }
