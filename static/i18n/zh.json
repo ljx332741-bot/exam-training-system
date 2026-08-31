@@ -1545,5 +1545,7 @@
 "backup_files": "备份文件",
 "backup_files_list": "备份文件列表",
 "retrieving_sign_in_data": "正在获取签到数据...",
-"rendering_sign_in_list": "正在渲染签到列表..."
+"rendering_sign_in_list": "正在渲染签到列表...",
+"try_adjust_search": "请尝试调整搜索条件",
+"no_matching_results": "没有匹配的结果"
 }
