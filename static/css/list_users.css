@@ -360,3 +360,42 @@
         color: #1a1a2e;
     }
 }
+
+/* 单元格数据悬浮提示 - 使用 data-title 属性 */
+td[data-title] {
+    position: relative;
+}
+
+/* 使用伪元素实现悬浮提示 */
+td[data-title]:hover::after {
+    content: attr(data-title);
+    position: absolute;
+    left: 0;
+    top: 100%;
+    z-index: 999;
+    background: #333;
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 13px;
+    max-width: 400px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    pointer-events: none;
+    margin-top: 2px;
+}
+
+/* 单元格文本溢出隐藏 */
+td {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 对于包含 HTML 内容的单元格（如 badge），保持样式 */
+td .badge {
+    white-space: nowrap;
+}
