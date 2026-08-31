@@ -1225,7 +1225,10 @@
             
             // ========== 前端多关键词搜索 ==========
             if (filters.search) {
-                const keywords = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+                let cleanSearch = filters.search.trim();
+                // 移除可能干扰正则的特殊字符
+                cleanSearch = cleanSearch.replace(/[.*+?^${}()|[\]\\]/g, '');
+                const keywords = cleanSearch.toLowerCase().split(/\s+/).filter(k => k.length > 0);
                 if (keywords.length > 0) {
                     const beforeSearch = users.length;
                     users = users.filter(user => {
@@ -1903,27 +1906,31 @@
                         break;
                     case 'name_en':
                         let nameDisplay = escapeHtml(u.name_en || '-');
+                        let isNameHtml = false;
                         if (filters.search) {
-                            const searchTerms = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+                            const searchTerms = cleanSearchTerms(filters.search);
                             if (searchTerms.length > 0) {
-                                // ✅ 先高亮，再转义（但高亮函数内部已经做了转义处理）
                                 nameDisplay = highlightMatch(u.name_en || '-', searchTerms);
+                                isNameHtml = true;
                             }
                         }
                         cellValue = nameDisplay;
                         titleValue = u.name_en || '-';
+                        if (isNameHtml) isHtmlContent = true;
                         break;
                     case 'email':
                         let emailDisplay = (u.email && u.email.startsWith('noemail-')) ? '' : escapeHtml(u.email || '-');
+                        let isEmailHtml = false;
                         if (filters.search && emailDisplay && emailDisplay !== '-') {
-                            const searchTerms = filters.search.trim().toLowerCase().split(/\s+/).filter(k => k.length > 0);
+                            const searchTerms = cleanSearchTerms(filters.search);
                             if (searchTerms.length > 0) {
-                                // 先高亮，再转义
                                 emailDisplay = highlightMatch(u.email || '', searchTerms);
+                                isEmailHtml = true;
                             }
                         }
                         cellValue = emailDisplay;
                         titleValue = u.email || '-';
+                        if (isEmailHtml) isHtmlContent = true;
                         break;
                     case 'id':
                         const userIdFull = u.id;
@@ -2140,26 +2147,34 @@
         }
     }
 
+    // 清理搜索关键词中的特殊字符
+    function cleanSearchTerms(searchInput) {
+        if (!searchInput) return [];
+        // 移除正则特殊字符
+        const clean = searchInput.trim().replace(/[.*+?^${}()|[\]\\]/g, '');
+        return clean.toLowerCase().split(/\s+/).filter(k => k.length > 0);
+    }
+
     // 高亮匹配文本的函数
-    // ✅ 修复：先转义文本，再高亮
     function highlightMatch(text, searchTerms) {
         if (!text || !searchTerms || searchTerms.length === 0) return escapeHtml(text);
         
-        // ✅ 先转义 HTML 特殊字符
         let result = escapeHtml(text);
         const terms = searchTerms.filter(t => t.length > 0);
         
         for (const term of terms) {
-            // 使用正则表达式进行不区分大小写的替换
-            const regex = new RegExp(`(${escapeRegex(term)})`, 'gi');
-            // ✅ 替换时保留原始内容，使用 $& 而不是 $1
-            result = result.replace(regex, '<mark class="search-highlight">$&</mark>');
+            const escapedTerm = escapeRegex(term);
+            if (!escapedTerm) continue;
+            const regex = new RegExp(`(${escapedTerm})`, 'gi');
+            result = result.replace(regex, '<mark class="search-highlight">$1</mark>');
         }
         return result;
     }
 
     // 转义正则表达式特殊字符
     function escapeRegex(str) {
+        if (!str) return '';
+        // ✅ 转义所有正则表达式特殊字符
         return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
