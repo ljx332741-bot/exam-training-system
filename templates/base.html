@@ -709,9 +709,20 @@
                 }
             }
 
+            // 页眉页脚语言切换控制
+            function updatePrintHeaderFooter() {
+                const lang = window.i18n?.currentLang || 'zh';
+                const showHeaderFooter = localStorage.getItem('show_print_header_footer') !== 'false';
+                
+                // 设置 CSS 变量
+                document.documentElement.style.setProperty('--print-header-footer', showHeaderFooter ? 'block' : 'none');
+                document.documentElement.setAttribute('data-print-lang', lang);
+            }
+            
             // 语言切换时也刷新时区（可选）
-            window.addEventListener('app:languageChanged', () => {
+            window.addEventListener('app:languageChanged', function(e) {
                 detectAndSetTimezone();
+                updatePrintHeaderFooter();
             });
             
             // 解决 "Blocked aria-hidden on an element because its descendant retained focus" 警告
@@ -738,6 +749,7 @@
                 await waitForI18n();
 
                 detectAndSetTimezone();
+                updatePrintHeaderFooter();
                 // 恢复上次选择的语言
                 await restoreLanguage();
 
