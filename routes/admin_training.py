@@ -1134,37 +1134,85 @@ def admin_training_attendance(training_id):
 def training_attendance_print(training_id):
     return render_template('admin/list_training_attendance.html', training_id=training_id, print_mode=True)
 
+# routes/admin_training.py
+
 @admin_training_bp.route('/admin/training/<int:training_id>/attendance/pdf')
 @login_required
 @admin_required
 def download_training_attendance_pdf(training_id):
     country = request.args.get('country', '')
+    lang = request.args.get('lang', 'zh')
+    show_header = request.args.get('show_header', 'true').lower() == 'true'
+    
     data = get_attendance_data(training_id, country)
     if not data:
         flash("培训不存在", "danger")
         return redirect(url_for('admin_dashboard'))
 
-    html_content = render_template('admin/attendance_pdf.html',
-                                    training=data['training'],
-                                    header=data['header_template'],
-                                    attendances=data['attendances'])
+    # 渲染模板（不包含页眉页脚 HTML）
+    html_content = render_template(
+        'admin/attendance_pdf.html',
+        training=data['training'],
+        header=data['header_template'],
+        attendances=data['attendances'],
+        lang=lang
+    )
 
-    # 配置 wkhtmltopdf 路径（根据实际安装位置修改）
-    wkhtmltopdf_path = find_wkhtmltopdf()   # 自动查找（支持环境变量 WKHTMLTOPDF_PATH）
+    wkhtmltopdf_path = find_wkhtmltopdf()
     config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
-    pdf = pdfkit.from_string(html_content, False, configuration=config,
-                             options={
-                                'page-size': 'A4',
-                                'margin-top': '10mm',
-                                'margin-bottom': '10mm',
-                                'margin-left': '10mm',
-                                'margin-right': '10mm',
-                                'encoding': 'UTF-8',
-                                'enable-local-file-access': None,
-                                # 可选：避免因网络图片慢而超时
-                                'javascript-delay': '200',
-                                'no-stop-slow-scripts': None,
-                             })
+    
+    # 基础选项
+    options = {
+        'page-size': 'A4',
+        'margin-top': '25mm',
+        'margin-bottom': '25mm',
+        'margin-left': '15mm',
+        'margin-right': '15mm',
+        'encoding': 'UTF-8',
+        'enable-local-file-access': None,
+        'javascript-delay': '200',
+        'no-stop-slow-scripts': None,
+    }
+    
+    # 如果显示页眉页脚，添加 wkhtmltopdf 的页眉页脚选项
+    if show_header:
+        if lang == 'en':
+            options.update({
+                # 页眉：左右分栏
+                'header-left': 'ZTE',
+                'header-right': 'Internal Use▲',
+                'header-font-size': '9',
+                'header-spacing': '8',
+                'header-line': None,  # 在页眉下方添加分割线
+                # 页脚：左右分栏
+                'footer-left': 'All rights reserved. No distribution without prior permission of ZTE.',
+                'footer-right': 'Page [page] / [topage]',
+                'footer-font-size': '8',
+                'footer-spacing': '8',
+                'footer-line': None,  # 在页脚上方添加分割线
+            })
+        else:
+            options.update({
+                # 页眉：左右分栏
+                'header-left': 'ZTE中兴',
+                'header-right': '内部使用▲',
+                'header-font-size': '9',
+                'header-spacing': '8',
+                'header-line': None,
+                # 页脚：左右分栏
+                'footer-left': '以上所有信息均为中兴通讯股份有限公司所有，不得外传',
+                'footer-right': '页码 [page] / [topage]',
+                'footer-font-size': '8',
+                'footer-spacing': '8',
+                'footer-line': None,
+            })
+    else:
+        # 不显示页眉页脚时，使用正常边距
+        options['margin-top'] = '15mm'
+        options['margin-bottom'] = '15mm'
+    
+    pdf = pdfkit.from_string(html_content, False, configuration=config, options=options)
+    
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
     response.headers['Content-Disposition'] = f'inline; filename=attendance_{training_id}.pdf'
