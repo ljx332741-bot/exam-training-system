@@ -1134,22 +1134,27 @@ def admin_training_attendance(training_id):
 def training_attendance_print(training_id):
     return render_template('admin/list_training_attendance.html', training_id=training_id, print_mode=True)
 
-# routes/admin_training.py
-
 @admin_training_bp.route('/admin/training/<int:training_id>/attendance/pdf')
 @login_required
 @admin_required
 def download_training_attendance_pdf(training_id):
+    """
+    导出培训签到表的 PDF
+    """
     country = request.args.get('country', '')
     lang = request.args.get('lang', 'zh')
     show_header = request.args.get('show_header', 'true').lower() == 'true'
     
+    # 记录日志，便于排查
+    logger.info(f"📄 PDF导出参数: training_id={training_id}, lang={lang}, show_header={show_header}, country={country}")
+
+    # 获取签到数据
     data = get_attendance_data(training_id, country)
     if not data:
         flash("培训不存在", "danger")
         return redirect(url_for('admin_dashboard'))
 
-    # 渲染模板（不包含页眉页脚 HTML）
+    # 渲染正文模板（不含页眉页脚 HTML）
     html_content = render_template(
         'admin/attendance_pdf.html',
         training=data['training'],
@@ -1158,9 +1163,15 @@ def download_training_attendance_pdf(training_id):
         lang=lang
     )
 
+    # 查找 wkhtmltopdf 可执行文件路径
     wkhtmltopdf_path = find_wkhtmltopdf()
+    if not wkhtmltopdf_path:
+        logger.error("wkhtmltopdf 未找到，请检查安装或环境变量 WKHTMLTOPDF_PATH")
+        flash("PDF 生成工具未安装，请联系管理员", "danger")
+        return redirect(url_for('admin_training_attendance', training_id=training_id))
+
     config = pdfkit.configuration(wkhtmltopdf=wkhtmltopdf_path)
-    
+
     # 基础选项
     options = {
         'page-size': 'A4',
@@ -1173,46 +1184,45 @@ def download_training_attendance_pdf(training_id):
         'javascript-delay': '200',
         'no-stop-slow-scripts': None,
     }
-    
-    # 如果显示页眉页脚，添加 wkhtmltopdf 的页眉页脚选项
+
+    # 如果显示页眉页脚，添加 wkhtmltopdf 的页眉页脚选项（方案一：使用 header-left/right 和 footer-left/right）
     if show_header:
         if lang == 'en':
             options.update({
-                # 页眉：左右分栏
                 'header-left': 'ZTE',
                 'header-right': 'Internal Use▲',
                 'header-font-size': '9',
                 'header-spacing': '8',
-                'header-line': None,  # 在页眉下方添加分割线
-                # 页脚：左右分栏
+                # 不添加 header-line，避免某些版本不支持 None 导致报错
                 'footer-left': 'All rights reserved. No distribution without prior permission of ZTE.',
                 'footer-right': 'Page [page] / [topage]',
                 'footer-font-size': '8',
                 'footer-spacing': '8',
-                'footer-line': None,  # 在页脚上方添加分割线
             })
         else:
             options.update({
-                # 页眉：左右分栏
                 'header-left': 'ZTE中兴',
                 'header-right': '内部使用▲',
                 'header-font-size': '9',
                 'header-spacing': '8',
-                'header-line': None,
-                # 页脚：左右分栏
                 'footer-left': '以上所有信息均为中兴通讯股份有限公司所有，不得外传',
                 'footer-right': '页码 [page] / [topage]',
                 'footer-font-size': '8',
                 'footer-spacing': '8',
-                'footer-line': None,
             })
     else:
-        # 不显示页眉页脚时，使用正常边距
+        # 不显示页眉页脚时，减小上下边距，让内容更紧凑
         options['margin-top'] = '15mm'
         options['margin-bottom'] = '15mm'
-    
-    pdf = pdfkit.from_string(html_content, False, configuration=config, options=options)
-    
+
+    # 生成 PDF
+    try:
+        pdf = pdfkit.from_string(html_content, False, configuration=config, options=options)
+    except Exception as e:
+        logger.error(f"PDF 生成失败: {e}")
+        flash("PDF 生成失败，请检查 wkhtmltopdf 是否正确安装", "danger")
+        return redirect(url_for('admin_training_attendance', training_id=training_id))
+
     response = make_response(pdf)
     response.headers['Content-Type'] = 'application/pdf'
     response.headers['Content-Disposition'] = f'inline; filename=attendance_{training_id}.pdf'
