@@ -952,17 +952,16 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
 
     # ========== 数据行 ==========
     row_idx2 = 3
-    
-    # ✅ 统计每个用户在每个考试中的参与次数（用于测评次数列）
-    user_exam_count = defaultdict(lambda: defaultdict(int))
+
+    # ✅ 统计每个用户参与了哪些考试（去重：一个考试只统计一次）
+    user_exam_set = defaultdict(set)
     for exam in exams:
-        results_query = db.table("exam_results").select("*").eq("exam_id", exam['id'])
+        results_query = db.table("exam_results").select("user_id").eq("exam_id", exam['id'])
         if user_ids is not None:
             results_query = results_query.in_("user_id", user_ids)
         results_all = results_query.execute().data or []
         for r in results_all:
-            uid = r['user_id']
-            user_exam_count[uid][exam['id']] += 1
+            user_exam_set[r['user_id']].add(exam['id'])
 
     for exam in exams:
         exam_title = exam.get('title', '')
@@ -1013,26 +1012,25 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             # ✅ 获取业务单位（部门）
             dept = user.get('department', '')
             
-            # ✅ 获取该用户在该考试中的参与次数（用于测评次数列）
-            exam_count = user_exam_count.get(result['user_id'], {}).get(exam['id'], 1)
+            # ✅ 获取该用户参与的考试总数（去重：一个考试只统计一次）
+            exam_count = len(user_exam_set.get(result['user_id'], set()))
 
-            # ✅ row_data 顺序与表头列一一对应
             row_data = [
-                row_idx2 - 2,                                         # 1. 序号
-                dept,                                                 # 2. 业务单位
-                user.get('country', ''),                              # 3. 国家
-                user.get('wh_type', ''),                              # 4. 库房类型
-                user.get('wh_id', ''),                                # 5. 库房编码
-                user.get('wh_name_en', ''),                           # 6. 库房名称
-                user.get('name_cn', '') or user.get('name_en', ''),   # 7. 考试人员姓名
-                result.get('created_at', '')[:10],                    # 8. 考试日期
-                exam.get('language', 'English'),                      # 9. 考试语种
-                result.get('total_score', 0),                         # 10. 成绩
-                exam.get('reviewer', ''),                             # 11. 阅卷人
-                exam_count,                                           # 12. ✅ 测评次数（在阅卷人之后）
-            ] + answer_status + [                                     # 13. 动态列 (NO.1~N)
-                result.get('custom5', ''),                            # 14. ✅ 备注
-                exam_title,                                           # 15. ✅ 考试名称
+                row_idx2 - 2,                                         # 序号
+                dept,                                                 # 业务单位
+                user.get('country', ''),                              # 国家
+                user.get('wh_type', ''),                              # 库房类型
+                user.get('wh_id', ''),                                # 库房编码
+                user.get('wh_name_en', ''),                           # 库房名称
+                user.get('name_cn', '') or user.get('name_en', ''),   # 考试人员姓名
+                result.get('created_at', '')[:10],                    # 考试日期
+                exam.get('language', 'English'),                      # 考试语种
+                result.get('total_score', 0),                         # 成绩
+                exam.get('reviewer', ''),                             # 阅卷人
+                exam_count,                                           # ✅ 测评次数（去重后）
+            ] + answer_status + [
+                result.get('custom5', ''),                            # 备注
+                exam_title,                                           # 考试名称
             ]
 
             for col_idx, value in enumerate(row_data, 1):
