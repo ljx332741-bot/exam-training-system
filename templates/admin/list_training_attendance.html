@@ -856,6 +856,15 @@
         console.log('📄 PDF 链接已更新:', url);
     }
 
+    // 更新批量删除按钮文本（语言切换时调用）
+    function updateBatchDeleteButtonText() {
+        const batchDeleteBtn = document.getElementById('batchDeleteBtn');
+        if (!batchDeleteBtn) return;
+        
+        const translatedText = typeof t === 'function' ? t('batch_delete') : '批量删除';
+        batchDeleteBtn.innerHTML = `<i class="bi bi-trash no-print"></i> ${translatedText}`;
+    }
+
     function escapeHtml(str) {
         if(!str) return '';
         return str.replace(/[&<>]/g, function(m) {
@@ -959,11 +968,41 @@
         console.log('🔄 语言切换，更新打印页眉页脚:', e.detail?.lang);
         updatePrintHeaderFooterStyles();
         updatePdfExportLink();
-        loadDetail();
-    });
+        updateBatchDeleteButtonText();
 
-    window.addEventListener('afterprint', function() {
-        console.log('📄 打印完成');
+        // 更新 PDF 导出按钮文本
+        const pdfExportBtn = document.getElementById('pdfExportBtn');
+        if (pdfExportBtn && typeof t === 'function') {
+            const span = pdfExportBtn.querySelector('[data-i18n="expert_pdf"]');
+            if (span) span.textContent = t('expert_pdf');
+        }
+        
+        // 更新页眉页脚复选框标签
+        const label = document.querySelector('label[for="showPrintHeaderFooter"]');
+        if (label && typeof t === 'function') {
+            const span = label.querySelector('[data-i18n="show_header_footer"]');
+            if (span) span.textContent = t('show_header_footer');
+        }
+        
+        // 更新签到表格中的按钮文字（重新签名、删除等）
+        document.querySelectorAll('.reset-sign-btn').forEach(btn => {
+            const icon = btn.querySelector('i');
+            if (icon) {
+                btn.innerHTML = `<i class="bi bi-pencil-square"></i> ${t('re_signature')}`;
+            }
+        });
+        
+        document.querySelectorAll('.delete-attendance-btn').forEach(btn => {
+            const icon = btn.querySelector('i');
+            if (icon) {
+                const name = btn.dataset.name || '';
+                btn.innerHTML = `<i class="bi bi-trash"></i> ${t('delete')}`;
+            }
+        });
+
+        window.addEventListener('afterprint', function() {
+            console.log('📄 打印完成');
+        });
     });
 
 </script>
