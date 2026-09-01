@@ -10,6 +10,7 @@ from config import Config
 from services.db import get_supabase
 import pdfkit
 import openpyxl
+from openpyxl.comments import Comment
 from openpyxl.styles import PatternFill, Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from datetime import datetime
@@ -600,11 +601,12 @@ def generate_bilingual_excel(training_id: int, exam_id: int, country: str = None
     filename = f"培训报告_{training_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return buffer, filename
 
+# services/export.py - 修改 generate_bilingual_excel_filtered 函数
+
 def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end_date, user_ids=None, wh_id=None, lang='zh'):
     """
     生成双语Excel报告，支持按国家、库房、培训名称、考试名称筛选
-    user_ids: 外部计算好的允许用户ID列表（None表示不限制）
-    wh_id: 库房编码，用于分组逻辑
+    增强版：增加业务单位、合并库房名称、考试年份测评次数
     """
     if not isinstance(trainings, list): trainings = []
     if not isinstance(exams, list): exams = []
@@ -612,16 +614,21 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     db = get_supabase()
     wb = openpyxl.Workbook()
     clean_title = lambda s: re.sub(r'[\\/*?:\[\]]', ' ', s).strip()
-    # ========== 工作表1：培训信息汇总 ==========
+    
+    # ============================================================
+    # ========== 工作表1：培训信息汇总（增强版） ==========
+    # ============================================================
     ws1 = wb.active
     ws1.title = clean_title("培训信息汇总 Training Summary")
 
+    # ✅ 新表头：增加"业务单位"，合并库房名称，调整顺序
     headers1 = [
         ("序号\nNO.", "NO."),
+        ("业务单位\nBusiness Unit", "Business Unit"),      # ✅ 新增
+        ("国家\nCountry", "Country"),                       # ✅ 从后面移到这里
         ("库房类型\nWH Type", "WH Type"),
         ("库房编码\nWH ID", "WH ID"),
-        ("库房名称(CN)\nWarehouse Name (CN)", "Warehouse Name (CN)"),
-        ("库房名称(EN)\nWarehouse Name (EN)", "Warehouse Name (EN)"),
+        ("库房名称\nWH Name", "WH Name"),                  # ✅ 合并 CN/EN
         ("立项编号\nProject Initiation No.", "Project Initiation No."),
         ("培训名称\nTraining Name", "Training Name"),
         ("培训语种\nTraining Language", "Training Language"),
@@ -632,7 +639,9 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         ("第三方服务商数量\nNumber of Providers", "Number of Providers"),
         ("参培人数\nNumber of Trainees", "Number of Trainees"),
         ("备注\nRemark", "Remark"),
-    ]    
+    ]
+    
+    # 写入表头
     for col, (cn_header, en_header) in enumerate(headers1, 1):
         cell = ws1.cell(row=1, column=col, value=cn_header)
         cell.font = Font(bold=True, color="FFFFFF")
@@ -651,14 +660,12 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     row_idx = 2
 
     for training in trainings:
-        tid = training['id']        
-        # ✅ 修复1：使用 training_attendances 表，而不是 training_signs
-        # ✅ 修复2：排除已软删除的签到记录
+        tid = training['id']
         query = db.table("training_attendances").select("*, users(*)").eq("training_id", tid).is_("deleted_at", "null")
         
         if user_ids is not None:
-            query = query.in_("user_id", user_ids)        
-        signs = query.execute().data or []        
+            query = query.in_("user_id", user_ids)
+        signs = query.execute().data or []
         if not signs:
             continue
 
@@ -666,11 +673,16 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
 
         if wh_id:
             # 固定库房，所有签到合并为一个组
-            groups = {'default': {'trainees': set(), 'partner_companies': set(), 'sign_dates': [], 'wh_info': {}}}
+            groups = {'default': {
+                'trainees': set(),
+                'partner_companies': set(),
+                'sign_dates': [],
+                'wh_info': {},
+                'departments': set()  # ✅ 新增：收集部门
+            }}
             for sign in signs:
                 user = sign.get('users', {})
                 groups['default']['trainees'].add(sign['user_id'])
-                # ✅ 修复3：使用 sign_time 字段
                 groups['default']['sign_dates'].append(sign.get('sign_time') or sign.get('signed_at'))
                 if user.get('is_partner'):
                     company = user.get('company', '').strip()
@@ -681,31 +693,40 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                         'wh_type': user.get('wh_type', ''),
                         'wh_id': user.get('wh_id', ''),
                         'wh_name_en': user.get('wh_name_en', '')
-                    }            
+                    }
+                # ✅ 收集部门
+                dept = user.get('department', '')
+                if dept:
+                    groups['default']['departments'].add(dept)
+            
             for g_key, g in groups.items():
                 partner_str = '/'.join(sorted(g['partner_companies'])) if g['partner_companies'] else '内部员工'
-                partner_count = len(g['partner_companies'])                
-                # 获取培训日期（取第一个签到日期）
+                partner_count = len(g['partner_companies'])
                 training_date = ""
                 if g['sign_dates']:
                     first_date = min(g['sign_dates'])
-                    training_date = first_date[:10] if first_date else ""                
+                    training_date = first_date[:10] if first_date else ""
+                
+                # ✅ 业务单位：取部门列表的第一个（或合并显示）
+                dept_str = '/'.join(sorted(g['departments'])) if g['departments'] else ''
+                
                 row_data = [
-                    row_idx - 1,
-                    g['wh_info'].get('wh_type', ''),
-                    g['wh_info'].get('wh_id', ''),
-                    g['wh_info'].get('wh_name_en', ''),
-                    g['wh_info'].get('wh_name_en', ''),
-                    meta.get("project_no", ""),
-                    training_names.get(tid, ''),
-                    meta.get("language", ""),
-                    meta.get("lecturer", ""),
-                    training_date,
-                    meta.get("duration", "2"),
-                    partner_str,
-                    partner_count,
-                    len(g['trainees']),
-                    ""
+                    row_idx - 1,                                      # 序号
+                    dept_str,                                         # ✅ 业务单位
+                    '',                                               # ✅ 国家（固定库房时可能为空）
+                    g['wh_info'].get('wh_type', ''),                  # 库房类型
+                    g['wh_info'].get('wh_id', ''),                    # 库房编码
+                    g['wh_info'].get('wh_name_en', ''),               # ✅ 库房名称（合并）
+                    meta.get("project_no", ""),                       # 立项编号
+                    training_names.get(tid, ''),                      # 培训名称
+                    meta.get("language", ""),                         # 培训语种
+                    meta.get("lecturer", ""),                         # 主讲人
+                    training_date,                                    # 培训日期
+                    meta.get("duration", "2"),                        # 培训课时
+                    partner_str,                                      # 培训对象
+                    partner_count,                                    # 第三方服务商数量
+                    len(g['trainees']),                               # 参培人数
+                    "",                                               # 备注
                 ]
                 for col_idx, value in enumerate(row_data, 1):
                     cell = ws1.cell(row=row_idx, column=col_idx, value=value)
@@ -715,7 +736,13 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 row_idx += 1
         else:
             # 按国家分组
-            country_groups = defaultdict(lambda: {'trainees': set(), 'partner_companies': set(), 'sign_dates': [], 'wh_info': {}})
+            country_groups = defaultdict(lambda: {
+                'trainees': set(),
+                'partner_companies': set(),
+                'sign_dates': [],
+                'wh_info': {},
+                'departments': set()  # ✅ 新增：收集部门
+            })
             for sign in signs:
                 user = sign.get('users', {})
                 cty = user.get('country', 'Unknown')
@@ -731,30 +758,40 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                         'wh_type': user.get('wh_type', ''),
                         'wh_id': user.get('wh_id', ''),
                         'wh_name_en': user.get('wh_name_en', '')
-                    }            
+                    }
+                # ✅ 收集部门
+                dept = user.get('department', '')
+                if dept:
+                    grp['departments'].add(dept)
+            
             for cty, grp in country_groups.items():
                 partner_str = '/'.join(sorted(grp['partner_companies'])) if grp['partner_companies'] else '内部员工'
-                partner_count = len(grp['partner_companies'])                
+                partner_count = len(grp['partner_companies'])
                 training_date = ""
                 if grp['sign_dates']:
                     first_date = min(grp['sign_dates'])
-                    training_date = first_date[:10] if first_date else ""                
+                    training_date = first_date[:10] if first_date else ""
+                
+                # ✅ 业务单位：取部门列表的第一个（或合并显示）
+                dept_str = '/'.join(sorted(grp['departments'])) if grp['departments'] else ''
+                
                 row_data = [
-                    row_idx - 1,
-                    grp['wh_info'].get('wh_type', ''),
-                    grp['wh_info'].get('wh_id', ''),
-                    grp['wh_info'].get('wh_name_en', ''),
-                    grp['wh_info'].get('wh_name_en', ''),
-                    meta.get("project_no", ""),
-                    training_names.get(tid, ''),
-                    meta.get("language", ""),
-                    meta.get("lecturer", ""),
-                    training_date,
-                    meta.get("duration", "2"),
-                    partner_str,
-                    partner_count,
-                    len(grp['trainees']),
-                    ""
+                    row_idx - 1,                                      # 序号
+                    dept_str,                                         # ✅ 业务单位
+                    cty,                                              # ✅ 国家
+                    grp['wh_info'].get('wh_type', ''),                # 库房类型
+                    grp['wh_info'].get('wh_id', ''),                  # 库房编码
+                    grp['wh_info'].get('wh_name_en', ''),             # ✅ 库房名称（合并）
+                    meta.get("project_no", ""),                       # 立项编号
+                    training_names.get(tid, ''),                      # 培训名称
+                    meta.get("language", ""),                         # 培训语种
+                    meta.get("lecturer", ""),                         # 主讲人
+                    training_date,                                    # 培训日期
+                    meta.get("duration", "2"),                        # 培训课时
+                    partner_str,                                      # 培训对象
+                    partner_count,                                    # 第三方服务商数量
+                    len(grp['trainees']),                             # 参培人数
+                    "",                                               # 备注
                 ]
                 for col_idx, value in enumerate(row_data, 1):
                     cell = ws1.cell(row=row_idx, column=col_idx, value=value)
@@ -767,7 +804,9 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     for col in range(1, len(headers1) + 1):
         ws1.column_dimensions[get_column_letter(col)].width = 15
 
-    # ========== 工作表2：知识测评汇总表 ==========
+    # ============================================================
+    # ========== 工作表2：知识测评汇总表（增强版） ==========
+    # ============================================================
     ws2 = wb.create_sheet(title=clean_title("知识测评汇总表 Assessment Summary"))
 
     # 收集所有考试题目及最大列数
@@ -780,8 +819,22 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         if len(questions) > max_questions:
             max_questions = len(questions)
 
+    # ✅ 计算年份显示（用于测评次数列标题）
+    exam_years = set()
+    for exam in exams:
+        created_at = exam.get('created_at')
+        if created_at:
+            try:
+                year = datetime.fromisoformat(created_at.replace('Z', '+00:00')).year
+                exam_years.add(str(year))
+            except:
+                pass
+    year_display = '/'.join(sorted(exam_years)) if exam_years else ''
+
+    # ✅ 新表头：增加"业务单位"，原"考试名称"改为"年份年测评次数"，在备注后面新增"考试名称"
     headers2_fixed = [
         ("序号\nNO.", "NO."),
+        ("业务单位\nBusiness Unit", "Business Unit"),           # ✅ 新增
         ("国家\nCountry", "Country"),
         ("库房类型\nWH Type", "WH Type"),
         ("库房编码\nWH ID", "WH ID"),
@@ -791,15 +844,24 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         ("考试语种\nLanguage", "Language"),
         ("成绩\nScore", "Score"),
         ("阅卷人(姓名+ID)\nGrading Personnel", "Grading Personnel"),
-        ("考试名称\nExam Name", "Exam Name"),  # ✅ 新增：考试名称列
     ]
-    dynamic_col_count = max_questions
-    remark_col = len(headers2_fixed) + dynamic_col_count + 1
-    total_header_cols = remark_col
 
+    # ✅ 列位置计算：
+    # 固定列数 = len(headers2_fixed) 
+    # 测评次数列（在阅卷人之后，动态列之前）
+    # 动态列（答题情况统计）在测评次数之后
+    # 备注列在动态列之后
+    # 考试名称列在备注之后
+    
+    fixed_col_count = len(headers2_fixed)
+    exam_freq_col = fixed_col_count + 1                # ✅ 测评次数（阅卷人之后，动态列之前）
+    dynamic_start_col = fixed_col_count + 2            # ✅ 动态列开始位置
+    remark_col = fixed_col_count + 2 + max_questions   # ✅ 备注列（动态列之后）
+    exam_name_col = remark_col + 1                     # ✅ 考试名称（备注之后）
+    total_header_cols = exam_name_col
 
     # ========== 第一行表头 ==========
-    # 固定列：合并第一、二行，写入列标题
+    # 固定列
     for idx, (cn_header, en_header) in enumerate(headers2_fixed, 1):
         col_letter = get_column_letter(idx)
         merge_range = f"{col_letter}1:{col_letter}2"
@@ -809,18 +871,37 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         cell.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-    # 动态列第一行合并，显示“答题情况统计Needback”
-    if dynamic_col_count > 0:
-        start_col_letter = get_column_letter(len(headers2_fixed) + 1)
-        end_col_letter = get_column_letter(len(headers2_fixed) + dynamic_col_count)
+    # 测评次数列（在阅卷人之后，动态列之前）
+    freq_letter = get_column_letter(exam_freq_col)
+    ws2.merge_cells(f"{freq_letter}1:{freq_letter}2")
+    exam_freq_header = f"{year_display}年测评次数\nExam Frequency" if year_display else "测评次数\nExam Frequency"
+    cell_freq = ws2.cell(row=1, column=exam_freq_col, value=exam_freq_header)
+    cell_freq.font = Font(bold=True, color="FFFFFF")
+    cell_freq.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+    cell_freq.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+    # 动态列第一行合并 - "答题情况统计Needback"
+    if max_questions > 0:
+        start_col_letter = get_column_letter(dynamic_start_col)
+        end_col_letter = get_column_letter(dynamic_start_col + max_questions - 1)
         merge_range = f"{start_col_letter}1:{end_col_letter}1"
         ws2.merge_cells(merge_range)
-        cell_detail = ws2.cell(row=1, column=len(headers2_fixed) + 1, value="答题情况统计Needback")
-        cell_detail.font = Font(bold=True, color="FFFFFF")
+        cell_detail = ws2.cell(
+            row=1, 
+            column=dynamic_start_col, 
+            value="答题情况统计Needback(题目答对填写 Y，答错则填写 N\If the test answer is correct fill 'Y', otherwise fill 'N')"
+        )
+        cell_detail.font = Font(bold=True, color="FFFFFF", size=10)
         cell_detail.fill = PatternFill(start_color="A5A5A5", end_color="A5A5A5", fill_type="solid")
         cell_detail.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+        
+        # 添加注释到"答题情况统计Needback"单元格
+        comment_text = "题目答对填写 Y，答错则填写 N\If the test answer is correct fill 'Y', otherwise fill 'N'"
+        comment = Comment(comment_text, "系统提示")
+        comment.visible = True
+        cell_detail.comment = comment
 
-    # 备注列合并两行
+    # 备注列（在动态列之后）
     remark_letter = get_column_letter(remark_col)
     ws2.merge_cells(f"{remark_letter}1:{remark_letter}2")
     cell_remark = ws2.cell(row=1, column=remark_col, value="备注\nRemark")
@@ -828,9 +909,17 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     cell_remark.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
     cell_remark.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
+    # 考试名称列（在备注之后）
+    exam_name_letter = get_column_letter(exam_name_col)
+    ws2.merge_cells(f"{exam_name_letter}1:{exam_name_letter}2")
+    cell_exam_name = ws2.cell(row=1, column=exam_name_col, value="考试名称\nExam Name")
+    cell_exam_name.font = Font(bold=True, color="FFFFFF")
+    cell_exam_name.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    cell_exam_name.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
     # ========== 第二行表头（动态列子标题题号列）==========
-    for i in range(1, dynamic_col_count + 1):
-        col_idx = len(headers2_fixed) + i
+    for i in range(1, max_questions + 1):
+        col_idx = dynamic_start_col + i - 1
         col_letter = get_column_letter(col_idx)
         cell = ws2.cell(row=2, column=col_idx, value=f"NO.{i}")
         cell.font = Font(bold=True, color="FFFFFF")
@@ -849,21 +938,39 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             if c.font == Font():
                 c.font = Font(bold=True, color="FFFFFF")
             if c.fill == PatternFill(fill_type=None):
-                if col <= len(headers2_fixed):
+                if col <= fixed_col_count:
                     c.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-                elif col <= len(headers2_fixed) + dynamic_col_count:
+                elif col == exam_freq_col:
+                    c.fill = PatternFill(start_color="70AD47", end_color="70AD47", fill_type="solid")
+                elif dynamic_start_col <= col <= dynamic_start_col + max_questions - 1:
                     c.fill = PatternFill(start_color="A5A5A5", end_color="A5A5A5", fill_type="solid")
                 elif col == remark_col:
                     c.fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+                elif col == exam_name_col:
+                    c.fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
             c.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
-
-    row_idx2 = 3  # 数据从第3行开始
+    # ========== 数据行 ==========
+    row_idx2 = 3
+    
+    # ✅ 统计每个用户在每个考试中的参与次数（用于测评次数列）
+    user_exam_count = defaultdict(lambda: defaultdict(int))
     for exam in exams:
         results_query = db.table("exam_results").select("*").eq("exam_id", exam['id'])
         if user_ids is not None:
             results_query = results_query.in_("user_id", user_ids)
         results_all = results_query.execute().data or []
+        for r in results_all:
+            uid = r['user_id']
+            user_exam_count[uid][exam['id']] += 1
+
+    for exam in exams:
+        exam_title = exam.get('title', '')
+        results_query = db.table("exam_results").select("*").eq("exam_id", exam['id'])
+        if user_ids is not None:
+            results_query = results_query.in_("user_id", user_ids)
+        results_all = results_query.execute().data or []
+        
         # 去重：每个用户只保留最新一次成绩
         latest_map = {}
         for r in results_all:
@@ -903,46 +1010,60 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             while len(answer_status) < max_questions:
                 answer_status.append("")
 
+            # ✅ 获取业务单位（部门）
+            dept = user.get('department', '')
+            
+            # ✅ 获取该用户在该考试中的参与次数（用于测评次数列）
+            exam_count = user_exam_count.get(result['user_id'], {}).get(exam['id'], 1)
+
+            # ✅ row_data 顺序与表头列一一对应
             row_data = [
-                row_idx2 - 2,
-                user.get('country', ''),
-                user.get('wh_type', ''),
-                user.get('wh_id', ''),
-                user.get('wh_name_en', ''),
-                user.get('name_cn', '') or user.get('name_en', ''),
-                result.get('created_at', '')[:10],
-                exam.get('language', 'English'),
-                result.get('total_score', 0),
-                exam.get('reviewer', ''),
-                exam.get('title', ''),                 # ✅ 新增：考试名称（放在阅卷人后面）
-            ] + answer_status + [result.get('custom5', '')]
+                row_idx2 - 2,                                         # 1. 序号
+                dept,                                                 # 2. 业务单位
+                user.get('country', ''),                              # 3. 国家
+                user.get('wh_type', ''),                              # 4. 库房类型
+                user.get('wh_id', ''),                                # 5. 库房编码
+                user.get('wh_name_en', ''),                           # 6. 库房名称
+                user.get('name_cn', '') or user.get('name_en', ''),   # 7. 考试人员姓名
+                result.get('created_at', '')[:10],                    # 8. 考试日期
+                exam.get('language', 'English'),                      # 9. 考试语种
+                result.get('total_score', 0),                         # 10. 成绩
+                exam.get('reviewer', ''),                             # 11. 阅卷人
+                exam_count,                                           # 12. ✅ 测评次数（在阅卷人之后）
+            ] + answer_status + [                                     # 13. 动态列 (NO.1~N)
+                result.get('custom5', ''),                            # 14. ✅ 备注
+                exam_title,                                           # 15. ✅ 考试名称
+            ]
 
             for col_idx, value in enumerate(row_data, 1):
                 cell = ws2.cell(row=row_idx2, column=col_idx, value=value)
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
                                      top=Side(style="thin"), bottom=Side(style="thin"))
-                if len(headers2_fixed) + 1 <= col_idx <= len(headers2_fixed) + max_questions:
+                # ✅ 动态列（答题情况统计）的 Y/N 着色
+                if dynamic_start_col <= col_idx <= dynamic_start_col + max_questions - 1:
                     if value == "Y":
                         cell.font = Font(color="008000", bold=True)
                     elif value == "N":
                         cell.font = Font(color="FF0000", bold=True)
             row_idx2 += 1
 
-    # 调整列宽...
-    for col in range(1, remark_col + 1):
-        if col <= len(headers2_fixed):
+    # 调整列宽
+    for col in range(1, total_header_cols + 1):
+        if col <= fixed_col_count:
             ws2.column_dimensions[get_column_letter(col)].width = 15
-        elif col <= len(headers2_fixed) + max_questions:
+        elif col == exam_freq_col:
+            ws2.column_dimensions[get_column_letter(col)].width = 16
+        elif dynamic_start_col <= col <= dynamic_start_col + max_questions - 1:
             ws2.column_dimensions[get_column_letter(col)].width = 8
-        else:
+        elif col == remark_col:
             ws2.column_dimensions[get_column_letter(col)].width = 20
+        elif col == exam_name_col:
+            ws2.column_dimensions[get_column_letter(col)].width = 30
 
-    # ✅ 可选：为考试名称列设置更合适的宽度（第11列，索引11）
-    # 如果 headers2_fixed 现在是11列（原来10列+新增1列）
-    if len(headers2_fixed) == 11:
-        ws2.column_dimensions[get_column_letter(11)].width = 30
-    # ========== 工作表3：访谈检查结果 ==========
+    # ============================================================
+    # ========== 工作表3：访谈检查结果（增强版） ==========
+    # ============================================================
     if exams:
         ws3 = wb.create_sheet(title=clean_title("访谈检查结果 Interview Results"))
         exam_ids = [ex['id'] for ex in exams]
@@ -950,8 +1071,10 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         interviews = interviews_query.data or []
 
         if interviews:
+            # ✅ 新表头：增加"业务单位"，调整备注位置
             headers3 = [
                 ("序号\nNO.", "NO."),
+                ("业务单位\nBusiness Unit", "Business Unit"),      # ✅ 新增
                 ("国家\nCountry", "Country"),
                 ("库房类型\nWH Type", "WH Type"),
                 ("库房编码\nWH ID", "WH ID"),
@@ -961,10 +1084,11 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 ("检查人员\nInspector", "Inspector"),
                 ("访谈问题数量\nTotal Questions", "Total Questions"),
                 ("答对问题数量\nCorrect Answers", "Correct Answers"),
+                ("备注\nRemark", "Remark"),                       # ✅ 移到反馈人前面
                 ("反馈人\nFeedback Person", "Feedback Person"),
                 ("访谈名称\nInterview Title", "Interview Title"),
-                ("备注\nRemark", "Remark"),
             ]
+            
             for col, (cn_header, en_header) in enumerate(headers3, 1):
                 cell = ws3.cell(row=1, column=col, value=cn_header)
                 cell.font = Font(bold=True, color="FFFFFF")
@@ -972,6 +1096,10 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 cell.border = Border(left=Side(style="thin"), right=Side(style="thin"),
                                      top=Side(style="thin"), bottom=Side(style="thin"))
+                
+                # ✅ 在"访谈问题数量 Total Questions"列添加注释
+                if cn_header == "访谈问题数量\nTotal Questions":
+                    cell.comment = openpyxl.comments.Comment("访谈问题不少于3个", "系统提示")
 
             row_idx3 = 2
             for interview in interviews:
@@ -1010,20 +1138,23 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
                 reviewer = interview.get('reviewer', '')
                 for uid, stats in user_stats.items():
                     user = users_map.get(uid, {})
+                    dept = user.get('department', '')  # ✅ 业务单位
+                    
                     row_data = [
-                        row_idx3 - 1,
-                        user.get('country', ''),
-                        user.get('wh_type', ''),
-                        user.get('wh_id', ''),
-                        user.get('wh_name_en') or user.get('name_cn') or user.get('name_en', ''),
-                        user.get('name_cn') or user.get('name_en', ''),
-                        stats['submitted_at'][:10] if stats['submitted_at'] else '',
-                        reviewer,
-                        stats['total'],
-                        stats['correct'],
-                        stats.get('feedback', ''),
-                        stats.get('interview_title', ''),
-                        stats.get('department', ''),
+                        row_idx3 - 1,                                     # 序号
+                        dept,                                             # ✅ 业务单位
+                        user.get('country', ''),                          # 国家
+                        user.get('wh_type', ''),                          # 库房类型
+                        user.get('wh_id', ''),                            # 库房编码
+                        user.get('wh_name_en') or user.get('name_cn') or user.get('name_en', ''),  # 库房名称
+                        user.get('name_cn') or user.get('name_en', ''),   # 访谈人员姓名
+                        stats['submitted_at'][:10] if stats['submitted_at'] else '',  # 检查时间
+                        reviewer,                                         # 检查人员
+                        stats['total'],                                   # 访谈问题数量
+                        stats['correct'],                                 # 答对问题数量
+                        stats.get('feedback', ''),                        # ✅ 备注（移到反馈人前面）
+                        stats.get('feedback', ''),                        # 反馈人（暂时取同样值，可根据实际调整）
+                        stats.get('interview_title', ''),                 # 访谈名称
                     ]
                     for col_idx, value in enumerate(row_data, 1):
                         cell = ws3.cell(row=row_idx3, column=col_idx, value=value)
@@ -1035,6 +1166,9 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             for col in range(1, len(headers3) + 1):
                 ws3.column_dimensions[get_column_letter(col)].width = 15
 
+    # ============================================================
+    # ========== 保存文件 ==========
+    # ============================================================
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
