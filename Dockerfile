@@ -30,15 +30,27 @@ RUN apt-get update && \
 # 2. 安装完整版 wkhtmltopdf（0.12.6 版本）
 # ============================================================
 # 下载官方完整版（支持 header-left/right）
-RUN wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.bullseye_amd64.deb && \
-    dpkg -i wkhtmltox_0.12.6-1.bullseye_amd64.deb || true && \
+# 注意：使用 buster 版本，bullseye 版本可能不兼容
+RUN wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.buster_amd64.deb && \
+    dpkg -i wkhtmltox_0.12.6-1.buster_amd64.deb 2>/dev/null || true && \
     apt-get install -f -y && \
-    rm -f wkhtmltox_0.12.6-1.bullseye_amd64.deb
+    rm -f wkhtmltox_0.12.6-1.buster_amd64.deb
 
 # ============================================================
-# 3. 验证安装
+# 3. 验证 wkhtmltopdf 是否安装成功
 # ============================================================
-RUN wkhtmltopdf --version
+# 先检查文件是否存在
+RUN if [ -f /usr/local/bin/wkhtmltopdf ]; then \
+        /usr/local/bin/wkhtmltopdf --version; \
+    elif [ -f /usr/bin/wkhtmltopdf ]; then \
+        /usr/bin/wkhtmltopdf --version; \
+    else \
+        echo "wkhtmltopdf not found, checking installed packages..."; \
+        dpkg -l | grep wkhtmltox; \
+        ls -la /usr/local/bin/ || true; \
+        ls -la /usr/bin/ | grep wkhtml || true; \
+        exit 1; \
+    fi
 
 # 刷新字体缓存
 RUN fc-cache -fv
