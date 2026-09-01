@@ -5,65 +5,54 @@ FROM python:3.10-slim-bullseye
 # ============================================================
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        # wkhtmltopdf 依赖
+        # wkhtmltopdf 依赖库
         libxrender1 \
         libfontconfig1 \
         libx11-6 \
         libxext6 \
         libxcb1 \
         libxkbcommon0 \
-        libxcb1 \
         libxcb-xinerama0 \
-        # 字体和中文字体
+        libjpeg62-turbo \
+        libpng16-16 \
+        # 字体
         fontconfig \
         fonts-wqy-microhei \
         fonts-wqy-zenhei \
         fonts-noto-cjk \
         fonts-liberation \
-        # 其他工具
         wget \
-        xfonts-75dpi \
-        xfonts-base \
+        xz-utils \
         && rm -rf /var/lib/apt/lists/*
 
 # ============================================================
-# 2. 安装完整版 wkhtmltopdf（0.12.6 版本）
+# 2. 下载 wkhtmltopdf 静态编译版本（推荐）
 # ============================================================
-# 下载官方完整版（支持 header-left/right）
-# 注意：使用 buster 版本，bullseye 版本可能不兼容
+# 直接下载静态编译版本，无需 dpkg 安装，避免依赖问题
 RUN wget -q https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6-1/wkhtmltox_0.12.6-1.buster_amd64.deb && \
-    dpkg -i wkhtmltox_0.12.6-1.buster_amd64.deb 2>/dev/null || true && \
-    apt-get install -f -y && \
+    # 解压 deb 包（无需安装）
+    dpkg -x wkhtmltox_0.12.6-1.buster_amd64.deb /opt/wkhtmltox && \
     rm -f wkhtmltox_0.12.6-1.buster_amd64.deb
 
+# 创建符号链接到 PATH
+RUN ln -s /opt/wkhtmltox/usr/local/bin/wkhtmltopdf /usr/local/bin/wkhtmltopdf && \
+    ln -s /opt/wkhtmltox/usr/local/bin/wkhtmltoimage /usr/local/bin/wkhtmltoimage
+
+# 设置执行权限
+RUN chmod +x /usr/local/bin/wkhtmltopdf /usr/local/bin/wkhtmltoimage
+
 # ============================================================
-# 3. 验证 wkhtmltopdf 是否安装成功
+# 3. 验证安装
 # ============================================================
-# 先检查文件是否存在
-RUN if [ -f /usr/local/bin/wkhtmltopdf ]; then \
-        /usr/local/bin/wkhtmltopdf --version; \
-    elif [ -f /usr/bin/wkhtmltopdf ]; then \
-        /usr/bin/wkhtmltopdf --version; \
-    else \
-        echo "wkhtmltopdf not found, checking installed packages..."; \
-        dpkg -l | grep wkhtmltox; \
-        ls -la /usr/local/bin/ || true; \
-        ls -la /usr/bin/ | grep wkhtml || true; \
-        exit 1; \
-    fi
+RUN /usr/local/bin/wkhtmltopdf --version
 
 # 刷新字体缓存
 RUN fc-cache -fv
-
-# 验证中文字体
-RUN fc-list :lang=zh || echo "No Chinese fonts found"
 
 # ============================================================
 # 4. 设置环境变量
 # ============================================================
 ENV WKHTMLTOPDF_PATH=/usr/local/bin/wkhtmltopdf
-ENV FONTCONFIG_PATH=/etc/fonts
-ENV FONTCONFIG_FILE=/etc/fonts/fonts.conf
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_DEBUG=False
 
@@ -79,9 +68,6 @@ COPY . .
 
 RUN touch reviewer.txt reviewers.json
 
-# ============================================================
-# 6. 启动命令
-# ============================================================
 EXPOSE 8000
 
 CMD gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 120
