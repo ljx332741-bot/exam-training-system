@@ -112,4 +112,72 @@
     </div>
 </div>
 {% endif %}
-
+<!-- 在 dashboard.html 的适当位置添加推送模态框 -->
+<!-- 推送（设置有效期）模态框 -->
+<div class="modal fade" id="pushModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    📢 <span data-i18n="push_sign_in_notify">推送培训签到</span>
+                    <span id="pushModalTrainingName" class="ms-2 text-muted" style="font-size: 0.85rem;"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="start_time"><span data-i18n="start_time">开始时间</span></label>
+                <input type="datetime-local" class="form-control mb-3" id="start_time">
+                <label class="form-label" for="end_time"><span data-i18n="end_time">结束时间</span></label>
+                <input type="datetime-local" class="form-control mb-3" id="end_time">
+                
+                <hr>
+                <h6><span data-i18n="select_push_recipient">选择推送对象（可选）</span></h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-3">
+                        <input type="text" id="pushUserSearch" class="form-control"
+                            data-i18n-placeholder="placeholder_mail_name" placeholder="姓名/邮箱">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" id="pushWhFilter" class="form-control" list="whDatalist" 
+                            data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
+                        <datalist id="whDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <select id="pushIsPartner" class="form-select">
+                            <option value="" data-i18n="supplier_all">服务商(全部)</option>
+                            <option value="Y" data-i18n="partner_yes">是</option>
+                            <option value="N" data-i18n="partner_no">否</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="pushCountryFilter" class="form-control" list="countryDatalist"
+                            data-i18n-placeholder="placeholder_country" placeholder="国家">
+                        <datalist id="countryDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="pushLoadUsersBtn" class="btn btn-secondary w-100"><span data-i18n="refresh_list">刷新列表</span></button>
+                    </div>
+                </div>
+                <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; white-space: nowrap;">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="pushSelectAll"></th>
+                                <th><span data-i18n="name_en">姓名</span></th>
+                                <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="wh_id_name">库房编码/名称</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pushUserListBody"></tbody>
+                    </table>
+                </div>
+                <small class="text-muted"><span data-i18n="training_push_hint">不选择则推送至所有用户（仅发送通知）</span></small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button type="button" class="btn btn-success" id="confirmPushBtn"><span data-i18n="confirm_push">确认推送</span></button>
+            </div>
+        </div>
+    </div>
+</div>

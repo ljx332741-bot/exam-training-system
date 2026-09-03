@@ -1,4 +1,4 @@
-﻿<!-- templates/admin/list_training_status_view.html -->
+﻿<!-- templates/admin/admin_training_status_view.html -->
 {% extends "base.html" %}
 {% block title %}培训签到人员状态{% endblock %}
 {% block extra_css %}
@@ -729,7 +729,29 @@
                 const res = await fetch(url);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
-                
+
+                // 检查是否有权限错误
+                if (data.code === 'NO_PERMISSION' || data.code === 'NO_INTERSECTION') {
+                    // 显示错误信息
+                    const tbody = document.getElementById('usersTableBody');
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="11" class="text-center text-danger">
+                                <i class="bi bi-shield-lock me-2"></i>
+                                ${data.error || '您没有权限访问此培训'}
+                            </td>
+                        </tr>
+                    `;
+                    // 更新统计卡片为0
+                    document.getElementById('signedCount').innerText = '0';
+                    document.getElementById('pendingCount').innerText = '0';
+                    document.getElementById('resignCount').innerText = '0';
+                    document.getElementById('notAssignedCount').innerText = '0';
+                    document.getElementById('totalCount').innerText = '0';
+                    document.getElementById('totalRecordCount').innerText = '0';
+                    return;
+                }
+
                 updateProgress(70, t('processing_data'));
                 allData = data.data || [];
 
@@ -974,56 +996,55 @@
      * @param {string} userId - 用户ID
      */
     function updateRowAfterReset(trainingId, userId) {
-        // 1. 在 allData 中找到该用户的数据
+        // 使用统一的更新函数
+        updateSingleItemStatus(trainingId, userId, 'resign', {
+            signature_url: null,
+            signed_name: null
+        });
+    }
+
+    /**
+    * 局部更新单条数据的状态（无需刷新整个页面）
+    */
+    function updateSingleItemStatus(trainingId, userId, newStatus, additionalData = {}) {
+        // 1. 更新 allData
         const index = allData.findIndex(item => 
-            item.training_id == trainingId && item.user_id == userId
+            Number(item.training_id) === Number(trainingId) && 
+            item.user_id === userId
         );
         
-        if (index === -1) {
-            // 如果没找到，回退到重新加载
-            console.warn('未找到要更新的数据，回退到全量刷新');
-            loadData(true);
-            return;
+        if (index !== -1) {
+            allData[index].sign_status = newStatus;
+            // 如果有额外数据（如签到时�?），也更新
+            Object.keys(additionalData).forEach(key => {
+                allData[index][key] = additionalData[key];
+            });
         }
         
-        // 2. 更新数据
-        const item = allData[index];
-        item.sign_status = 'resign';
-        item.signature_url = null;
-        item.signed_name = null;
-        
-        // 3. 同步更新 cachedData
+        // 2. 同步更新 cachedData
         const cachedIndex = cachedData.findIndex(item => 
-            item.training_id == trainingId && item.user_id == userId
+            Number(item.training_id) === Number(trainingId) && 
+            item.user_id === userId
         );
         if (cachedIndex !== -1) {
-            cachedData[cachedIndex].sign_status = 'resign';
-            cachedData[cachedIndex].signature_url = null;
-            cachedData[cachedIndex].signed_name = null;
+            cachedData[cachedIndex].sign_status = newStatus;
+            Object.keys(additionalData).forEach(key => {
+                cachedData[cachedIndex][key] = additionalData[key];
+            });
         }
         
-        // 4. 更新缓存（持久化到 sessionStorage）
+        // 3. 更新缓存（持久化到 sessionStorage）
         try {
-            const cacheData = {
-                data: cachedData
-            };
+            const cacheData = { data: cachedData };
             setCachedTrainingStatusData(cacheData);
         } catch (e) {
             console.warn('更新缓存失败:', e);
         }
         
-        // 5. 重新应用筛选（会重新渲染表格）
+        // 4. 重新应用筛选（会重新渲染表格）
         applyFilters();
         
-        // 6. 如果当前有状态筛选，确保数据正确显示
-        if (filters.status_filter === 'signed') {
-            // 如果筛选的是"已签到"，重置后该行会消失，需要提示用户
-            if (typeof showToast === 'function') {
-                showToast('⚠️ 该学员已变为"需重新签名"状态，当前筛选"已签到"会隐藏此行', 'info');
-            }
-        }
-        
-        console.log('✅ 局部更新完成:', { trainingId, userId, newStatus: 'resign' });
+        console.log('✅ 状态更新完成:', { trainingId, userId, newStatus });
     }
 
     // 绑定分配/取消分配/重新签到按钮事件
@@ -1037,8 +1058,13 @@
                 const userName = btn.dataset.userName;
                 
                 if (!confirm(t('confirm_assign_training', userName))) return;
+
+                // 保存按钮状态
+                const originalHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
                 
-                showLoading(t('assigning'));
+                // showLoading(t('assigning'));
                 try {
                     const res = await fetch(`/api/admin/training/${trainingId}/assign`, {
                         method: 'POST',
@@ -1046,16 +1072,15 @@
                         body: JSON.stringify({ user_ids: [userId] })
                     });
                     const data = await res.json();
-                    hideLoading();
+                    // hideLoading();
                     
                     if (data.success) {
                         if (typeof showToast === 'function') {
                             let count = data.assigned_count || 0;
                             showToast(t('success_assign', count), 'success');
-                        } else {
-                            alert(`分配成功: ${data.assigned_count} 人`);
-                        }
-                        loadData(true);
+                        } 
+                        // 局部更新：将状态改为 pending（待签到）
+                        updateSingleItemStatus(trainingId, userId, 'pending');
                     } else {
                         const msg = data.message || '分配失败';
                         if (typeof showToast === 'function') {
@@ -1063,11 +1088,17 @@
                         } else {
                             alert(msg);
                         }
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
                     }
                 } catch (err) {
                     hideLoading();
                     console.error('分配失败:', err);
-                    alert('网络错误，请重试');
+                    if (typeof showToast === 'function') {
+                        showToast('网络错误，请重试', 'error');
+                    }
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
                 }
             };
             btn.addEventListener('click', btn._assignHandler);
@@ -1083,8 +1114,13 @@
                 
                 // if (!confirm(`确定要取消 ${userName} 的培训分配吗？\n取消后该学员将无法看到此培训。`)) return;
                 if (!confirm(t('confirm_cancel_training_assign', userName ))) return;
+
+                // 保存按钮状态
+                const originalHtml = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>';
                 
-                showLoading(t('canceling_assign'));
+                // showLoading(t('canceling_assign'));
                 try {
                     const res = await fetch(`/api/admin/training/${trainingId}/unassign`, {
                         method: 'POST',
@@ -1092,16 +1128,20 @@
                         body: JSON.stringify({ user_ids: [userId] })
                     });
                     const data = await res.json();
-                    hideLoading();
+                    // hideLoading();
                     
                     if (data.success) {
                         if (typeof showToast === 'function') {
                             let count = data.unassigned_count;
                             showToast(t('canceled_people_assignment', count), 'success');
-                        } else {
-                            alert(`取消分配成功: ${data.unassigned_count} 人`);
-                        }
-                        loadData(true);
+                        } 
+                        // ✅ 局部更新：将状态改为 not_assigned（未分配）
+                        // 同时清空签到相关信息
+                        updateSingleItemStatus(trainingId, userId, 'not_assigned', {
+                            sign_time: null,
+                            signed_name: null,
+                            signature_url: null
+                        });
                     } else {
                         const msg = data.message || '取消分配失败';
                         if (typeof showToast === 'function') {
@@ -1109,11 +1149,17 @@
                         } else {
                             alert(msg);
                         }
+                        btn.disabled = false;
+                        btn.innerHTML = originalHtml;
                     }
                 } catch (err) {
                     hideLoading();
                     console.error('取消分配失败:', err);
-                    alert('网络错误，请重试');
+                    if (typeof showToast === 'function') {
+                        showToast('网络错误，请重试', 'error');
+                    }
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
                 }
             };
             btn.addEventListener('click', btn._unassignHandler);

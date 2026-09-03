@@ -2,6 +2,7 @@
 // ============================================================
 // 仪表盘培训列表操作模块（数据由服务端渲染，JS只负责操作交互）
 // 修复版：采用与 list_trainings.html 一致的直接事件绑定方式
+// 完整移植推送功能
 // ============================================================
 
 const TrainingListModule = (function() {
@@ -10,6 +11,8 @@ const TrainingListModule = (function() {
     let _isInitialized = false;
     let _currentEditingRow = null;
     let _countryTagInstances = new Map(); // 存储国家标签组件实例
+    let _currentPushTrainingId = null;    // 当前推送的培训ID
+    let _pushUserListCache = [];          // 推送用户列表缓存
     
     // ==================== 工具函数 ====================
     
@@ -62,6 +65,16 @@ const TrainingListModule = (function() {
         } catch {
             return '';
         }
+    }
+    
+    // 解析国家参数（将中文/英文名转换为国家代码）
+    function resolveCountryParam(text) {
+        if (!text) return '';
+        const upperText = text.toUpperCase();
+        if (upperText.length === 2) {
+            return upperText;
+        }
+        return '';
     }
     
     // 加载国家列表（带缓存）
@@ -323,7 +336,6 @@ const TrainingListModule = (function() {
             dropdown.classList.add('show');
             this._currentIndex = -1;
             
-            // 绑定点击事件
             dropdown.querySelectorAll('.suggestion-item').forEach(item => {
                 item.addEventListener('click', () => {
                     this._addCountry(item.dataset.code, item.dataset.name);
@@ -547,10 +559,10 @@ const TrainingListModule = (function() {
         });
     }
     
-    // ==================== 推送功能 ====================
+    // ==================== 推送功能（完整移植自 list_trainings.html） ====================
     
     /**
-     * 处理推送按钮点击 - 与培训管理页面保持一致
+     * 处理推送按钮点击 - 打开推送模态框
      */
     async function handlePushClick(e) {
         const btn = e.currentTarget;
@@ -561,52 +573,426 @@ const TrainingListModule = (function() {
         const nameLink = row?.querySelector('.training-name-link');
         const trainingName = nameLink ? nameLink.textContent.trim() : `培训 #${trainingId}`;
         
-        // 使用与 list_trainings.html 相同的推送对话框
-        if (typeof showPushDialog === 'function') {
-            showPushDialog(trainingId, trainingName);
+        // 获取培训状态
+        const statusBadge = row?.querySelector('.badge');
+        const isDraft = statusBadge && statusBadge.textContent.trim() === '草稿';
+        
+        // 获取时间
+        let startTime = btn.dataset.start;
+        let endTime = btn.dataset.end;
+        
+        // 如果是草稿或无有效时间，使用默认时间
+        if (isDraft || !startTime || !endTime || startTime.startsWith('1970-01-01')) {
+            const now = new Date();
+            const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+            startTime = formatDateTimeLocal(now);
+            endTime = formatDateTimeLocal(thirtyDaysLater);
         } else {
-            // 降级方案：使用简单的确认对话框
-            if (!confirm(`确定要推送培训「${trainingName}」吗？\n\n推送后，相关用户将收到通知。`)) {
+            startTime = startTime ? utcToLocalDatetimeLocal(startTime) : '';
+            endTime = endTime ? utcToLocalDatetimeLocal(endTime) : '';
+        }
+        
+        // 设置当前培训ID
+        _currentPushTrainingId = trainingId;
+        
+        // 填充时间
+        document.getElementById('start_time').value = startTime;
+        document.getElementById('end_time').value = endTime;
+        
+        // 设置培训名称
+        const nameSpan = document.getElementById('pushModalTrainingName');
+        if (nameSpan) {
+            nameSpan.textContent = trainingName ? `- ${escapeHtml(trainingName)}` : '';
+        }
+        
+        // 清空用户列表并显示加载状态
+        const tbody = document.getElementById('pushUserListBody');
+        if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center">${safeT('loading') || '加载中...'}</td></tr>`;
+        }
+        
+        // 显示模态框
+        const modalElement = document.getElementById('pushModal');
+        if (modalElement) {
+            const modal = new bootstrap.Modal(modalElement);
+            modal.show();
+        }
+        
+        // 加载用户列表
+        await loadPushUserList(trainingId);
+    }
+    
+    /**
+     * 加载推送用户列表 - 完全移植自 list_trainings.html
+     */
+    async function loadPushUserList(trainingId) {
+        const search = document.getElementById('pushUserSearch')?.value || '';
+        const whFilter = document.getElementById('pushWhFilter')?.value.toLowerCase() || '';
+        const isPartner = document.getElementById('pushIsPartner')?.value || '';
+        const countryFilterInput = document.getElementById('pushCountryFilter');
+        const countryFilter = countryFilterInput ? countryFilterInput.value : '';
+        
+        const tid = trainingId || _currentPushTrainingId;
+        if (!tid) {
+            console.warn('没有选中培训');
+            const tbody = document.getElementById('pushUserListBody');
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-warning">请先选择培训</td></tr>';
+            }
+            return;
+        }
+        
+        try {
+            // ========== 1. 获取培训详情 ==========
+            const trainingRes = await fetch(`/api/admin/trainings/${tid}`);
+            if (!trainingRes.ok) {
+                throw new Error(`HTTP ${trainingRes.status}`);
+            }
+            const trainingData = await trainingRes.json();
+            const training = trainingData.data || trainingData;
+            
+            if (!training) {
+                const tbody = document.getElementById('pushUserListBody');
+                if (tbody) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">培训不存在</td></tr>';
+                }
                 return;
             }
             
-            // 显示加载状态
-            const originalText = btn.innerHTML;
-            btn.disabled = true;
-            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${safeT('pushing') || '推送中...'}`;
+            // ========== 2. 解析培训国家列表 ==========
+            let trainingCountries = parseTrainingCountries(training);
             
-            try {
-                const response = await fetch(`/api/admin/training/${trainingId}/push`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({})
-                });
+            if (trainingCountries.length === 0) {
+                const tbody = document.getElementById('pushUserListBody');
+                if (tbody) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="text-center text-warning">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                该培训未指定国家，无法推送
+                            </td>
+                        </tr>
+                    `;
+                }
+                return;
+            }
+            
+            // ========== 3. 构建请求参数 ==========
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (whFilter) params.append('wh', whFilter);
+            if (isPartner) params.append('is_partner', isPartner === 'Y' ? 'true' : 'false');
+            
+            // 传递培训国家列表
+            trainingCountries.forEach(c => {
+                params.append('countries', c);
+            });
+            
+            // 用户手动筛选的国家
+            if (countryFilter) {
+                const resolved = resolveCountryParam(countryFilter);
+                if (resolved) {
+                    params.append('country', resolved);
+                }
+            }
+            
+            console.log('📤 请求推送用户列表:', params.toString());
+            
+            // ========== 4. 调用推送用户列表 API ==========
+            const res = await fetch(`/api/admin/users/push_list?${params.toString()}`);
+            const data = await res.json();
+            let users = data.data || [];
+            const actualCountries = data.countries || trainingCountries;
+            
+            console.log(`📥 返回用户数: ${users.length} (有效国家: ${actualCountries.join(', ')})`);
+            
+            // ========== 5. 签到状态过滤 ==========
+            // 获取该培训的所有签到记录
+            const attRes = await fetch(`/api/training/attendance/${tid}`);
+            const attData = await attRes.json();
+            const attendances = attData.attendances || [];
+            
+            // 构建签到映射
+            const attendanceMap = {};
+            attendances.forEach(att => {
+                attendanceMap[att.user_id] = {
+                    has_signature: !!(att.signature_url && att.signature_url !== '' && att.signature_url !== 'null'),
+                    sign_time: att.sign_time,
+                    signed_name: att.signed_name
+                };
+            });
+            
+            // 过滤用户：只保留未签到 或 待重新签字的用户
+            const filteredUsers = users.filter(user => {
+                const userId = user.id;
+                const attendance = attendanceMap[userId];
                 
-                const result = await response.json();
-                
-                if (result.success) {
-                    if (typeof showToast === 'function') {
-                        showToast(result.message || '推送成功', 'success');
-                    } else {
-                        alert('推送成功');
+                if (!attendance) return true;  // 未签到
+                if (!attendance.has_signature) return true;  // 待重新签字
+                return false;  // 已签到
+            });
+            
+            console.log(`签到状态过滤: 原始 ${users.length} 人，过滤后 ${filteredUsers.length} 人`);
+            
+            // ========== 6. 渲染用户列表 ==========
+            const tbody = document.getElementById('pushUserListBody');
+            if (!tbody) return;
+            
+            if (filteredUsers.length === 0) {
+                let message = '';
+                if (users.length === 0) {
+                    message = `该培训国家(${actualCountries.join(', ')})下暂无用户`;
+                } else {
+                    message = `该培训国家(${actualCountries.join(', ')})下所有用户已签到`;
+                }
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="text-center text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            ${message}
+                        </td>
+                    </tr>
+                `;
+            } else {
+                tbody.innerHTML = filteredUsers.map(u => {
+                    const attendance = attendanceMap[u.id];
+                    let statusBadge = '';
+                    if (!attendance) {
+                        statusBadge = `<span class="badge bg-warning text-dark ms-1">${safeT('pending_push') || '待推送'}</span>`;
+                    } else if (!attendance.has_signature) {
+                        statusBadge = `<span class="badge bg-danger ms-1">${safeT('need_re-sign') || '待重新签字'}</span>`;
                     }
-                    // 刷新页面
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    throw new Error(result.message || '推送失败');
-                }
-            } catch (error) {
-                console.error('推送失败:', error);
-                if (typeof showToast === 'function') {
-                    showToast('推送失败: ' + error.message, 'error');
-                } else {
-                    alert('推送失败: ' + error.message);
-                }
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = originalText;
+                    
+                    const whDisplay = u.wh_id ? `${u.wh_id}${u.wh_name_en ? ` (${u.wh_name_en})` : ''}` : '-';
+                    
+                    return `
+                        <tr>
+                            <td><input type="checkbox" class="push-user-checkbox" value="${u.id}"></td>
+                            <td>
+                                <div style="display: flex; flex-direction: column; align-items: flex-start; white-space: nowrap;">
+                                    <span>${escapeHtml(u.name_en || u.name_cn || '')}</span>
+                                    <span>${statusBadge}</span>
+                                </div>
+                            </td>
+                            <td>${escapeHtml(u.email)}</td>
+                            <td class="country-cell">${escapeHtml(u.country || '-')}</td>
+                            <td>${escapeHtml(whDisplay)}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            // ========== 7. 绑定全选事件 ==========
+            const selectAllCheckbox = document.getElementById('pushSelectAll');
+            if (selectAllCheckbox) {
+                const newSelectAll = selectAllCheckbox.cloneNode(true);
+                selectAllCheckbox.parentNode.replaceChild(newSelectAll, selectAllCheckbox);
+                newSelectAll.onclick = (e) => {
+                    document.querySelectorAll('.push-user-checkbox').forEach(cb => cb.checked = e.target.checked);
+                };
+            }
+            
+        } catch (err) {
+            console.error('加载用户列表失败', err);
+            const tbody = document.getElementById('pushUserListBody');
+            if (tbody) {
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">加载失败: ' + escapeHtml(err.message) + '</td></tr>';
             }
         }
+    }
+    
+    /**
+     * 格式化本地时间（用于 datetime-local 输入框）
+     */
+    function formatDateTimeLocal(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const hours = String(date.getHours()).padStart(2, '0');
+        const minutes = String(date.getMinutes()).padStart(2, '0');
+        return `${year}-${month}-${day}T${hours}:${minutes}`;
+    }
+    
+    /**
+     * UTC 时间转本地 datetime-local 格式
+     */
+    function utcToLocalDatetimeLocal(utcStr) {
+        if (!utcStr) return '';
+        try {
+            const date = new Date(utcStr);
+            if (isNaN(date.getTime())) return '';
+            return formatDateTimeLocal(date);
+        } catch {
+            return '';
+        }
+    }
+    
+    // ==================== 绑定推送模态框事件 ====================
+    
+    /**
+     * 绑定推送模态框的确认按钮事件
+     */
+    function bindPushModalEvents() {
+        const confirmBtn = document.getElementById('confirmPushBtn');
+        if (confirmBtn) {
+            // 移除旧事件避免重复绑定
+            const newBtn = confirmBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+            
+            newBtn.addEventListener('click', confirmPushHandler);
+        }
+        
+        // 刷新用户列表按钮
+        const loadUsersBtn = document.getElementById('pushLoadUsersBtn');
+        if (loadUsersBtn) {
+            const newBtn = loadUsersBtn.cloneNode(true);
+            loadUsersBtn.parentNode.replaceChild(newBtn, loadUsersBtn);
+            
+            newBtn.addEventListener('click', async function() {
+                const btn = this;
+                const originalHTML = btn.innerHTML;
+                btn.disabled = true;
+                btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${safeT('loading') || '加载中...'}`;
+                
+                try {
+                    await loadPushUserList(_currentPushTrainingId);
+                    if (typeof showToast === 'function') {
+                        showToast(safeT('t_list_refreshed') || '列表已刷新', 'success');
+                    }
+                } catch (err) {
+                    console.error('加载失败:', err);
+                    if (typeof showToast === 'function') {
+                        showToast(safeT('load_failed') || '加载失败', 'error');
+                    }
+                } finally {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHTML;
+                }
+            });
+        }
+        
+        // 库房模糊搜索
+        const whFilterInput = document.getElementById('pushWhFilter');
+        if (whFilterInput) {
+            whFilterInput.addEventListener('input', async function() {
+                const q = this.value.trim();
+                const datalist = document.getElementById('whDatalist');
+                if (q.length === 0) {
+                    datalist.innerHTML = '';
+                    return;
+                }
+                try {
+                    const res = await fetch(`/api/search/warehouses?q=${encodeURIComponent(q)}`);
+                    const items = await res.json();
+                    datalist.innerHTML = items.map(name => `<option value="${escapeHtml(name)}">`).join('');
+                } catch (e) {
+                    console.error('搜索库房失败', e);
+                }
+            });
+        }
+        
+        // 国家自动补全初始化
+        setupCountryAutocompleteForPush();
+    }
+    
+    /**
+     * 推送确认处理函数
+     */
+    async function confirmPushHandler() {
+        const startLocal = document.getElementById('start_time').value;
+        const endLocal = document.getElementById('end_time').value;
+        
+        if (!startLocal || !endLocal) {
+            alert(safeT('t_fill_start_end_time') || '请填写开始和结束时间');
+            return;
+        }
+        
+        // 转换为 UTC
+        const startISO = localDateTimeToUTC(startLocal);
+        const endISO = localDateTimeToUTC(endLocal);
+        
+        // 收集选中的用户ID
+        const selectedUserIds = Array.from(document.querySelectorAll('.push-user-checkbox:checked')).map(cb => cb.value);
+        
+        const btn = document.getElementById('confirmPushBtn');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${safeT('pushing') || '推送中...'}`;
+        
+        try {
+            const res = await fetch('/api/admin/trainings', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: _currentPushTrainingId,
+                    start_time: startISO,
+                    end_time: endISO,
+                    is_active: true,
+                    user_ids: selectedUserIds.length > 0 ? selectedUserIds : null
+                })
+            });
+            
+            if (res.ok) {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('pushModal'));
+                if (modal) modal.hide();
+                
+                if (typeof showToast === 'function') {
+                    const count = selectedUserIds.length;
+                    const msg = count > 0 
+                        ? `已推送给 ${count} 名选中学员`
+                        : '已推送给所有国家用户';
+                    showToast(msg, 'success');
+                }
+                
+                // 刷新页面
+                setTimeout(() => {
+                    location.reload();
+                }, 1000);
+            } else {
+                const err = await res.json();
+                alert(safeT('t_push_failed') + (err.message || safeT('t_network_err')));
+            }
+        } catch (err) {
+            console.error('推送失败:', err);
+            alert(safeT('t_push_failed') + err.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalText;
+        }
+    }
+    
+    /**
+     * 为推送模态框设置国家自动补全
+     */
+    function setupCountryAutocompleteForPush() {
+        const input = document.getElementById('pushCountryFilter');
+        if (!input) return;
+        
+        // 确保有隐藏字段
+        if (!document.getElementById('pushCountryCode')) {
+            const hidden = document.createElement('input');
+            hidden.type = 'hidden';
+            hidden.id = 'pushCountryCode';
+            input.after(hidden);
+        }
+        
+        // 如果已经初始化，跳过
+        if (window._pushCountryAutocompleteInited) return;
+        window._pushCountryAutocompleteInited = true;
+        
+        // 使用与 list_trainings.html 相同的逻辑
+        // 简单实现：输入时尝试匹配国家代码
+        input.addEventListener('blur', function() {
+            const val = this.value.trim();
+            if (!val) {
+                document.getElementById('pushCountryCode').value = '';
+                return;
+            }
+            const code = resolveCountryParam(val);
+            if (code) {
+                document.getElementById('pushCountryCode').value = code;
+            }
+        });
     }
     
     // ==================== 拷贝功能 ====================
@@ -629,7 +1015,6 @@ const TrainingListModule = (function() {
             const data = await res.json();
             const training = data.data || data;
             
-            // 解析国家列表
             let countries = [];
             if (training.countries) {
                 countries = typeof training.countries === 'string' ? 
@@ -706,14 +1091,12 @@ const TrainingListModule = (function() {
                 if (typeof showToast === 'function') {
                     showToast('培训删除成功', 'success');
                 }
-                // 从DOM中移除行
                 if (row) {
                     row.style.transition = 'all 0.3s ease';
                     row.style.opacity = '0';
                     row.style.transform = 'translateX(-20px)';
                     setTimeout(() => {
                         row.remove();
-                        // 更新计数
                         const countBadge = document.getElementById('trainingCount');
                         if (countBadge) {
                             const current = parseInt(countBadge.textContent) || 0;
@@ -738,26 +1121,18 @@ const TrainingListModule = (function() {
     
     // ==================== 编辑功能（行内编辑） ====================
     
-    /**
-     * 处理编辑按钮点击 - 行内编辑
-     */
     function handleEditClick(e) {
         const btn = e.currentTarget;
         const row = btn.closest('tr');
         if (!row) return;
         
-        // 如果已经有编辑中的行，先取消
         if (_currentEditingRow && _currentEditingRow !== row) {
             cancelEdit(_currentEditingRow);
         }
         
-        // 进入编辑模式
         startEdit(row);
     }
     
-    /**
-     * 开始行内编辑 - 从服务器获取最新数据
-     */
     async function startEdit(row) {
         const trainingId = row.dataset.trainingId;
         if (!trainingId) {
@@ -768,7 +1143,6 @@ const TrainingListModule = (function() {
         const nameCell = row.querySelector('td:first-child');
         const originalContent = nameCell.innerHTML;
         
-        // 显示加载状态
         nameCell.innerHTML = `
             <div class="d-flex align-items-center gap-2">
                 <span class="spinner-border spinner-border-sm"></span>
@@ -777,16 +1151,12 @@ const TrainingListModule = (function() {
         `;
         
         try {
-            // 从服务器获取最新数据
             const res = await fetch(`/api/admin/trainings/${trainingId}`);
             if (!res.ok) throw new Error('获取培训数据失败');
             const result = await res.json();
             const training = result.data || result;
             
-            // 解析国家列表
             let countries = parseTrainingCountries(training);
-            
-            // 构建编辑界面
             buildEditUI(row, training, countries);
         } catch (err) {
             console.error('加载培训数据失败:', err);
@@ -797,19 +1167,14 @@ const TrainingListModule = (function() {
         }
     }
     
-    /**
-     * 构建行内编辑界面
-     */
     function buildEditUI(row, training, countries) {
         const nameCell = row.querySelector('td:first-child');
         const actionsCell = row.querySelector('td:last-child');
         const uniqueId = Date.now() + '_' + Math.random().toString(36).substr(2, 6);
         
-        // 获取当前行中的绑定徽章（如果有）
         const bindingBadge = nameCell.querySelector('.binding-badge');
         const bindingHtml = bindingBadge ? bindingBadge.outerHTML : '';
         
-        // 构建培训名称列
         nameCell.innerHTML = `
             <div class="training-name-cell editing-cell">
                 <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
@@ -835,7 +1200,6 @@ const TrainingListModule = (function() {
             </div>
         `;
         
-        // 初始化国家标签组件
         const wrapper = document.getElementById(`editCountryTag_${uniqueId}`);
         let countryInstance = null;
         if (wrapper) {
@@ -848,11 +1212,9 @@ const TrainingListModule = (function() {
                     console.log('已选国家:', selected);
                 }
             });
-            // 保存实例引用
             _countryTagInstances.set(uniqueId, countryInstance);
         }
         
-        // 构建操作列
         actionsCell.innerHTML = `
             <div class="d-flex gap-1">
                 <button class="btn btn-sm btn-success save-edit-btn" data-training-id="${training.id}">
@@ -864,19 +1226,16 @@ const TrainingListModule = (function() {
             </div>
         `;
         
-        // 保存按钮事件
         const saveBtn = actionsCell.querySelector('.save-edit-btn');
         saveBtn.onclick = function() {
             saveEdit(row, countryInstance, uniqueId);
         };
         
-        // 取消按钮事件
         const cancelBtn = actionsCell.querySelector('.cancel-edit-btn');
         cancelBtn.onclick = function() {
             cancelEdit(row);
         };
         
-        // 键盘事件
         const inputs = nameCell.querySelectorAll('input');
         inputs.forEach(input => {
             input.addEventListener('keydown', function(e) {
@@ -890,11 +1249,9 @@ const TrainingListModule = (function() {
             });
         });
         
-        // 标记行进入编辑状态
         row.classList.add('editing-mode');
         _currentEditingRow = row;
         
-        // 聚焦到名称输入框
         setTimeout(() => {
             const nameInput = nameCell.querySelector('.edit-name-input');
             if (nameInput) {
@@ -904,9 +1261,6 @@ const TrainingListModule = (function() {
         }, 100);
     }
     
-    /**
-     * 保存编辑
-     */
     async function saveEdit(row, countryInstance, instanceId) {
         const trainingId = row.dataset.trainingId;
         const nameInput = row.querySelector('.edit-name-input');
@@ -919,10 +1273,8 @@ const TrainingListModule = (function() {
         const newStartTime = startInput ? startInput.value : '';
         const newEndTime = endInput ? endInput.value : '';
         
-        // 从组件获取选中的国家列表
         let countries = countryInstance ? countryInstance.getSelected() : [];
         
-        // 验证
         if (!newName) {
             if (typeof showToast === 'function') {
                 showToast('培训名称不能为空', 'warning');
@@ -938,14 +1290,12 @@ const TrainingListModule = (function() {
             return;
         }
         
-        // 显示保存状态
         const saveBtn = row.querySelector('.save-edit-btn');
         const originalText = saveBtn.innerHTML;
         saveBtn.disabled = true;
         saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${safeT('saving') || '保存中...'}`;
         
         try {
-            // 构建更新数据
             const updateData = {
                 id: trainingId,
                 name: newName,
@@ -969,7 +1319,6 @@ const TrainingListModule = (function() {
                 if (typeof showToast === 'function') {
                     showToast('培训更新成功', 'success');
                 }
-                // 清理组件实例
                 if (instanceId && _countryTagInstances.has(instanceId)) {
                     const instance = _countryTagInstances.get(instanceId);
                     if (instance && typeof instance.destroy === 'function') {
@@ -977,7 +1326,6 @@ const TrainingListModule = (function() {
                     }
                     _countryTagInstances.delete(instanceId);
                 }
-                // 刷新页面显示最新数据
                 setTimeout(() => {
                     location.reload();
                 }, 500);
@@ -994,13 +1342,9 @@ const TrainingListModule = (function() {
         }
     }
     
-    /**
-     * 取消编辑 - 刷新页面
-     */
     function cancelEdit(row) {
         if (!row) return;
         
-        // 清理所有国家标签组件实例
         _countryTagInstances.forEach((instance, key) => {
             if (instance && typeof instance.destroy === 'function') {
                 instance.destroy();
@@ -1008,46 +1352,55 @@ const TrainingListModule = (function() {
         });
         _countryTagInstances.clear();
         
-        // 直接刷新页面以恢复原始数据
         location.reload();
     }
     
-    /**
-     * 重新绑定事件（用于页面动态更新后）
-     */
+    // ==================== 初始化推送模态框事件 ====================
+    
+    function initPushModal() {
+        // 监听模态框显示事件，初始化国家自动补全
+        const modalElement = document.getElementById('pushModal');
+        if (modalElement) {
+            modalElement.addEventListener('shown.bs.modal', function() {
+                setupCountryAutocompleteForPush();
+                // 如果有当前培训ID，加载用户列表
+                if (_currentPushTrainingId) {
+                    loadPushUserList(_currentPushTrainingId);
+                }
+            });
+        }
+        
+        // 绑定确认按钮事件
+        bindPushModalEvents();
+    }
+    
+    // ==================== 重新绑定事件 ====================
+    
     function reinit() {
         _currentEditingRow = null;
         _countryTagInstances.clear();
         bindEvents();
         initTooltips();
+        initPushModal();
     }
     
     // ==================== 公共 API ====================
     
     return {
-        /**
-         * 初始化培训列表操作模块
-         */
         init: function() {
             if (_isInitialized) return;
             _isInitialized = true;
             
-            // 延迟绑定事件，确保 DOM 完全渲染
             setTimeout(function() {
                 bindEvents();
                 initTooltips();
-                console.log('✅ 培训列表操作模块已初始化（修复版）');
+                initPushModal();
+                console.log('✅ 培训列表操作模块已初始化（含完整推送功能）');
             }, 300);
         },
         
-        /**
-         * 重新绑定事件
-         */
         reinit: reinit,
         
-        /**
-         * 刷新列表
-         */
         refresh: function() {
             location.reload();
         }
