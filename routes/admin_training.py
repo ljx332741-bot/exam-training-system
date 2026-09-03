@@ -4775,4 +4775,117 @@ def export_trainings_excel():
     except Exception as e:
         logger.error(f"导出培训列表失败: {e}", exc_info=True)
         return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_training_bp.route('/api/admin/trainings/dashboard')
+@login_required
+@admin_required
+def get_dashboard_trainings():
+    """获取仪表盘培训列表（仅草稿、未开始、进行中三种状态）"""
+    db = get_supabase()
+    admin_db = get_supabase_admin()
+    
+    # 获取权限过滤
+    allowed_countries = get_admin_allowed_countries()
+    is_dev = is_developer()
+    current_user_id = session.get('user_id')
+    
+    # 获取查询参数
+    statuses_param = request.args.get('statuses', 'draft,pending,active')
+    statuses = [s.strip() for s in statuses_param.split(',') if s.strip()]
+    
+    logger.info(f"用户权限: allowed_countries={allowed_countries}, is_dev={is_dev}")
+    
+    # 基础查询 - 只查询有效培训
+    query = db.table("trainings").select("*").is_("deleted_at", "null")
+    
+    # 状态过滤
+    if statuses:
+        query = query.in_("dynamic_status", statuses)
+        logger.info(f"状态过滤: {statuses}")
+    
+    # 权限过滤
+    if not is_dev and allowed_countries is not None and allowed_countries:
+        or_conditions = []
+        for c in allowed_countries:
+            or_conditions.append(f"country.eq.{c}")
+            or_conditions.append(f"countries.cs.{{{c}}}")
         
+        if or_conditions:
+            query = query.or_(','.join(or_conditions))
+            logger.info(f"国家权限过滤: {allowed_countries}")
+    elif not is_dev and allowed_countries is not None and not allowed_countries:
+        return jsonify({"data": [], "total": 0})
+    
+    # 按创建时间倒序
+    query = query.order("created_at", desc=True)
+    
+    # 执行查询
+    res = query.execute()
+    trainings = res.data or []
+    logger.info(f"查询到 {len(trainings)} 个培训")
+    
+    if not trainings:
+        return jsonify({"data": [], "total": 0})
+    
+    # ✅ 批量获取所有培训的绑定数量（一次查询）
+    training_ids = [t['id'] for t in trainings]
+    
+    # 批量查询绑定数量
+    bind_count_res = admin_db.table("training_exam_bindings") \
+        .select("training_id", count="exact") \
+        .in_("training_id", training_ids) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    # 统计每个培训的绑定数量
+    bind_count_map = {}
+    for b in (bind_count_res.data or []):
+        tid = b.get('training_id')
+        bind_count_map[tid] = bind_count_map.get(tid, 0) + 1
+    
+    # ✅ 批量获取绑定考试详情（一次查询）
+    bind_detail_res = admin_db.table("training_exam_bindings") \
+        .select("training_id, exam_id, exams!inner(title)") \
+        .in_("training_id", training_ids) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    # 按培训ID分组绑定详情
+    bind_exams_map = {}
+    for b in (bind_detail_res.data or []):
+        tid = b.get('training_id')
+        if tid not in bind_exams_map:
+            bind_exams_map[tid] = []
+        exam_data = b.get('exams', {})
+        bind_exams_map[tid].append({
+            'exam_id': b.get('exam_id'),
+            'exam_title': exam_data.get('title', f"考试 {b.get('exam_id')}")
+        })
+    
+    # ✅ 批量获取签到人数（一次查询）
+    att_res = admin_db.table("training_attendances") \
+        .select("training_id", count="exact") \
+        .in_("training_id", training_ids) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    att_count_map = {}
+    for a in (att_res.data or []):
+        tid = a.get('training_id')
+        att_count_map[tid] = att_count_map.get(tid, 0) + 1
+    
+    # 组装数据
+    for t in trainings:
+        tid = t['id']
+        t['signed_count'] = att_count_map.get(tid, 0)
+        t['binding_count'] = bind_count_map.get(tid, 0)
+        t['binding_exams'] = bind_exams_map.get(tid, [])
+        
+        if t['binding_count'] > 0:
+            logger.info(f"培训 {tid} 有 {t['binding_count']} 个绑定考试")
+    
+    return jsonify({
+        "data": trainings,
+        "total": len(trainings)
+    })
+

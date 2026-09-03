@@ -1,0 +1,1462 @@
+<!-- templates/admin/exam_question.html -->
+{% extends "base.html" %}
+{% block title %}题库管理 - {{ exam_title }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/exam_question.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="exam-question-container" id="mainContainer">
+    
+    <!-- 考试信息 -->
+    <div id="examInfo" class="exam-info-card">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+        </div>
+    </div>
+    
+    <!-- 题目列表 -->
+    <div id="questionsContainer">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+        </div>
+    </div>
+    
+</div>
+
+<!-- Toast 通知容器 -->
+<div class="toast-container" id="toastContainer"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // 页面加载时获取国家列表
+    let globalCountryList = [];
+
+    async function loadCountryListForValidation() {
+        try {
+            const res = await fetch('/api/countries');
+            if (res.ok) {
+                const data = await res.json();
+                globalCountryList = data || [];
+                window.countryList = globalCountryList;
+                console.log('✅ 国家列表已加载，共', globalCountryList.length, '个国家');
+            } else {
+                console.warn('⚠️ 加载国家列表失败，使用备用列表');
+                // 使用备用国家列表（常见国家）
+                globalCountryList = getFallbackCountryList();
+                window.countryList = globalCountryList;
+            }
+        } catch (err) {
+            console.warn('⚠️ 加载国家列表失败:', err);
+            globalCountryList = getFallbackCountryList();
+            window.countryList = globalCountryList;
+        }
+    }
+
+    // 备用国家列表（常见国家）
+    function getFallbackCountryList() {
+        return [
+            { code: 'CN', name_zh: '中国', name_en: 'China' },
+            { code: 'US', name_zh: '美国', name_en: 'United States' },
+            { code: 'GB', name_zh: '英国', name_en: 'United Kingdom' },
+            { code: 'JP', name_zh: '日本', name_en: 'Japan' },
+            { code: 'DE', name_zh: '德国', name_en: 'Germany' },
+            { code: 'FR', name_zh: '法国', name_en: 'France' },
+            { code: 'IT', name_zh: '意大利', name_en: 'Italy' },
+            { code: 'BR', name_zh: '巴西', name_en: 'Brazil' },
+            { code: 'IN', name_zh: '印度', name_en: 'India' },
+            { code: 'AU', name_zh: '澳大利亚', name_en: 'Australia' },
+            { code: 'CA', name_zh: '加拿大', name_en: 'Canada' },
+            { code: 'KR', name_zh: '韩国', name_en: 'South Korea' },
+            { code: 'RU', name_zh: '俄罗斯', name_en: 'Russia' },
+            { code: 'ZA', name_zh: '南非', name_en: 'South Africa' },
+            { code: 'EG', name_zh: '埃及', name_en: 'Egypt' },
+            { code: 'SA', name_zh: '沙特阿拉伯', name_en: 'Saudi Arabia' },
+            { code: 'AE', name_zh: '阿联酋', name_en: 'United Arab Emirates' },
+            { code: 'SG', name_zh: '新加坡', name_en: 'Singapore' },
+            { code: 'MY', name_zh: '马来西亚', name_en: 'Malaysia' },
+            { code: 'TH', name_zh: '泰国', name_en: 'Thailand' },
+            { code: 'VN', name_zh: '越南', name_en: 'Vietnam' },
+            { code: 'PH', name_zh: '菲律宾', name_en: 'Philippines' },
+            { code: 'ID', name_zh: '印度尼西亚', name_en: 'Indonesia' },
+            { code: 'PK', name_zh: '巴基斯坦', name_en: 'Pakistan' },
+            { code: 'BD', name_zh: '孟加拉国', name_en: 'Bangladesh' },
+            { code: 'NG', name_zh: '尼日利亚', name_en: 'Nigeria' },
+            { code: 'MX', name_zh: '墨西哥', name_en: 'Mexico' },
+            { code: 'AR', name_zh: '阿根廷', name_en: 'Argentina' },
+            { code: 'CL', name_zh: '智利', name_en: 'Chile' },
+            { code: 'CO', name_zh: '哥伦比亚', name_en: 'Colombia' },
+            { code: 'PE', name_zh: '秘鲁', name_en: 'Peru' },
+            { code: 'NZ', name_zh: '新西兰', name_en: 'New Zealand' },
+            { code: 'PL', name_zh: '波兰', name_en: 'Poland' },
+            { code: 'TR', name_zh: '土耳其', name_en: 'Turkey' },
+            { code: 'IR', name_zh: '伊朗', name_en: 'Iran' },
+            { code: 'TW', name_zh: '台湾', name_en: 'Taiwan' },
+            { code: 'HK', name_zh: '香港', name_en: 'Hong Kong' },
+            { code: 'MO', name_zh: '澳门', name_en: 'Macau' },
+            // 您常用的国家
+            { code: 'NP', name_zh: '尼泊尔', name_en: 'Nepal' },
+            { code: 'LK', name_zh: '斯里兰卡', name_en: 'Sri Lanka' },
+            { code: 'MM', name_zh: '缅甸', name_en: 'Myanmar' },
+        ];
+    }
+
+    // 在输入框中添加自动补全（datalist）
+    function setupCountryAutocompleteWithValidation(inputId, datalistId) {
+        const input = document.getElementById(inputId);
+        const datalist = document.getElementById(datalistId);
+        
+        if (!input || !datalist) return;
+        
+        // 填充 datalist
+        const countries = globalCountryList.length > 0 ? globalCountryList : getFallbackCountryList();
+        datalist.innerHTML = countries.map(c => 
+            `<option value="${c.code}">${c.code} - ${c.name_zh || c.name_en}</option>`
+        ).join('');
+        
+        // 输入时过滤
+        input.addEventListener('input', function() {
+            const val = this.value.toUpperCase();
+            if (val.length > 0) {
+                const filtered = countries.filter(c => 
+                    c.code.startsWith(val) || 
+                    (c.name_zh || '').includes(val) ||
+                    (c.name_en || '').toUpperCase().includes(val)
+                );
+                datalist.innerHTML = filtered.map(c => 
+                    `<option value="${c.code}">${c.code} - ${c.name_zh || c.name_en}</option>`
+                ).join('');
+            } else {
+                datalist.innerHTML = countries.map(c => 
+                    `<option value="${c.code}">${c.code} - ${c.name_zh || c.name_en}</option>`
+                ).join('');
+            }
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const examId = {{ exam_id }};
+        const isReadonly = {{ readonly|tojson }};
+        let currentEditingField = null;
+        let saveTimeout = null;
+        let isSaving = false;
+        
+        // 如果是只读模式，添加只读类
+        if (isReadonly) {
+            document.getElementById('mainContainer').classList.add('readonly-mode');
+            showToast('📖 只读模式：此考试已发布，题目不可编辑', 'info');
+        }
+        
+        // ==================== 数据加载 ====================
+        // 判断是否可编辑
+        function isExamEditable(examInfo) {
+            // 只读参数优先
+            if (isReadonly) return false;
+            
+            // 考试状态判断
+            const editableStatuses = ['draft', 'created'];
+            return editableStatuses.includes(examInfo.status);
+        }
+
+        function loadExamData() {
+            // 加载考试信息
+            fetch(`/api/admin/exam/${examId}/info`)
+                .then(res => res.json())
+                .then(data => {
+                    // 根据考试状态更新只读模式
+                    if (data.status === 'active' || data.status === 'closed' || data.status === 'deleted') {
+                        document.getElementById('mainContainer').classList.add('readonly-mode');
+                    }
+                    renderExamInfo(data);
+                })
+                .catch(error => {
+                    showToast(t('t_loading_exam_failed'), 'error');
+                    console.error('加载考试信息失败:', error);
+                });
+            
+            // 加载题目列表
+            fetch(`/api/admin/exam/${examId}/questions`)
+                .then(res => res.json())
+                .then(data => {
+                    renderQuestions(data);
+                    // ===== 渲染完成后清理 =====
+                    setTimeout(() => {
+                        cleanupAllEditableFields();
+                    }, 100);
+                })
+                .catch(error => {
+                    showToast(t('loading_questions_faild'), 'error');
+                    console.error('加载题目列表失败:', error);
+                });
+            cleanupEditStates();
+        }
+        
+        // 在 loadExamData 之后添加
+        function cleanupEditStates() {
+            document.querySelectorAll('.editable-field').forEach(el => {
+                el.contentEditable = false;
+                el.classList.remove('editing');
+                el._originalText = null;
+                el._isInputMode = false;
+                // 移除所有内联样式
+                el.style.cssText = '';
+            });
+            currentEditingField = null;
+        }
+
+        // ==================== 渲染考试信息 ====================
+        function renderExamInfo(info) {
+            const container = document.getElementById('examInfo');
+
+            // ===== 清理所有字段中的 ✏️ =====
+            const cleanText = (text) => {
+                if (!text) return text;
+                return String(text).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+            };
+            
+            const countries = info.countries || [];
+            const countryDisplay = countries.length > 0 ? countries.join(', ') : `${t('not_setup')}`;
+            const isEditable = !isReadonly && ['draft', 'created'].includes(info.status);
+
+            // 清理标题
+            const title = cleanText(info.title || '未命名考试');
+            const reviewer = cleanText(info.reviewer || '未指定');
+            const quarter = cleanText(info.quarter || '未设置');
+            const cleanedCountryDisplay = cleanText(countryDisplay);
+            
+            container.innerHTML = `
+                <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:8px;">
+                    <div style="flex:1; min-width:200px;">
+                        <div class="exam-title">
+                            <i class="fas fa-book-open" style="font-size:18px;"></i>
+                            <span class="editable-info-field" 
+                                data-field="title" 
+                                data-exam-id="${info.id}"
+                                data-original-value="${escapeHtml(info.title || '未命名考试')}">
+                                ${escapeHtml(info.title || '未命名考试')}
+                                ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
+                            </span>
+                            ${!isEditable ? '<span class="badge bg-light text-dark ms-2" style="font-size:11px;">🔒 只读</span>' : ''}
+                        </div>
+                        <div class="exam-info-grid">
+                            <div class="exam-info-item">
+                                <span class="label">🌍</span>
+                                <span class="value">
+                                    <span class="editable-info-field" 
+                                        data-field="countries" 
+                                        data-exam-id="${info.id}"
+                                        data-original-value="${escapeHtml(countryDisplay)}">
+                                        ${escapeHtml(countryDisplay)}
+                                        ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="exam-info-item">
+                                <span class="label">📊</span>
+                                <span class="value">
+                                    <span class="editable-info-field" 
+                                        data-field="pass_score" 
+                                        data-exam-id="${info.id}"
+                                        data-original-value="${info.pass_score || 85}">
+                                        ${info.pass_score || 85}
+                                        ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="exam-info-item">
+                                <span class="label">🔄</span>
+                                <span class="value">
+                                    <span class="editable-info-field" 
+                                        data-field="max_retake" 
+                                        data-exam-id="${info.id}"
+                                        data-original-value="${info.max_retake || 3}">
+                                        ${info.max_retake || 3}
+                                        ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
+                                    </span>
+                                </span>
+                            </div>
+                            <div class="exam-info-item">
+                                <span class="label">✍️</span>
+                                <span class="value">
+                                    <span class="editable-info-field" 
+                                        data-field="reviewer" 
+                                        data-exam-id="${info.id}"
+                                        data-original-value="${escapeHtml(info.reviewer || '未指定')}">
+                                        ${escapeHtml(info.reviewer || '未指定')}
+                                        ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
+                                    </span>
+                                </span>
+                            </div>
+                            <!--
+                            <div class="exam-info-item">
+                                <span class="label">📅</span>
+                                <span class="value">
+                                    <span class="editable-info-field" 
+                                        data-field="quarter" 
+                                        data-exam-id="${info.id}"
+                                        data-original-value="${escapeHtml(info.quarter || '未设置')}">
+                                        ${escapeHtml(info.quarter || '未设置')}
+                                        ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
+                                    </span>
+                                </span>
+                            </div>
+                            -->
+                            <div class="exam-info-item">
+                                <span class="label">📝</span>
+                                <span class="value" style="font-weight:600;">
+                                    ${info.questions_count || 0} 题
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 只在可编辑状态显示 "双击编辑" 提示 -->
+                    ${isEditable ? `
+                        <div class="edit-badge">
+                            <i class="fas fa-mouse-pointer"></i> ${t('double_click_to_edit')}
+                        </div>
+                    ` : `
+                        <div class="edit-badge" style="background:rgba(255,255,255,0.1); cursor:default;">
+                            <i class="fas fa-lock"></i> ${t('readonly_mode')}
+                        </div>
+                    `}
+                </div>
+            `;
+            
+            // 只在可编辑时绑定事件
+            if (!isReadonly && isEditable) {
+                bindExamInfoEditEvents();
+            }
+        }
+
+        // ==================== 渲染题目 ====================
+        
+        function renderQuestions(questions) {
+            const container = document.getElementById('questionsContainer');
+
+            // 清理所有编辑状态
+            if (currentEditingField) {
+                cancelEditing();
+            }
+            currentEditingField = null;
+            clearTimeout(saveTimeout);
+            
+            if (!questions || questions.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-question-circle"></i>
+                        <h5>暂无题目</h5>
+                        <p>该考试还没有添加题目</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            const groups = groupQuestionsByType(questions);
+            let html = '';
+            
+            for (const [type, items] of Object.entries(groups)) {
+                const typeLabel = getTypeLabel(type);
+                const typeLabelEn = getTypeLabelEn(type);
+                const totalScore = items.reduce((sum, q) => sum + (q.score || 0), 0);
+                const typeIcon = getTypeIcon(type);
+                
+                html += `
+                    <div class="question-group">
+                        <div class="group-header">
+                            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                                <i class="fas ${typeIcon}" style="color:#667eea;"></i>
+                                <h4>${typeLabel}</h4>
+                                <span class="badge-group">${typeLabelEn} · ${items.length} 题 · ${totalScore} 分</span>
+                            </div>
+                        </div>
+                        ${items.map((q, index) => renderQuestion(q, index)).join('')}
+                    </div>
+                `;
+            }
+            
+            container.innerHTML = html;
+            
+            if (!isReadonly) {
+                bindEditEvents();
+            }
+        }
+        
+        function renderQuestion(q, index) {
+            const options = q.options || {};
+            const optionKeys = Object.keys(options).filter(k => options[k] && options[k].trim());
+            const typeClass = `type-${q.type || 'single'}`;
+            
+            // 清理选项内容
+            const cleanedOptions = {};
+            optionKeys.forEach(key => {
+                let value = options[key] || '';
+                value = String(value).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+                cleanedOptions[key] = value;
+            });
+            
+            let optionsHtml = '';
+            if (optionKeys.length > 0) {
+                optionsHtml = `<div class="options-list">`;
+                optionKeys.forEach(key => {
+                    const optionText = cleanedOptions[key] || '';
+                    optionsHtml += `
+                        <div class="option-item">
+                            <span class="option-label">${key}.</span>
+                            <span class="option-content editable-field" 
+                                data-field="options" 
+                                data-qid="${q.id}" 
+                                data-optkey="${key}">
+                                <span class="field-text">${escapeHtml(optionText)}</span>
+                                <span class="edit-hint">✏️</span>
+                            </span>
+                        </div>
+                    `;
+                });
+                optionsHtml += `</div>`;
+            }
+            
+            // 清理题干内容
+            let content = q.content || '';
+            content = String(content).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+            
+            // 清理答案
+            let answer = q.answer || '';
+            answer = String(answer).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+            
+            return `
+                <div class="question-item" data-qid="${q.id}">
+                    <div class="edit-actions">
+                        <button class="btn btn-sm btn-outline-primary" onclick="window.toggleEditMode(this)" title="编辑模式">
+                            <i class="fas fa-edit"></i>
+                        </button>
+                    </div>
+                    
+                    <div class="question-header">
+                        <span class="question-number">${q.num || index + 1}</span>
+                        <span class="question-type-badge ${typeClass}">
+                            ${getTypeLabel(q.type)}
+                        </span>
+                        <span class="question-id-text">ID: ${q.id}</span>
+                    </div>
+                    
+                    <div class="question-content editable-field" 
+                        data-field="content" 
+                        data-qid="${q.id}">
+                        <span class="field-text">${escapeHtml(content)}</span>
+                        <span class="edit-hint">✏️</span>
+                    </div>
+                    
+                    ${optionsHtml}
+                    
+                    <div class="question-meta">
+                        <div class="meta-item">
+                            <span class="label">📌 答案：</span>
+                            <span class="value editable-field" 
+                                data-field="answer" 
+                                data-qid="${q.id}">
+                                <span class="field-text">${escapeHtml(answer)}</span>
+                                <span class="edit-hint">✏️</span>
+                            </span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="label">⭐ 分值：</span>
+                            <span class="value editable-field" 
+                                data-field="score" 
+                                data-qid="${q.id}">
+                                <span class="field-text">${q.score || 0}</span>
+                                <span class="edit-hint">✏️</span>
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // 页面加载完成后清理所有可编辑字段的内容
+        function cleanupAllEditableFields() {
+            document.querySelectorAll('.editable-field').forEach(el => {
+                // 获取文本内容，排除 .edit-hint
+                const clone = el.cloneNode(true);
+                const hint = clone.querySelector('.edit-hint');
+                if (hint) hint.remove();
+                let text = clone.textContent.trim();
+                text = text.replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+                
+                // 如果内容有变化，更新显示
+                const currentText = el.textContent.trim();
+                if (text !== currentText && text !== '') {
+                    // 保留 edit-hint，更新文本
+                    const hintSpan = el.querySelector('.edit-hint');
+                    el.innerHTML = '';
+                    const textNode = document.createTextNode(text);
+                    el.appendChild(textNode);
+                    if (hintSpan) {
+                        el.appendChild(hintSpan);
+                    } else {
+                        const newHint = document.createElement('span');
+                        newHint.className = 'edit-hint';
+                        newHint.textContent = '✏️';
+                        el.appendChild(newHint);
+                    }
+                }
+                
+                // 确保编辑状态清理干净
+                el.contentEditable = false;
+                el.classList.remove('editing');
+                el._originalText = null;
+                el._isInputMode = false;
+            });
+            currentEditingField = null;
+        }
+
+        // ==================== 考试信息编辑 ====================
+        
+        function bindExamInfoEditEvents() {
+            document.querySelectorAll('.editable-info-field').forEach(el => {
+                el.removeEventListener('dblclick', handleExamInfoDblClick);
+                el.addEventListener('dblclick', handleExamInfoDblClick);
+            });
+        }
+        
+        function handleExamInfoDblClick(e) {
+            e.stopPropagation();
+            const el = e.currentTarget;
+            startEditingExamInfo(el);
+        }
+
+        function startEditingExamInfo(el) {
+            if (isReadonly) return;
+            
+            if (currentEditingField && currentEditingField !== el) {
+                saveCurrentEdit();
+            }
+            
+            // ===== 获取纯文本，移除 ✏️ 和多余空格 =====
+            let currentText = el.textContent.trim();
+            currentText = currentText.replace(/✏️/g, '').trim();
+            currentText = currentText.replace(/\u270f\ufe0f/g, '').trim();
+            currentText = currentText.replace(/\s+/g, ' ');
+            
+            const field = el.dataset.field;
+            const examId = el.dataset.examId;
+            
+            // 国家字段使用输入框
+            if (field === 'countries') {
+                el.contentEditable = false;
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'exam-info-input';
+                input.value = currentText;
+                input.dataset.original = currentText;
+                input.dataset.field = field;
+                input.dataset.examId = el.dataset.examId;
+                input.placeholder = '输入国家代码，用逗号分隔，如: CN, US, GB';
+                input.title = '请输入标准的2字母国家代码，多个国家用逗号分隔';
+                input.spellcheck = false;
+                input.autocorrect = 'off';
+                input.autocapitalize = 'off';
+                
+                // ===== 添加实时校验提示 =====
+                // 创建提示容器
+                const hintContainer = document.createElement('div');
+                hintContainer.className = 'country-input-hint';
+                hintContainer.style.cssText = `
+                    font-size: 11px;
+                    color: #6c757d;
+                    margin-top: 4px;
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                `;
+                hintContainer.innerHTML = `
+                    <span>💡 提示：使用逗号分隔多个国家</span>
+                    <span class="valid-hint" style="color: #28a745; display: none;">✅ 有效</span>
+                    <span class="invalid-hint" style="color: #dc3545; display: none;">❌ 无效</span>
+                `;
+                
+                // 输入时实时校验
+                input.addEventListener('input', function() {
+                    const value = this.value.trim();
+                    const validHint = hintContainer.querySelector('.valid-hint');
+                    const invalidHint = hintContainer.querySelector('.invalid-hint');
+                    
+                    if (value.length === 0) {
+                        validHint.style.display = 'none';
+                        invalidHint.style.display = 'none';
+                        this.style.borderColor = '';
+                        return;
+                    }
+                    
+                    // 分割并检查每个代码
+                    const codes = value.split(/[,，\s、;；]+/)
+                        .map(c => c.trim().toUpperCase())
+                        .filter(c => c.length > 0);
+                    
+                    if (codes.length === 0) {
+                        validHint.style.display = 'none';
+                        invalidHint.style.display = 'none';
+                        this.style.borderColor = '';
+                        return;
+                    }
+                    
+                    // 检查是否有无效的2字母代码
+                    const invalidCodes = codes.filter(c => !/^[A-Z]{2}$/.test(c));
+                    const validCountryCodes = new Set(globalCountryList.map(c => c.code.toUpperCase()));
+                    const unknownCodes = codes.filter(c => /^[A-Z]{2}$/.test(c) && !validCountryCodes.has(c));
+                    
+                    if (invalidCodes.length > 0 || unknownCodes.length > 0) {
+                        invalidHint.style.display = 'inline';
+                        validHint.style.display = 'none';
+                        this.style.borderColor = '#dc3545';
+                        this.style.boxShadow = '0 0 0 3px rgba(220, 53, 69, 0.2)';
+                        
+                        let errorMsg = '';
+                        if (invalidCodes.length > 0) {
+                            errorMsg = `"${invalidCodes.join(', ')}" 格式无效`;
+                        }
+                        if (unknownCodes.length > 0) {
+                            errorMsg += (errorMsg ? '; ' : '') + `"${unknownCodes.join(', ')}" 不在国家列表中`;
+                        }
+                        hintContainer.querySelector('.invalid-hint').textContent = `❌ ${errorMsg}`;
+                    } else {
+                        validHint.style.display = 'inline';
+                        invalidHint.style.display = 'none';
+                        this.style.borderColor = '#28a745';
+                        this.style.boxShadow = '0 0 0 3px rgba(40, 167, 69, 0.2)';
+                        
+                        const countryNames = codes.map(c => {
+                            const found = globalCountryList.find(country => country.code.toUpperCase() === c);
+                            return found ? `${c}(${found.name_zh || found.name_en})` : c;
+                        });
+                        hintContainer.querySelector('.valid-hint').textContent = `✅ ${countryNames.join(', ')}`;
+                    }
+                });
+                
+                // 失焦时自动格式化
+                input.addEventListener('blur', function() {
+                    const value = this.value.trim();
+                    if (value.length > 0) {
+                        const codes = value.split(/[,，\s、;；]+/)
+                            .map(c => c.trim().toUpperCase())
+                            .filter(c => c.length > 0 && /^[A-Z]{2}$/.test(c));
+                        if (codes.length > 0) {
+                            this.value = codes.join(', ');
+                        }
+                    }
+                });
+                
+                el.innerHTML = '';
+                el.appendChild(input);
+                el.appendChild(hintContainer);
+                
+                input.focus();
+                input.select();
+                
+                // 修改 blur 事件处理
+                input._originalBlurHandler = input._blurHandler || null;
+                if (input._originalBlurHandler) {
+                    input.removeEventListener('blur', input._originalBlurHandler);
+                }
+                input._blurHandler = function() {
+                    saveExamInfoFromInput(this);
+                };
+                input.addEventListener('blur', input._blurHandler);
+                
+                // 修改 keydown 事件
+                input._originalKeydownHandler = input._keydownHandler || null;
+                if (input._originalKeydownHandler) {
+                    input.removeEventListener('keydown', input._originalKeydownHandler);
+                }
+                input._keydownHandler = function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
+                    }
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        this.value = this.dataset.original;
+                        this.blur();
+                    }
+                };
+                input.addEventListener('keydown', input._keydownHandler);
+                
+                el._originalText = currentText;
+                el._isInputMode = true;
+                currentEditingField = el;
+                return;
+            }
+            
+            // 数字字段特殊处理
+            if (field === 'pass_score' || field === 'max_retake') {
+                el.contentEditable = false;
+                const input = document.createElement('input');
+                input.type = 'number';
+                input.className = 'exam-info-input exam-info-input-sm';
+                input.value = currentText;
+                input.dataset.original = currentText;
+                input.dataset.field = field;
+                input.dataset.examId = examId;
+                input.min = 0;
+                
+                el.innerHTML = '';
+                el.appendChild(input);
+                
+                input.focus();
+                input.select();
+                
+                input.addEventListener('blur', function() {
+                    saveExamInfoFromInput(this);
+                });
+                input.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
+                    }
+                    if (e.key === 'Escape') {
+                        e.preventDefault();
+                        this.value = this.dataset.original;
+                        this.blur();
+                    }
+                });
+                
+                el._originalText = currentText;
+                el._isInputMode = true;
+                currentEditingField = el;
+                return;
+            }
+            
+            // ===== 普通文本字段 - 重构显示 =====
+            // 清空元素，只保留文本内容（不含 ✏️）
+            const hintSpan = el.querySelector('.edit-hint');
+            el.innerHTML = '';
+            const textNode = document.createTextNode(currentText);
+            el.appendChild(textNode);
+            if (hintSpan) {
+                el.appendChild(hintSpan);
+            } else {
+                const newHint = document.createElement('span');
+                newHint.className = 'edit-hint';
+                newHint.textContent = '✏️';
+                el.appendChild(newHint);
+            }
+            
+            el.contentEditable = true;
+            el.className = el.className + ' editing';
+            el.focus();
+            
+            // 选中所有文本（排除 edit-hint）
+            const range = document.createRange();
+            const textNodeToSelect = el.childNodes[0];
+            if (textNodeToSelect && textNodeToSelect.nodeType === Node.TEXT_NODE) {
+                range.setStart(textNodeToSelect, 0);
+                range.setEnd(textNodeToSelect, textNodeToSelect.length);
+            } else {
+                range.selectNodeContents(el);
+            }
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            el._originalText = currentText;
+            el._isInputMode = false;
+            currentEditingField = el;
+        }
+
+        // 修复 saveExamInfoFromInput 函数
+        function saveExamInfoFromInput(input) {
+            const container = input.parentElement;
+            // 关键修复：清理输入值，移除特殊字符和多余空格
+            let newValue = input.value.trim();
+            
+            // 移除 ✏️ 表情符号和多余空格
+            newValue = newValue.replace(/✏️/g, '').trim();
+            newValue = newValue.replace(/\u270f\ufe0f/g, '').trim();
+            newValue = newValue.replace(/\s+/g, ' ');
+            
+            const field = input.dataset.field;
+            const examId = input.dataset.examId;
+            const originalValue = input.dataset.original;
+            
+            // 如果值没有变化，直接恢复
+            if (newValue === originalValue) {
+                container.textContent = originalValue;
+                container._originalText = originalValue;
+                container._isInputMode = false;
+                currentEditingField = null;
+                return;
+            }
+            
+            // 验证数字字段
+            if (field === 'pass_score' || field === 'max_retake') {
+                const num = parseInt(newValue);
+                if (isNaN(num) || num < 0) {
+                    showToast('❌ 请输入有效的数字', 'error');
+                    container.textContent = originalValue;
+                    container._originalText = originalValue;
+                    container._isInputMode = false;
+                    currentEditingField = null;
+                    return;
+                }
+                saveExamInfoFieldData(examId, field, num, container);
+                return;
+            }
+            
+            // ===== 国家字段增强校验 =====
+            if (field === 'countries') {
+                // 1. 分割输入（支持逗号、空格、中文逗号等分隔符）
+                let rawCountries = newValue.split(/[,，\s、;；]+/)
+                    .map(c => c.trim().toUpperCase())
+                    .filter(c => c.length > 0);
+                
+                // 2. 移除重复项
+                rawCountries = [...new Set(rawCountries)];
+                
+                // 3. 验证每个国家代码是否有效
+                const validCountries = [];
+                const invalidCountries = [];
+                
+                // 获取有效国家列表（从已有的国家列表中获取）
+                const allCountries = window.countryList || [];
+                const validCountryCodes = new Set(allCountries.map(c => c.code.toUpperCase()));
+                
+                rawCountries.forEach(code => {
+                    // 检查是否在有效国家列表中
+                    if (validCountryCodes.has(code)) {
+                        validCountries.push(code);
+                    } else {
+                        // 检查是否是有效的2字母代码（ISO 3166-1 alpha-2）
+                        const isValidFormat = /^[A-Z]{2}$/.test(code);
+                        if (isValidFormat) {
+                            // 格式正确但不在列表中，记录并尝试提示
+                            invalidCountries.push(code);
+                        } else {
+                            invalidCountries.push(code);
+                        }
+                    }
+                });
+                
+                // 4. 如果有无效的国家代码，给出警告并让用户确认
+                if (invalidCountries.length > 0) {
+                    const invalidList = invalidCountries.join(', ');
+                    
+                    // 显示警告对话框
+                    const confirmMsg = `以下国家代码无效或不存在：${invalidList}\n\n` +
+                        `有效代码示例：CN, US, GB, JP, DE, FR, IT, BR, IN, AU, CA, KR, RU, ZA, EG, SA, AE, SG, MY, TH, VN, PH, ID, PK, BD, NG, MX, AR, CL, CO, PE, NZ, PL, TR, IR, TW, HK, MO, ...\n\n` +
+                        `是否继续保存（只保存有效国家）？\n\n` +
+                        `💡 提示：请使用标准的2字母国家代码，多个国家用逗号分隔`;
+                    
+                    if (!confirm(confirmMsg)) {
+                        // 用户取消，恢复原值
+                        container.textContent = originalValue;
+                        container._originalText = originalValue;
+                        container._isInputMode = false;
+                        currentEditingField = null;
+                        input.focus();
+                        return;
+                    }
+                }
+                
+                // 5. 如果所有国家都无效，提示错误
+                if (validCountries.length === 0 && invalidCountries.length > 0) {
+                    showToast('❌ 请输入有效的国家代码，如: CN, US, GB', 'error');
+                    container.textContent = originalValue;
+                    container._originalText = originalValue;
+                    container._isInputMode = false;
+                    currentEditingField = null;
+                    return;
+                }
+                
+                // 6. 保存有效国家
+                if (validCountries.length > 0) {
+                    saveExamInfoFieldData(examId, field, validCountries, container);
+                    
+                    // 如果有无效国家被过滤，显示提示
+                    if (invalidCountries.length > 0) {
+                        setTimeout(() => {
+                            showToast(`⚠️ 已过滤无效国家：${invalidCountries.join(', ')}`, 'warning');
+                        }, 500);
+                    }
+                } else {
+                    // 没有有效国家
+                    showToast('❌ 请输入至少一个有效的国家代码', 'error');
+                    container.textContent = originalValue;
+                    container._originalText = originalValue;
+                    container._isInputMode = false;
+                    currentEditingField = null;
+                }
+                return;
+            }
+            
+            // 普通文本字段
+            saveExamInfoFieldData(examId, field, newValue, container);
+        }
+
+        function saveExamInfoFieldData(examId, field, value, el) {
+            if (isSaving) return;
+            isSaving = true;
+            
+            const data = {};
+            
+            // 国家字段：清理并转为数组
+            if (field === 'countries') {
+                let countries = [];
+                if (typeof value === 'string') {
+                    countries = value.split(/[,，\s]+/)
+                        .map(c => c.replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim().toUpperCase())
+                        .filter(c => c.length > 0);
+                } else if (Array.isArray(value)) {
+                    countries = value.map(c => 
+                        String(c).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim().toUpperCase()
+                    ).filter(c => c.length > 0);
+                }
+                data[field] = [...new Set(countries)]; // 去重
+            } 
+            // 数字字段
+            else if (field === 'pass_score' || field === 'max_retake') {
+                const num = parseInt(value);
+                data[field] = isNaN(num) ? 0 : num;
+            } 
+            // 普通文本字段
+            else {
+                data[field] = String(value).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+            }
+            
+            // 如果数据没有变化，不保存
+            // 检查当前数据是否与原始数据相同
+            // ... 可以添加对比逻辑
+            
+            fetch(`/api/admin/exam/${examId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('✅ 保存成功', 'success');
+                    if (el) {
+                        let displayValue = value;
+                        if (field === 'countries') {
+                            displayValue = Array.isArray(value) ? value.join(', ') : value;
+                        }
+                        // 确保显示值不含 ✏️
+                        displayValue = String(displayValue).replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+                        el.textContent = displayValue;
+                        el._originalText = displayValue;
+                        el._isInputMode = false;
+                        el.className = el.className.replace(/ editing/g, '');
+                        el.contentEditable = false;
+                    }
+                } else {
+                    showToast('❌ 保存失败: ' + (result.error || '未知错误'), 'error');
+                    if (el && el._originalText !== undefined) {
+                        el.textContent = el._originalText;
+                    }
+                }
+            })
+            .catch(error => {
+                showToast('❌ 保存失败: ' + error.message, 'error');
+                if (el && el._originalText !== undefined) {
+                    el.textContent = el._originalText;
+                }
+            })
+            .finally(() => {
+                isSaving = false;
+                currentEditingField = null;
+            });
+        }
+
+        // ==================== 题目编辑 ====================
+        
+        function bindEditEvents() {
+            document.querySelectorAll('.editable-field').forEach(el => {
+                el.removeEventListener('dblclick', handleFieldDblClick);
+                el.addEventListener('dblclick', handleFieldDblClick);
+            });
+            
+            document.removeEventListener('click', handleOutsideClick);
+            document.addEventListener('click', handleOutsideClick);
+            
+            document.removeEventListener('keydown', handleKeyDown);
+            document.addEventListener('keydown', handleKeyDown);
+        }
+        
+        function handleFieldDblClick(e) {
+            e.stopPropagation();
+            const el = e.currentTarget;
+            startEditing(el);
+        }
+            
+        function handleOutsideClick(e) {
+            if (currentEditingField) {
+                const target = e.target;
+                // 检查点击是否在可编辑区域内
+                const isInEditable = target.closest('.editable-field') || target.closest('.editable-info-field');
+                const isInModal = target.closest('.modal');
+                const isInToast = target.closest('.toast-container');
+                
+                // 如果点击在可编辑区域、模态框或 Toast 内，不保存
+                if (isInEditable || isInModal || isInToast) {
+                    return;
+                }
+                
+                saveCurrentEdit();
+            }
+        }
+        
+        function handleKeyDown(e) {
+            if (!currentEditingField) return;
+            
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                saveCurrentEdit();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                cancelEditing();
+            }
+        }
+        
+        function startEditing(el) {
+            if (isReadonly) return;
+            
+            if (currentEditingField && currentEditingField !== el) {
+                saveCurrentEdit();
+            }
+            
+            // ===== 关键修复：只获取文本节点的内容，排除子元素 =====
+            let currentText = '';
+            // 获取所有文本节点
+            const textNodes = [];
+            const walker = document.createTreeWalker(
+                el,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode: function(node) {
+                        // 跳过空文本节点
+                        if (node.textContent.trim() === '') {
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                }
+            );
+            let node;
+            while (node = walker.nextNode()) {
+                textNodes.push(node);
+            }
+            // 合并所有文本节点内容
+            currentText = textNodes.map(n => n.textContent).join('').trim();
+            
+            // 如果没有文本节点，使用 textContent 但排除 .edit-hint
+            if (!currentText) {
+                // 克隆元素，移除 .edit-hint 后再获取文本
+                const clone = el.cloneNode(true);
+                const hint = clone.querySelector('.edit-hint');
+                if (hint) hint.remove();
+                currentText = clone.textContent.trim();
+            }
+            
+            // 清理可能残留的 ✏️
+            currentText = currentText.replace(/✏️/g, '').trim();
+            currentText = currentText.replace(/\u270f\ufe0f/g, '').trim();
+            
+            if (el.contentEditable === 'true') {
+                el.focus();
+                currentEditingField = el;
+                return;
+            }
+            
+            // 清空元素，只保留文本内容（保留 edit-hint 元素）
+            // 但为了编辑干净，我们移除所有子元素，只保留文本
+            const hintElement = el.querySelector('.edit-hint');
+            el.innerHTML = ''; // 清空所有子元素
+            
+            // 重新插入文本内容
+            const textNode = document.createTextNode(currentText);
+            el.appendChild(textNode);
+            
+            // 重新插入 edit-hint
+            if (hintElement) {
+                const newHint = document.createElement('span');
+                newHint.className = 'edit-hint';
+                newHint.textContent = '✏️';
+                el.appendChild(newHint);
+            } else {
+                const newHint = document.createElement('span');
+                newHint.className = 'edit-hint';
+                newHint.textContent = '✏️';
+                el.appendChild(newHint);
+            }
+            
+            el.contentEditable = true;
+            el.className = el.className + ' editing';
+            el.focus();
+            
+            // 选中所有文本（排除 edit-hint）
+            const range = document.createRange();
+            const textNodeToSelect = el.childNodes[0];
+            if (textNodeToSelect && textNodeToSelect.nodeType === Node.TEXT_NODE) {
+                range.setStart(textNodeToSelect, 0);
+                range.setEnd(textNodeToSelect, textNodeToSelect.length);
+            } else {
+                range.selectNodeContents(el);
+            }
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+            
+            el._originalText = currentText;
+            currentEditingField = el;
+        }
+
+        function saveCurrentEdit() {
+            if (!currentEditingField) return;
+            
+            const el = currentEditingField;
+            
+            // 如果是考试信息输入框模式
+            if (el._isInputMode) {
+                const input = el.querySelector('input');
+                if (input) {
+                    saveExamInfoFromInput(input);
+                }
+                return;
+            }
+            
+            // ===== 修复：考试信息字段 =====
+            if (el.classList.contains('editable-info-field')) {
+                // 获取纯文本内容，排除 ✏️ 符号
+                let newValue = el.textContent.trim();
+                // 清理 ✏️ 符号
+                newValue = newValue.replace(/✏️/g, '').trim();
+                newValue = newValue.replace(/\u270f\ufe0f/g, '').trim();
+                // 清理多余空格
+                newValue = newValue.replace(/\s+/g, ' ');
+                
+                const field = el.dataset.field;
+                const examId = el.dataset.examId;
+                const originalText = (el._originalText || '').replace(/✏️/g, '').replace(/\u270f\ufe0f/g, '').trim();
+                
+                // 如果内容没有变化（或只有 ✏️ 的变化），取消编辑
+                if (newValue === originalText || 
+                    newValue === originalText + '✏️' || 
+                    newValue === '✏️' + originalText) {
+                    cancelEditing();
+                    return;
+                }
+                
+                // 清理编辑状态
+                el.contentEditable = false;
+                el.className = el.className.replace(/ editing/g, '');
+                el._originalText = newValue;
+                el._isInputMode = false;
+                
+                // 恢复显示：只显示文本，保留 edit-hint
+                const hintSpan = el.querySelector('.edit-hint');
+                el.innerHTML = '';
+                const textNode = document.createTextNode(newValue);
+                el.appendChild(textNode);
+                if (hintSpan) {
+                    el.appendChild(hintSpan);
+                } else {
+                    const newHint = document.createElement('span');
+                    newHint.className = 'edit-hint';
+                    newHint.textContent = '✏️';
+                    el.appendChild(newHint);
+                }
+                
+                clearTimeout(saveTimeout);
+                saveTimeout = setTimeout(() => {
+                    saveExamInfoFieldData(examId, field, newValue, el);
+                }, 600);
+                
+                currentEditingField = null;
+                return;
+            }
+            
+            // ===== 题目编辑 - 只获取文本节点内容 =====
+            let newValue = '';
+            const textNodes = [];
+            const walker = document.createTreeWalker(
+                el,
+                NodeFilter.SHOW_TEXT,
+                {
+                    acceptNode: function(node) {
+                        // 跳过空文本节点
+                        if (node.textContent.trim() === '') {
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        // 跳过 .edit-hint 内的文本
+                        if (node.parentElement && node.parentElement.classList.contains('edit-hint')) {
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                        return NodeFilter.FILTER_ACCEPT;
+                    }
+                }
+            );
+            let node;
+            while (node = walker.nextNode()) {
+                textNodes.push(node);
+            }
+            newValue = textNodes.map(n => n.textContent).join('').trim();
+            
+            // 如果没有文本节点，使用 textContent 但排除 .edit-hint
+            if (!newValue) {
+                const clone = el.cloneNode(true);
+                const hint = clone.querySelector('.edit-hint');
+                if (hint) hint.remove();
+                newValue = clone.textContent.trim();
+            }
+            
+            // 清理可能残留的 ✏️
+            newValue = newValue.replace(/✏️/g, '').trim();
+            newValue = newValue.replace(/\u270f\ufe0f/g, '').trim();
+            
+            const field = el.dataset.field;
+            const qid = el.dataset.qid;
+            const optKey = el.dataset.optkey;
+            const originalText = el._originalText || '';
+            
+            if (newValue === originalText) {
+                cancelEditing();
+                return;
+            }
+            
+            // 清理编辑状态
+            el.contentEditable = false;
+            el.classList.remove('editing');
+            el._originalText = null;
+            el._isInputMode = false;
+            el.style.cssText = '';
+            
+            // 恢复显示：只保留文本和 edit-hint
+            const hintSpan = el.querySelector('.edit-hint');
+            el.innerHTML = '';
+            const textNode = document.createTextNode(newValue);
+            el.appendChild(textNode);
+            if (hintSpan) {
+                el.appendChild(hintSpan);
+            } else {
+                const newHint = document.createElement('span');
+                newHint.className = 'edit-hint';
+                newHint.textContent = '✏️';
+                el.appendChild(newHint);
+            }
+            
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(() => {
+                saveQuestionField(qid, field, newValue, optKey);
+            }, 600);
+            
+            currentEditingField = null;
+        }
+
+        function cancelEditing() {
+            if (!currentEditingField) return;
+            
+            const el = currentEditingField;
+            const originalText = el._originalText || '';
+            
+            // 恢复显示：只保留文本和 edit-hint
+            const hintSpan = el.querySelector('.edit-hint');
+            el.innerHTML = '';
+            const textNode = document.createTextNode(originalText);
+            el.appendChild(textNode);
+            if (hintSpan) {
+                el.appendChild(hintSpan);
+            } else {
+                const newHint = document.createElement('span');
+                newHint.className = 'edit-hint';
+                newHint.textContent = '✏️';
+                el.appendChild(newHint);
+            }
+            
+            el.contentEditable = false;
+            el.classList.remove('editing');
+            el._originalText = null;
+            el._isInputMode = false;
+            el.style.cssText = '';
+            currentEditingField = null;
+        }
+
+        function saveQuestionField(qid, field, value, optKey) {
+            if (isSaving) return;
+            isSaving = true;
+            
+            const data = {};
+            
+            if (field === 'options' && optKey) {
+                const questionEl = document.querySelector(`.question-item[data-qid="${qid}"]`);
+                if (questionEl) {
+                    const optionEls = questionEl.querySelectorAll('.option-content');
+                    const options = {};
+                    optionEls.forEach(el => {
+                        const key = el.dataset.optkey;
+                        if (key) {
+                            options[key] = el.textContent.trim();
+                        }
+                    });
+                    data.options = options;
+                } else {
+                    data.options = { [optKey]: value };
+                }
+            } else {
+                data[field] = value;
+            }
+            
+            fetch(`/api/admin/question/${qid}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': getCsrfToken()
+                },
+                body: JSON.stringify(data)
+            })
+            .then(res => res.json())
+            .then(result => {
+                if (result.success) {
+                    showToast('✅ 保存成功', 'success');
+                    const el = document.querySelector(`.editable-field[data-qid="${qid}"][data-field="${field}"]`);
+                    if (el) {
+                        el._originalText = el.textContent.trim();
+                    }
+                } else {
+                    showToast('❌ 保存失败: ' + (result.error || '未知错误'), 'error');
+                }
+            })
+            .catch(error => {
+                showToast('❌ 保存失败: ' + error.message, 'error');
+                console.error('保存失败:', error);
+            })
+            .finally(() => {
+                isSaving = false;
+            });
+        }
+        
+        // ==================== 辅助函数 ====================
+        
+        function groupQuestionsByType(questions) {
+            const groups = {};
+            const typeOrder = ['single', 'multi', 'judge'];
+            
+            questions.forEach(q => {
+                const type = q.type || 'single';
+                if (!groups[type]) {
+                    groups[type] = [];
+                }
+                groups[type].push(q);
+            });
+            
+            const sortedGroups = {};
+            typeOrder.forEach(type => {
+                if (groups[type]) {
+                    sortedGroups[type] = groups[type];
+                }
+            });
+            
+            return sortedGroups;
+        }
+        
+        function getTypeLabel(type) {
+            const labels = { 'single': '单选题', 'multi': '多选题', 'judge': '判断题' };
+            return labels[type] || type;
+        }
+        
+        function getTypeLabelEn(type) {
+            const labels = { 'single': 'Single Choice', 'multi': 'Multiple Choice', 'judge': 'True/False' };
+            return labels[type] || type;
+        }
+        
+        function getTypeIcon(type) {
+            const icons = { 'single': 'fa-circle', 'multi': 'fa-check-square', 'judge': 'fa-gavel' };
+            return icons[type] || 'fa-question-circle';
+        }
+        
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function getCsrfToken() {
+            return document.querySelector('meta[name="csrf-token"]')?.content || '';
+        }
+        
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast-message ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateX(100%)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => {
+                    toast.remove();
+                }, 300);
+            }, 2500);
+        }
+        
+        // ==================== 暴露全局函数 ====================
+        window.toggleEditMode = function(btn) {
+            const item = btn.closest('.question-item');
+            const fields = item.querySelectorAll('.editable-field');
+            const isEditing = item.classList.contains('editing-mode');
+            
+            if (isEditing) {
+                // 退出编辑模式 - 保存所有当前编辑的字段
+                item.classList.remove('editing-mode');
+                fields.forEach(el => {
+                    if (el.contentEditable === 'true') {
+                        // 立即保存当前编辑，而不是等待
+                        const newValue = el.textContent.trim();
+                        const field = el.dataset.field;
+                        const qid = el.dataset.qid;
+                        const optKey = el.dataset.optkey;
+                        const originalText = el._originalText || '';
+                        
+                        if (newValue !== originalText) {
+                            // 直接保存，不经过防抖
+                            el.contentEditable = false;
+                            el.classList.remove('editing');
+                            el._originalText = null;
+                            saveQuestionField(qid, field, newValue, optKey);
+                        } else {
+                            // 内容没变，直接取消编辑
+                            el.contentEditable = false;
+                            el.classList.remove('editing');
+                            el._originalText = null;
+                        }
+                    }
+                });
+                currentEditingField = null;
+            } else {
+                // 进入编辑模式
+                item.classList.add('editing-mode');
+                const firstField = item.querySelector('.editable-field');
+                if (firstField) {
+                    // 清理可能的残留编辑状态
+                    if (firstField.classList.contains('editing')) {
+                        firstField.classList.remove('editing');
+                        firstField.contentEditable = false;
+                        firstField._originalText = null;
+                    }
+                    startEditing(firstField);
+                }
+            }
+        };
+
+        // ==================== 初始化 ====================
+        loadExamData();
+        loadCountryListForValidation();
+    });
+</script>
+{% endblock %}

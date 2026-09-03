@@ -554,7 +554,7 @@
 "save_configuration": "保存配置",
 "training_management_tip": "管理多场培训、设置签到有效期、查看签到记录",
 "access_management": "进入管理",
-"exam_data_export_manage": "考试管理",
+"training_exam_data_fast_manage": "培训考试快捷管理",
 "import_examination_word": "导入Word题库",
 "status": "状态",
 "candidate_qty": "考生人数",
@@ -643,6 +643,7 @@
 "t_closed": "已关闭",
 "t_deleted": "已删除",
 "t_loading_exam_failed": "加载考试信息失败",
+"loading_questions_faild": "加载题目列表失败",
 "t_enter_valid_duration": "请输入有效时长",
 "t_setting_saved": "设置已保存",
 "t_save_failed": "❌ 保存失败",
@@ -1091,6 +1092,7 @@
 "success_assign": "已分配 「{0}」 人",
 "current_reviewer": "当前阅卷人",
 "current_reviewer_not_configured": "当前未设置阅卷人",
+"not_setup": "未设置",
 "save_only": "仅保存设置",
 "reopen_exam_hint": "「仅保存设置」只更新考试信息，不重置考生状态。「确认重新打开」将重置所有考生的考试状态，考生可重新参加考试。「强制推送」仅推送给选中的未完成考试学员，有效期2小时。",
 "draft_is_saved": "草稿已保存",
@@ -1550,6 +1552,12 @@
 "rendering_sign_in_list": "正在渲染签到列表...",
 "try_adjust_search": "请尝试调整搜索条件",
 "no_matching_results": "没有匹配的结果",
+"show_header_footer": "显示页眉页脚",
 
-"show_header_footer": "显示页眉页脚"
+"edit_question_bank": "编辑题库",
+"question_bank": "题库管理",
+"view_question_bank": "查看题目",
+"view_questions": "查看题目",
+"double_click_to_edit": "双击编辑",
+"readonly_mode": "只读模式"
 }
