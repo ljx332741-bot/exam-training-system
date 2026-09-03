@@ -533,6 +533,28 @@
         .crystal-card .card-title {
             font-size: 0.65rem;
         }
+
+        .training-dashboard-table .training-name-cell .training-meta {
+            font-size: 0.6rem;
+            gap: 4px 8px;
+        }
+        
+        .section-divider {
+            padding: 10px 0;
+            margin: 0 10px;
+            gap: 10px;
+        }
+        
+        .section-divider .divider-icon {
+            width: 28px;
+            height: 28px;
+            font-size: 0.9rem;
+        }
+        
+        .training-dashboard-table .binding-badge {
+            font-size: 0.5rem;
+            padding: 1px 6px;
+        }
     }
 
     /* ==================== 悬浮触发旋转图标 ==================== */
@@ -676,3 +698,299 @@
     font-size: 0.7rem;
     white-space: nowrap;
 }
+
+
+/* ============================================================
+   打印时隐藏分界线
+   ============================================================ */
+
+@media print {
+    .section-divider {
+        display: none !important;
+    }
+    
+    .training-dashboard-table {
+        border-left: none !important;
+    }
+    
+    .exam-list-wrapper .exam-dashboard-table {
+        border-left: none !important;
+    }
+}
+
+/* ============================================================
+   培训列表 - 橙色边框主题（与培训统计卡片颜色一致）
+   ============================================================ */
+
+/* 培训列表表格 - 橙色边框主题 */
+.training-dashboard-table {
+    border-left: 4px solid #fb8c00 !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+
+.training-dashboard-table thead th {
+    background-color: rgba(251, 140, 0, 0.08) !important;
+    border-bottom: 2px solid #fb8c00 !important;
+    color: #e65100 !important;
+    font-weight: 600 !important;
+}
+
+.training-dashboard-table tbody tr:hover {
+    background-color: rgba(251, 140, 0, 0.04) !important;
+}
+
+.training-dashboard-table tbody tr {
+    border-left: 3px solid transparent;
+    transition: border-color 0.3s ease;
+}
+
+.training-dashboard-table tbody tr:hover {
+    border-left-color: #fb8c00;
+}
+
+/* 培训名称列 - 与考试列表风格一致 */
+.training-dashboard-table .training-name-cell {
+    display: flex;
+    flex-direction: column;
+    padding: 8px 0;
+}
+
+.training-dashboard-table .training-name-cell .training-name-link {
+    font-weight: 600;
+    color: #1a1a2e;
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.training-dashboard-table .training-name-cell .training-name-link:hover {
+    color: #34a853;
+}
+
+.training-dashboard-table .training-name-cell .training-meta {
+    margin-top: 4px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    font-size: 0.7rem;
+    color: #6c757d;
+}
+
+.training-dashboard-table .training-name-cell .training-meta .badge-country {
+    background-color: #e9ecef;
+    color: #495057;
+    font-weight: 500;
+    font-size: 0.6rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.training-dashboard-table .training-name-cell .training-meta .badge-quarter {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+    font-size: 0.6rem;
+    padding: 2px 8px;
+    border-radius: 10px;
+}
+
+.training-dashboard-table .training-name-cell .training-meta .badge-time {
+    color: #6c757d;
+    font-size: 0.65rem;
+}
+
+/* 培训绑定徽章 - 与考试列表一致 */
+.training-dashboard-table .binding-badge {
+    background-color: #fb8c00;
+    color: white;
+    font-size: 0.55rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    cursor: help;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 6px;
+}
+
+.training-dashboard-table .binding-badge:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(251, 140, 0, 0.3) !important;
+}
+
+.training-dashboard-table .binding-badge i {
+    font-size: 0.5rem;
+}
+
+/* 培训状态徽章 */
+.training-dashboard-table .status-badge {
+    font-size: 0.65rem;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.training-dashboard-table .status-badge.draft {
+    background-color: #e9ecef;
+    color: #6c757d;
+}
+
+.training-dashboard-table .status-badge.pending {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.training-dashboard-table .status-badge.active {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.training-dashboard-table .status-badge.closed {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+/* 培训签到人数徽章 */
+.training-dashboard-table .sign-count-badge {
+    background-color: #fff3e0 !important;
+    color: #e65100 !important;
+}
+
+/* ============================================================
+   考试列表 - 蓝色边框主题
+   ============================================================ */
+
+.exam-list-wrapper .exam-dashboard-table {
+    border-left: 4px solid #34a853 !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+
+.exam-list-wrapper .exam-dashboard-table thead th {
+    background-color: rgba(52, 168, 83, 0.08) !important;
+    border-bottom: 2px solid #34a853 !important;
+    color: #1e7e34 !important;
+    font-weight: 600 !important;
+}
+
+.exam-list-wrapper .exam-dashboard-table tbody tr:hover {
+    background-color: rgba(52, 168, 83, 0.04) !important;
+}
+
+.exam-list-wrapper .exam-dashboard-table tbody tr {
+    border-left: 3px solid transparent;
+    transition: border-color 0.3s ease;
+}
+
+.exam-list-wrapper .exam-dashboard-table tbody tr:hover {
+    border-left-color: #34a853;
+}
+
+/* ============================================================
+   培训与考试之间的分界线
+   ============================================================ */
+
+.section-divider {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px 0;
+    margin: 0 20px;
+    gap: 16px;
+}
+
+.section-divider .divider-line {
+    flex: 1;
+    height: 2px;
+    background: linear-gradient(90deg, #fb8c00, #34a853);
+    border-radius: 2px;
+    opacity: 0.6;
+}
+
+.section-divider .divider-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(251, 140, 0, 0.15), rgba(52, 168, 83, 0.15));
+    color: #fb8c00;
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.section-divider .divider-icon i {
+    transition: transform 0.4s ease;
+}
+
+.section-divider:hover .divider-icon {
+    background: linear-gradient(135deg, rgba(251, 140, 0, 0.25), rgba(52, 168, 83, 0.25));
+    transform: scale(1.05);
+}
+
+.section-divider:hover .divider-icon i {
+    transform: translateY(3px);
+}
+
+/* ============================================================
+   培训列表和考试列表的卡片边框
+   ============================================================ */
+
+/* 培训列表卡片边框 - 橙色 */
+.card:has(.training-dashboard-table) {
+    border-top: 3px solid #fb8c00 !important;
+    border-radius: 10px 10px 0 0 !important;
+}
+
+/* 培训名称链接悬停颜色 */
+.training-dashboard-table .training-name-link:hover {
+    color: #fb8c00 !important;
+}
+
+/* 考试列表卡片边框 - 绿色 */
+.exam-list-wrapper {
+    border-top: 3px solid #34a853 !important;
+    border-radius: 10px 10px 0 0 !important;
+    margin-top: 0;
+    padding-top: 4px;
+}
+
+/* 考试名称链接悬停颜色 */
+.exam-list-wrapper .exam-dashboard-table .fw-semibold:hover {
+    color: #34a853 !important;
+}
+
+/* 如果考试列表在同一个 card 内，使用伪类 */
+.card:has(.exam-dashboard-table) {
+    border-bottom: 3px solid #4285f4 !important;
+    border-radius: 0 0 10px 10px !important;
+}
+
+/* ============================================================
+   操作按钮组 - 与考试列表一致
+   ============================================================ */
+
+.training-dashboard-table .btn-group-sm .btn {
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+    border-radius: 4px;
+}
+
+.training-dashboard-table .btn-group-sm .btn i {
+    font-size: 0.7rem;
+}
+
+/* 培训操作按钮悬停效果 */
+.training-dashboard-table .btn-outline-success:hover {
+    background-color: #fb8c00 !important;
+    border-color: #fb8c00 !important;
+    color: white !important;
+}
+
+.training-dashboard-table .btn-outline-info:hover {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+}
+

@@ -423,7 +423,7 @@ def admin_batch_export_by_result():
         if not results:
             return jsonify({"success": False, "message": "未找到有效的成绩记录"}), 404
         
-        # ✅ 关键：按 user_id 去重，只保留每个考生最新的成绩记录
+        # 按 user_id 去重，只保留每个考生最新的成绩记录
         user_latest_result = {}
         for result in results:
             user_id = result['user_id']
@@ -460,10 +460,6 @@ def admin_batch_export_by_result():
         # 获取题目列表
         questions_res = db.table("questions").select("*").eq("exam_id", exam_id).order("num").execute()
         questions = questions_res.data or []
-        
-        from io import BytesIO
-        import zipfile
-        import re
         
         zip_buffer = BytesIO()
         

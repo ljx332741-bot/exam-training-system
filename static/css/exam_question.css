@@ -1,0 +1,664 @@
+/* static/css/exam_question.css */
+/* ===== 页面布局 ===== */
+.exam-question-container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* ===== 考试信息卡片（紧凑版） ===== */
+.exam-info-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-radius: 12px;
+    padding: 18px 24px;
+    margin-bottom: 25px;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.25);
+}
+
+.exam-info-card .exam-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.exam-info-card .exam-title .editable-info-field {
+    cursor: text;
+    padding: 2px 8px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.exam-info-card .exam-title .editable-info-field:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.exam-info-card .exam-title .editable-info-field .edit-hint {
+    display: none !important;
+    position: absolute;
+    right: -16px;
+    top: -8px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.exam-info-card .exam-title .editable-info-field:hover .edit-hint {
+    display: block !important;
+}
+
+.exam-info-card .exam-title .editable-info-field.editing {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border: 2px solid rgba(255, 255, 255, 0.5) !important;
+    border-radius: 4px;
+    outline: none;
+}
+
+.exam-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px 16px;
+}
+
+.exam-info-item {
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+    border-radius: 8px;
+    padding: 6px 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.exam-info-item .label {
+    font-size: 11px;
+    opacity: 0.75;
+    white-space: nowrap;
+    font-weight: 400;
+}
+
+.exam-info-item .value {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.exam-info-item .value .editable-info-field {
+    cursor: text;
+    padding: 1px 6px;
+    border-radius: 3px;
+    transition: all 0.2s ease;
+    position: relative;
+    display: inline-block;
+}
+
+.exam-info-item .value .editable-info-field:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.exam-info-item .value .editable-info-field .edit-hint {
+    display: none !important;
+    position: absolute;
+    right: -14px;
+    top: -6px;
+    font-size: 9px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.exam-info-item .value .editable-info-field:hover .edit-hint {
+    display: block !important;
+}
+
+.exam-info-item .value .editable-info-field.editing {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border: 2px solid rgba(255, 255, 255, 0.5) !important;
+    border-radius: 3px;
+    outline: none;
+}
+
+.exam-info-item .badge-count {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.exam-info-card .edit-badge {
+    font-size: 12px;
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.exam-info-card .edit-badge i {
+    margin-right: 4px;
+}
+
+/* ===== 题型分组 ===== */
+.question-group {
+    margin-bottom: 32px;
+}
+
+.group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 18px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    border-left: 4px solid #667eea;
+}
+
+.group-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #2d3748;
+}
+
+.group-header .badge-group {
+    font-size: 12px;
+    background: #667eea;
+    color: white;
+    padding: 4px 14px;
+    border-radius: 20px;
+}
+
+/* ===== 题目卡片 ===== */
+.question-item {
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.question-item:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.12);
+    transform: translateY(-1px);
+}
+
+.question-item .edit-actions {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    z-index: 5;
+}
+
+.question-item:hover .edit-actions {
+    opacity: 1;
+}
+
+.question-item .edit-actions .btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+}
+
+/* ===== 题目编号 ===== */
+.question-header {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.question-number {
+    display: inline-block;
+    background: #667eea;
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    text-align: center;
+    line-height: 28px;
+    font-weight: 600;
+    font-size: 13px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+.question-type-badge {
+    display: inline-block;
+    padding: 1px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+    margin-left: 8px;
+}
+
+.type-single { background: #bee3f8; color: #2b6cb0; }
+.type-multi { background: #c6f6d5; color: #276749; }
+.type-judge { background: #fefcbf; color: #975a16; }
+
+.question-id-text {
+    font-size: 11px;
+    color: #a0aec0;
+    margin-left: 8px;
+}
+
+/* ===== 题目标题 ===== */
+.question-content {
+    font-size: 14px;
+    line-height: 1.6;
+    padding: 8px 14px;
+    background: #f7fafc;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    min-height: 36px;
+    position: relative;
+}
+
+/* ===== 选项列表 ===== */
+.options-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+    margin-bottom: 12px;
+}
+
+.option-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 4px;
+    transition: background 0.2s;
+    gap: 6px;
+}
+
+.option-item:hover {
+    background: #f7fafc;
+}
+
+.option-label {
+    font-weight: 600;
+    color: #4a5568;
+    min-width: 24px;
+    font-size: 13px;
+}
+
+.option-content {
+    flex: 1;
+    font-size: 13px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    cursor: text;
+    min-height: 22px;
+    position: relative;
+}
+
+.option-content:hover {
+    background: #edf2f7;
+}
+
+/* ===== 答案和分数 ===== */
+.question-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+    flex-wrap: wrap;
+}
+
+.meta-item {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 13px;
+}
+
+.meta-item .label {
+    color: #718096;
+    font-weight: 400;
+}
+
+.meta-item .value {
+    font-weight: 600;
+    color: #2d3748;
+    padding: 1px 8px;
+    border-radius: 3px;
+    cursor: text;
+    transition: all 0.2s;
+    min-width: 24px;
+    display: inline-block;
+    position: relative;
+}
+
+.meta-item .value:hover {
+    background: #edf2f7;
+}
+
+/* ============================================================
+   核心修复：编辑提示图标 - 完全控制显示状态
+   ============================================================ */
+.editable-field {
+    cursor: text;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.editable-field:hover {
+    background: #edf2f7;
+    border-radius: 4px;
+}
+
+/* ---- 编辑提示图标 - 默认完全隐藏 ---- */
+.editable-field .edit-hint {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    position: absolute;
+    right: -16px;
+    top: -10px;
+    font-size: 11px;
+    color: #667eea;
+    background: white;
+    padding: 0 3px;
+    border-radius: 3px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    z-index: 10;
+    pointer-events: none;
+    line-height: 1.3;
+    transition: none;
+}
+
+/* ---- 悬浮时显示编辑提示 ---- */
+.editable-field:hover .edit-hint {
+    display: block !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    animation: floatUp 0.25s ease;
+}
+
+/* ---- 编辑状态时隐藏编辑提示（最高优先级） ---- */
+.editable-field.editing .edit-hint,
+.editable-field.editing * .edit-hint,
+.editable-field.editing > .edit-hint {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* ---- 父级编辑状态时隐藏所有子元素的编辑提示 ---- */
+.editing-mode .editable-field .edit-hint,
+.editing-mode .editable-field * .edit-hint {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* ---- 只读模式强制隐藏所有编辑提示 ---- */
+.readonly-mode .editable-field .edit-hint,
+.readonly-mode .editable-field * .edit-hint,
+.readonly-mode .editable-info-field .edit-hint,
+.readonly-mode .editable-info-field * .edit-hint {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+/* ---- 选项中的编辑提示位置调整 ---- */
+.option-item .editable-field .edit-hint {
+    right: -14px;
+    top: -8px;
+    font-size: 9px;
+}
+
+/* ---- 题干中的编辑提示位置调整 ---- */
+.question-content .editable-field .edit-hint {
+    right: -14px;
+    top: -8px;
+}
+
+@keyframes floatUp {
+    from {
+        opacity: 0;
+        transform: translateY(4px) scale(0.9);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+/* ===== 编辑状态样式 ===== */
+.editable-field.editing {
+    background: #ebf8ff !important;
+    border: 2px solid #4299e1 !important;
+    border-radius: 4px;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(66, 153, 225, 0.15);
+    padding: 2px 6px;
+}
+
+.editable-field.editing:hover {
+    background: #ebf8ff !important;
+}
+
+/* ===== 加载状态 ===== */
+.loading-spinner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px 0;
+}
+
+.loading-spinner .spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ===== Toast 通知 ===== */
+.toast-container {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9999;
+    max-width: 320px;
+}
+
+.toast-message {
+    padding: 10px 16px;
+    border-radius: 8px;
+    color: white;
+    font-weight: 500;
+    font-size: 14px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+    margin-bottom: 8px;
+    animation: slideIn 0.3s ease;
+}
+
+.toast-message.success { background: #48bb78; }
+.toast-message.error { background: #fc8181; }
+.toast-message.info { background: #4299e1; }
+
+@keyframes slideIn {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 768px) {
+    .options-list {
+        grid-template-columns: 1fr;
+    }
+    
+    .exam-info-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+    
+    .question-item {
+        padding: 12px 14px;
+    }
+    
+    .question-item .edit-actions {
+        opacity: 1;
+        top: 8px;
+        right: 8px;
+    }
+    
+    .question-item .edit-actions .btn {
+        width: 24px;
+        height: 24px;
+        font-size: 10px;
+    }
+    
+    .exam-info-card {
+        padding: 14px 16px;
+    }
+    
+    .exam-info-card .exam-title {
+        font-size: 17px;
+    }
+    
+    /* 移动端完全隐藏编辑提示 */
+    .editable-field .edit-hint,
+    .editable-field * .edit-hint,
+    .editable-info-field .edit-hint,
+    .editable-info-field * .edit-hint {
+        display: none !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+    }
+}
+
+/* ===== 空状态 ===== */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: #a0aec0;
+}
+
+.empty-state i {
+    font-size: 40px;
+    margin-bottom: 16px;
+    display: block;
+}
+
+.empty-state h5 {
+    color: #4a5568;
+    margin-bottom: 8px;
+    font-size: 16px;
+}
+
+.empty-state p {
+    font-size: 14px;
+}
+
+/* ===== 编辑徽章 ===== */
+.edit-badge {
+    font-size: 12px;
+    padding: 4px 14px;
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 20px;
+    white-space: nowrap;
+    transition: all 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.edit-badge i {
+    margin-right: 5px;
+}
+
+/* 可编辑时悬浮效果 */
+.edit-badge:not(:has(.fa-lock)):hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.02);
+}
+
+/* ===== 只读模式 ===== */
+.readonly-mode .editable-field {
+    cursor: default !important;
+}
+
+.readonly-mode .editable-field:hover {
+    background: transparent !important;
+}
+
+.readonly-mode .edit-actions {
+    display: none !important;
+}
+
+.readonly-mode .editable-field .edit-hint,
+.readonly-mode .editable-field * .edit-hint {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+.readonly-mode .editable-info-field {
+    cursor: default !important;
+}
+
+.readonly-mode .editable-info-field:hover {
+    background: transparent !important;
+}
+
+.readonly-mode .editable-info-field .edit-hint,
+.readonly-mode .editable-info-field * .edit-hint {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+}
+
+.readonly-mode .edit-badge {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(255, 255, 255, 0.05);
+    cursor: default !important;
+}
+
+.readonly-mode .edit-badge:hover {
+    transform: none !important;
+}
+
+/* ===== 考试信息输入框 ===== */
+.exam-info-input {
+    display: inline-block;
+    background: rgba(255, 255, 255, 0.95);
+    color: #2d3748;
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 80px;
+    max-width: 200px;
+    outline: none;
+}
+
+.exam-info-input:focus {
+    border-color: white;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+}
+
+.exam-info-input-sm {
+    font-size: 12px;
+    padding: 1px 6px;
+    min-width: 50px;
+    max-width: 120px;
+}

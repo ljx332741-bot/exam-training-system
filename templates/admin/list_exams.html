@@ -1133,6 +1133,12 @@
         const showDelete = ['super_admin', 'developer'].includes(CURRENT_USER_ROLE);
         const showReopenBtn = ex.can_show_reopen_button === true;
 
+        // ========== 新增：题库按钮显示条件 ==========
+        // 只有在草稿(draft)或未开始(created)状态时才显示可编辑的题库按钮
+        // 其他状态(active/closed)不显示或显示为只读查看
+        const isEditable = ['draft', 'created'].includes(ex.status);
+        const showQuestionBank = !isDeleted && isEditable;
+
         // 使用 getStatusBadge 生成状态徽章
         const statusBadge = getStatusBadge(ex.status);
 
@@ -1308,6 +1314,7 @@
             `;
         }
         
+        // ========== 操作按钮部分（已添加题库按钮） ==========
         let actionButtons = '';
         if (isDeleted) {
             actionButtons = `<button class="btn btn-sm btn-outline-success restore-exam-btn" data-id="${ex.id}">${safeT('t_recover')}</button>`;
@@ -1320,6 +1327,25 @@
                         <i class="bi bi-bootstrap-reboot spin-icon"></i>
                         ${safeT('reopen') || '重新打开'}
                     </button>` : ''}
+
+                ${showQuestionBank ? `
+                    <a href="/admin/exam/${ex.id}/questions" 
+                    class="btn btn-sm btn-outline-info" 
+                    title="${safeT('edit_question_bank') || '编辑题库'}"
+                    style="white-space: nowrap;">
+                        <i class="bi bi-book"></i> 
+                        <span class="d-none d-lg-inline">${safeT('question_bank') || '题库'}</span>
+                    </a>` : ''
+                }
+                ${!isDeleted && !isEditable && ['active', 'closed'].includes(ex.status) ? `
+                    <a href="/admin/exam/${ex.id}/questions?readonly=true" 
+                    class="btn btn-sm btn-outline-secondary" 
+                    title="${safeT('view_question_bank') || '查看题目'}"
+                    style="white-space: nowrap;">
+                        <i class="bi bi-eye"></i> 
+                        <span class="d-none d-lg-inline">${safeT('view_questions') || '查看题目'}</span>
+                    </a>` : ''
+                }
                 <button class="btn btn-sm btn-outline-info copy-exam-btn" data-id="${ex.id}">${safeT('copy')}</button>
                 ${showEdit ? `<button class="btn btn-sm btn-outline-primary edit-exam-btn" data-id="${ex.id}"
                     onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">

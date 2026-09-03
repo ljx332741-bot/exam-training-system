@@ -23,6 +23,7 @@ exam-system/
 │   │   ├── list_trainings.css                  # 培训管理页面样式
 │   │   ├── list_users.css                      # 用户管理页面样式
 │   │   ├── dashboard.css                       # 学员端仪表盘样式
+│   │   ├── exam_question.css                   # 题库管理样式
 │   │   ├── admin_dashboard.css                 # 学员端仪表盘样式
 │   │   └── training_photos.css                 # 照片墙样式
 │   │
@@ -95,6 +96,7 @@ exam-system/
 │        ├── wh_info.html                       # 库房信息管理页面
 │        ├── admin_training_photos.html         # 管理员照片管理页面
 │        ├── cms_management.html                # 首页卡片管理页面
+│        ├── exam_question.html                 # 题库管理页面
 │        ├── training_completion_report.html    # 首页卡片管理页面
 │        └── dashboard.html                     # 管理员面板
 │   
@@ -115,6 +117,7 @@ exam-system/
 │   ├── admin_training.py                       # 管理员：培训管理
 │   ├── admin_inspection.py                     # 管理员：访谈管理
 │   ├── admin_export.py                         # 管理员：导出模块
+│   ├── admin_exam_question.py                  # 管理员：题库管理
 │   └── helpers.py                              # 公共辅助函数 & 装饰器
 │   
 

@@ -18,6 +18,7 @@ admin_bp = Blueprint('admin', __name__)
 # 然后导入 admin_message 模块（它会在内部使用 admin_bp）
 from .admin_message import message_bp
 from .admin_training_photos import admin_training_photos_bp
+from .admin_exam_question import admin_exam_q_bp
 
 # ========== 1. 定义所有蓝图 ==========
 auth_bp = Blueprint('auth', __name__)
@@ -193,6 +194,7 @@ def register_blueprints(app):
     app.register_blueprint(admin_inspection.admin_inspection_bp)
     app.register_blueprint(admin_export.admin_export_bp)
     app.register_blueprint(admin_wh.admin_wh_bp)
+    app.register_blueprint(admin_exam_q_bp)
 
     # 注入兼容版 url_for
     @app.context_processor
