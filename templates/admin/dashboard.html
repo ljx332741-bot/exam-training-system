@@ -279,33 +279,9 @@
 				</div>
 
                 <!-- ============================================================
-                    培训列表 - 与考试列表布局一致
+                    培训列表 - 使用 include 引入 HTML
                     ============================================================ -->
-                {% if session.get('role') in ['developer', 'super_admin'] %}
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover align-middle mb-0 training-dashboard-table" style="min-width: 1000px;">
-                            <thead class="table-light">
-                                <tr>
-                                    <th><span data-i18n="training_name">培训名称</span></th>
-                                    <th>tid</th>
-                                    <th><span data-i18n="status">状态</span></th>
-                                    <th><span data-i18n="sign_count">签到人数</span></th>
-                                    <th><span data-i18n="actions">操作</span></th>
-                                </tr>
-                            </thead>
-                            <tbody id="dashboardTrainingTbody">
-                                <tr>
-                                    <td colspan="5" class="text-center text-muted py-3">
-                                        <span class="spinner-border spinner-border-sm me-2"></span>
-                                        <span data-i18n="loading">加载中...</span>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                {% endif %}
+                {% include 'admin/dashboard/_training_list.html' %}
 
                 <!-- ============================================================
                     培训与考试之间的分界线
@@ -1114,6 +1090,13 @@
 {% endblock %}
 
 {% block extra_js %}
+<!-- ============================================================
+     引入培训列表的 JavaScript
+     ============================================================ -->
+{% if session.get('role') in ['developer', 'super_admin'] %}
+<script src="{{ url_for('static', filename='js/admin/dashboard/_training_list.js') }}"></script>
+{% endif %}
+
 <script>
     // 在前端添加缓存，不要每次都请求
     let unreadCountCache = 0;
@@ -5669,8 +5652,6 @@
 		if (typeof loadExams === 'function') loadExams();
 		if (typeof loadTrainings === 'function') loadTrainings();
 		if (typeof loadExamStatusData === 'function' && currentExamId) loadExamStatusData(currentExamId);
-        // 重新加载培训列表以更新翻译
-        renderDashboardTrainings();
 	});
      
     // 更新选中消息计数
@@ -5712,7 +5693,13 @@
     }
 
 	// 初始化事件监听
-	document.addEventListener('DOMContentLoaded', async () => {
+	document.addEventListener('DOMContentLoaded', async function () {
+        {% if session.get('role') in ['developer', 'super_admin'] %}
+        if (typeof TrainingListModule !== 'undefined') {
+            TrainingListModule.init();
+        }
+        {% endif %}
+        
         // 1. 齿轮动画
         const gearIcon = document.getElementById('gearIcon');
         if (gearIcon) {
@@ -5936,10 +5923,6 @@
         if (batchDeleteBtn) {
             batchDeleteBtn.addEventListener('click', batchDeleteMessages);
         }
-        // 加载培训列表（延迟执行，确保考试列表先加载）
-        setTimeout(() => {
-            loadDashboardTrainings();
-        }, 500);
 	});
 
 	// 带权限过滤的国家自动完成函数
@@ -6862,447 +6845,6 @@
     document.getElementById('refreshLogConfigBtn')?.addEventListener('click', function() {
         loadLogConfigData();
     });
-
-    // ==================== 仪表盘培训列表加载 ====================
-    /**
-    * 渲染仪表盘培训列表 - 与考试列表布局一致
-    */
-    function renderDashboardTrainings(trainings) {
-        const tbody = document.getElementById('dashboardTrainingTbody');
-        if (!tbody) return;
-        
-        if (!trainings || trainings.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center text-muted py-4">
-                        <span data-i18n="no_training_data">暂无培训数据</span>
-                    </td>
-                </tr>
-            `;
-            return;
-        }
-        
-        tbody.innerHTML = trainings.map((t, index) => {
-            const quarter = getQuarterFromDate(t.start_time);
-            const countries = parseTrainingCountries(t);
-            const countryDisplay = countries.length > 0 ? countries.join(', ') : '-';
-            const statusMap = {
-                'draft': { text: safeT('draft') || '草稿', class: 'draft' },
-                'pending': { text: safeT('t_pending') || '未开始', class: 'pending' },
-                'active': { text: safeT('t_pushed') || '进行中', class: 'active' },
-                'closed': { text: safeT('t_closed') || '已关闭', class: 'closed' }
-            };
-            const statusInfo = statusMap[t.dynamic_status] || statusMap['draft'];
-            
-            // 构建绑定徽章
-            let bindingHtml = '';
-            if (t.binding_count > 0 && t.binding_exams && t.binding_exams.length > 0) {
-                const bindingNames = t.binding_exams.map(b => 
-                    `${b.exam_title} (ID: ${b.exam_id})`
-                ).join('\n');
-                bindingHtml = `
-                    <span class="binding-badge" 
-                        title="已绑定 ${t.binding_count} 个考试:\n${bindingNames}"
-                        data-bs-toggle="tooltip" 
-                        data-bs-html="true">
-                        <i class="bi bi-link"></i> ${t.binding_count}
-                    </span>
-                `;
-            }
-            
-            // 构建操作按钮
-            const canViewAttendance = (t.signed_count || 0) > 0 && (t.country || t.countries);
-            let actionsHtml = `
-                <div class="btn-group btn-group-sm" role="group">
-                    ${canViewAttendance ? 
-                        `<a href="/admin/training/${t.id}/attendance" class="btn btn-outline-info" title="查看签到详情" target="_blank">
-                            <i class="bi bi-eye"></i>
-                        </a>` : 
-                        `<button class="btn btn-outline-secondary" disabled title="暂无签到记录" style="opacity:0.5;">
-                            <i class="bi bi-eye"></i>
-                        </button>`
-                    }
-                    <a href="/admin/training/${t.id}/attendance?from=dashboard" class="btn btn-outline-primary" target="_blank" title="签到管理">
-                        <i class="bi bi-pencil-square"></i>
-                    </a>
-                    <button class="btn btn-outline-success push-btn" data-id="${t.id}" title="推送">
-                        <i class="bi bi-send"></i>
-                    </button>
-                    <button class="btn btn-outline-secondary copy-training-btn" data-id="${t.id}" title="拷贝">
-                        <i class="bi bi-copy"></i>
-                    </button>
-                    ${t.dynamic_status === 'draft' ? `
-                        <button class="btn btn-outline-danger delete-training-btn" data-id="${t.id}" title="删除">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    ` : ''}
-                </div>
-            `;
-            
-            // 格式化有效期
-            const startTime = t.start_time ? formatLocalTime(t.start_time) : '';
-            const endTime = t.end_time ? formatLocalTime(t.end_time) : '';
-            const timeDisplay = startTime && endTime ? `${startTime} - ${endTime}` : '未设置';
-            
-            return `
-                <tr data-training-id="${t.id}">
-                    <td>
-                        <div class="training-name-cell">
-                            <div>
-                                <span class="training-name-link">${escapeHtml(t.name)}</span>
-                                ${bindingHtml}
-                            </div>
-                            <div class="training-meta">
-                                <span class="badge-country">🌍 ${escapeHtml(countryDisplay)}</span>
-                                <span class="badge-quarter">📅 ${quarter}</span>
-                                <span class="badge-time">🕐 ${escapeHtml(timeDisplay)}</span>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="text-muted" style="font-size:0.8rem;">${t.id}</td>
-                    <td>
-                        <span class="status-badge ${statusInfo.class}">${statusInfo.text}</span>
-                    </td>
-                    <td>
-                        <span class="sign-count-badge">${t.signed_count || 0}</span>
-                    </td>
-                    <td>${actionsHtml}</td>
-                </tr>
-            `;
-        }).join('');
-        
-        // 初始化 Tooltip
-        setTimeout(() => {
-            document.querySelectorAll('#dashboardTrainingTbody [data-bs-toggle="tooltip"]').forEach(el => {
-                const oldTooltip = bootstrap.Tooltip.getInstance(el);
-                if (oldTooltip) oldTooltip.dispose();
-                new bootstrap.Tooltip(el, {
-                    container: 'body',
-                    trigger: 'hover focus',
-                    placement: 'top'
-                });
-            });
-        }, 100);
-    }
-
-    /**
-     * 加载仪表盘培训列表（仅显示草稿、未开始、进行中三种状态）
-     */
-    async function loadDashboardTrainings() {
-        const tbody = document.getElementById('dashboardTrainingTbody');
-        if (!tbody) return;
-        
-        try {
-            // 获取当前用户权限范围
-            let allowedCountries = null;
-            try {
-                const permRes = await fetch('/api/admin/current_user_permissions');
-                if (permRes.ok) {
-                    const permData = await permRes.json();
-                    allowedCountries = permData.allowed_countries || null;
-                }
-            } catch (e) {
-                console.warn('获取权限失败:', e);
-            }
-            
-            // 构建请求参数：只获取草稿(draft)、未开始(pending)、进行中(active)三种状态
-            const params = new URLSearchParams({
-                per_page: 20,
-                statuses: 'draft,pending,active'  // 只获取这三种状态
-            });
-            
-            // 如果有权限限制，添加国家过滤
-            if (allowedCountries && Array.isArray(allowedCountries) && allowedCountries.length > 0) {
-                allowedCountries.forEach(c => {
-                    params.append('country', c);
-                });
-            }
-            
-            const url = `/api/admin/trainings/dashboard?${params.toString()}`;
-            const response = await fetch(url, {
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-            
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            
-            const data = await response.json();
-            const trainings = data.data || [];
-            
-            // 更新培训数量徽章
-            const countBadge = document.getElementById('trainingCount');
-            if (countBadge) {
-                countBadge.textContent = trainings.length;
-            }
-            
-            // 渲染培训列表
-            renderDashboardTrainings(trainings);
-            
-            // 绑定事件
-            bindDashboardTrainingEvents();
-            
-        } catch (error) {
-            console.error('加载培训列表失败:', error);
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center text-danger py-3">
-                        <i class="bi bi-exclamation-triangle me-1"></i>
-                        <span data-i18n="load_failed">加载失败</span>: ${escapeHtml(error.message)}
-                        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="loadDashboardTrainings()">
-                            <i class="bi bi-arrow-clockwise"></i> <span data-i18n="retry">重试</span>
-                        </button>
-                    </td>
-                </tr>
-            `;
-        }
-    }
-
-    /**
-    * 获取培训状态徽章
-    */
-    function getTrainingStatusBadge(status) {
-        const statusMap = {
-            'draft': { text: safeT('draft') || '草稿', class: 'bg-secondary' },
-            'pending': { text: safeT('t_pending') || '未开始', class: 'bg-warning text-dark' },
-            'active': { text: safeT('t_pushed') || '进行中', class: 'bg-success' },
-            'closed': { text: safeT('t_closed') || '已关闭', class: 'bg-danger' }
-        };
-        const info = statusMap[status] || statusMap['draft'];
-        return `<span class="badge ${info.class}" style="font-size:0.7rem;">${info.text}</span>`;
-    }
-
-    /**
-    * 绑定仪表盘培训列表事件
-    */
-    function bindDashboardTrainingEvents() {
-        // 推送按钮
-        document.querySelectorAll('#dashboardTrainingTbody .push-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDashboardPushClick);
-            btn.addEventListener('click', handleDashboardPushClick);
-        });
-        
-        // 拷贝按钮
-        document.querySelectorAll('#dashboardTrainingTbody .copy-training-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDashboardCopyClick);
-            btn.addEventListener('click', handleDashboardCopyClick);
-        });
-        
-        // 删除按钮
-        document.querySelectorAll('#dashboardTrainingTbody .delete-training-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDashboardDeleteClick);
-            btn.addEventListener('click', handleDashboardDeleteClick);
-        });
-        
-        // 编辑名称按钮
-        document.querySelectorAll('#dashboardTrainingTbody .edit-training-name-btn').forEach(btn => {
-            btn.removeEventListener('click', handleDashboardEditClick);
-            btn.addEventListener('click', handleDashboardEditClick);
-        });
-    }
-
-    /**
-     * 处理推送按钮点击 - 仪表盘内直接推送
-     */
-    async function handleDashboardPushClick(e) {
-        const btn = e.currentTarget;
-        const trainingId = btn.dataset.id;
-        
-        // 获取培训名称
-        const row = btn.closest('tr');
-        const nameLink = row?.querySelector('.training-name-link');
-        const trainingName = nameLink ? nameLink.textContent.trim() : `培训 #${trainingId}`;
-        
-        // 确认推送
-        if (!confirm(`确定要推送培训「${trainingName}」吗？\n\n推送后，相关用户将收到通知。`)) {
-            return;
-        }
-        
-        // 显示加载状态
-        const originalText = btn.innerHTML;
-        btn.disabled = true;
-        btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('pushing') || '推送中...'}`;
-        
-        try {
-            const response = await fetch(`/api/admin/training/${trainingId}/push`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({})
-            });
-            
-            const result = await response.json();
-            
-            if (result.success) {
-                if (typeof showToast === 'function') {
-                    showToast(result.message || '推送成功', 'success');
-                } else {
-                    alert('推送成功');
-                }
-            } else {
-                throw new Error(result.message || '推送失败');
-            }
-        } catch (error) {
-            console.error('推送失败:', error);
-            if (typeof showToast === 'function') {
-                showToast('推送失败: ' + error.message, 'error');
-            } else {
-                alert('推送失败: ' + error.message);
-            }
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = originalText;
-        }
-    }
-
-    /**
-    * 处理拷贝按钮点击
-    */
-    async function handleDashboardCopyClick(e) {
-        const btn = e.currentTarget;
-        const trainingId = btn.dataset.id;
-        
-        try {
-            const res = await fetch(`/api/admin/trainings/${trainingId}`);
-            if (!res.ok) throw new Error('获取培训数据失败');
-            const data = await res.json();
-            const training = data.data || data;
-            
-            // 准备拷贝数据
-            const copyData = {
-                name: `${training.name} (拷贝)`,
-                countries: training.countries || [training.country],
-                start_time: training.start_time,
-                end_time: training.end_time,
-                header_template: training.header_template || {}
-            };
-            
-            // 创建新培训
-            const createRes = await fetch('/api/admin/trainings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(copyData)
-            });
-            
-            if (createRes.ok) {
-                if (typeof showToast === 'function') {
-                    showToast('培训拷贝成功', 'success');
-                }
-                // 刷新列表
-                renderDashboardTrainings();
-            } else {
-                const error = await createRes.json();
-                throw new Error(error.message || '拷贝失败');
-            }
-        } catch (error) {
-            console.error('拷贝培训失败:', error);
-            if (typeof showToast === 'function') {
-                showToast('拷贝失败: ' + error.message, 'error');
-            }
-        }
-    }
-
-    /**
-    * 处理删除按钮点击
-    */
-    async function handleDashboardDeleteClick(e) {
-        const btn = e.currentTarget;
-        const trainingId = btn.dataset.id;
-        const row = btn.closest('tr');
-        const nameCell = row?.querySelector('td:first-child');
-        const trainingName = nameCell ? nameCell.textContent.trim() : '';
-        
-        if (!confirm(`确定要删除培训「${trainingName}」吗？此操作不可恢复！`)) {
-            return;
-        }
-        
-        try {
-            const res = await fetch(`/api/admin/trainings?id=${trainingId}`, {
-                method: 'DELETE'
-            });
-            const result = await res.json();
-            
-            if (result.success) {
-                if (typeof showToast === 'function') {
-                    showToast('培训删除成功', 'success');
-                }
-                // 从DOM中移除行
-                row?.remove();
-                // 更新计数
-                const countBadge = document.getElementById('trainingCount');
-                if (countBadge) {
-                    const current = parseInt(countBadge.textContent) || 0;
-                    countBadge.textContent = Math.max(0, current - 1);
-                }
-            } else {
-                throw new Error(result.message || '删除失败');
-            }
-        } catch (error) {
-            console.error('删除培训失败:', error);
-            if (typeof showToast === 'function') {
-                showToast('删除失败: ' + error.message, 'error');
-            }
-        }
-    }
-
-    /**
-    * 处理编辑名称按钮点击
-    */
-    async function handleDashboardEditClick(e) {
-        const btn = e.currentTarget;
-        const trainingId = btn.dataset.id;
-        const row = btn.closest('tr');
-        const nameCell = row?.querySelector('td:first-child');
-        const currentName = nameCell ? nameCell.textContent.trim() : '';
-        
-        const newName = prompt('请输入新的培训名称：', currentName);
-        if (newName === null || newName.trim() === '') return;
-        
-        try {
-            const res = await fetch('/api/admin/trainings', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    id: trainingId,
-                    name: newName.trim()
-                })
-            });
-            const result = await res.json();
-            
-            if (result.success) {
-                if (typeof showToast === 'function') {
-                    showToast('培训名称更新成功', 'success');
-                }
-                // 更新DOM
-                if (nameCell) {
-                    const nameSpan = nameCell.querySelector('.fw-semibold');
-                    if (nameSpan) {
-                        nameSpan.textContent = newName.trim();
-                    } else {
-                        nameCell.textContent = newName.trim();
-                    }
-                }
-            } else {
-                throw new Error(result.message || '更新失败');
-            }
-        } catch (error) {
-            console.error('更新培训名称失败:', error);
-            if (typeof showToast === 'function') {
-                showToast('更新失败: ' + error.message, 'error');
-            }
-        }
-    }
-
-    /**
-    * 刷新培训列表
-    */
-    function refreshTrainings() {
-        const btn = document.querySelector('.card-header .btn-outline-primary i.bi-arrow-clockwise');
-        if (btn) {
-            btn.classList.add('spinning');
-            setTimeout(() => btn.classList.remove('spinning'), 1000);
-        }
-        renderDashboardTrainings();
-    }
 
     // 暴露函数给全局
     window.openLogConfigModal = openLogConfigModal;
