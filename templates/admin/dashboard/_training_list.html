@@ -1,0 +1,115 @@
+<!-- templates/admin/dashboard/_training_list.html -->
+<!-- ============================================================
+     培训列表 - 服务端渲染（仅开发者和超管可见）
+     ============================================================ -->
+{% if session.get('role') in ['developer', 'super_admin'] %}
+<div class="card-body p-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 training-dashboard-table" style="min-width: 1000px;">
+            <thead class="table-light">
+                <tr>
+                    <th><span data-i18n="training_name">培训名称</span></th>
+                    <th>tid</th>
+                    <th><span data-i18n="status">状态</span></th>
+                    <th><span data-i18n="sign_count">签到人数</span></th>
+                    <th><span data-i18n="actions">操作</span></th>
+                </tr>
+            </thead>
+            <tbody id="dashboardTrainingTbody">
+                {% for t in dashboard_trainings | default([]) %}
+                    <tr data-training-id="{{ t.id }}">
+                        <td>
+                            <div class="training-name-cell">
+                                <div>
+                                    <span class="training-name-link">{{ t.name }}</span>
+                                    {% if t.binding_count > 0 %}
+                                    <span class="binding-badge" 
+                                        title="已绑定 {{ t.binding_count }} 个考试"
+                                        data-bs-toggle="tooltip">
+                                        <i class="bi bi-link"></i> {{ t.binding_count }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <div class="training-meta">
+                                    <span class="badge-country">🌍 {{ t.countries_display | default('-') }}</span>
+                                    <span class="badge-quarter">📅 
+                                        {% if t.start_time %}
+                                            {{ t.start_time|format_datetime_local|truncate(10, True) }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </span>
+                                    <span class="badge-time">🕐 
+                                        {% if t.start_time and t.end_time %}
+                                            {{ t.start_time|format_datetime_local }} - {{ t.end_time|format_datetime_local }}
+                                        {% else %}
+                                            未设置
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-muted" style="font-size:0.8rem;">{{ t.id }}</td>
+                        <td>
+                            {% if t.dynamic_status == 'draft' %}
+                                <span class="status-badge draft">草稿</span>
+                            {% elif t.dynamic_status == 'pending' %}
+                                <span class="status-badge pending">未开始</span>
+                            {% elif t.dynamic_status == 'active' %}
+                                <span class="status-badge active">进行中</span>
+                            {% elif t.dynamic_status == 'closed' %}
+                                <span class="status-badge closed">已关闭</span>
+                            {% else %}
+                                <span class="status-badge draft">{{ t.dynamic_status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="sign-count-badge">{{ t.signed_count | default(0) }}</span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                {% if t.signed_count > 0 and (t.countries_list or t.country) %}
+                                    <a href="/admin/training/{{ t.id }}/attendance" class="btn btn-outline-info" title="查看签到详情" target="_blank">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                {% else %}
+                                    <button class="btn btn-outline-secondary" disabled title="暂无签到记录" style="opacity:0.5;">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                {% endif %}
+                                <a href="/admin/training/{{ t.id }}/attendance?from=dashboard" class="btn btn-outline-primary" target="_blank" title="签到管理">
+                                    <i class="bi bi-pencil-square"></i>
+                                </a>
+                                <button class="btn btn-outline-success push-training-btn" data-id="{{ t.id }}" title="推送">
+                                    <i class="bi bi-send"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary copy-training-btn" data-id="{{ t.id }}" title="拷贝">
+                                    <i class="bi bi-copy"></i>
+                                </button>
+                                <!-- 编辑按钮（草稿状态显示） -->
+                                {% if t.dynamic_status == 'draft' %}
+                                    <button class="btn btn-outline-warning edit-training-btn" data-id="{{ t.id }}" title="编辑">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                {% endif %}
+                                {% if t.dynamic_status == 'draft' %}
+                                    <button class="btn btn-outline-danger delete-training-btn" data-id="{{ t.id }}" title="删除">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr>
+                        <td colspan="5" class="text-center text-muted py-4">
+                            <span data-i18n="no_training_data">暂无培训数据</span>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+

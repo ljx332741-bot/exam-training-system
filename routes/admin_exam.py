@@ -145,6 +145,8 @@ def admin_dashboard():
     allowed_countries = get_admin_allowed_countries()
     is_dev = is_developer()
     db = get_supabase()
+    admin_db = get_supabase_admin()
+
     # ========== 2. 用户统计 ==========
     registered_count, imported_count = get_user_stats(allowed_countries)
     
@@ -197,17 +199,109 @@ def admin_dashboard():
 
     # ========== 8. 培训签到开关 ==========
     sign_in_open = get_sign_in_status()
+
+    # ========== 9. 获取仪表盘培训列表（服务端渲染）==========
+    dashboard_trainings = []
+    if session.get('role') in ['developer', 'super_admin']:
+        try:
+            # 查询培训（仅草稿、未开始、进行中）
+            query = db.table("trainings").select("*").is_("deleted_at", "null")
+            query = query.in_("dynamic_status", ['draft', 'pending', 'active'])
+            
+            # 权限过滤
+            if not is_dev and allowed_countries and len(allowed_countries) > 0:
+                or_conditions = []
+                for c in allowed_countries:
+                    or_conditions.append(f"country.eq.{c}")
+                    or_conditions.append(f"countries.cs.{{{c}}}")
+                if or_conditions:
+                    query = query.or_(','.join(or_conditions))
+            
+            query = query.order("created_at", desc=True).limit(20)
+            res = query.execute()
+            dashboard_trainings = res.data or []
+            
+            if dashboard_trainings:
+                training_ids = [t['id'] for t in dashboard_trainings]
+                
+                # 批量获取签到人数
+                att_res = db.table("training_attendances") \
+                    .select("training_id", count="exact") \
+                    .in_("training_id", training_ids) \
+                    .is_("deleted_at", "null") \
+                    .execute()
+                signed_counts = {}
+                for att in (att_res.data or []):
+                    tid = att['training_id']
+                    signed_counts[tid] = signed_counts.get(tid, 0) + 1
+                
+                # 批量获取绑定数量
+                bind_res = admin_db.table("training_exam_bindings") \
+                    .select("training_id", count="exact") \
+                    .in_("training_id", training_ids) \
+                    .is_("deleted_at", "null") \
+                    .execute()
+                bind_counts = {}
+                for b in (bind_res.data or []):
+                    tid = b['training_id']
+                    bind_counts[tid] = bind_counts.get(tid, 0) + 1
+                
+                # 批量获取绑定详情（只对有绑定的培训）
+                binding_ids = [tid for tid, count in bind_counts.items() if count > 0]
+                bind_exams_map = {}
+                if binding_ids:
+                    bind_detail_res = admin_db.table("training_exam_bindings") \
+                        .select("training_id, exam_id, exams!inner(title)") \
+                        .in_("training_id", binding_ids) \
+                        .is_("deleted_at", "null") \
+                        .execute()
+                    for b in (bind_detail_res.data or []):
+                        tid = b.get('training_id')
+                        if tid not in bind_exams_map:
+                            bind_exams_map[tid] = []
+                        exam_data = b.get('exams', {})
+                        bind_exams_map[tid].append({
+                            'exam_id': b.get('exam_id'),
+                            'exam_title': exam_data.get('title', f"考试 {b.get('exam_id')}")
+                        })
+                
+                # 组装数据
+                for t in dashboard_trainings:
+                    tid = t['id']
+                    t['signed_count'] = signed_counts.get(tid, 0)
+                    t['binding_count'] = bind_counts.get(tid, 0)
+                    t['binding_exams'] = bind_exams_map.get(tid, [])
+                    
+                    # 解析国家列表（用于显示）
+                    countries = t.get('countries', [])
+                    if isinstance(countries, str):
+                        try:
+                            countries = json.loads(countries)
+                        except:
+                            countries = [t.get('country', '')] if t.get('country') else []
+                    elif not countries and t.get('country'):
+                        countries = [t.get('country')]
+                    t['countries_list'] = countries
+                    
+                    # 处理国家显示
+                    t['countries_display'] = ', '.join(countries) if countries else '-'
+                
+                logger.info(f"仪表盘培训列表加载完成: {len(dashboard_trainings)} 条")
+                
+        except Exception as e:
+            logger.error(f"加载仪表盘培训列表失败: {e}")
+            dashboard_trainings = []
     
-    # ========== 9. 组装统计数据 ==========
+    # ========== 10. 组装统计数据 ==========
     stats = {
         "users": registered_count,
         "users_imported": imported_count,
         "exams_total": exams_total,
-        "exams_closed": exams_closed,      # ✅ 已关闭/已完成
-        "exams_active": exams_active,      # ✅ 进行中
-        "exams_draft": exams_draft,        # ✅ 草稿
-        "exams_created": exams_created,    # ✅ 未开始
-        "exams_other": exams_other,        # ✅ 其它（草稿+未开始）
+        "exams_closed": exams_closed,
+        "exams_active": exams_active,
+        "exams_draft": exams_draft,
+        "exams_created": exams_created,
+        "exams_other": exams_other, 
         "trainings_count": trainings_count,
         "total_attendances": total_attendances,
         "signins_today": signins_today,
@@ -216,7 +310,7 @@ def admin_dashboard():
     
     logger.info(f"最终统计: {stats}")
     
-    # ========== 10. 渲染模板 ==========
+    # ========== 11. 渲染模板 ==========
     return render_template(
         'admin/dashboard.html',
         signs=[],
@@ -228,7 +322,8 @@ def admin_dashboard():
         signins_today=signins_today,
         total_attendances=total_attendances,
         trainings_count=trainings_count,
-        interviewee_count=interviewee_count
+        interviewee_count=interviewee_count,
+        dashboard_trainings=dashboard_trainings
     )
 
 @admin_exam_bp.route('/admin/exams')

@@ -17,7 +17,12 @@ exam-system/
 │   │   ├── help.js                             # 前端交互
 │   │   ├── privacy.js                          # 前端交互
 │   │   ├── training_photos.js                  # 前端交互逻辑
-│   │   └── timezone.js                         # 前端时区检测增强
+│   │   ├── timezone.js                         # 前端时区检测增强
+│   │   │
+│   │   └── admin/
+│   │        │
+│   │        └── dashboard/           
+│   │             └── _training_list.js         # 管理员培训列表 JavaScript
 │   │
 │   ├── css/                          
 │   │   ├── list_trainings.css                  # 培训管理页面样式
@@ -98,7 +103,13 @@ exam-system/
 │        ├── cms_management.html                # 首页卡片管理页面
 │        ├── exam_question.html                 # 题库管理页面
 │        ├── training_completion_report.html    # 首页卡片管理页面
-│        └── dashboard.html                     # 管理员面板
+│        ├── dashboard.html                     # 管理员主仪表盘
+│        │
+│        └── dashboard/
+│             └── _training_list.html           # 管理员培训列表 HTML 片段
+│ 
+│ 
+│ 
 │   
 ├── routes/
 │   ├── __init__.py                             # 蓝图注册中心
