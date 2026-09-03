@@ -96,7 +96,7 @@ def cache_result(seconds=300):
 @login_required
 @admin_required
 def admin_trainings():
-    return render_template('admin/list_trainings.html')
+    return render_template('admin/admin_trainings.html')
 
 # ==================== 培训列表 API（使用缓存）开始 ====================
 @admin_training_bp.route('/api/admin/trainings', methods=['GET', 'POST', 'PUT', 'DELETE'])
@@ -1126,13 +1126,13 @@ def admin_reset_signature_by_user(training_id, user_id):
 @login_required
 @admin_required
 def admin_training_attendance(training_id):
-    return render_template('admin/list_training_attendance.html', training_id=training_id)
+    return render_template('admin/admin_training_attendance.html', training_id=training_id)
 
 @admin_training_bp.route('/admin/training/<int:training_id>/attendance/print')
 @login_required
 @admin_required
 def training_attendance_print(training_id):
-    return render_template('admin/list_training_attendance.html', training_id=training_id, print_mode=True)
+    return render_template('admin/admin_training_attendance.html', training_id=training_id, print_mode=True)
 
 @admin_training_bp.route('/admin/training/<int:training_id>/attendance/pdf')
 @login_required
@@ -1374,13 +1374,13 @@ def api_admin_batch_delete_training_attendances():
 @admin_required
 def training_attendance_status_view():
     """培训签到人员状态查看页面"""
-    return render_template('admin/list_training_status_view.html')
+    return render_template('admin/admin_training_status_view.html')
 
 @admin_training_bp.route('/api/admin/training/users_with_status')
 @login_required
 @admin_required
 def api_training_users_with_status():
-    """获取权限范围内所有培训的学员签到状态（只显示培训对应国家的学员）"""
+    """获取权限范围内所有培训的学员签到状态（严格按培训国家过滤）"""
     db = get_supabase()
     admin_db = get_supabase_admin()
     
@@ -1396,233 +1396,146 @@ def api_training_users_with_status():
     wh_id = request.args.get('wh_id', '').strip()
     training_name = request.args.get('training_name', '').strip()
     
-    # ========== 1. 获取权限范围内的所有培训 ==========
-    trainings_query = db.table("trainings").select("id, name, country").is_("deleted_at", "null")
-    
-    if allowed_countries is not None:
-        if not allowed_countries:
-            return jsonify({"data": []})
-        trainings_query = trainings_query.in_("country", allowed_countries)
-    
-    trainings_res = trainings_query.execute()
-    trainings = trainings_res.data or []
-
+    # ========== 1. 获取培训列表（带权限验证）==========
     if training_id_param:
         try:
             training_id_int = int(training_id_param)
-            allowed_training_ids = [t['id'] for t in trainings]
-            if training_id_int not in allowed_training_ids:
-                return jsonify({"data": []})
-            trainings = [t for t in trainings if t['id'] == training_id_int]
+            training_res = db.table("trainings").select("id, name, country, countries").eq("id", training_id_int).maybe_single().execute()
+            if not training_res.data:
+                return jsonify({"data": [], "error": "培训不存在"})
+            
+            training = training_res.data
+            training_countries = parse_training_countries(training)
+            
+            # 权限交叉验证
+            if not is_dev and allowed_countries is not None:
+                if not allowed_countries:
+                    return jsonify({"data": [], "error": "无权限"})
+                intersection = [c for c in training_countries if c in allowed_countries]
+                if not intersection:
+                    return jsonify({"data": [], "error": "培训国家不在权限范围内"})
+                effective_countries = intersection
+            else:
+                effective_countries = training_countries
+            
+            if not effective_countries:
+                return jsonify({"data": [], "error": "培训未指定国家"})
+            
+            trainings = [training]
+            logger.info(f"✅ 权限验证通过: training_id={training_id_int}, 有效国家={effective_countries}")
+            
         except ValueError:
+            return jsonify({"data": [], "error": "无效的培训ID"})
+    else:
+        # 获取所有权限范围内的培训
+        trainings_query = db.table("trainings").select("id, name, country, countries").is_("deleted_at", "null")
+        
+        # 培训名称筛选
+        if training_name:
+            trainings_query = trainings_query.ilike("name", f"%{training_name}%")
+        
+        all_trainings = trainings_query.execute().data or []
+        
+        # 权限过滤
+        if not is_dev and allowed_countries is not None:
+            if not allowed_countries:
+                return jsonify({"data": []})
+            # 只保留培训国家在权限范围内的培训
+            filtered_trainings = []
+            for t in all_trainings:
+                t_countries = parse_training_countries(t)
+                if any(c in allowed_countries for c in t_countries):
+                    filtered_trainings.append(t)
+            trainings = filtered_trainings
+        else:
+            trainings = all_trainings
+        
+        if not trainings:
             return jsonify({"data": []})
     
-    if not trainings:
-        return jsonify({"data": []})
-
-    # ========== 2. ✅ 培训名称筛选（支持多字段组合查询）- 修复版 ==========
-    if training_name:
-        keywords = training_name.strip().split()
-        # 模糊匹配每个关键词
-        filtered_trainings = []
-        for t in trainings:
-            t_name = t.get('name', '').lower()
-            # 所有关键词都必须匹配
-            if all(k.lower() in t_name for k in keywords):
-                filtered_trainings.append(t)
-        trainings = filtered_trainings
+    # ========== 2. 构建培训ID列表和国家映射 ==========
+    training_ids = [t['id'] for t in trainings]
     
-    # 如果筛选后没有培训，直接返回空
-    if not trainings:
-        return jsonify({"data": []})
-    
-    # ========== 3. 获取培训涉及的国家列表 ==========
-    training_countries = []
+    # 构建培训国家映射：training_id -> [国家列表]
+    training_countries_map = {}
     for t in trainings:
-        t_country = t.get('country')
-        if t_country:
-            training_countries.append(t_country)
-    training_countries = list(set(training_countries))
+        t_countries = parse_training_countries(t)
+        # 应用权限过滤
+        if not is_dev and allowed_countries is not None:
+            t_countries = [c for c in t_countries if c in allowed_countries]
+        training_countries_map[t['id']] = t_countries
     
-    # ========== 4. 获取用户 ==========
-    # 开发者特殊处理：先获取所有用户，后续再确保开发者自己出现在列表中
-    if is_dev:
-        # 开发者：获取所有用户（不受国家限制）
-        users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
-    else:
-        if training_countries:
-            users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", training_countries)
-        else:
-            if allowed_countries is not None and allowed_countries:
-                users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False).in_("country", allowed_countries)
-            else:
-                users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
-
-    # ========== 5. 获取所有用户（用于后续过滤） ==========
-    users_res = users_query.execute()
-    all_users = users_res.data or []
-
-    # 开发者特殊处理：确保自己始终在用户列表中
-    if is_dev:
-        # 检查开发者是否在 all_users 中
-        dev_in_list = any(u['id'] == current_user_id for u in all_users)
-        if not dev_in_list:
-            # 手动添加开发者自己
-            dev_res = db.table("users").select("*").eq("id", current_user_id).maybe_single().execute()
-            if dev_res and dev_res.data:
-                all_users.append(dev_res.data)
-                logger.info(f"✅ 开发者 {current_user_id} 已手动添加到用户列表")
-
-    # ========== 6. 多字段组合查询（姓名/邮箱/库房/国家） ==========
+    # ========== 3. 获取所有有效的国家列表（用于用户查询）==========
+    all_effective_countries = set()
+    for countries in training_countries_map.values():
+        all_effective_countries.update(countries)
+    
+    if not all_effective_countries:
+        return jsonify({"data": []})
+    
+    logger.info(f"有效国家列表: {all_effective_countries}")
+    
+    # ========== 4. 获取用户（严格按有效国家过滤）==========
+    users_query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
+    
+    # ✅ 关键修复：严格限制用户国家必须在有效国家列表中
+    users_query = users_query.in_("country", list(all_effective_countries))
+    
+    # 搜索过滤
     if search:
         keywords = search.strip().split()
-        filtered_users = []
-        for user in all_users:
-            # 构建用户的搜索字段（姓名、邮箱、库房编码、库房名称、国家）
-            searchable_fields = [
-                user.get('name_en', '').lower(),
-                user.get('name_cn', '').lower(),
-                user.get('email', '').lower(),
-                user.get('wh_id', '').lower(),
-                user.get('wh_name_en', '').lower(),
-                user.get('country', '').lower()
-            ]
-            
-            # 组合字段文本
-            combined_text = ' '.join(searchable_fields)
-            
-            # 检查所有关键词是否都在组合文本中
-            if all(k.lower() in combined_text for k in keywords):
-                filtered_users.append(user)
-        users = filtered_users
-    else:
-        users = all_users
+        # 使用 OR 条件组合
+        or_conditions = []
+        for kw in keywords:
+            or_conditions.append(f"name_en.ilike.%{kw}%")
+            or_conditions.append(f"name_cn.ilike.%{kw}%")
+            or_conditions.append(f"email.ilike.%{kw}%")
+        if or_conditions:
+            users_query = users_query.or_(','.join(or_conditions))
     
-    # ========== 7. 额外筛选（国家、库房） ==========
+    # 国家筛选（用户手动输入的额外过滤，必须是有效国家的子集）
     if country:
-        users = [u for u in users if u.get('country', '').lower() == country.lower()]
+        # 解析用户输入的国家
+        resolved_country = match_country_code(country)
+        if resolved_country and resolved_country in all_effective_countries:
+            users_query = users_query.eq("country", resolved_country)
+        else:
+            # 如果输入的国家不在有效列表中，返回空
+            logger.warning(f"用户筛选的国家 {country} 不在有效国家列表 {all_effective_countries} 中")
+            return jsonify({"data": []})
     
+    users_res = users_query.execute()
+    all_users = users_res.data or []
+    
+    # 库房筛选（前端模糊匹配）
     if wh_id:
         wh_lower = wh_id.lower()
-        users = [u for u in users if 
-                 (u.get('wh_id', '').lower() in wh_lower or wh_lower in u.get('wh_id', '').lower()) or
-                 (u.get('wh_name_en', '').lower() in wh_lower or wh_lower in u.get('wh_name_en', '').lower())]
+        filtered_users = []
+        for u in all_users:
+            wh_id_val = (u.get('wh_id') or '').lower()
+            wh_name = (u.get('wh_name_en') or '').lower()
+            if wh_lower in wh_id_val or wh_lower in wh_name:
+                filtered_users.append(u)
+        all_users = filtered_users
     
-    # ========== 8. 权限过滤（使用新的权限逻辑） ==========
-    filtered_users = []
-    for user in users:  # ✅ 使用 users 而不是 all_users
-        user_role = user.get('role', 'user')
-        user_id = user.get('id')
-        user_country = user.get('country', '')
-        user_admin_countries = user.get('admin_countries')
-        user_name = user.get('name_en', '')
-        
-        # 解析目标用户的权限范围
-        target_admin_country_list = []
-        if user_admin_countries:
-            try:
-                target_admin_country_list = json.loads(user_admin_countries) if isinstance(user_admin_countries, str) else user_admin_countries
-            except:
-                pass
-        
-        # 开发者：可以看到所有用户
-        if is_dev:
-            filtered_users.append(user)
-            continue
-        
-        # ========== 超管逻辑 ==========
-        if current_role == 'super_admin':
-            # 超管看不到开发者
-            if user_role == 'developer':
-                continue
-            
-            # 如果当前超管没有权限范围限制，可以看到所有非开发者
-            if allowed_countries is None:
-                filtered_users.append(user)
-                continue
-            
-            # 有权限范围限制
-            if allowed_countries:
-                # 目标用户是超管或管理员：检查 admin_countries 交集
-                if user_role in ['super_admin', 'admin']:
-                    if target_admin_country_list:
-                        if any(c in allowed_countries for c in target_admin_country_list):
-                            filtered_users.append(user)
-                            continue
-                    # 如果目标超管没有设置权限范围，视为全局，可见
-                    elif user_role == 'super_admin' and not target_admin_country_list:
-                        filtered_users.append(user)
-                        continue
-                    continue
-                
-                # 目标用户是普通用户：检查 country
-                if user_role == 'user':
-                    if user_country and user_country in allowed_countries:
-                        filtered_users.append(user)
-                        continue
-                continue
-            continue
-        
-        # ========== 管理员逻辑 ==========
-        if current_role == 'admin':
-            # 管理员看不到超管和开发者
-            if user_role in ['super_admin', 'developer']:
-                continue
-            
-            # 当前管理员的权限范围
-            current_allowed = allowed_countries if allowed_countries else [session.get('user_country')]
-            if not current_allowed:
-                continue
-            
-            # 1. 如果是自己，允许
-            if user_id == current_user_id:
-                filtered_users.append(user)
-                continue
-            
-            # 2. 目标用户是管理员：检查 admin_countries 交集
-            if user_role == 'admin':
-                if target_admin_country_list:
-                    if any(c in current_allowed for c in target_admin_country_list):
-                        filtered_users.append(user)
-                        continue
-                # 如果目标管理员没有设置权限范围，检查 country
-                elif user_country and user_country in current_allowed:
-                    filtered_users.append(user)
-                    continue
-                continue
-            
-            # 3. 目标用户是普通用户：检查 country
-            if user_role == 'user':
-                if user_country and user_country in current_allowed:
-                    filtered_users.append(user)
-                    continue
-                continue
-            
-            continue
-        
-        # 其他角色
-        filtered_users.append(user)
-    
-    users = filtered_users
-    user_ids = [u['id'] for u in users]
-    
-    logger.info(f"权限过滤后 {len(users)} 个用户")
-    
-    if not user_ids:
+    if not all_users:
         return jsonify({"data": []})
     
-    # ========== 9. 获取培训分配记录 ==========
-    training_ids = [t['id'] for t in trainings]
+    user_ids = [u['id'] for u in all_users]
+    user_map = {u['id']: u for u in all_users}
+    
+    # ========== 5. 获取培训分配记录 ==========
     assign_res = admin_db.table("training_assignments").select("training_id, user_id")\
         .in_("training_id", training_ids)\
+        .in_("user_id", user_ids)\
         .execute()
-
+    
     assignment_map = {}
     for a in (assign_res.data or []):
         key = f"{a['training_id']}_{a['user_id']}"
         assignment_map[key] = True
     
-    # ========== 10. 获取签到记录 ==========
+    # ========== 6. 获取签到记录 ==========
     att_res = db.table("training_attendances").select(
         "training_id, user_id, sign_time, signed_name, signature_url"
     ).in_("training_id", training_ids).in_("user_id", user_ids).is_("deleted_at", "null").execute()
@@ -1636,35 +1549,32 @@ def api_training_users_with_status():
             "signature_url": att.get('signature_url', '')
         }
     
-    # ========== 11. 构建返回数据 ==========
+    # ========== 7. 组装返回数据（严格验证每个用户国家）==========
     result = []
     for training in trainings:
         training_id = training['id']
         training_name_val = training.get('name', '')
-        training_country = training.get('country', '')
         
-        for user in users:
+        # 获取该培训的有效国家列表
+        effective_training_countries = training_countries_map.get(training_id, [])
+        
+        for user in all_users:
+            user_id = user.get('id')
             user_country = user.get('country', '')
-            user_id = user.get('id', '')
             
-            # 开发者特殊处理：即使国家不匹配，也显示自己
-            if is_dev and user_id == current_user_id:
-                # 开发者自己，跳过国家检查
-                pass
-            else:
+            # ✅ 关键修复：严格验证用户国家必须在培训国家列表中
+            if user_country not in effective_training_countries:
+                continue
             
-                # 如果培训有国家，用户国家必须匹配
-                if training_country and user_country != training_country:
-                    continue
+            key = f"{training_id}_{user_id}"
             
-            key = f"{training_id}_{user['id']}"
-
             is_assigned = key in assignment_map
             has_attendance = key in attendance_map
             attendance = attendance_map.get(key, {})
             sign_time = attendance.get('sign_time')
             signature_url = attendance.get('signature_url', '')
             
+            # 确定签到状态
             if not is_assigned and not has_attendance:
                 sign_status = 'not_assigned'
             elif not sign_time:
@@ -1673,28 +1583,34 @@ def api_training_users_with_status():
                 sign_status = 'resign'
             else:
                 sign_status = 'signed'
- 
+            
+            # 获取用户信息
+            user_info = user_map.get(user_id, {})
+            
             result.append({
                 "training_id": training_id,
                 "training_name": training_name_val,
-                "training_country": training_country,
-                "user_id": user['id'],
+                "training_country": ', '.join(effective_training_countries),  # 显示培训所有国家
+                "user_id": user_id,
                 "user_country": user_country,
                 "country": user_country,
-                "name_en": user.get('name_en', ''),
-                "email": user.get('email', ''),
-                "wh_id": user.get('wh_id', ''),
-                "wh_name_en": user.get('wh_name_en', ''),
-                "company": user.get('company', ''),
+                "name_en": user_info.get('name_en', ''),
+                "name_cn": user_info.get('name_cn', ''),
+                "email": user_info.get('email', ''),
+                "wh_id": user_info.get('wh_id', ''),
+                "wh_name_en": user_info.get('wh_name_en', ''),
+                "company": user_info.get('company', ''),
                 "sign_status": sign_status,
                 "sign_time": sign_time,
                 "signed_name": attendance.get('signed_name', ''),
                 "signature_url": signature_url
             })
     
+    # 排序
     result.sort(key=lambda x: (x.get('training_name', ''), x.get('name_en', '')))
     
-    logger.info(f"最终返回 {len(result)} 条记录")
+    logger.info(f"最终返回 {len(result)} 条记录 (有效国家: {all_effective_countries})")
+    
     return jsonify({"data": result})
 
 @admin_training_bp.route('/api/admin/training/export_attendance_status')
@@ -3967,6 +3883,12 @@ def unassign_training_from_users(training_id):
     # 获取当前培训信息
     training_res = db.table("trainings").select("name").eq("id", training_id).maybe_single().execute()
     training_name = training_res.data.get('name', '') if training_res.data else ''
+
+    # 获取用户信息（用于日志）
+    users_res = db.table("users").select("id, name_en, name_cn").in_("id", user_ids).execute()
+    users_map = {}
+    for u in (users_res.data or []):
+        users_map[u['id']] = u.get('name_en') or u.get('name_cn') or f'用户{u["id"]}'
     
     # 删除分配记录
     result = db.table("training_assignments").delete().eq("training_id", training_id).in_("user_id", user_ids).execute()
@@ -3977,13 +3899,21 @@ def unassign_training_from_users(training_id):
     
     logger.info(f"培训 {training_id} ({training_name}) 取消了 {deleted_count} 名学员的分配")
 
-    log_training_unassign(
-        training_id=training_id,
-        training_name=training_name,
-        user_id=user_id,
-        user_name=user_name,
-        admin_id=session.get('user_id')
-    )
+    # 记录日志（批量）
+    admin_id = session.get('user_id')
+    for user_id in user_ids:
+        user_name = users_map.get(user_id, f'用户{user_id}')
+        try:
+            log_training_unassign(
+                training_id=training_id,
+                training_name=training_name,
+                user_id=user_id,
+                user_name=user_name,
+                admin_id=admin_id
+            )
+        except Exception as e:
+            logger.warning(f"记录取消分配日志失败 (user_id={user_id}): {e}")
+    
     return jsonify({
         "success": True, 
         "unassigned_count": deleted_count,
@@ -4889,3 +4819,113 @@ def get_dashboard_trainings():
         "total": len(trainings)
     })
 
+@admin_training_bp.route('/api/admin/users/push_list', methods=['GET'])
+@login_required
+@admin_required
+def get_push_user_list():
+    """
+    获取推送用户列表（严格遵守培训国家范围）
+    - 开发者：用户国家 ∈ 培训国家（无额外限制）
+    - 超管/管理员：用户国家 ∈ 培训国家 ∩ 权限范围
+    """
+    db = get_supabase()
+    
+    # 获取当前用户角色
+    current_role = session.get('role')
+    is_dev = is_developer()
+    
+    # 获取参数
+    search = request.args.get('search', '').strip()
+    countries_param = request.args.getlist('countries')  # 培训国家列表（必须）
+    country_param = request.args.get('country', '').strip()  # 用户手动筛选的国家
+    wh_filter = request.args.get('wh', '').strip().lower()
+    is_partner = request.args.get('is_partner', '').strip()
+    exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
+    
+    # ========== 1. 必须有培训国家 ==========
+    if not countries_param:
+        logger.warning("没有培训国家，无法查询用户")
+        return jsonify({"data": [], "total": 0, "message": "培训未指定国家"})
+    
+    # 解析培训国家列表
+    training_countries = [c.strip() for c in countries_param if c.strip()]
+    if not training_countries:
+        return jsonify({"data": [], "total": 0, "message": "培训国家列表为空"})
+    
+    # ========== 2. 获取用户权限范围 ==========
+    allowed_countries = get_admin_allowed_countries()
+    
+    # ========== 3. 确定最终国家过滤条件 ==========
+    if is_dev:
+        # ✅ 开发者：只使用培训国家（无额外限制）
+        final_countries = training_countries
+        logger.info(f"开发者推送: 培训国家 {final_countries}")
+    else:
+        # ✅ 超管/管理员：培训国家 ∩ 权限范围
+        if allowed_countries is not None and allowed_countries:
+            # 有权限范围限制：取交集
+            final_countries = [c for c in training_countries if c in allowed_countries]
+            logger.info(f"超管/管理员推送: 培训国家 {training_countries} ∩ 权限范围 {allowed_countries} = {final_countries}")
+        else:
+            # 无权限范围限制（超管全局）：使用培训国家
+            final_countries = training_countries
+            logger.info(f"超管(全局)推送: 培训国家 {final_countries}")
+    
+    # 如果最终国家列表为空，返回空
+    if not final_countries:
+        logger.warning("交集后国家列表为空，无权限推送")
+        return jsonify({
+            "data": [], 
+            "total": 0, 
+            "message": "您没有权限推送此培训的任何国家"
+        })
+    
+    # ========== 4. 用户手动筛选的国家（额外限制，不能超出 final_countries） ==========
+    if country_param:
+        resolved = match_country_code(country_param)
+        if resolved and resolved in final_countries:
+            final_countries = [resolved]
+            logger.info(f"用户手动筛选国家: {resolved}")
+        elif resolved:
+            logger.warning(f"用户筛选的国家 {resolved} 不在权限范围内，忽略")
+    
+    # ========== 5. 构建用户查询 ==========
+    query = db.table("users").select("*").eq("user_status", "registered")
+    
+    # 排除离职人员
+    if exclude_resigned:
+        query = query.eq("is_resign", False)
+    
+    # ✅ 国家过滤：必须在 final_countries 中
+    if final_countries:
+        query = query.in_("country", final_countries)
+    
+    # 搜索过滤（姓名/邮箱）
+    if search:
+        query = query.or_(f"name_en.ilike.%{search}%,name_cn.ilike.%{search}%,email.ilike.%{search}%")
+    
+    # 合作方过滤
+    if is_partner:
+        query = query.eq("is_partner", is_partner == 'true')
+    
+    # 执行查询
+    res = query.execute()
+    users = res.data or []
+    
+    # ========== 6. 库房过滤（前端模糊匹配） ==========
+    if wh_filter:
+        filtered = []
+        for u in users:
+            wh_id = (u.get('wh_id') or '').lower()
+            wh_name = (u.get('wh_name_en') or '').lower()
+            if wh_filter in wh_id or wh_filter in wh_name:
+                filtered.append(u)
+        users = filtered
+    
+    logger.info(f"推送用户列表返回: {len(users)} 人 (国家: {final_countries})")
+    
+    return jsonify({
+        "data": users,
+        "total": len(users),
+        "countries": final_countries  # 返回实际使用的国家列表，便于前端显示
+    })
