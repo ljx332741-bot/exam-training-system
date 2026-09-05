@@ -957,7 +957,7 @@
 				endTimeInput.value = copyConfig.end_time;
 			}
 			
-			// ✅ 不清除 sessionStorage，让编辑模式也能读取？
+			// 不清除 sessionStorage，让编辑模式也能读取？
 			// sessionStorage.removeItem('copy_exam_config');  // 延迟到国家设置完成后再清除
 		} catch(e) {
 			console.error('读取复制配置失败:', e);
@@ -966,17 +966,38 @@
 	
 	// ==================== 页面初始化（重写确保顺序正确）====================
 	document.addEventListener('DOMContentLoaded', async () => {
-		// 1. 先初始化国家选择器（加载国家列表）
-		await initCountrySelector([]);  // 先初始化空列表
+		// ========== 1. 确定初始国家列表 ==========
+		let initialCountries = [];
+		
+		// 优先级1：复制模式（pendingCountries）
+		if (window.pendingCountries && window.pendingCountries.length > 0) {
+			initialCountries = [...window.pendingCountries];
+			window.pendingCountries = null;
+			console.log('📋 使用 pendingCountries:', initialCountries);
+		}
+		// 优先级2：绑定模式或普通模式（defaultCountries）
+		else if (!isEditMode && defaultCountries && defaultCountries.length > 0) {
+			initialCountries = [...defaultCountries];
+			console.log('📋 使用 defaultCountries:', initialCountries);
+		}
+		// 优先级3：编辑模式（先不设置，后面从 API 加载）
+		else if (isEditMode) {
+			initialCountries = [];
+			console.log('📋 编辑模式，等待 API 加载');
+		}
+		
+		// ========== 2. 初始化国家选择器（传入初始值）==========
+		await initCountrySelector(initialCountries);
+		console.log('📋 国家选择器初始化完成，当前国家:', selectedCountryCodes);
+		
 		// 设置返回/关闭按钮
 		setupCloseOrBackButton();
 		
-		// ✅ 2. 如果是新建考试（非编辑、非复制模式），使用默认值
+		// ========== 3. 预填有效期（仅非编辑模式）==========
 		const copyConfigStr = sessionStorage.getItem('copy_exam_config');
 		const isCopyMode = !!copyConfigStr;
 		
-		if (!isEditMode && !isCopyMode && !fromBinding) {
-			// 预填有效期
+		if (!isEditMode && !isCopyMode) {
 			const startTimeInput = document.getElementById('startTimeInput');
 			const endTimeInput = document.getElementById('endTimeInput');
 			if (startTimeInput && defaultStartTime) {
@@ -985,55 +1006,9 @@
 			if (endTimeInput && defaultEndTime) {
 				endTimeInput.value = defaultEndTime;
 			}
-			
-			// 预填国家
-			if (defaultCountries && defaultCountries.length > 0) {
-				for (const code of defaultCountries) {
-					if (!selectedCountryCodes.includes(code)) {
-						selectedCountryCodes.push(code);
-					}
-				}
-				renderSelectedCountryTags();
-				console.log('使用默认预填国家:', defaultCountries);
-			}
 		}
 		
-		if (window.pendingCountries && window.pendingCountries.length > 0) {
-			// ✅ 再次过滤：只保留权限范围内的国家
-			try {
-				const permRes = await fetch('/api/admin/refresh_permissions');
-				const permData = await permRes.json();
-				const allowedCountries = permData.admin_countries || [];
-				const role = permData.role;
-				
-				let filteredPending = window.pendingCountries;
-				if (allowedCountries && allowedCountries.length > 0) {
-					filteredPending = window.pendingCountries.filter(c => allowedCountries.includes(c));
-					console.log('🔄 再次过滤国家:', { original: window.pendingCountries, filtered: filteredPending });
-				}
-				
-				if (filteredPending.length === 0) {
-					console.warn('没有权限范围内的国家可预填');
-				}
-				
-				for (const code of filteredPending) {
-					if (!selectedCountryCodes.includes(code)) {
-						selectedCountryCodes.push(code);
-					}
-				}
-			} catch(e) {
-				// 获取权限失败，直接使用原值
-				for (const code of window.pendingCountries) {
-					if (!selectedCountryCodes.includes(code)) {
-						selectedCountryCodes.push(code);
-					}
-				}
-			}
-			renderSelectedCountryTags();
-			window.pendingCountries = null;
-		}
- 
-		// 3. 如果是编辑模式，加载考试信息（会覆盖国家选择）
+		// ========== 4. 如果是编辑模式，加载考试信息 ==========
 		if (isEditMode && examId) {
 			try {
 				const res = await fetch(`/api/admin/exam/${examId}`);
@@ -1058,7 +1033,7 @@
 						endTimeInput.value = utcToLocalDatetimeLocal(examData.end_time);
 					}
 					
-					// 设置国家（编辑模式优先使用考试的国家）
+					// 设置国家（编辑模式优先使用考试的国家，覆盖初始值）
 					let countries = [];
 					if (examData.countries) {
 						countries = typeof examData.countries === 'string' 
@@ -1069,9 +1044,9 @@
 					}
 					
 					if (countries.length > 0) {
-						// 清空现有国家，设置为考试的国家
 						selectedCountryCodes = [...countries];
 						renderSelectedCountryTags();
+						console.log('📋 编辑模式加载国家:', selectedCountryCodes);
 					}
 				}
 			} catch(e) {
@@ -1079,20 +1054,24 @@
 			}
 		}
 		
-		// 4. 如果是从培训绑定进入，添加培训国家
-		if (fromBinding && trainingCountry && trainingCountry !== 'null') {
-			if (!selectedCountryCodes.includes(trainingCountry)) {
-				selectedCountryCodes.push(trainingCountry);
-				renderSelectedCountryTags();
+		// ========== 5. 如果是从培训绑定进入，确保国家已预填 ==========
+		// 注意：这一步作为安全保障，如果前面的初始值没有正确设置
+		if (fromBinding && defaultCountries && defaultCountries.length > 0 && selectedCountryCodes.length === 0) {
+			for (const code of defaultCountries) {
+				if (!selectedCountryCodes.includes(code)) {
+					selectedCountryCodes.push(code);
+				}
 			}
+			renderSelectedCountryTags();
+			console.log('📋 绑定模式保障预填国家:', selectedCountryCodes);
 		}
 		
-		// 5. 预填培训有效期（从绑定模态框进入时）
+		// ========== 6. 预填培训有效期（从绑定模态框进入时）==========
 		if (fromBinding && trainingId) {
 			await prefetchTrainingDates(trainingId);
 		}
 		
-		// 6. 处理按钮显示（绑定模式）
+		// ========== 7. 处理按钮显示（绑定模式）==========
 		if (fromBinding && trainingId) {
 			const saveDraftBtn = document.getElementById('saveDraftBtn');
 			const saveBtn = document.getElementById('saveBtn');
@@ -1104,7 +1083,7 @@
 			}
 		}
 		
-		// 7. 初始化题目表格操作
+		// ========== 8. 初始化题目表格操作 ==========
 		if (canEditQuestions && examStatus !== 'closed') {
 			bindAllRowEvents();
 			const addRowBtn = document.getElementById('addRowBtn');
@@ -1120,7 +1099,7 @@
 			}
 		}
 		
-		// 8. 绑定保存按钮
+		// ========== 9. 绑定保存按钮 ==========
 		if (isEditMode) {
 			const updateBtn = document.getElementById('updateBtn');
 			if (updateBtn) {
@@ -1131,7 +1110,6 @@
 			const saveDraftBtn = document.getElementById('saveDraftBtn');
 
 			if (saveBtn) {
-				// 根据是否从绑定进入，修改按钮文字
 				if (fromBinding && trainingId) {
 					saveBtn.innerHTML = '✅ ' + (t('save_and_bind') || '保存并绑定');
 				} else {
@@ -1145,7 +1123,7 @@
 			}
 		}
 		
-		// 9. 禁用只读模式的输入框
+		// ========== 10. 禁用只读模式的输入框 ==========
 		if (!canEditQuestions || examStatus === 'closed') {
 			const questionInputs = document.querySelectorAll('#qTableBody input, #qTableBody select, #qTableBody textarea');
 			questionInputs.forEach(input => {
@@ -1154,6 +1132,7 @@
 				input.style.cursor = 'not-allowed';
 			});
 		}
+		
 		sessionStorage.removeItem('copy_exam_config');
 	});
 

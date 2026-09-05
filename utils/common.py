@@ -55,16 +55,54 @@ def quarter_to_date_range(quarter_str):
         end_date = datetime(year, end_month + 1, 1, 0, 0, 0, tzinfo=timezone.utc) - timedelta(microseconds=1)
     return start_date.isoformat(), end_date.isoformat()
 
-def get_quarter_from_date(date_iso):
-    """从 ISO 日期字符串提取季度，返回 'YYYYQN' 或 None"""
-    if not date_iso:
-        return None
+def get_quarter_from_date(date_str):
+    """从日期字符串提取季度（格式：2026Q2）"""
+    if not date_str:
+        return ''
     try:
-        dt = datetime.fromisoformat(date_iso)
-        quarter = (dt.month - 1) // 3 + 1
-        return f"{dt.year}Q{quarter}"
-    except:
-        return None
+        import re
+        
+        # 如果已经是 datetime 对象
+        if hasattr(date_str, 'year'):
+            date = date_str
+        else:
+            # 处理各种日期格式
+            date_str = str(date_str)
+            
+            # 1. 处理 ISO 格式: 2026-09-04T10:30:00+00:00 或 2026-09-04T10:30:00Z
+            if 'T' in date_str:
+                # 移除时区信息
+                date_str = re.sub(r'[+-]\d{2}:\d{2}$', '', date_str)
+                date_str = date_str.replace('Z', '')
+                date_str = date_str.split('T')[0]
+            elif ' ' in date_str:
+                # 处理 "2026-09-04 10:30:00" 格式
+                date_str = date_str.split(' ')[0]
+            
+            # 2. 尝试解析
+            try:
+                date = datetime.fromisoformat(date_str)
+            except ValueError:
+                # 3. 尝试其他常见格式
+                for fmt in ['%Y-%m-%d', '%Y/%m/%d', '%d-%m-%Y', '%d/%m/%Y']:
+                    try:
+                        date = datetime.strptime(date_str, fmt)
+                        break
+                    except ValueError:
+                        continue
+                else:
+                    # 所有格式都失败
+                    print(f"⚠️ 无法解析日期: {date_str}")
+                    return ''
+        
+        year = date.year
+        month = date.month
+        quarter = (month - 1) // 3 + 1
+        return f"{year}Q{quarter}"
+        
+    except Exception as e:
+        print(f"⚠️ get_quarter_from_date 解析失败: {date_str}, 错误: {e}")
+        return '-'
 
 # 阅卷人配置文件路径（项目根目录）
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -1,0 +1,417 @@
+<!-- templates/admin/dashboard/_training_exam_list.html -->
+<!-- ============================================================
+     培训列表 - 服务端渲染（仅开发者和超管可见）
+     ============================================================ -->
+{% if session.get('role') in ['developer', 'super_admin'] %}
+<div class="card-body p-0">
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 training-dashboard-table" style="min-width: 1000px;">
+            <thead class="table-light">
+                <tr>
+                    <th><span data-i18n="training_name">培训名称</span></th>
+                    <th>tid</th>
+                    <th><span data-i18n="status">状态</span></th>
+                    <th><span data-i18n="sign_count">签到人数</span></th>
+                    <th><span data-i18n="actions">操作</span></th>
+                </tr>
+            </thead>
+            <tbody id="dashboardTrainingTbody">
+                {% for t in dashboard_trainings | default([]) %}
+                    <tr data-training-id="{{ t.id }}">
+                        <td>
+                            <div class="training-name-cell">
+                                <div>
+                                    <span class="training-name-link">{{ t.name }}</span>
+                                    {% if t.binding_count > 0 %}
+                                    <span class="binding-badge" 
+                                        title="已绑定 {{ t.binding_count }} 个考试"
+                                        data-bs-toggle="tooltip">
+                                        <i class="bi bi-link"></i> {{ t.binding_count }}
+                                    </span>
+                                    {% endif %}
+                                </div>
+                                <div class="training-meta">
+                                    <span class="badge-country">🌍 {{ t.countries_display | default('-') }}</span>
+                                    <span class="badge-quarter">📅 {{ t.display_quarter }}</span>
+                                    <span class="badge-time {% if not t.has_valid_time %}text-muted{% endif %}">
+                                        🕐 {{ t.display_time_range }}
+                                    </span>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-muted" style="font-size:0.8rem;">{{ t.id }}</td>
+                        <td>
+                            {% if t.dynamic_status == 'draft' %}
+                                <span class="status-badge draft" data-i18n="draft">草稿</span>
+                            {% elif t.dynamic_status == 'pending' %}
+                                <span class="status-badge pending" data-i18n="not_started">未开始</span>
+                            {% elif t.dynamic_status == 'active' %}
+                                <span class="status-badge active" data-i18n="ongoing">进行中</span>
+                            {% elif t.dynamic_status == 'closed' %}
+                                <span class="status-badge closed" data-i18n="closed">已关闭</span>
+                            {% else %}
+                                <span class="status-badge draft">{{ t.dynamic_status }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="sign-count-badge">{{ t.signed_count | default(0) }}</span>
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm gap-2" role="group">
+                                {% if t.signed_count > 0 and (t.countries_list or t.country) %}
+                                    <a href="/admin/training/{{ t.id }}/attendance?from=dashboard" 
+                                        class="btn btn-outline-info" target="_blank"
+                                        data-i18n-title="view_sign_in_records_export"
+                                        title="查看签到详情">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                {% else %}
+                                    <button class="btn btn-outline-secondary"  
+                                        style="opacity:0.5;" 
+                                        data-i18n-title="no_sign_in_record_available"
+                                        title="暂无签到记录">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                {% endif %}
+                                <button class="btn btn-outline-success push-training-btn" 
+                                    data-id="{{ t.id }}" 
+                                    data-i18n-title="push"
+                                    title="推送">
+                                    <i class="bi bi-send"></i> <span data-i18n="push">推送</span>
+                                </button>
+                                <button class="btn btn-outline-secondary copy-training-btn" 
+                                    data-id="{{ t.id }}" 
+                                    data-i18n-title="copy"
+                                    title="拷贝">
+                                    <i class="bi bi-copy"></i> <span data-i18n="copy">拷贝</span>
+                                </button>
+                                <!-- 编辑按钮（草稿状态显示） -->
+                                {% if t.dynamic_status == 'draft' %}
+                                    <button class="btn btn-outline-warning edit-training-btn" 
+                                        data-id="{{ t.id }}" 
+                                        data-i18n-title="edit"
+                                        title="编辑">
+                                        <i class="bi bi-pencil"></i> <span data-i18n="edit">编辑</span>
+                                    </button>
+                                {% endif %}
+                                {% if t.dynamic_status == 'draft' %}
+                                    <button class="btn btn-outline-danger delete-training-btn" 
+                                        data-id="{{ t.id }}" 
+                                        data-i18n-title="delete"
+                                        title="删除">
+                                        <i class="bi bi-trash"></i> <span data-i18n="delete">删除</span>
+                                    </button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <!-- 无培训数据时显示提示 + 新增培训按钮 -->
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <div class="d-flex flex-row align-items-center justify-content-center gap-3">
+                                <div class="text-muted">
+                                    <i class="bi bi-inbox" style="font-size: 2rem; margin-right: 8px;"></i>
+                                    <span data-i18n="no_training_data">暂无培训数据</span>
+                                </div>
+                                <button class="btn btn-primary btn-sm" id="dashboardAddTrainingBtn">
+                                    <i class="bi bi-plus-circle me-1"></i>
+                                    <span data-i18n="new_training">新增培训</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- ============================================================
+    培训与考试之间的分界线
+    ============================================================ -->
+<div class="section-divider training-exam-divider">
+    <span class="divider-line"></span>
+    <span class="divider-icon"><i class="bi bi-arrow-down-circle-fill"></i></span>
+    <span class="divider-line"></span>
+</div>
+
+<!-- ============================================================
+    考试列表
+    ============================================================ -->
+
+<div class="card-body p-0 exam-list-wrapper">
+    <!-- 仪表盘考试管理exams_for_table = get_exams_for_display  -->
+    <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 exam-dashboard-table" style="min-width: 1000px;" >
+            <style>
+                .table-responsive {
+                    overflow-x: auto;
+                    white-space: nowrap;
+                }
+                .table td, .table th {
+                    vertical-align: middle;
+                }
+                /* 允许部分列在内容过长时换行（可选），但保持表格整体不换行 */
+                .time-range {
+                    min-width: 280px;
+                }
+                .btn-group-sm .btn {
+                    white-space: nowrap;
+                }
+            </style>
+            <thead class="table-light">
+                <tr>
+                    <th><span data-i18n="exam_name">考试名称</span></th>
+                    <th>exid</th>
+                    <th><span data-i18n="status">状态</span></th>
+                    <th><span data-i18n="candidate_qty">参考人数</span></th>
+                    <th><span data-i18n="actions">操作</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ex in exams_table | default([]) %}
+                    <tr>
+                        <td class="fw-medium" style="display: flex; flex-direction: column;">
+                            {# 进行中的考试名称显示为可点击链接 #}
+                            {% if ex.status == 'active' %}
+                                <a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}"  target="_blank"
+                                    class="text-decoration-none fw-semibold">
+                                    {{ ex.title }}
+                                    {% if ex.has_binding %}
+                                    <span class="badge bg-success ms-1" 
+                                        style="font-size: 0.6rem; cursor: help;"
+                                        data-i18n-title="binded_training_with_names"
+                                        data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
+                                        title="">
+                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
+                                    </span>
+                                    {% endif %}
+                                </a>
+                            {% else %}
+                                <span class="fw-semibold">
+                                    {{ ex.title }}
+                                    {% if ex.has_binding %}
+                                    <span class="badge bg-success ms-1" 
+                                        style="font-size: 0.6rem; cursor: help;"
+                                        data-i18n-title="binded_training_with_names"
+                                        data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
+                                        title="">
+                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
+                                    </span>
+                                    {% endif %}
+                                </span>
+                            {% endif %}
+                            <small class="text-muted" style="margin-top: 4px;">
+                                <!-- 显示多个国家标签 -->
+                                <span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
+                                {{ (ex.start_time | format_datetime_local) or '' }}
+                                - 
+                                {{ (ex.end_time | format_datetime_local) or '' }}
+                                | {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
+                                | <span data-i18n="att_reg">应考|实考</span>: 
+                                {{ ex.submitted_count }}/{{ ex.assigned_count }}
+                            </small>
+                        </td>
+                        <td class="text-muted">{{ ex.id }}</td>
+                        <td>
+                            {% if ex.status == 'draft' %}
+                                <span class="badge bg-secondary" data-i18n="draft">草稿</span>
+                            {% elif ex.status == 'created' %}
+                                <span class="badge bg-info" data-i18n="not_started">未开始</span>
+                            {% elif ex.status == 'active' %}
+                                <span class="badge bg-success" data-i18n="ongoing">进行中</span>
+                            {% elif ex.status == 'closed' %}
+                                <span class="badge bg-danger" data-i18n="closed">已关闭</span>
+                            {% elif ex.status == 'deleted' %}
+                                <span class="badge bg-dark" data-i18n="deleted">已删除</span>
+                            {% else %}
+                                {{ ex.status }}
+                            {% endif %}
+                        </td>
+                        <td class="text-muted">{{ ex.submitted_count | default(0) }}</td>
+                        <td>
+                            <div class="btn-group btn-group-sm" role="group">
+                                {# ===== 新增：题库按钮 ===== #}
+                                {# 根据考试状态决定显示哪种题库按钮 #}
+                                {% if ex.status not in ['deleted'] %}
+                                    {# 草稿或未开始：显示可编辑的题库按钮 #}
+                                    {% if ex.status == 'draft' or ex.status == 'created' %}
+                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}" 
+                                        class="btn btn-sm btn-outline-info" 
+                                        data-i18n-title="edit_question_bank"
+                                        title="编辑题库">
+                                            <i class="bi bi-book"></i> 
+                                            <span data-i18n="question_bank">题库</span>
+                                        </a>
+                                    {# 进行中或已关闭：显示只读的查看按钮 #}
+                                    {% elif ex.status == 'active' or ex.status == 'closed' %}
+                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}?readonly=true" 
+                                        class="btn btn-sm btn-outline-secondary" 
+                                        data-i18n-title="view_question_bank"
+                                        title="查看题目（只读模式）">
+                                            <i class="bi bi-eye"></i> 
+                                            <span data-i18n="view_questions">查看</span>
+                                        </a>
+                                    {% endif %}
+                                {% endif %}
+                                <button class="btn btn-outline-secondary batch-export" data-id="{{ ex.id }}">PDF</button> 
+                                <!-- 重置考生状态（需配合用户选择，示例中简化） -->
+                                <button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}"><span data-i18n="setting">推送</span></button>
+                                {% if ex.dynamic_status == 'draft' %}
+                                    <button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}"
+                                        onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
+                                        ✏️ <span data-i18n="edit">编辑</span>
+                                    </button>
+                                {% endif %}
+                                <button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}"><span data-i18n="copy">拷贝</span></button>
+                                <!-- 删除考试（危险操作） -->
+                                <button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="{{ ex.id }}">
+                                    🗑️ <span data-i18n="delete">删除</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                {% else %}
+                    <!-- 无考试数据时显示提示 + 创建考试按钮 -->
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <div class="d-flex flex-row align-items-center justify-content-center gap-3">
+                                <div class="text-muted">
+                                    <i class="bi bi-journal-x" style="font-size: 2rem; margin-right: 8px;"></i>
+                                    <span data-i18n="no_exam_datas">暂无考试数据</span>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="openImportPage()">
+                                    <i class="bi bi-plus-circle me-1"></i>
+                                    <span data-i18n="create_exam">创建考试</span>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ============================================================
+        考生考试状态（原有内容保持不变）
+        ============================================================ -->
+    <!-- 仪表盘考生考试状态 exams_for_selector = get_exams_for_display-->
+    <div class="card shadow-sm border-0 mt-4">
+        <div class="card-header bg-light fw-bold">
+            <i class="bi bi-people me-2"></i><span data-i18n="view_status">考生考试状态（选择考试查看）</span>
+        </div>
+        <div class="card-body p-0">
+            <select id="exam-selector" class="form-select mb-3">
+                <option value="" data-i18n="select_exam">-- 选择考试 --</option>
+                {% for ex in exams_selector %}
+                    <option value="{{ ex.id }}">
+                        {{ ex.title }}
+                        {% if ex.has_binding %}
+                            🔗
+                        {% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <!-- 筛选栏 -->
+            <div class="row g-2 mb-3 px-3">
+                <div class="col-md-3">
+                    <input type="text" id="statusFilterName" class="form-control form-control-sm" 
+                        placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
+                </div>
+                <div class="col-md-3">
+                    <input type="text" id="statusFilterWh" class="form-control form-control-sm" list="whDatalist" 
+                    data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
+                    <datalist id="whDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <select id="statusFilterIsPartner" class="form-select form-select-sm">
+                    <option value="" data-i18n="supplier_all">服务商(全部)</option>
+                    <option value="Y" data-i18n="partner_yes">是</option>
+                    <option value="N" data-i18n="partner_no">否</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <input type="text" id="statusFilterCountry" class="form-control form-control-sm" list="countryDatalist" 
+                        placeholder="国家" data-i18n-placeholder="placeholder_country">
+                    <datalist id="countryDatalist"></datalist>
+                </div>
+                <div class="col-md-2">
+                    <button id="statusResetFilterBtn" class="btn btn-sm btn-secondary w-100"><span data-i18n="reset">重置</span></button>
+                </div>
+            </div>
+            <div id="status-table-container"></div>
+        </div>	
+    </div>
+</div>
+
+<!-- 推送（设置有效期）模态框 -->
+<div class="modal fade" id="pushModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    📢 <span data-i18n="push_sign_in_notify">推送培训签到</span>
+                    <span id="pushModalTrainingName" class="ms-2 text-muted" style="font-size: 0.85rem;"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <label class="form-label" for="start_time"><span data-i18n="start_time">开始时间</span></label>
+                <input type="datetime-local" class="form-control mb-3" id="start_time">
+                <label class="form-label" for="end_time"><span data-i18n="end_time">结束时间</span></label>
+                <input type="datetime-local" class="form-control mb-3" id="end_time">
+                
+                <hr>
+                <h6><span data-i18n="select_push_recipient">选择推送对象（可选）</span></h6>
+                <div class="row g-2 mb-2">
+                    <div class="col-md-3">
+                        <input type="text" id="pushUserSearch" class="form-control"
+                            data-i18n-placeholder="placeholder_mail_name" placeholder="姓名/邮箱">
+                    </div>
+                    <div class="col-md-3">
+                        <input type="text" id="pushWhFilter" class="form-control" list="whDatalist" 
+                            data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
+                        <datalist id="whDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <select id="pushIsPartner" class="form-select">
+                            <option value="" data-i18n="supplier_all">服务商(全部)</option>
+                            <option value="Y" data-i18n="partner_yes">是</option>
+                            <option value="N" data-i18n="partner_no">否</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="pushCountryFilter" class="form-control" list="countryDatalist"
+                            data-i18n-placeholder="placeholder_country" placeholder="国家">
+                        <datalist id="countryDatalist"></datalist>
+                    </div>
+                    <div class="col-md-2">
+                        <button id="pushLoadUsersBtn" class="btn btn-secondary w-100"><span data-i18n="refresh_list">刷新列表</span></button>
+                    </div>
+                </div>
+                <div style="max-height: 300px; overflow-y: auto; border: 1px solid #ddd; white-space: nowrap;">
+                    <table class="table table-sm mb-0">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="pushSelectAll"></th>
+                                <th><span data-i18n="name_en">姓名</span></th>
+                                <th><span data-i18n="email">邮箱</span></th>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="wh_id_name">库房编码/名称</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="pushUserListBody"></tbody>
+                    </table>
+                </div>
+                <small class="text-muted"><span data-i18n="training_push_hint">不选择则推送至所有用户（仅发送通知）</span></small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button type="button" class="btn btn-success" id="confirmPushBtn"><span data-i18n="confirm_push">确认推送</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+

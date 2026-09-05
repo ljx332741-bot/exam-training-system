@@ -31,9 +31,9 @@ logger = logging.getLogger(__name__)
 def admin_user_list():
     # 添加调试代码，检查模板文件路径
     import os
-    template_path = os.path.join(app.root_path, 'templates', 'admin', 'list_users.html')
+    template_path = os.path.join(app.root_path, 'templates', 'admin', 'admin_users.html')
     
-    return render_template('admin/list_users.html', is_developer=is_developer())
+    return render_template('admin/admin_users.html', is_developer=is_developer())
 
 @admin_user_bp.route('/api/admin/users/<user_id>')
 @login_required

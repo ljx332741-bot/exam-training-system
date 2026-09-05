@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 @login_required
 @admin_required
 def admin_interviews_page():
-    return render_template('admin/list_inspection.html')
+    return render_template('admin/admin_inspection.html')
 
 @admin_inspection_bp.route('/api/admin/interviews', methods=['GET', 'POST', 'PUT'])
 @login_required
@@ -326,7 +326,7 @@ def get_interview_user_ids(interview_id):
 @admin_required
 def admin_interview_detail_page(interview_id):
     """3. 访谈二级菜单数据接口 访谈详情页面""" 
-    return render_template('admin/list_inspection_details.html', interview_id=interview_id)
+    return render_template('admin/admin_inspection_details.html', interview_id=interview_id)
 
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/results')
 @login_required
@@ -966,7 +966,7 @@ def api_admin_batch_delete_interview_results(interview_id):
 @login_required
 @admin_required
 def api_admin_delete_interview_by_id(interview_id):
-    """删除访谈（软删除）- 供 list_inspection.html 调用"""
+    """删除访谈（软删除）- 供 admin_inspection.html 调用"""
     db = get_supabase()
     operator_id = session['user_id']
     
@@ -1081,7 +1081,7 @@ def api_admin_resample_interview(interview_id, user_id):
 def admin_interviewee_stats():
     """访谈统计页面入口（二级菜单）"""
     # 此函数仅渲染模板，实际数据由前端 AJAX 请求 /api/admin/interview/<id>/details 获取
-    return render_template('admin/list_inspection.html')
+    return render_template('admin/admin_inspection.html')
 
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/details')
 @login_required
@@ -1258,7 +1258,7 @@ def api_interview_details(interview_id):
 @admin_required
 def admin_interview_details_page(interview_id):
     """访谈详情页面（渲染HTML）"""
-    return render_template('admin/list_inspection_details.html', interview_id=interview_id)
+    return render_template('admin/admin_inspection_details.html', interview_id=interview_id)
 
 @admin_inspection_bp.route('/api/admin/interview/<int:interview_id>/force_resample', methods=['POST'])
 @login_required

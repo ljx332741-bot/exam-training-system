@@ -1,4 +1,4 @@
-// static/js/admin/dashboard/_training_list.js
+// static/js/admin/dashboard/_training_exam_list.js
 // ============================================================
 // 仪表盘培训列表操作模块（数据由服务端渲染，JS只负责操作交互）
 // 修复版：采用与 list_trainings.html 一致的直接事件绑定方式
@@ -1373,6 +1373,251 @@ const TrainingListModule = (function() {
         // 绑定确认按钮事件
         bindPushModalEvents();
     }
+
+    /**
+    * 打开新增培训对话框（复用 list_trainings.html 的逻辑）
+    */
+    function showAddTrainingDialog() {
+        // 检查是否已有编辑行
+        const existingEditRow = document.getElementById('new-training-row');
+        if (existingEditRow) {
+            existingEditRow.remove();
+        }
+        
+        // 获取表格 tbody
+        const tbody = document.getElementById('dashboardTrainingTbody');
+        if (!tbody) return;
+        
+        // 检查是否已有数据行（如果有数据行，在顶部插入；如果没有，替换空状态行）
+        const hasData = tbody.querySelector('tr[data-training-id]');
+        
+        // 创建新行
+        const newRow = document.createElement('tr');
+        newRow.id = 'new-training-row';
+        newRow.className = 'table-active';
+        
+        // 自动填充起止时间（当前时间 + 30天）
+        const now = new Date();
+        const thirtyDaysLater = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+        const prefillStart = formatDateTimeLocal(now);
+        const prefillEnd = formatDateTimeLocal(thirtyDaysLater);
+        
+        // 生成唯一ID
+        const uniqueId = Date.now() + '_' + Math.random().toString(36).substr(2, 6);
+        
+        newRow.innerHTML = `
+            <td colspan="5" style="padding: 12px 8px;">
+                <div class="d-flex flex-wrap align-items-center gap-2">
+                    <span class="badge bg-info text-white">${safeT('new') || '新增'}</span>
+                    <div style="flex: 1; min-width: 200px;">
+                        <input type="text" id="newTrainingName_${uniqueId}" class="form-control form-control-sm" 
+                            placeholder="${safeT('placeholder_training_name') || '培训名称'}" 
+                            style="min-width: 150px;">
+                    </div>
+                    <div style="min-width: 200px;">
+                        <div id="newCountryTag_${uniqueId}" class="country-tag-input-wrapper" style="min-width: 150px;"></div>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                        <span class="text-muted small">${safeT('valid_period') || '有效期'}:</span>
+                        <input type="datetime-local" id="newStartTime_${uniqueId}" class="form-control form-control-sm" 
+                            value="${prefillStart}" style="width: 150px;">
+                        <span class="text-muted">→</span>
+                        <input type="datetime-local" id="newEndTime_${uniqueId}" class="form-control form-control-sm" 
+                            value="${prefillEnd}" style="width: 150px;">
+                    </div>
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-success save-new-training-btn" data-unique-id="${uniqueId}">
+                            <i class="bi bi-check"></i> ${safeT('save') || '保存'}
+                        </button>
+                        <button class="btn btn-sm btn-secondary cancel-new-training-btn" data-unique-id="${uniqueId}">
+                            <i class="bi bi-x"></i> ${safeT('cancel') || '取消'}
+                        </button>
+                    </div>
+                </div>
+            </td>
+        `;
+        
+        // 如果已有数据行，在顶部插入；否则替换空状态行
+        if (hasData) {
+            tbody.insertBefore(newRow, tbody.firstChild);
+        } else {
+            // 移除空状态行（如果有）
+            const emptyRow = tbody.querySelector('tr:not([data-training-id])');
+            if (emptyRow) {
+                emptyRow.remove();
+            }
+            tbody.appendChild(newRow);
+        }
+        
+        // 初始化国家标签组件
+        const wrapper = document.getElementById(`newCountryTag_${uniqueId}`);
+        let countryInstance = null;
+        if (wrapper) {
+            countryInstance = new CountryTagInput({
+                container: wrapper,
+                selectedCountries: [],
+                placeholder: safeT('placeholder_coutry_search') || '输入国家名称或代码',
+                maxTags: 30,
+                onChange: (selected) => {
+                    console.log('已选国家:', selected);
+                }
+            });
+        }
+        
+        // 绑定保存按钮事件
+        const saveBtn = newRow.querySelector('.save-new-training-btn');
+        saveBtn.onclick = async function() {
+            const nameInput = document.getElementById(`newTrainingName_${uniqueId}`);
+            const startInput = document.getElementById(`newStartTime_${uniqueId}`);
+            const endInput = document.getElementById(`newEndTime_${uniqueId}`);
+            
+            const name = nameInput ? nameInput.value.trim() : '';
+            const start = startInput ? startInput.value : '';
+            const end = endInput ? endInput.value : '';
+            
+            // 从组件获取选中的国家列表
+            const selectedCountries = countryInstance ? countryInstance.getSelected() : [];
+            
+            // 验证
+            if (!name) {
+                if (typeof showToast === 'function') {
+                    showToast(safeT('training_name_cannot_empty') || '培训名称不能为空', 'warning');
+                }
+                if (nameInput) nameInput.focus();
+                return;
+            }
+            
+            if (selectedCountries.length === 0) {
+                if (typeof showToast === 'function') {
+                    showToast('请至少选择一个国家', 'warning');
+                }
+                return;
+            }
+            
+            // 转换时间
+            const startISO = start ? localDateTimeToUTC(start) : '';
+            const endISO = end ? localDateTimeToUTC(end) : '';
+            
+            // 显示加载状态
+            const originalText = saveBtn.innerHTML;
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${safeT('saving') || '保存中...'}`;
+            
+            try {
+                const payload = {
+                    name: name,
+                    countries: selectedCountries,
+                    start_time: startISO,
+                    end_time: endISO,
+                    header_template: {}
+                };
+                
+                const res = await fetch('/api/admin/trainings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    const newTrainingId = data.id;
+                    
+                    if (typeof showToast === 'function') {
+                        showToast('培训创建成功', 'success');
+                    }
+                    
+                    // 刷新页面显示新数据
+                    setTimeout(() => {
+                        location.reload();
+                    }, 800);
+                } else {
+                    const error = await res.json();
+                    throw new Error(error.message || '创建失败');
+                }
+            } catch (error) {
+                console.error('创建培训失败:', error);
+                if (typeof showToast === 'function') {
+                    showToast('创建失败: ' + error.message, 'error');
+                }
+                saveBtn.disabled = false;
+                saveBtn.innerHTML = originalText;
+            }
+        };
+        
+        // 绑定取消按钮事件
+        const cancelBtn = newRow.querySelector('.cancel-new-training-btn');
+        cancelBtn.onclick = function() {
+            // 清理组件实例
+            if (countryInstance && typeof countryInstance.destroy === 'function') {
+                countryInstance.destroy();
+            }
+            newRow.remove();
+            
+            // 如果没有数据行，重新显示空状态
+            const hasDataAfterRemove = tbody.querySelector('tr[data-training-id]');
+            if (!hasDataAfterRemove && !tbody.querySelector('#new-training-row')) {
+                // 检查是否已经有空状态行
+                let emptyRow = tbody.querySelector('tr:not([data-training-id])');
+                if (!emptyRow) {
+                    emptyRow = document.createElement('tr');
+                    emptyRow.innerHTML = `
+                        <td colspan="5" class="text-center py-4">
+                            <div class="d-flex flex-column align-items-center gap-3">
+                                <div class="text-muted">
+                                    <i class="bi bi-inbox" style="font-size: 2rem; display: block; margin-bottom: 8px;"></i>
+                                    <span data-i18n="no_training_data">暂无培训数据</span>
+                                </div>
+                                <button class="btn btn-primary btn-sm" id="dashboardAddTrainingBtn">
+                                    <i class="bi bi-plus-circle me-1"></i>
+                                    <span data-i18n="new_training">新增培训</span>
+                                </button>
+                            </div>
+                        </td>
+                    `;
+                    tbody.appendChild(emptyRow);
+                    // 重新绑定新增按钮事件
+                    const addBtn = document.getElementById('dashboardAddTrainingBtn');
+                    if (addBtn) {
+                        addBtn.onclick = showAddTrainingDialog;
+                    }
+                }
+            }
+        };
+        
+        // 键盘事件：Enter 保存，Escape 取消
+        const inputs = newRow.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveBtn.click();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelBtn.click();
+                }
+            });
+        });
+        
+        // 聚焦到名称输入框
+        setTimeout(() => {
+            const nameInput = document.getElementById(`newTrainingName_${uniqueId}`);
+            if (nameInput) {
+                nameInput.focus();
+            }
+        }, 200);
+    }
+
+    // ==================== 绑定新增培训按钮事件 ====================
+
+    function bindAddTrainingButton() {
+        const addBtn = document.getElementById('dashboardAddTrainingBtn');
+        if (addBtn) {
+            // 移除旧事件
+            const newBtn = addBtn.cloneNode(true);
+            addBtn.parentNode.replaceChild(newBtn, addBtn);
+            newBtn.addEventListener('click', showAddTrainingDialog);
+        }
+    }
     
     // ==================== 重新绑定事件 ====================
     
@@ -1395,6 +1640,7 @@ const TrainingListModule = (function() {
                 bindEvents();
                 initTooltips();
                 initPushModal();
+                bindAddTrainingButton();
                 console.log('✅ 培训列表操作模块已初始化（含完整推送功能）');
             }, 300);
         },
