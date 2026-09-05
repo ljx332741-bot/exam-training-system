@@ -1560,5 +1560,9 @@
 "view_question_bank": "查看题目",
 "view_questions": "查看题目",
 "double_click_to_edit": "双击编辑",
-"readonly_mode": "只读模式"
+"readonly_mode": "只读模式",
+"remark_hint": "管理员可见，用户不可见",
+"remark_placeholder": "请输入备注信息（仅管理员可见）",
+"visible_to_admins_only": "(仅管理员可见)",
+"no_remark": "暂无备注"
 }

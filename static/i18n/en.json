@@ -1571,5 +1571,9 @@
 "view_question_bank": "View Question Bank",
 "view_questions": "View Questions",
 "double_click_to_edit": "Double click to edit",
-"readonly_mode": "Readonly Mode"
+"readonly_mode": "Readonly Mode",
+"remark_hint": "Visible to admins only, not to users",
+"remark_placeholder": "Enter remark (admins only)",
+"visible_to_admins_only": "(Visible to admins only)",
+"no_remark": "No remark"
 }

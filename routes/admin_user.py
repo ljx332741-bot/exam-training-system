@@ -134,7 +134,7 @@ def api_admin_users():
 
     # ========== 2. 国家模糊匹配 ==========
     matched_country_codes = []
-    # ✅ 处理 country 参数（单个国家，可能是名称或代码）
+    # 处理 country 参数（单个国家，可能是名称或代码）
     if country:
         countries_res = db.table("countries").select("code, name_zh, name_en").execute()
         all_countries = countries_res.data or []
@@ -158,7 +158,7 @@ def api_admin_users():
                 "per_page": per_page
             })
 
-    # ✅ 处理 countries 参数（多个国家代码，逗号分隔）
+    # 处理 countries 参数（多个国家代码，逗号分隔）
     if countries_param:
         # 直接解析为多个国家代码
         param_codes = [c.strip().upper() for c in countries_param.split(',') if c.strip()]
@@ -218,7 +218,7 @@ def api_admin_users():
     # ========== 5. 内存过滤 ==========
     exclude_resigned = request.args.get('exclude_resigned', 'true').lower() == 'true'
 
-    # ✅ 判断是否有国家筛选参数
+    # 判断是否有国家筛选参数
     has_country_filter = bool(country or countries_param)
 
     filtered = []
@@ -258,11 +258,11 @@ def api_admin_users():
             # 用户自己的 country 匹配
             elif user_country and user_country in final_countries:
                 pass
-            # ✅ 如果有明确的国家筛选参数（用户输入了国家），不通过创建者匹配
+            # 如果有明确的国家筛选参数（用户输入了国家），不通过创建者匹配
             elif has_country_filter:
                 # 用户有国家筛选，但当前用户不匹配，跳过
                 continue
-            # ✅ 没有国家筛选参数时，才通过创建者国家匹配（用于权限过滤）
+            # 没有国家筛选参数时，才通过创建者国家匹配（用于权限过滤）
             elif user_status == 'imported' and created_by:
                 creator_res = db.table("users").select("country").eq("id", created_by).maybe_single().execute()
                 if creator_res.data:
@@ -537,7 +537,8 @@ def api_admin_add_user():
         "wh_name_en": data.get('wh_name_en', ''),
         "is_active": False if user_status == 'imported' else True,
         "created_by": session['user_id'],
-        "is_protected": (role == 'developer')  # 开发者账号自动保护
+        "is_protected": (role == 'developer'),
+        "remark": data.get('remark', '')
     }
     try:
         db.table("users").insert(insert_data).execute()
@@ -583,10 +584,12 @@ def api_admin_import_users():
         '服务商?': 'is_partner', '公司': 'company', '部门': 'department',
         '库房类型': 'wh_type', '库房ID': 'wh_id', '库房名称(EN)': 'wh_name_en',
         '工号': 'employee_id', '手机号': 'phone', '生日': 'birthday', '权限范围': 'admin_countries',
+        '备注': 'remark',
         'country': 'country', 'email': 'email', 'name_en': 'name_en', 'role': 'role',
         'is_partner': 'is_partner', 'company': 'company', 'department': 'department',
         'wh_type': 'wh_type', 'wh_id': 'wh_id', 'wh_name_en': 'wh_name_en',
-        'employee_id': 'employee_id', 'phone': 'phone', 'birthday': 'birthday', 'admin_countries': 'admin_countries'
+        'employee_id': 'employee_id', 'phone': 'phone', 'birthday': 'birthday', 'admin_countries': 'admin_countries',
+        'remark': 'remark'
     }
     
     # 解析 Excel，获取有效数据行
@@ -616,7 +619,7 @@ def api_admin_import_users():
         
         name_en = user_data.get('name_en', '')
         if not name_en:
-            # ✅ 修复：使用结构化错误
+            # 使用结构化错误
             error_rows.append(I18nMessages.format_error(
                 row_idx, "name_required"
             ))
@@ -656,7 +659,7 @@ def api_admin_import_users():
         if role in ['admin', 'super_admin']:
             admin_countries_raw = user_data.get('admin_countries', '')
             if not admin_countries_raw:
-                # ✅ 修复：使用结构化错误
+                # 使用结构化错误
                 error_rows.append(I18nMessages.format_error(
                     row_idx, "admin_countries_required",
                     role=role
@@ -669,7 +672,7 @@ def api_admin_import_users():
             if allowed_countries is not None:
                 invalid_countries = [c for c in countries_list if c not in allowed_countries]
                 if invalid_countries:
-                    # ✅ 修复：使用结构化错误
+                    # 使用结构化错误
                     error_rows.append(I18nMessages.format_error(
                         row_idx, "admin_countries_invalid",
                         countries=', '.join(invalid_countries)
@@ -695,6 +698,7 @@ def api_admin_import_users():
         user_data['is_protected'] = (role == 'developer')
         user_data['created_at'] = datetime.now(timezone.utc).isoformat()
         user_data['country'] = final_country or None
+        user_data['remark'] = user_data.get('remark', '')
         
         # 移除空值字段
         user_data = {k: v for k, v in user_data.items() if v != '' and v is not None}
@@ -739,7 +743,7 @@ def api_admin_import_users():
     }
     return jsonify(result)
 
-# ✅ 添加模板下载接口
+# 添加模板下载接口
 @admin_user_bp.route('/api/admin/users/import/template', methods=['GET'])
 @login_required
 @admin_required
@@ -811,7 +815,8 @@ def api_admin_edit_user(user_id):
         'employee_id', 'birthday', 'country', 
         'phone', 'wh_type', 'wh_id', 
         'wh_name_en', 'user_status', 'is_partner',
-        'is_resign', 'resigned_at', 'is_rehire', 'rehire_at'  # ✅ 新增
+        'is_resign', 'resigned_at', 'is_rehire', 'rehire_at',
+        'remark'
         ]
 
     # 处理离职状态的特殊逻辑
