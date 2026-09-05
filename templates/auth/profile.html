@@ -191,6 +191,20 @@
                                         <div class="text-muted text-center pt-2">--</div>
                                         {% endif %}
                                     </div>
+                                    {% if session.get('role') in ['admin', 'super_admin', 'developer'] %}
+                                    <div class="row mb-3">
+                                        <div class="col-md-12">
+                                            <label class="form-label" for="remarkDisplay">
+                                                <span data-i18n="remark">备注</span>
+                                                <small class="text-muted"><span data-i18n="visible_to_admins_only">(仅管理员可见)</span></small>
+                                            </label>
+                                            <textarea class="form-control" id="remarkDisplay" rows="2" 
+                                                disabled readonly style="background-color: #f8f9fa; resize: none;">
+                                                {{ user.remark or 'No remark' }}
+                                            </textarea>
+                                        </div>
+                                    </div>
+                                    {% endif %}
                                 </div>
                             </form>
                         </div>
