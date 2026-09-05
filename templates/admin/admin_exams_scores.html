@@ -1,4 +1,4 @@
-﻿﻿﻿<!-- templates/admin/list_exams_scores.html -->
+﻿﻿<!-- templates/admin/admin_exams_scores.html -->
 {% extends "base.html" %}
 {% block title %}{{ _('exam_scores_detail') }}{% endblock %}
 
@@ -206,7 +206,7 @@
                 throw err;
             }
         }, {
-            title: t('loading_score_data'),
+            title: `${t('loading_score_data')}`,
             desc: 'please_wait_loading_scores',
             colspan: 13,
             size: 'md',

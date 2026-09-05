@@ -16,11 +16,18 @@ from services.db import get_supabase, get_supabase_admin, safe_table
 from services import auth, exam, export
 from config import Config
 from utils.status import get_exam_status
-from utils.common import match_country_code, quarter_to_date_range, get_reviewer_by_country, utc_to_local, format_datetime_local
 from utils.email_notifier import send_bilingual_notification, EmailScenario, _format_time
 from utils.cache_manager import cache_get, clear_all_assignment_caches
 from utils.timezone_utils import get_user_timezone, utc_string_to_local, format_datetime
-from utils.training_helpers import parse_training_countries, sync_pass_score_to_bindings
+from utils.training_helpers import parse_training_countries, sync_pass_score_to_bindings, get_dashboard_trainings_data
+from utils.common import (
+    match_country_code, 
+    quarter_to_date_range, 
+    get_quarter_from_date,
+    get_reviewer_by_country, 
+    utc_to_local, 
+    format_datetime_local
+)
 from utils.permissions import (
     is_developer, 
     get_admin_allowed_countries, 
@@ -282,9 +289,38 @@ def admin_dashboard():
                     elif not countries and t.get('country'):
                         countries = [t.get('country')]
                     t['countries_list'] = countries
-                    
-                    # 处理国家显示
                     t['countries_display'] = ', '.join(countries) if countries else '-'
+                
+                    # ============================================================
+                    # 处理显示字段（季度、有效期）
+                    # ============================================================
+                    start_time = t.get('start_time')
+                    end_time = t.get('end_time')
+                    status = t.get('dynamic_status', 'draft')
+                    
+                    # 检测占位符
+                    is_draft = status == 'draft'
+                    is_placeholder = False
+                    if start_time and end_time:
+                        is_placeholder = '1970-01-01' in str(start_time) or '1970-01-01' in str(end_time)
+                    
+                    # 决定是否显示时间
+                    if is_draft or is_placeholder or not start_time or not end_time:
+                        t['display_quarter'] = '---'
+                        t['display_time_range'] = '未设置Not set'
+                        t['has_valid_time'] = False
+                    else:
+                        t['display_quarter'] = get_quarter_from_date(start_time)
+                        t['display_time_range'] = f"{format_datetime_local(start_time)} - {format_datetime_local(end_time)}"
+                        t['has_valid_time'] = True
+                    
+                    # 保留原始 quarter 字段（用于其他地方）
+                    if start_time and not is_draft and not is_placeholder:
+                        t['quarter'] = get_quarter_from_date(start_time)
+                    else:
+                        t['quarter'] = '---'
+                    
+                    logger.info(f"📝 培训 {tid}: quarter={t['quarter']}, display_quarter={t['display_quarter']}, has_valid_time={t['has_valid_time']}")
                 
                 logger.info(f"仪表盘培训列表加载完成: {len(dashboard_trainings)} 条")
                 
@@ -354,7 +390,7 @@ def admin_exams_page():
         # 可选：也存储原始国家列表供其他用途
         exam['countries'] = parse_exam_countries(exam)
     
-    return render_template('admin/list_exams.html', exams=exams)
+    return render_template('admin/admin_exams.html', exams=exams)
 
 @admin_exam_bp.route('/admin/exam/edit/<int:exam_id>')
 @login_required
@@ -438,17 +474,94 @@ def edit_exam_preview(exam_id):
 @login_required
 @admin_required
 def admin_import():
-    """Word 题库导入页面"""
+    """Word 题库导入页面 / 新建考试页面"""
     print(f"\n🔥🔥🔥 admin_import 被调用！method={request.method} 🔥🔥🔥\n", flush=True)
 
-    # 获取 from_binding 参数（GET 和 POST 都需要）
+    # 获取参数
     from_binding = request.args.get('from_binding') == 'true'
     training_id = request.args.get('training_id')
-    training_country = request.args.get('country')
+    training_countries_param = request.args.get('training_countries', '')
+    countries_param = request.args.get('countries', '')
+    mode = request.args.get('mode', '')
     
+    # ========== 解析培训国家（支持多国家） ==========
+    training_countries = []
+    
+    # 1. 优先使用 countries 参数（JSON 格式）
+    if countries_param:
+        try:
+            training_countries = json.loads(countries_param)
+            if isinstance(training_countries, str):
+                training_countries = [training_countries]
+            elif not isinstance(training_countries, list):
+                training_countries = [training_countries]
+        except:
+            training_countries = []
+    
+    # 2. 如果 countries 参数无效，使用 training_countries 参数（逗号分隔）
+    if not training_countries and training_countries_param:
+        training_countries = [c.strip() for c in training_countries_param.split(',') if c.strip()]
+    
+    # 3. 如果是绑定模式且没有国家信息，从培训获取
+    if from_binding and training_id and not training_countries:
+        try:
+            db = get_supabase()
+            training_res = db.table("trainings").select("countries, country").eq("id", training_id).maybe_single().execute()
+            if training_res.data:
+                training = training_res.data
+                if training.get('countries'):
+                    countries_data = training.get('countries')
+                    if isinstance(countries_data, str):
+                        try:
+                            training_countries = json.loads(countries_data)
+                        except:
+                            training_countries = []
+                    elif isinstance(countries_data, list):
+                        training_countries = countries_data
+                if not training_countries and training.get('country'):
+                    training_countries = [training.get('country')]
+        except Exception as e:
+            logger.warning(f"获取培训国家失败: {e}")
+    
+    # 过滤空值并去重
+    training_countries = [c for c in training_countries if c and c.strip()]
+    seen = set()
+    training_countries = [c for c in training_countries if not (c in seen or seen.add(c))]
+    
+    logger.info(f"📋 培训国家: {training_countries}")
+    
+    # ========== GET 请求处理 ==========
+    if request.method == 'GET':
+        # 如果是绑定模式且设置了 mode=create，直接进入上传页面但携带国家信息
+        if from_binding and training_id:
+            logger.info("📄 渲染 import.html（绑定模式 - 上传题库）")
+            return render_template('admin/import.html',
+                from_binding=from_binding,
+                training_id=training_id,
+                training_countries=','.join(training_countries) if training_countries else '',
+                return_url=request.referrer or url_for('admin_exam.admin_dashboard')
+            )
+        
+        # 普通导入模式
+        logger.info("📄 渲染 import.html（普通导入模式）")
+        return render_template('admin/import.html')
+    
+    # ========== POST 请求：处理文件上传 ==========
     if request.method == 'POST' and 'docx_file' in request.files:
         file = request.files['docx_file']
         logger.info(f"📄 收到文件: {file.filename}, size={file.content_length}")
+        
+        # 从 POST 表单获取国家信息（由隐藏字段传递）
+        post_training_id = request.form.get('training_id', '')
+        post_from_binding = request.form.get('from_binding', 'false') == 'true'
+        post_training_countries = request.form.get('training_countries', '')
+        
+        # 解析国家
+        if post_from_binding and post_training_countries:
+            countries = [c.strip() for c in post_training_countries.split(',') if c.strip()]
+            logger.info(f"📋 从表单获取国家: {countries}")
+        else:
+            countries = training_countries  # 使用 GET 参数中的国家
         
         if not file.filename.endswith('.docx'):
             logger.warning(f"❌ 文件格式错误: {file.filename}")
@@ -475,19 +588,21 @@ def admin_import():
                 logger.warning("⚠️ 解析结果为空")
                 flash({'msg': 'no_valid_question', 'params': []}, 'warning')
                 return render_template('admin/import.html')
-
-            if qs:
-                # 获取来源 URL
-                return_url = request.referrer or url_for('admin_exam.admin_dashboard')
-                if return_url and '/admin/import' in return_url:
-                    return_url = url_for('admin_exam.admin_dashboard')
-                
-            logger.info("🔄 跳转预览页")
+            
+            # 获取来源 URL
+            return_url = request.referrer or url_for('admin_exam.admin_dashboard')
+            if return_url and '/admin/import' in return_url:
+                return_url = url_for('admin_exam.admin_dashboard')
+            
+            logger.info("🔄 跳转预览页，国家: {countries}")
             
             # 获取默认值
             defaults = get_default_exam_values(request)
             can_edit_questions = True
-
+            
+            # 决定使用哪个国家列表：POST > GET > 默认
+            final_countries = countries if countries else training_countries
+            
             return render_template('admin/import_preview.html', 
                 questions=qs, 
                 exam_title=exam_title,
@@ -498,14 +613,14 @@ def admin_import():
                 can_edit_questions=can_edit_questions,
                 exam_duration=60,
                 exam_reviewer='',
-                exam_start_time=defaults['exam_start_time'],
-                exam_end_time=defaults['exam_end_time'],
-                exam_countries=defaults['exam_countries'],
-                from_binding=from_binding,
-                training_id=training_id,
-                training_country=training_country,
-                return_url=return_url,  # ✅ 传递动态来源 URL
-                exam_pass_score=85
+                exam_pass_score=85,
+                exam_start_time=defaults.get('exam_start_time', ''),
+                exam_end_time=defaults.get('exam_end_time', ''),
+                exam_countries=final_countries,
+                from_binding=post_from_binding or from_binding,
+                training_id=post_training_id or training_id,
+                training_country=','.join(final_countries) if final_countries else '',
+                return_url=return_url
             )
 
         except AttributeError as e:
@@ -530,9 +645,7 @@ def admin_import():
                     pass
         return redirect(request.url)
     
-    # ========== GET 请求 ==========
-    logger.info("📄 渲染 import_preview.html（新建考试）")
-    
+    # ========== 其他情况 ==========
     return render_template('admin/import.html')
 
 @admin_exam_bp.route('/admin/import/save', methods=['POST'])
@@ -2116,7 +2229,7 @@ def api_admin_exams_list():
             
             # 为前端添加格式化字段
             created_date = exam.get('created_at', '')[:10] if exam.get('created_at') else ''
-            quarter_val = _get_quarter_from_date(exam.get('created_at'))
+            quarter_val = get_quarter_from_date(exam.get('created_at'))
             stats = stats_by_exam.get(exam_id, {'max_score': None, 'min_score': None, 'retake_count': 0})
 
             # 获取绑定培训信息
@@ -2167,26 +2280,6 @@ def api_admin_exams_list():
     except Exception as e:
         logger.error(f"api_admin_exams_list 错误: {e}", exc_info=True)
         return jsonify({"data": [], "total": 0, "error": str(e)}), 500
-
-
-def _get_quarter_from_date(date_str):
-    """从日期字符串提取季度（格式：2026Q2）"""
-    if not date_str:
-        return ''
-    try:
-        from datetime import datetime
-        if isinstance(date_str, str):
-            if 'T' in date_str:
-                date_str = date_str.split('T')[0]
-            elif ' ' in date_str:
-                date_str = date_str.split(' ')[0]
-        date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
-        year = date.year
-        month = date.month
-        quarter = (month - 1) // 3 + 1
-        return f"{year}Q{quarter}"
-    except:
-        return ''
 
 @admin_exam_bp.route('/api/admin/exams/list_light')
 @login_required
@@ -2485,12 +2578,12 @@ def admin_exam_scores_page(exam_id):
     
     exam_title = exam_res.data.get('title', f'考试 #{exam_id}') if exam_res.data else f'考试 #{exam_id}'
     
-    # ✅ 使用权限函数获取用户角色 
+    # 使用权限函数获取用户角色 
     is_dev = is_developer()
     is_super_admin = session.get('role') == 'super_admin' or is_dev
     
     return render_template(
-        'admin/list_exams_scores.html',
+        'admin/admin_exams_scores.html',
         exam_id=exam_id,
         exam_title=exam_title,
         is_super_admin=is_super_admin  # 传递是否超管/开发者
@@ -3936,7 +4029,7 @@ def export_exams_excel():
             ws.cell(row=row, column=2, value=exam.get('title', ''))
             ws.cell(row=row, column=3, value=exam_id)
             ws.cell(row=row, column=4, value=countries_display)
-            ws.cell(row=row, column=5, value=_get_quarter_from_date(exam.get('created_at')))
+            ws.cell(row=row, column=5, value=get_quarter_from_date(exam.get('created_at')))
             ws.cell(row=row, column=6, value=status_map.get(exam.get('status'), exam.get('status', '')))
 
             # 时间字段转换为本地24小时制

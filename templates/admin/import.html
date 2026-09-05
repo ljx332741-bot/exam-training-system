@@ -12,7 +12,12 @@
 			</button>
 		</div>
 		<div class="card-body">
-			<form method="POST" enctype="multipart/form-data">
+			<form method="POST" enctype="multipart/form-data" id="uploadForm">
+				<!-- 隐藏字段：传递培训国家信息 -->
+				<input type="hidden" name="training_id" value="{{ training_id | default('') }}">
+				<input type="hidden" name="from_binding" value="{{ from_binding | default('false') }}">
+				<input type="hidden" name="training_countries" value="{{ training_countries | default('') }}">
+				
 				<div class="mb-3">
 					<label class="form-label"><span data-i18n="select_docx">选择 .docx 文件</span></label>
 					<input type="file" name="docx_file" class="form-control" accept=".docx" required>
@@ -21,6 +26,17 @@
 						<span data-i18n="import_tips2">📌 考试名称将自动从文档中提取，若无则使用文件名。</span>
 					</div>
 				</div>
+				
+				<!-- 显示预填国家信息（用户提示） -->
+				{% if training_countries and from_binding == 'true' %}
+				<div class="alert alert-info py-2 small">
+					<i class="bi bi-info-circle me-1"></i>
+					<span data-i18n="from_training_countries">来自培训的国家</span>: 
+					<strong>{{ training_countries }}</strong>
+					<span class="text-muted ms-2">（上传后将自动填入考试国家）</span>
+				</div>
+				{% endif %}
+				
 				<button type="submit" class="btn btn-primary"><span data-i18n="upload_parse">🔍 上传并解析</span></button>
 			</form>
 			<hr>
@@ -62,15 +78,17 @@
 				}
 			};
 		} else {
-			if (icon) icon.textContent = '←';
+			// 非绑定模式也显示"关闭"，并尝试关闭窗口
+			if (icon) icon.textContent = '✖';
 			if (text) {
-				text.textContent = t('back') || '返回';
-				text.setAttribute('data-i18n', 'back');
+				text.textContent = t('close') || '关闭';
+				text.setAttribute('data-i18n', 'close');
 			}
 			btn.onclick = function() {
-				if (document.referrer) {
-					history.back();
+				if (window.opener) {
+					window.close();
 				} else {
+					// 如果无法关闭（非弹窗模式），跳转到仪表盘
 					window.location.href = '/admin/dashboard';
 				}
 			};

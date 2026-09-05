@@ -5,6 +5,7 @@ import json
 import pdfkit
 import openpyxl
 import traceback
+import threading
 from io import BytesIO
 from flask import render_template, request, redirect, send_file, url_for, session, flash, jsonify, make_response
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -17,7 +18,7 @@ from services import auth
 from services.export import find_wkhtmltopdf
 from utils.timezone_utils import utc_string_to_local
 from utils.status import get_exam_status, get_training_status
-from utils.common import match_country_code, quarter_to_date_range
+from utils.common import match_country_code, quarter_to_date_range, get_quarter_from_date
 from utils.email_notifier import  _send_training_notifications
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, get_allowed_countries, is_developer
 from utils.cache_manager import clear_training_related_cache, cache_get, invalidate_cache_on_change, training_cache, clear_all_assignment_caches
@@ -394,7 +395,25 @@ def _get_trainings_list(db):
     # 8. 组装返回数据
     for t in paginated:
         tid = t['id']
+
+        # 计算季度
+        start_time = t.get('start_time')
+        created_at = t.get('created_at')
+        logger.info(f"📝 培训 {tid}: start_time={start_time}, created_at={created_at}")
         
+        if start_time:
+            quarter = get_quarter_from_date(start_time)
+            t['quarter'] = quarter if quarter else '-'
+            # 调试日志
+            logger.info(f"📝 培训 {tid}: 使用 start_time 计算季度 = {quarter}")
+        elif created_at:
+            quarter = get_quarter_from_date(created_at)
+            t['quarter'] = quarter if quarter else '-'
+            logger.info(f"📝 培训 {tid}: 使用 created_at 计算季度 = {quarter}")
+        else:
+            t['quarter'] = '-'
+            logger.info(f"📝 培训 {tid}: 无时间字段，季度设为 '-'")
+
         # 签到人数
         user_ids = attendance_map.get(tid, [])
         signed_count = len([uid for uid in user_ids if uid in active_user_ids])
@@ -680,29 +699,7 @@ def _update_training(db):
         update_data['name'] = data['name']
     if 'header_template' in data:
         update_data['header_template'] = data['header_template']
-    if 'start_time' in data and data['start_time'] is not None:
-        update_data['start_time'] = data['start_time']
-    if 'end_time' in data and data['end_time'] is not None:
-        update_data['end_time'] = data['end_time']
-    if 'is_active' in data:
-        update_data['is_active'] = data['is_active']
 
-    # 如果有效期变化，重新计算状态
-    if 'start_time' in update_data or 'end_time' in update_data:
-        start = update_data.get('start_time') or original.get('start_time')
-        end = update_data.get('end_time') or original.get('end_time')
-
-        # 检查是否为占位符
-        if is_draft_time(start) or is_draft_time(end):
-            update_data['dynamic_status'] = 'draft'
-            update_data['is_active'] = False
-        elif start and end:
-            update_data['dynamic_status'] = calculate_dynamic_status(start, end)
-            update_data['is_active'] = True
-        else:
-            update_data['dynamic_status'] = 'draft'
-            update_data['is_active'] = False
-    
     # 处理多国家更新
     if 'countries' in data:
         countries_input = data['countries']
@@ -722,11 +719,69 @@ def _update_training(db):
     
     if 'quarter' in data:
         update_data['quarter'] = data['quarter']
+
+    if 'is_active' in data:
+        update_data['is_active'] = data['is_active']
+
+    logger.info(f"📝 [DEBUG] 原始 start_time: {data.get('start_time')}, type: {type(data.get('start_time'))}")
+    logger.info(f"📝 [DEBUG] 原始 end_time: {data.get('end_time')}, type: {type(data.get('end_time'))}")
+
+    # ========== 关键修复：处理时间 ==========
+    # 注意：这里要处理两种情况：
+    # 1. 字段不存在于 data 中 → 不更新
+    # 2. 字段存在于 data 中，但值为 None 或 '' → 设置为占位符
+    
+    if 'start_time' in data:
+        start_val = data['start_time']
+        # 如果值为 None、空字符串、或 falsy 值，使用占位符
+        if not start_val:  # 这会捕获 None, '', 0, False 等
+            update_data['start_time'] = DRAFT_PLACEHOLDER
+            logger.info(f"📝 start_time 为空，设置为占位符: {DRAFT_PLACEHOLDER}")
+        else:
+            update_data['start_time'] = start_val
+            logger.info(f"📝 start_time 更新为: {start_val}")
+    
+    if 'end_time' in data:
+        end_val = data['end_time']
+        if not end_val:
+            update_data['end_time'] = DRAFT_PLACEHOLDER
+            logger.info(f"📝 end_time 为空，设置为占位符: {DRAFT_PLACEHOLDER}")
+        else:
+            update_data['end_time'] = end_val
+            logger.info(f"📝 end_time 更新为: {end_val}")
+    
+    # ========== 计算状态 ==========
+    if 'start_time' in update_data or 'end_time' in update_data:
+        start = update_data.get('start_time') or original.get('start_time')
+        end = update_data.get('end_time') or original.get('end_time')
+        
+        # 使用统一的 calculate_dynamic_status 函数
+        dynamic_status = calculate_dynamic_status(start, end)
+        update_data['dynamic_status'] = dynamic_status
+        
+        # 只有非草稿状态才激活培训
+        update_data['is_active'] = (dynamic_status != 'draft')
+        
+        logger.info(f"📝 计算状态: {dynamic_status}, is_active={update_data['is_active']}")
+        
+    # ========== 执行更新 ==========
+    logger.info(f"📝 最终 update_data: {update_data}")
     
     if update_data:
         db.table("trainings").update(update_data).eq("id", tid).execute()
         logger.info(f"更新培训成功: id={tid}, 更新字段={list(update_data.keys())}")
 
+        # 验证更新结果
+        verify_res = db.table("trainings").select("start_time, end_time, dynamic_status, is_active").eq("id", tid).maybe_single().execute()
+        if verify_res.data:
+            logger.info(f"📝 [VERIFY] 更新后: start_time={verify_res.data.get('start_time')}, end_time={verify_res.data.get('end_time')}, status={verify_res.data.get('dynamic_status')}")
+            # 返回更新后的状态
+            return jsonify({
+                "success": True,
+                "dynamic_status": verify_res.data.get('dynamic_status'),
+                "is_active": verify_res.data.get('is_active')
+            })
+    
     # 处理培训-学员分配关系（定点推送）
     user_ids = data.get('user_ids')
     if user_ids is not None:  # 注意：空数组表示清空所有分配
@@ -755,7 +810,6 @@ def _update_training(db):
     # 发送培训推送邮件通知
     if data.get('is_active') and start_time and end_time:
         # 异步发送邮件，避免阻塞请求
-        import threading
         thread = threading.Thread(
             target=_send_training_notifications,
             args=(tid, start_time, end_time, user_ids, request.host_url)
@@ -764,12 +818,14 @@ def _update_training(db):
         thread.start()
         logger.info(f"培训 {tid} 邮件通知已加入发送队列")
     
-    return jsonify({"success": True})
-    
     # 更新成功后清除缓存
     training_cache.clear('training_list')
     
-    return jsonify({"success": True})
+    return jsonify({
+        "success": True,
+        "dynamic_status": update_data.get('dynamic_status', original.get('dynamic_status', 'draft')),
+        "is_active": update_data.get('is_active', original.get('is_active', False))
+    })
 
 def _delete_training(db):
     """删除培训 - 支持多国家 + 创建者权限校验"""
@@ -1915,25 +1971,6 @@ def search_trainings():
     
     logger.info(f"[search_trainings] 最终返回 {len(result)} 条数据")
     return jsonify(result)
-
-def _get_quarter_from_date(date_str):
-    """从日期字符串提取季度（格式：2026Q2）"""
-    if not date_str:
-        return ''
-    try:
-        from datetime import datetime
-        if isinstance(date_str, str):
-            if 'T' in date_str:
-                date_str = date_str.split('T')[0]
-            elif ' ' in date_str:
-                date_str = date_str.split(' ')[0]
-        date = datetime.fromisoformat(date_str) if isinstance(date_str, str) else date_str
-        year = date.year
-        month = date.month
-        quarter = (month - 1) // 3 + 1
-        return f"{year}Q{quarter}"
-    except:
-        return ''
 
 @admin_training_bp.route('/api/admin/training/bindings/by_exam')
 @login_required
@@ -4668,7 +4705,7 @@ def export_trainings_excel():
             ws.cell(row=row, column=2, value=t.get('name', ''))
             ws.cell(row=row, column=3, value=tid)
             ws.cell(row=row, column=4, value=countries_display)
-            ws.cell(row=row, column=5, value=_get_quarter_from_date(t.get('created_at')))
+            ws.cell(row=row, column=5, value=get_quarter_from_date(t.get('created_at')))
             ws.cell(row=row, column=6, value=status_map.get(t.get('dynamic_status', 'draft'), t.get('dynamic_status', '')))
 
             # 时间字段转换为本地24小时制
@@ -4757,7 +4794,7 @@ def get_dashboard_trainings():
     if not trainings:
         return jsonify({"data": [], "total": 0})
     
-    # ✅ 批量获取所有培训的绑定数量（一次查询）
+    # 批量获取所有培训的绑定数量（一次查询）
     training_ids = [t['id'] for t in trainings]
     
     # 批量查询绑定数量
@@ -4773,7 +4810,7 @@ def get_dashboard_trainings():
         tid = b.get('training_id')
         bind_count_map[tid] = bind_count_map.get(tid, 0) + 1
     
-    # ✅ 批量获取绑定考试详情（一次查询）
+    # 批量获取绑定考试详情（一次查询）
     bind_detail_res = admin_db.table("training_exam_bindings") \
         .select("training_id, exam_id, exams!inner(title)") \
         .in_("training_id", training_ids) \
@@ -4792,7 +4829,7 @@ def get_dashboard_trainings():
             'exam_title': exam_data.get('title', f"考试 {b.get('exam_id')}")
         })
     
-    # ✅ 批量获取签到人数（一次查询）
+    # 批量获取签到人数（一次查询）
     att_res = admin_db.table("training_attendances") \
         .select("training_id", count="exact") \
         .in_("training_id", training_ids) \
@@ -4810,10 +4847,37 @@ def get_dashboard_trainings():
         t['signed_count'] = att_count_map.get(tid, 0)
         t['binding_count'] = bind_count_map.get(tid, 0)
         t['binding_exams'] = bind_exams_map.get(tid, [])
-        
+
         if t['binding_count'] > 0:
             logger.info(f"培训 {tid} 有 {t['binding_count']} 个绑定考试")
-    
+
+        # 计算季度
+        start_time = t.get('start_time')
+        end_time = t.get('end_time')
+        status = t.get('dynamic_status', 'draft')
+
+        # 检测占位符
+        is_draft = status == 'draft'
+        is_placeholder = False
+        if start_time and end_time:
+            is_placeholder = '1970-01-01' in str(start_time) or '1970-01-01' in str(end_time)
+        
+        # 决定是否显示时间
+        if is_draft or is_placeholder or not start_time or not end_time:
+            t['display_quarter'] = '-'
+            t['display_time_range'] = '未设置Not set'
+            t['has_valid_time'] = False
+        else:
+            t['display_quarter'] = get_quarter_from_date(start_time)
+            t['display_time_range'] = f"{format_datetime_local(start_time)} - {format_datetime_local(end_time)}"
+            t['has_valid_time'] = True
+
+        # 保留原始 quarter 字段（用于其他用途）
+        if start_time and not is_draft and not is_placeholder:
+            t['quarter'] = get_quarter_from_date(start_time)
+        else:
+            t['quarter'] = '-'
+
     return jsonify({
         "data": trainings,
         "total": len(trainings)
@@ -4929,3 +4993,4 @@ def get_push_user_list():
         "total": len(users),
         "countries": final_countries  # 返回实际使用的国家列表，便于前端显示
     })
+

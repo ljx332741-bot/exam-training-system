@@ -1232,6 +1232,24 @@
             const row = tbody.insertRow();
             row.setAttribute('data-id', t.id);
 
+            // 将 countries 转换为 JSON 字符串
+            let countriesJson = '[]';
+            if (t.countries) {
+                try {
+                    countriesJson = typeof t.countries === 'string' 
+                        ? t.countries 
+                        : JSON.stringify(t.countries);
+                } catch(e) {
+                    countriesJson = '[]';
+                }
+            }
+            row.setAttribute('data-countries', countriesJson);
+            
+            // 如果有单个国家，也添加 data-country（兼容）
+            if (t.country) {
+                row.setAttribute('data-country', t.country);
+            }
+
             //（多国家）解析国家列表
             const countries = parseTrainingCountries(t);
             const isMultiCountry = countries.length > 1;
@@ -2078,6 +2096,16 @@
         if (updates.name) {
             updates.name = updates.name.replace(/[▶➕✕]/g, '').trim();
         }
+
+        // 如果更新了时间，重新计算状态（作为备用方案）
+        if ((updates.start_time !== undefined || updates.end_time !== undefined) && !updates.dynamic_status) {
+            // 如果后端没有返回状态，前端计算
+            const training = cachedData[index];
+            const start = updates.start_time !== undefined ? updates.start_time : training.start_time;
+            const end = updates.end_time !== undefined ? updates.end_time : training.end_time;
+            updates.dynamic_status = calculateStatusFromTime(start, end);
+        }
+        
         // 更新数据
         cachedData[index] = { ...cachedData[index], ...updates };
         
@@ -2086,6 +2114,24 @@
         
         console.log('✅ 本地更新培训成功:', trainingId, updates);
         return true;
+    }
+
+    // 辅助函数：前端计算状态
+    function calculateStatusFromTime(startTime, endTime) {
+        if (!startTime || !endTime) return 'draft';
+        if ('1970-01-01' in startTime || '1970-01-01' in endTime) return 'draft';
+        
+        try {
+            const now = new Date();
+            const start = new Date(startTime);
+            const end = new Date(endTime);
+            if (isNaN(start.getTime()) || isNaN(end.getTime())) return 'draft';
+            if (now < start) return 'pending';
+            if (now > end) return 'closed';
+            return 'active';
+        } catch {
+            return 'draft';
+        }
     }
 
     /**
@@ -2416,8 +2462,8 @@
                     }
                     
                     // 转换时间为 UTC
-                    const startISO = newStartTime ? localDateTimeToUTC(newStartTime) : null;
-                    const endISO = newEndTime ? localDateTimeToUTC(newEndTime) : null;
+                    const startISO = newStartTime ? localDateTimeToUTC(newStartTime) : '';
+                    const endISO = newEndTime ? localDateTimeToUTC(newEndTime) : '';
                     
                     // 显示加载状态
                     const saveBtn = actionsCell.querySelector('.save-edit-btn');
@@ -2439,12 +2485,15 @@
                         });
                         
                         if (res.ok) {
+                            const result = await res.json();  // ✅ 获取返回的 JSON
+                            const newStatus = result.dynamic_status;  // ✅ 获取新状态
                             // 使用本地更新（不刷新列表）
                             updateTrainingLocally(trainingId, {
                                 name: newName,
                                 countries: selectedCountries,
                                 start_time: startISO,
-                                end_time: endISO
+                                end_time: endISO,
+                                dynamic_status: newStatus
                             });
                             
                             if (typeof showToast === 'function') {
@@ -4407,9 +4456,21 @@
         });
 
         if (res.ok) {
+            const result = await res.json();  // 获取返回结果
+
+            // 更新本地缓存中的状态
+            updateTrainingFieldLocally(currentTrainingId, 'dynamic_status', result.dynamic_status);
+            updateTrainingFieldLocally(currentTrainingId, 'is_active', result.is_active);
+
+            // loadTrainings(true);
+            
             bootstrap.Modal.getInstance(document.getElementById('pushModal')).hide();
-            loadTrainings(true);
-            alert(safeT('t_notification_push_success') + (selectedUserIds.length ? '' : safeT('t_all_registered_users')));
+            // 使用 toast 替代 alert
+            if (typeof showToast === 'function') {
+                showToast(safeT('t_notification_push_success'), 'success');
+            } else {
+                alert(safeT('t_notification_push_success') + (selectedUserIds.length ? '' : safeT('t_all_registered_users')));
+            }
         } else {
             const err = await res.json();
             alert(safeT('t_push_failed') + (err.message || t('t_network_err')));
@@ -5963,20 +6024,174 @@
     }
 
     /**
-    * 重写 showAddExamModal - 增强考试下拉选项显示（修复版）
+    * 增强考试下拉选项显示（修复版）
     */
     async function showAddExamModal(trainingId) {
         console.log('showAddExamModal 被调用, trainingId:', trainingId);
+
+        // 1. 首先获取培训行
+        const trainingRow = document.querySelector(`tr[data-id="${trainingId}"]`);
+        if (!trainingRow) {
+            console.warn('未找到培训行:', trainingId);
+            if (typeof showToast === 'function') {
+                showToast('无法获取培训信息，请刷新页面重试', 'warning');
+            }
+            return;
+        }
+
+        console.log('🔍 trainingRow:', trainingRow);
+        console.log('🔍 trainingRow HTML:', trainingRow.outerHTML);
         
+        // ✅ 2. 调试：检查所有可能的数据源
+        console.log('🔍 window.cachedData:', window.cachedData);
+        console.log('🔍 window.cachedData 长度:', window.cachedData?.length);
+        
+        // 2. 获取培训名称和国家
+        let trainingName = '';
+        let trainingCountries = [];
+        
+        // 从培训行获取名称
+        const nameLink = trainingRow.querySelector('.training-name-link');
+        if (nameLink) {
+            trainingName = nameLink.textContent.trim();
+            console.log('🔍 培训名称:', trainingName);
+        }
+    
+        // ========== 调试：检查 country-cell ==========
+        const countryCell = trainingRow.querySelector('.country-cell');
+        console.log('🔍 country-cell:', countryCell);
+        if (countryCell) {
+            console.log('🔍 country-cell textContent:', countryCell.textContent);
+            console.log('🔍 country-cell innerHTML:', countryCell.innerHTML);
+            
+            // 检查 .badge 元素
+            const badges = countryCell.querySelectorAll('.badge');
+            console.log('🔍 .badge 元素数量:', badges.length);
+            badges.forEach((el, i) => {
+                console.log(`🔍 .badge[${i}]:`, el.textContent);
+            });
+        }
+        
+        // ========== 从多个来源获取国家 ==========
+        
+        // 来源1：从缓存数据获取
+        if (window.cachedData && Array.isArray(window.cachedData)) {
+            const training = window.cachedData.find(t => Number(t.id) === Number(trainingId));
+            console.log('🔍 从缓存找到的培训:', training);
+            if (training) {
+                // 检查 countries 字段
+                if (training.countries) {
+                    try {
+                        trainingCountries = typeof training.countries === 'string' 
+                            ? JSON.parse(training.countries) 
+                            : training.countries;
+                        console.log('✅ 从缓存 countries 获取:', trainingCountries);
+                    } catch (e) {
+                        console.warn('⚠️ 解析 countries 失败:', e);
+                        trainingCountries = [];
+                    }
+                }
+                // 如果 countries 为空，检查 country 字段
+                if (trainingCountries.length === 0 && training.country) {
+                    trainingCountries = [training.country];
+                    console.log('✅ 从缓存 country 获取:', trainingCountries);
+                }
+            }
+        }
+        
+        // 来源2：从 DOM 提取（使用正则匹配国家代码）
+        if (trainingCountries.length === 0 && countryCell) {
+            const text = countryCell.textContent.trim();
+            console.log('🔍 从 DOM 提取国家, 文本:', text);
+            
+            // 匹配 2-3 个大写字母的国家代码
+            const matches = text.match(/\b[A-Z]{2,3}\b/g);
+            console.log('🔍 正则匹配结果:', matches);
+            if (matches) {
+                trainingCountries = matches;
+                console.log('✅ 从 DOM 正则提取:', trainingCountries);
+            }
+        }
+        
+        // 来源3：从 data 属性获取（如果存在）
+        if (trainingCountries.length === 0) {
+            const countryAttr = trainingRow.dataset.countries;
+            console.log('🔍 data-countries 属性:', countryAttr);
+            if (countryAttr) {
+                try {
+                    trainingCountries = JSON.parse(countryAttr);
+                    console.log('✅ 从 data-countries 获取:', trainingCountries);
+                } catch {
+                    trainingCountries = countryAttr.split(',').map(c => c.trim());
+                    console.log('✅ 从 data-countries 分割获取:', trainingCountries);
+                }
+            }
+        }
+        
+        // 来源4：从 training 对象的 countries 字段（如果有全局 trainings 变量）
+        if (trainingCountries.length === 0 && window.trainings) {
+            const training = window.trainings.find(t => t.id === trainingId);
+            console.log('🔍 window.trainings 中的培训:', training);
+            if (training) {
+                if (training.countries) {
+                    try {
+                        trainingCountries = typeof training.countries === 'string' 
+                            ? JSON.parse(training.countries) 
+                            : training.countries;
+                        console.log('✅ 从 window.trainings 获取:', trainingCountries);
+                    } catch (e) {
+                        trainingCountries = [];
+                    }
+                }
+            }
+        }
+        
+        // 过滤空值并去重
+        trainingCountries = trainingCountries.filter(c => c && c.trim() && /^[A-Z]{2,3}$/.test(c.trim()));
+        trainingCountries = [...new Set(trainingCountries)];
+        
+        console.log('📋 最终培训国家:', trainingCountries);
+        
+        // 如果没有国家信息，尝试从培训 API 获取
+        if (trainingCountries.length === 0) {
+            console.log('⚠️ 所有来源都未获取到国家，尝试从 API 获取...');
+            try {
+                const apiRes = await fetch(`/api/admin/trainings/${trainingId}`);
+                if (apiRes.ok) {
+                    const apiData = await apiRes.json();
+                    const training = apiData.data || apiData;
+                    console.log('🔍 API 返回的培训:', training);
+                    
+                    if (training.countries) {
+                        trainingCountries = typeof training.countries === 'string' 
+                            ? JSON.parse(training.countries) 
+                            : training.countries;
+                        console.log('✅ 从 API 获取 countries:', trainingCountries);
+                    } else if (training.country) {
+                        trainingCountries = [training.country];
+                        console.log('✅ 从 API 获取 country:', trainingCountries);
+                    }
+                }
+            } catch (e) {
+                console.warn('⚠️ API 获取国家失败:', e);
+            }
+        }
+        
+        // 如果仍然没有国家，显示错误并返回
+        if (trainingCountries.length === 0) {
+            console.error('❌ 无法获取培训国家信息');
+            if (typeof showToast === 'function') {
+                showToast('无法获取培训国家信息，请确保培训已设置国家', 'error');
+            }
+            return;
+        }
+        
+        console.log('📋 培训信息:', { trainingName, trainingCountries });
         // 获取可用的考试列表
         const timestamp = Date.now();
         const res = await fetch(`/api/admin/training/${trainingId}/bindings?_t=${timestamp}`);
         const data = await res.json();
         const availableExams = data.available_exams || [];
-        
-        // 🔥 获取培训名称
-        const trainingRow = document.querySelector(`tr[data-id="${trainingId}"]`);
-        const trainingName = trainingRow ? trainingRow.querySelector('.name-cell')?.innerText || trainingId : trainingId;
         
         // 创建模态框
         const modalId = 'addExamModal_' + Date.now();
@@ -6252,16 +6467,76 @@
             }
         });
         
-        // 🔥 点击下拉项时关闭下拉（由 item 的 click 事件处理）
-        
         // ========== 新建考试按钮 ==========
         document.getElementById(`createNewExamBtn_${modalId}`).addEventListener('click', function() {
+            console.log('🔴 新建考试按钮被点击！');
+            console.log('🔴 trainingCountries 值:', trainingCountries);
+            // ✅ 使用 trainingCountries（来自闭包）
+            console.log('📤 新建考试 - 培训国家:', trainingCountries);
+
+            // 如果 trainingCountries 为空，重新获取
+            if (trainingCountries.length === 0) {
+                console.warn('⚠️ trainingCountries 为空，尝试重新获取...');
+                // 重新从 DOM 获取
+                const row = document.querySelector(`tr[data-id="${trainingId}"]`);
+                if (row) {
+                    const countryAttr = row.dataset.countries;
+                    if (countryAttr) {
+                        try {
+                            const parsed = JSON.parse(countryAttr);
+                            if (Array.isArray(parsed)) {
+                                trainingCountries = parsed;
+                                console.log('✅ 重新获取成功:', trainingCountries);
+                            }
+                        } catch(e) {
+                            // 忽略
+                        }
+                    }
+                }
+            }
+            
+            if (trainingCountries.length === 0) {
+                if (typeof showToast === 'function') {
+                    showToast('无法获取培训国家信息，请确保培训已设置国家', 'warning');
+                }
+                return;
+            }
+            
+            const countryParam = trainingCountries.join(',');
+            const countriesJson = JSON.stringify(trainingCountries);
+            
+            let createUrl = `/admin/import?mode=create&training_id=${trainingId}&from_binding=true`;
+            createUrl += `&training_countries=${encodeURIComponent(countryParam)}`;
+            createUrl += `&countries=${encodeURIComponent(countriesJson)}`;
+            
+            if (trainingCountries.length === 1) {
+                createUrl += `&country=${encodeURIComponent(trainingCountries[0])}`;
+            }
+            
+            console.log('📤 新建考试 URL:', createUrl);
+            
+            // 先关闭模态框，再打开新窗口（避免 aria-hidden 警告）
             modal.hide();
-            const trainingCountry = trainingRow?.querySelector('.country-cell')?.innerText || '';
-            const createUrl = `/admin/import?training_id=${trainingId}&country=${trainingCountry}&from_binding=true`;
-            window.open(createUrl, '_blank');
+            setTimeout(() => {
+                window.open(createUrl, '_blank');
+            }, 300);
         });
         
+        // 模态框关闭后清理焦点
+        modalElement.addEventListener('hidden.bs.modal', function() {
+            setTimeout(() => {
+                modalElement.remove();
+            }, 300);
+            
+            // 将焦点移回触发按钮
+            const triggerBtn = document.querySelector(`.expand-icon[data-training-id="${trainingId}"]`);
+            if (triggerBtn) {
+                setTimeout(() => {
+                    triggerBtn.focus();
+                }, 100);
+            }
+        });
+
         // ========== 确认绑定按钮 ==========
         modalElement.querySelector('.confirm-add-btn').onclick = async function() {
             // 防重复点击检查
@@ -6303,17 +6578,17 @@
                 const result = await res.json();
 
                 if (result.success) {
-                    // ✅ 清除相关缓存
+                    // 清除相关缓存
                     sessionStorage.removeItem(`training_bindings_${trainingId}`);
                     sessionStorage.removeItem('training_bindings_data');
                     
-                    // ✅ 获取最新的绑定数据并更新缓存
+                    // 获取最新的绑定数据并更新缓存
                     try {
                         const bindingsRes = await fetch(`/api/admin/training/${trainingId}/bindings?_t=${Date.now()}`);
                         const bindingsData = await bindingsRes.json();
                         const bindings = bindingsData.bindings || [];
                         
-                        // ✅ 更新内存缓存
+                        // 更新内存缓存
                         const training = cachedData.find(t => Number(t.id) === Number(trainingId));
                         if (training) {
                             training.binding_exams = bindings.map(b => ({
@@ -6338,7 +6613,6 @@
                                 }
                             }
                             
-                            // ✅ 保存到 sessionStorage
                             try {
                                 const cacheKey = `training_bindings_${trainingId}`;
                                 sessionStorage.setItem(cacheKey, JSON.stringify({
@@ -6357,7 +6631,7 @@
                         }
                     }
                     
-                    // ✅ 更新 DOM（徽章和图标）
+                    // 更新 DOM（徽章和图标）
                     const row = document.querySelector(`tr[data-id="${trainingId}"]`);
                     if (row) {
                         const badge = row.querySelector('.badge-count');

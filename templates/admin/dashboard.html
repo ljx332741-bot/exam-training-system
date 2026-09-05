@@ -272,220 +272,17 @@
 						<button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#exportFilterModal">
 							<i class="bi bi-download me-1"></i><span data-i18n="export_training_exam_result">导出培训测评报告</span>
 						</button>
-						<a href="{{ url_for('admin_import') }}" class="btn btn-sm btn-outline-success"><i class="bi bi-upload me-1"></i>
+						<button class="btn btn-primary btn-sm" onclick="openImportPage()">
+                            <i class="bi bi-upload me-1"></i>
 							<span data-i18n="import_examination_word">导入Word题库</span>
-						</a>
+						</button>
 					</div>
 				</div>
 
                 <!-- ============================================================
-                    培训列表 - 使用 include 引入 HTML
+                    培训考试列表及考生考试状态 - 使用 include 引入 HTML
                     ============================================================ -->
-                {% include 'admin/dashboard/_training_list.html' %}
-
-                <!-- ============================================================
-                    培训与考试之间的分界线
-                    ============================================================ -->
-                <div class="section-divider training-exam-divider">
-                    <span class="divider-line"></span>
-                    <span class="divider-icon"><i class="bi bi-arrow-down-circle-fill"></i></span>
-                    <span class="divider-line"></span>
-                </div>
-
-                <!-- ============================================================
-                    考试列表
-                    ============================================================ -->
-
-				<div class="card-body p-0 exam-list-wrapper">
-                    <!-- 仪表盘考试管理exams_for_table = get_exams_for_display  -->
-					<div class="table-responsive">
-						<table class="table table-hover align-middle mb-0 exam-dashboard-table" style="min-width: 1000px;" >
-							<style>
-								.table-responsive {
-									overflow-x: auto;
-									white-space: nowrap;
-								}
-								.table td, .table th {
-									vertical-align: middle;
-								}
-								/* 允许部分列在内容过长时换行（可选），但保持表格整体不换行 */
-								.time-range {
-									min-width: 280px;
-								}
-								.btn-group-sm .btn {
-									white-space: nowrap;
-								}
-							</style>
-							<thead class="table-light">
-								<tr>
-									<th><span data-i18n="exam_name">考试名称</span></th>
-									<th>exid</th>
-									<th><span data-i18n="status">状态</span></th>
-									<th><span data-i18n="candidate_qty">参考人数</span></th>
-									<th><span data-i18n="actions">操作</span></th>
-								</tr>
-							</thead>
-							<tbody>
-								{% for ex in exams_table | default([]) %}
-									<tr>
-										<td class="fw-medium" style="display: flex; flex-direction: column;">
-											{# 进行中的考试名称显示为可点击链接 #}
-											{% if ex.status == 'active' %}
-												<a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}"  target="_blank"
-													class="text-decoration-none fw-semibold">
-													{{ ex.title }}
-                                                    {% if ex.has_binding %}
-                                                    <span class="badge bg-success ms-1" 
-                                                        style="font-size: 0.6rem; cursor: help;"
-                                                        data-i18n-title="binded_training_with_names"
-                                                        data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
-                                                        title="">
-                                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
-                                                    </span>
-                                                    {% endif %}
-												</a>
-											{% else %}
-												<span class="fw-semibold">
-                                                    {{ ex.title }}
-                                                    {% if ex.has_binding %}
-                                                    <span class="badge bg-success ms-1" 
-                                                        style="font-size: 0.6rem; cursor: help;"
-                                                        data-i18n-title="binded_training_with_names"
-                                                        data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
-                                                        title="">
-                                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
-                                                    </span>
-                                                    {% endif %}
-                                                </span>
-											{% endif %}
-											<small class="text-muted" style="margin-top: 4px;">
-												<!-- 显示多个国家标签 -->
-												<span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
-												{{ (ex.start_time | format_datetime_local) or '' }}
-												- 
-												{{ (ex.end_time | format_datetime_local) or '' }}
-												| {{ ex.duration }}<span data-i18n="minutes">分钟</span> 
-												| <span data-i18n="att_reg">应考|实考</span>: 
-												{{ ex.submitted_count }}/{{ ex.assigned_count }}
-											</small>
-										</td>
-										<td class="text-muted">{{ ex.id }}</td>
-										<td>
-											{% if ex.status == 'draft' %}
-												<span class="badge bg-secondary"><span data-i18n="draft">草稿</span></span>
-											{% elif ex.status == 'created' %}
-												<span class="badge bg-info"><span data-i18n="not_started">未开始</span></span>
-											{% elif ex.status == 'active' %}
-												<span class="badge bg-success"><span data-i18n="ongoing">进行中</span></span>
-											{% elif ex.status == 'closed' %}
-												<span class="badge bg-danger"><span data-i18n="closed">已关闭</span></span>
-											{% elif ex.status == 'deleted' %}
-												<span class="badge bg-dark"><span data-i18n="deleted">已删除</span></span>
-											{% else %}
-												{{ ex.status }}
-											{% endif %}
-										</td>
-										<td class="text-muted">{{ ex.submitted_count | default(0) }}</td>
-										<td>
-											<div class="btn-group btn-group-sm" role="group">
-                                                {# ===== 新增：题库按钮 ===== #}
-                                                {# 根据考试状态决定显示哪种题库按钮 #}
-                                                {% if ex.status not in ['deleted'] %}
-                                                    {# 草稿或未开始：显示可编辑的题库按钮 #}
-                                                    {% if ex.status == 'draft' or ex.status == 'created' %}
-                                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}" 
-                                                        class="btn btn-sm btn-outline-info" 
-                                                        data-i18n-title="edit_question_bank"
-                                                        title="编辑题库">
-                                                            <i class="bi bi-book"></i> 
-                                                            <span data-i18n="question_bank">题库</span>
-                                                        </a>
-                                                    {# 进行中或已关闭：显示只读的查看按钮 #}
-                                                    {% elif ex.status == 'active' or ex.status == 'closed' %}
-                                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}?readonly=true" 
-                                                        class="btn btn-sm btn-outline-secondary" 
-                                                        data-i18n-title="view_question_bank"
-                                                        title="查看题目（只读模式）">
-                                                            <i class="bi bi-eye"></i> 
-                                                            <span data-i18n="view_questions">查看</span>
-                                                        </a>
-                                                    {% endif %}
-                                                {% endif %}
-												<button class="btn btn-outline-secondary batch-export" data-id="{{ ex.id }}">PDF</button> 
-												<!-- 重置考生状态（需配合用户选择，示例中简化） -->
-												<button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}"><span data-i18n="setting">推送</span></button>
-												{% if ex.dynamic_status == 'draft' %}
-													<button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}"
-                                                        onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
-                                                        ✏️ <span data-i18n="edit">编辑</span>
-                                                    </button>
-												{% endif %}
-												<button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}"><span data-i18n="copy">拷贝</span></button>
-												<!-- 删除考试（危险操作） -->
-												<button class="btn btn-sm btn-outline-danger delete-exam-btn" data-id="{{ ex.id }}">
-													🗑️ <span data-i18n="delete">删除</span>
-												</button>
-											</div>
-										</td>
-									</tr>
-								{% else %}
-									<tr><td colspan="5" class="text-center text-muted py-4"><span data-i18n="no_exam_datas">暂无考试数据</span></td></tr>
-								{% endfor %}
-							</tbody>
-						</table>
-					</div>
-
-                    <!-- ============================================================
-                        考生考试状态（原有内容保持不变）
-                        ============================================================ -->
-					<!-- 仪表盘考生考试状态 exams_for_selector = get_exams_for_display-->
-					<div class="card shadow-sm border-0 mt-4">
-						<div class="card-header bg-light fw-bold">
-							<i class="bi bi-people me-2"></i><span data-i18n="view_status">考生考试状态（选择考试查看）</span>
-						</div>
-						<div class="card-body p-0">
-							<select id="exam-selector" class="form-select mb-3">
-								<option value="" data-i18n="select_exam">-- 选择考试 --</option>
-								{% for ex in exams_selector %}
-									<option value="{{ ex.id }}">
-                                        {{ ex.title }}
-                                        {% if ex.has_binding %}
-                                            🔗
-                                        {% endif %}
-                                    </option>
-								{% endfor %}
-							</select>
-							<!-- 筛选栏 -->
-							<div class="row g-2 mb-3 px-3">
-								<div class="col-md-3">
-									<input type="text" id="statusFilterName" class="form-control form-control-sm" 
-										placeholder="姓名/邮箱" data-i18n-placeholder="placeholder_mail_name">
-								</div>
-								<div class="col-md-3">
-									<input type="text" id="statusFilterWh" class="form-control form-control-sm" list="whDatalist" 
-									data-i18n-placeholder="placeholder_fuzzy_match_whidname" placeholder="库房编码/名称">
-									<datalist id="whDatalist"></datalist>
-								</div>
-								<div class="col-md-2">
-									<select id="statusFilterIsPartner" class="form-select form-select-sm">
-									<option value="" data-i18n="supplier_all">服务商(全部)</option>
-									<option value="Y" data-i18n="partner_yes">是</option>
-									<option value="N" data-i18n="partner_no">否</option>
-									</select>
-								</div>
-								<div class="col-md-2">
-									<input type="text" id="statusFilterCountry" class="form-control form-control-sm" list="countryDatalist" 
-										placeholder="国家" data-i18n-placeholder="placeholder_country">
-									<datalist id="countryDatalist"></datalist>
-								</div>
-								<div class="col-md-2">
-									<button id="statusResetFilterBtn" class="btn btn-sm btn-secondary w-100"><span data-i18n="reset">重置</span></button>
-								</div>
-							</div>
-							<div id="status-table-container"></div>
-						</div>	
-					</div>
-				</div>
+                {% include 'admin/dashboard/_training_exam_list.html' %}
 			</div>
 		</div>
 	</div>
@@ -5883,6 +5680,7 @@
 				renderExamStatusTable();
 			});
 		}
+
         if (window.i18n) {
             // 首次加载时应用翻译
             window.i18n.applyTranslations();
@@ -6848,5 +6646,10 @@
 
     // 暴露函数给全局
     window.openLogConfigModal = openLogConfigModal;
+    
+    function openImportPage() {
+        // ✅ 使用 window.open 打开，这样 window.close() 才能正常工作
+        window.open('{{ url_for("admin_exam.admin_import") }}', '_blank');
+    }
 </script>
 {% endblock %}

@@ -336,35 +336,6 @@ def parse_country_list(training_country):
     
     return []
 
-def calculate_dynamic_status(start_time, end_time):
-    """
-    计算培训的动态状态（工具函数，供其他地方调用）
-    如果数据库已有 dynamic_status 字段，可以直接读取
-    """
-    logger.info("=" * 60)
-    logger.info("📝 [CALC_STATUS] 被调用")
-    logger.info(f"📝 [CALC_STATUS] start_time={start_time}, end_time={end_time}")
-    logger.info(f"📝 [CALC_STATUS] 调用栈:")
-    for line in traceback.format_stack()[-5:-1]:
-        logger.info(f"    {line.strip()}")
-    logger.info("=" * 60)
-    
-    if not start_time or not end_time:
-        logger.info(f"📝 [CALC_STATUS] 检测到占位符，返回 draft")
-        return 'draft'
-    try:
-        now = datetime.now(timezone.utc)
-        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-        if now < start_dt:
-            return 'pending'
-        elif now > end_dt:
-            return 'closed'
-        else:
-            return 'active'
-    except Exception:
-        return 'draft'
-
 """
 及格分数同步工具模块
 确保 exams 表和 training_exam_bindings 表的 pass_score 保持一致
@@ -463,29 +434,66 @@ def sync_binding_pass_score_to_exam(binding_id, new_pass_score, db=None):
         logger.error(f"❌ 反向同步及格分数失败: binding_id={binding_id}, error={e}")
         return {"synced": False, "reason": str(e)}
 
-DRAFT_PLACEHOLDER = '1970-01-01T00:00:00+00:00'
+DRAFT_PLACEHOLDER = '1970-01-01T00:00:00Z'
 
 def is_draft_time(time_str):
-    """检查是否为草稿占位时间"""
+    """检查是否为草稿占位时间（增强版）"""
     if not time_str:
         return True
-    # ✅ 兼容多种格式
-    return (time_str == '1970-01-01T00:00:00Z' or 
-            time_str == '1970-01-01T00:00:00+00:00' or
-            time_str.startswith('1970-01-01'))
+    
+    # 转换为字符串
+    time_str = str(time_str)
+    
+    # 检查多种占位符格式
+    draft_patterns = [
+        '1970-01-01',
+        '1970-01-01T00:00:00',
+        '1970-01-01 00:00:00',
+        '1970-01-01T00:00:00Z',
+        '1970-01-01T00:00:00+00:00',
+        '1970-01-01 00:00:00+00:00',
+        '1970-01-01T00:00:00.000Z',
+        '1970-01-01 00:00:00.000Z',
+        '1970-01-01T00:00:00.000+00:00',
+    ]
+    
+    for pattern in draft_patterns:
+        if pattern in time_str:
+            return True
+    
+    # 额外检查：如果年份是 1970，也视为占位符
+    if '1970' in time_str:
+        return True
+    
+    return False
 
 def calculate_dynamic_status(start_time, end_time):
     """计算培训的动态状态（统一版本）"""
-    # ✅ 添加日志
+    logger.info("=" * 60)
+    logger.info("📝 [CALC_STATUS] 被调用")
     logger.info(f"📝 [CALC_STATUS] 输入: start_time={start_time}, end_time={end_time}")
-
-    # ✅ 检查是否为占位符（草稿）
+    logger.info(f"📝 [CALC_STATUS] 调用栈:")
+    for line in traceback.format_stack()[-5:-1]:
+        logger.info(f"    {line.strip()}")
+    logger.info("=" * 60)
+    
+    # ✅ 第一步：检查是否为占位符（草稿）
     if is_draft_time(start_time) or is_draft_time(end_time):
         logger.info(f"📝 [CALC_STATUS] 检测到占位符，返回 draft")
         return 'draft'
     
+    # ✅ 第二步：检查时间是否为空
     if not start_time or not end_time:
         logger.info(f"📝 [CALC_STATUS] 时间为空，返回 draft")
+        return 'draft'
+
+    # 检查年份是否有效（小于 2000 年视为无效）
+    try:
+        start_year = int(str(start_time)[:4])
+        end_year = int(str(end_time)[:4])
+        if start_year < 2000 or end_year < 2000:
+            return 'draft'
+    except:
         return 'draft'
     
     try:
@@ -507,4 +515,96 @@ def calculate_dynamic_status(start_time, end_time):
     except Exception:
         logger.error(f"📝 [CALC_STATUS] 异常: {e}")
         return 'draft'
+
+def get_dashboard_trainings_data():
+    """
+    获取仪表盘培训列表数据（供 dashboard.html 使用）
+    只返回草稿、未开始、进行中三种状态
+    """
+    db = get_supabase()
+    admin_db = get_supabase_admin()
+    
+    # 获取权限范围
+    allowed_countries = get_admin_allowed_countries()
+    is_dev = is_developer()
+    
+    # 查询培训（只查询有效状态）
+    query = db.table("trainings").select("*").is_("deleted_at", "null")
+    
+    # 只查询草稿、未开始、进行中（排除已关闭）
+    query = query.in_("dynamic_status", ['draft', 'pending', 'active'])
+    
+    # 权限过滤
+    if not is_dev and allowed_countries is not None and allowed_countries:
+        or_conditions = []
+        for c in allowed_countries:
+            or_conditions.append(f"country.eq.{c}")
+            or_conditions.append(f"countries.cs.{{{c}}}")
+        if or_conditions:
+            query = query.or_(','.join(or_conditions))
+    elif not is_dev and allowed_countries is not None and not allowed_countries:
+        return []
+    
+    query = query.order("created_at", desc=True)
+    
+    res = query.execute()
+    trainings = res.data or []
+    
+    if not trainings:
+        return []
+    
+    training_ids = [t['id'] for t in trainings]
+    
+    # 批量获取绑定数量
+    bind_count_res = admin_db.table("training_exam_bindings") \
+        .select("training_id", count="exact") \
+        .in_("training_id", training_ids) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    bind_count_map = {}
+    for b in (bind_count_res.data or []):
+        tid = b.get('training_id')
+        bind_count_map[tid] = bind_count_map.get(tid, 0) + 1
+    
+    # 批量获取签到人数
+    att_res = admin_db.table("training_attendances") \
+        .select("training_id", count="exact") \
+        .in_("training_id", training_ids) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    att_count_map = {}
+    for a in (att_res.data or []):
+        tid = a.get('training_id')
+        att_count_map[tid] = att_count_map.get(tid, 0) + 1
+    
+    result = []
+    for t in trainings:
+        tid = t['id']
+        
+        # 计算季度
+        start_time = t.get('start_time')
+        if start_time:
+            quarter = get_quarter_from_date(start_time)
+        else:
+            created_at = t.get('created_at')
+            quarter = get_quarter_from_date(created_at) if created_at else '-'
+        
+        result.append({
+            'id': t['id'],
+            'name': t.get('name', ''),
+            'dynamic_status': t.get('dynamic_status', 'draft'),
+            'start_time': t.get('start_time'),
+            'end_time': t.get('end_time'),
+            'created_at': t.get('created_at'),
+            'countries_display': get_training_countries_display(t, allowed_countries),
+            'countries_list': parse_training_countries(t),
+            'country': t.get('country'),
+            'signed_count': att_count_map.get(tid, 0),
+            'binding_count': bind_count_map.get(tid, 0),
+            'quarter': quarter,
+        })
+    
+    return result
 

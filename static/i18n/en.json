@@ -1385,7 +1385,8 @@
 "help_binding_reassign": "<strong>Reassign</strong>: Reassign exams to users who have signed in but haven't been assigned yet.",
 
 "exam_management_help_title": "Exam Management",
-"create_exam": "Create & Edit Exam",
+"create_edit_exam": "Create & edit exam",
+"create_exam": "Create Exam",
 "help_create_exam": "There are two ways to create an exam:",
 "help_import_word": "<strong>Import Word</strong>: Upload a Word document in the required format for automatic parsing.",
 "help_copy_exam": "<strong>Copy Exam</strong>: Copy from an existing exam to quickly create a new one.",
@@ -1564,5 +1565,11 @@
 "try_adjust_search": "Try adjusting the search filter",
 "no_matching_results": "No matching results",
 
-"show_header_footer": "Show Header & Footer"
+"show_header_footer": "Show Header & Footer",
+"edit_question_bank": "Edit Question Bank",
+"question_bank": "Question Bank",
+"view_question_bank": "View Question Bank",
+"view_questions": "View Questions",
+"double_click_to_edit": "Double click to edit",
+"readonly_mode": "Readonly Mode"
 }
