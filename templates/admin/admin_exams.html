@@ -244,7 +244,7 @@
                     </thead>
                     <tbody id="examsTbody">
                         <tr>
-                            <td colspan="14" class="text-center" style="padding: 40px 20px;">
+                            <td colspan="15" class="text-center" style="padding: 40px 20px;">
                                 <div class="d-flex flex-column align-items-center justify-content-center">
                                     <div class="spinner-border text-primary mb-3" role="status" style="width: 2.5rem; height: 2.5rem;">
                                         <span class="visually-hidden">Loading...</span>
@@ -625,6 +625,72 @@
 </div>
 
 <script>
+    // ============================================================
+    // 跨页面通信 - 内联实现
+    // ============================================================
+    (function() {
+        console.log('📡 初始化内联跨页面通信 (考试管理)');
+        
+        // 定义频道名称
+        window.CHANNELS = {
+            EXAM: 'exam_update_channel',
+            TRAINING: 'training_update_channel',
+            USER: 'user_update_channel'
+        };
+        
+        // 发送考试更新通知
+        window.notifyExamUpdate = function(examId, action) {
+            action = action || 'update';
+            console.log('📡 发送考试更新通知:', examId, action);
+            try {
+                var channel = new BroadcastChannel('exam_update_channel');
+                channel.postMessage({
+                    type: 'exam_updated',
+                    exam_id: examId,
+                    action: action,
+                    timestamp: Date.now()
+                });
+                channel.close();
+                console.log('📡 BroadcastChannel 已发送');
+            } catch(e) {
+                console.warn('📡 BroadcastChannel 失败:', e);
+            }
+        };
+        
+        // 监听考试更新
+        window.onExamUpdate = function(callback) {
+            console.log('📡 注册考试更新监听');
+            try {
+                var channel = new BroadcastChannel('exam_update_channel');
+                channel.onmessage = function(event) {
+                    var data = event.data;
+                    if (data && data.type === 'exam_updated') {
+                        console.log('📡 收到消息:', data);
+                        callback(data);
+                    }
+                };
+                window._examChannel = channel;
+                console.log('📡 BroadcastChannel 监听已注册');
+                return function() { try { channel.close(); } catch(e) {} };
+            } catch(e) {
+                console.warn('📡 BroadcastChannel 监听失败:', e);
+                // 降级: localStorage
+                var handler = function(e) {
+                    if (e.key === 'exam_update_flag') {
+                        try {
+                            var data = JSON.parse(e.newValue);
+                            if (data && data.exam_id) callback(data);
+                        } catch(err) {}
+                    }
+                };
+                window.addEventListener('storage', handler);
+                return function() { window.removeEventListener('storage', handler); };
+            }
+        };
+        
+        console.log('✅ 内联跨页面通信已初始化');
+    })();
+
     let currentPage = 1;
     let filters = { name: '', status: '', quarter: '', country: '' };
     const CURRENT_USER_ROLE = "{{ session.get('role', 'user') }}";
@@ -841,13 +907,13 @@
     }
 
     // ========== 加载考试列表（首次加载，获取全部数据） ==========
-    async function loadExams() {
+    async function loadExams(forceRefresh = false) {
         const tbody = document.getElementById('examsTbody');
         // 立即显示加载动画（消除静态文字）
         if (tbody) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="14" class="text-center" style="padding: 30px 20px;">
+                    <td colspan="15" class="text-center" style="padding: 30px 20px;">
                         <div class="d-flex flex-column align-items-center justify-content-center">
                             <div class="spinner-border text-primary mb-2" role="status" style="width: 2rem; height: 2rem;">
                                 <span class="visually-hidden">Loading...</span>
@@ -858,8 +924,16 @@
                 </tr>
             `;
         }
+
+        // 如果是强制刷新，清除缓存
+        if (forceRefresh) {
+            allData = [];
+            cachedExamsData = [];
+            cachedTotal = 0;
+        }
+        
         // 如果已经有数据，直接使用缓存
-        if (allData && allData.length > 0) {
+        if (!forceRefresh && allData && allData.length > 0) {
             console.log('📋 使用缓存数据，应用筛选');
             applyFilters();
             return;
@@ -1650,36 +1724,12 @@
         }
     }
 
-    // ========== 绑定重新打开模态框事件 ==========
-    document.addEventListener('DOMContentLoaded', function() {
-        // 搜索防抖
-        const searchInput = document.getElementById('reopenSearchInput');
-        if (searchInput) {
-            searchInput.addEventListener('input', function() {
-                clearTimeout(reopenSearchTimer);
-                reopenSearchTimer = setTimeout(() => {
-                    reopenCurrentPage = 1;
-                    loadEligibleUsers();
-                }, 300);
-            });
-        }
-        
-        // 重置筛选
-        document.getElementById('reopenResetBtn')?.addEventListener('click', function() {
-            document.getElementById('reopenSearchInput').value = '';
-            reopenCurrentPage = 1;
-            loadEligibleUsers();
+    function renumberRows() {
+        document.querySelectorAll('#examsTbody tr').forEach((tr, idx) => {
+            const td = tr.querySelector('td:first-child');
+            if (td) td.textContent = idx + 1;
         });
-        
-        // 强制推送选中
-        document.getElementById('forcePushSelectedBtn')?.addEventListener('click', forcePushSelectedUsers);
-        
-        // 强制推送全部
-        document.getElementById('forcePushAllBtn')?.addEventListener('click', forcePushAllUsers);
-
-        // 存储当前考试列表页面 URL，供签到详情页返回使用
-        sessionStorage.setItem('exam_list_return_url', window.location.href);
-    });
+    }
 
     // ========== 获取考试信息并回显 ==========
     async function fetchAndPopulateExamInfo(examId) {
@@ -1739,6 +1789,12 @@
                 allData = [];
                 cachedExamsData = [];
                 loadExams();
+        
+                // 发送通知
+                if (typeof notifyExamUpdate === 'function') {
+                    notifyExamUpdate(currentReopenExamId, 'update');
+                    console.log('📡 仪表盘发送考试更新通知:', currentReopenExamId);
+                }
             } else {
                 showToast(result.message || t('t_save_failed'), 'error');
             }
@@ -1803,6 +1859,12 @@
                 allData = [];
                 cachedExamsData = [];
                 loadExams();
+        
+                // 发送通知
+                if (typeof notifyExamUpdate === 'function') {
+                    notifyExamUpdate(currentReopenExamId, 'update');
+                    console.log('📡 仪表盘发送重新打开考试通知:', currentReopenExamId);
+                }
             } else {
                 showToast(result.message || t('t_operation_failed'), 'error');
             }
@@ -2075,29 +2137,54 @@
         const endTime = localDateTimeToUTC(document.getElementById('settingEndTime').value);
         const duration = parseInt(document.getElementById('settingDuration').value);
         const reviewer = document.getElementById('settingReviewer').value;
+        
         if (!duration || duration <= 0) {
             showToast(t('t_enter_valid_duration'), 'warning');
             return;
         }
-        const updateRes = await fetch(`/api/admin/exam/${examId}/update`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ 
-                start_time: startTime || null, 
-                end_time: endTime || null, 
-                duration: duration,
-                reviewer: reviewer
-            })
-        });
-        if (updateRes.ok) {
-            showToast(t('t_setting_saved'), 'success');
-            bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
-            loadExams();
-        } else {
-            showToast(t('t_save_failed'), 'error');
+        
+        const saveBtn = document.getElementById('saveSettingBtn');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('saving') || '保存中...'}`;
+        
+        try {
+            const updateRes = await fetch(`/api/admin/exam/${examId}/update`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ 
+                    start_time: startTime || null, 
+                    end_time: endTime || null, 
+                    duration: duration,
+                    reviewer: reviewer
+                })
+            });
+            
+            if (updateRes.ok) {
+                showToast(t('t_setting_saved'), 'success');
+                bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
+                
+                // ✅ 无刷新局部更新
+                await window.updateExamRow(examId);
+                
+                // ✅ 发送通知给其他页面
+                if (typeof notifyExamUpdate === 'function') {
+                    notifyExamUpdate(examId, 'update');
+                }
+            } else {
+                const errorData = await updateRes.json();
+                showToast(errorData.message || t('t_save_failed'), 'error');
+            }
+        } catch (err) {
+            console.error('保存失败:', err);
+            showToast(t('t_network_error') + err.message, 'error');
+        } finally {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = originalText;
         }
     });
 
+    // 同样修改 confirmSettingBtn
     document.getElementById('confirmSettingBtn')?.addEventListener('click', async () => {
         const examId = currentExamIdForSetting;
         const startTime = localDateTimeToUTC(document.getElementById('settingStartTime').value);
@@ -2105,33 +2192,359 @@
         const duration = parseInt(document.getElementById('settingDuration').value);
         const userIds = Array.from(document.querySelectorAll('.user-checkbox:checked')).map(cb => cb.value);
         const reviewer = document.getElementById('settingReviewer').value;
+
         if (!duration || duration <= 0) {
             showToast(t('t_enter_valid_duration'), 'warning');
             return;
         }
+        
         if (userIds.length === 0) {
             showToast(t('t_choice_candidate'), 'warning');
             return;
         }
-        const pushRes = await fetch(`/api/admin/exam/${examId}/push_with_settings`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                start_time: startTime || null,
-                end_time: endTime || null,
-                duration: duration,
-                user_ids: userIds,
-                reviewer: reviewer
-            })
-        });
-        if (pushRes.ok) {
-            showToast(t('t_setting_saved_email_pushed'), 'success');
-            bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
-            loadExams();
-        } else {
-            showToast(t('t_operation_failed'), 'error');
+
+        const pushBtn = document.getElementById('confirmSettingBtn');
+        const originalText = pushBtn.innerHTML;
+        pushBtn.disabled = true;
+        pushBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('pushing') || '推送中...'}`;
+        
+        try {
+            const pushRes = await fetch(`/api/admin/exam/${examId}/push_with_settings`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    start_time: startTime || null,
+                    end_time: endTime || null,
+                    duration: duration,
+                    user_ids: userIds,
+                    reviewer: reviewer
+                })
+            });
+            
+            if (pushRes.ok) {
+                showToast(t('t_setting_saved_email_pushed'), 'success');
+                bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
+                
+                // ✅ 无刷新局部更新
+                await window.updateExamRow(examId);
+                
+                // ✅ 发送通知给其他页面
+                if (typeof notifyExamUpdate === 'function') {
+                    notifyExamUpdate(examId, 'update');
+                }
+            } else {
+                showToast(t('t_operation_failed'), 'error');
+            }
+        } catch (err) {
+            console.error('推送失败:', err);
+            showToast(t('t_network_error') + err.message, 'error');
+        } finally {
+            pushBtn.disabled = false;
+            pushBtn.innerHTML = originalText;
         }
     });
+
+    /**
+     * 刷新考试列表（清除缓存并重新加载）- 暴露给子页面调用
+     */
+    window.refreshExamList = function() {
+        console.log('🔄 从子页面触发刷新考试列表');
+        // 清除缓存
+        allData = [];
+        cachedExamsData = [];
+        cachedTotal = 0;
+        currentPage = 1;
+        // 重新加载
+        loadExams(true);
+    };
+
+    /**
+    * 局部更新单行考试数据（无刷新）
+    * @param {number} examId - 考试ID
+    * @param {Function} callback - 更新完成后的回调
+    */
+    window.updateExamRow = async function(examId) {
+        try {
+            console.log('🔄 开始更新考试行:', examId);
+            
+            // 从服务器获取该考试的最新数据
+            const res = await fetch(`/api/admin/exam/${examId}?include_stats=true`);
+            if (!res.ok) {
+                console.warn('API 返回错误，降级为重新加载:', res.status);
+                loadExams(true);
+                return false;
+            }
+            const examData = await res.json();
+            console.log('📊 获取到考试数据:', examData);
+            console.log('📊 状态:', examData.status);
+            
+            // 更新缓存 allData
+            const index = allData.findIndex(e => e.id === parseInt(examId));
+            if (index !== -1) {
+                allData[index] = {
+                    ...allData[index],
+                    ...examData,
+                    status: examData.status,
+                    start_time: examData.start_time,
+                    end_time: examData.end_time,
+                    question_count: examData.question_count || allData[index].question_count || 0,
+                    assigned_count: examData.assigned_count || allData[index].assigned_count || 0,
+                    submitted_count: examData.submitted_count || allData[index].submitted_count || 0
+                };
+                console.log('✅ 缓存已更新，新状态:', allData[index].status);
+            } else {
+                console.warn('缓存中没有该考试，重新加载');
+                loadExams(true);
+                return false;
+            }
+            
+            // 更新 filteredData
+            const filteredIndex = filteredData.findIndex(e => e.id === parseInt(examId));
+            if (filteredIndex !== -1) {
+                filteredData[filteredIndex] = {
+                    ...filteredData[filteredIndex],
+                    ...examData,
+                    status: examData.status
+                };
+            }
+            
+            // 查找并更新行
+            const row = document.querySelector(`#examsTbody tr[data-exam-id="${examId}"]`);
+            if (row) {
+                // 获取当前行的序号
+                const allRows = document.querySelectorAll('#examsTbody tr');
+                let globalIdx = 1;
+                for (let i = 0; i < allRows.length; i++) {
+                    if (allRows[i].dataset.examId == examId) {
+                        globalIdx = i + 1;
+                        break;
+                    }
+                }
+                
+                // ✅ 关键修复：确保 status 使用最新值
+                const fullExamData = {
+                    ...examData,
+                    // 强制使用最新状态
+                    status: examData.status,
+                    start_time: examData.start_time,
+                    end_time: examData.end_time,
+                    question_count: examData.question_count || allData[index]?.question_count || 0,
+                    assigned_count: examData.assigned_count || allData[index]?.assigned_count || 0,
+                    submitted_count: examData.submitted_count || allData[index]?.submitted_count || 0,
+                    max_score: examData.max_score !== undefined ? examData.max_score : (allData[index]?.max_score || null),
+                    min_score: examData.min_score !== undefined ? examData.min_score : (allData[index]?.min_score || null),
+                    retake_count: examData.retake_count || allData[index]?.retake_count || 0,
+                    has_binding: examData.binding_count > 0 || allData[index]?.has_binding || false,
+                    binding_count: examData.binding_count || allData[index]?.binding_count || 0,
+                    binding_trainings: examData.binding_trainings || allData[index]?.binding_trainings || []
+                };
+                
+                console.log('📊 传给 buildExamRow 的状态:', fullExamData.status);
+                
+                // 重新构建该行
+                const newRowHtml = buildExamRow(fullExamData, globalIdx);
+                const temp = document.createElement('tbody');
+                temp.innerHTML = newRowHtml;
+                const newRow = temp.querySelector('tr');
+                
+                if (newRow) {
+                    const oldDetailRow = document.getElementById(`binding-detail-${examId}`);
+                    
+                    // 替换主行内容
+                    row.innerHTML = newRow.innerHTML;
+                    row.dataset.examId = newRow.dataset.examId;
+                    
+                    // 处理详情行
+                    const newDetailRow = temp.querySelector('.binding-detail-row');
+                    if (newDetailRow) {
+                        if (oldDetailRow) {
+                            oldDetailRow.outerHTML = newDetailRow.outerHTML;
+                        } else {
+                            row.after(newDetailRow);
+                        }
+                    } else if (oldDetailRow) {
+                        oldDetailRow.remove();
+                    }
+                    
+                    // 重新绑定事件
+                    bindExamTableButtons();
+                    bindBindingExpandEvents();
+                    console.log('✅ 行已更新，状态:', fullExamData.status);
+                }
+            } else {
+                // 行不存在，重新加载
+                console.warn('行不存在，重新加载');
+                applyFilters();
+            }
+            return true;
+        } catch (error) {
+            console.error('更新考试行失败:', error);
+            loadExams(true);
+            return false;
+        }
+    };
+
+    // ============================================================
+    // 删除考试行
+    // ============================================================
+    function removeExamRow(examId) {
+        const row = document.querySelector(`#examsTbody tr[data-exam-id="${examId}"]`);
+        if (row) {
+            row.remove();
+            // 更新缓存
+            allData = allData.filter(e => e.id !== parseInt(examId));
+            filteredData = filteredData.filter(e => e.id !== parseInt(examId));
+            cachedTotal = allData.length;
+            document.getElementById('totalCount').innerText = cachedTotal;
+            renumberRows();
+        }
+    }
+
+    /**
+    * 渲染单行数据（无刷新）
+    * @param {number} examId - 考试ID
+    * @param {Object} examData - 考试数据
+    */
+    function renderSingleRow(examId, examData) {
+        const row = document.querySelector(`#examsTbody tr[data-exam-id="${examId}"]`);
+        if (!row) {
+            // 如果行不存在，重新加载整个表格
+            applyFilters();
+            return;
+        }
+        
+        // 获取当前行的索引（用于序号）
+        const allRows = document.querySelectorAll('#examsTbody tr');
+        let globalIdx = 1;
+        let found = false;
+        for (let i = 0; i < allRows.length; i++) {
+            const r = allRows[i];
+            if (r.dataset.examId == examId) {
+                globalIdx = i + 1;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            applyFilters();
+            return;
+        }
+        
+        // 使用 buildExamRow 函数重新生成该行 HTML
+        const newRowHtml = buildExamRow(examData, globalIdx);
+        
+        // 创建临时元素解析 HTML
+        const temp = document.createElement('tbody');
+        temp.innerHTML = newRowHtml;
+        
+        // 获取主行和详情行
+        const mainRow = temp.querySelector('tr');
+        const detailRow = temp.querySelector('.binding-detail-row');
+        
+        if (mainRow) {
+            // 保留旧的详情行（如果有）
+            const oldDetailRow = document.getElementById(`binding-detail-${examId}`);
+            
+            // 替换主行内容
+            row.innerHTML = mainRow.innerHTML;
+            row.dataset.examId = mainRow.dataset.examId;
+            
+            // 如果存在详情行，更新它
+            if (detailRow) {
+                if (oldDetailRow) {
+                    oldDetailRow.outerHTML = detailRow.outerHTML;
+                } else {
+                    // 在行后面插入详情行
+                    row.after(detailRow);
+                }
+            } else if (oldDetailRow) {
+                // 如果没有详情行但旧的有，移除旧的
+                oldDetailRow.remove();
+            }
+            
+            // 重新绑定该行的事件
+            bindExamRowEvents(row);
+            if (detailRow || oldDetailRow) {
+                const detailRowElement = document.getElementById(`binding-detail-${examId}`);
+                if (detailRowElement) {
+                    bindExamRowEvents(detailRowElement);
+                }
+            }
+        }
+    }
+
+    /**
+    * 绑定单行的事件
+    */
+    function bindExamRowEvents(row) {
+        if (!row) return;
+        
+        // 根据 row 的类型绑定不同的事件
+        const detailBtn = row.querySelector('.detail-btn');
+        if (detailBtn) {
+            detailBtn.addEventListener('click', () => location.href = `/admin/exam/${detailBtn.dataset.id}/scores`);
+        }
+        
+        const pushBtn = row.querySelector('.push-btn');
+        if (pushBtn) {
+            pushBtn.addEventListener('click', () => openSettingModal(pushBtn.dataset.id));
+        }
+        
+        const copyBtn = row.querySelector('.copy-exam-btn');
+        if (copyBtn) {
+            copyBtn.addEventListener('click', () => copyExam(copyBtn.dataset.id));
+        }
+        
+        const editBtn = row.querySelector('.edit-exam-btn');
+        if (editBtn) {
+            editBtn.addEventListener('click', () => {
+                window.location.href = `/admin/exam/edit/${editBtn.dataset.id}`;
+            });
+        }
+        
+        const deleteBtn = row.querySelector('.delete-exam-btn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => confirmDeleteExam(deleteBtn.dataset.id));
+        }
+        
+        const restoreBtn = row.querySelector('.restore-exam-btn');
+        if (restoreBtn) {
+            restoreBtn.addEventListener('click', async () => {
+                await fetch(`/admin/exam/restore/${restoreBtn.dataset.id}`, { method: 'POST' });
+                showToast(t('restore_success'), 'success');
+                loadExams();
+            });
+        }
+        
+        const reopenBtn = row.querySelector('.reopen-push-btn');
+        if (reopenBtn) {
+            reopenBtn.addEventListener('click', handleReopenPush);
+        }
+        
+        // 考试名称链接
+        const examLink = row.querySelector('.exam-detail-link');
+        if (examLink) {
+            examLink.addEventListener('click', function(e) {
+                e.preventDefault();
+                const status = this.dataset.status;
+                if (status === 'draft') {
+                    if (typeof showToast === 'function') {
+                        showToast(t('draft_exam_no_details') || '草稿考试暂无详情，请先发布考试', 'warning');
+                    }
+                    return;
+                }
+                if (this.dataset.id) {
+                    window.location.href = `/admin/exam/${this.dataset.id}/scores`;
+                }
+            });
+        }
+        
+        // 绑定培训展开事件
+        const bindingWrapper = row.querySelector('.binding-wrapper');
+        if (bindingWrapper) {
+            bindingWrapper.addEventListener('click', handleBindingToggle);
+        }
+    }
 
     // ========== 拷贝考试 ==========
     async function copyExam(examId) {
@@ -2603,6 +3016,7 @@
 
     // ========== 修改页面加载完成后的初始化 ==========
     document.addEventListener('DOMContentLoaded', async () => {
+        // ========== 1. 基础初始化 ==========
         await initReopenMode();
         await waitForI18n();
         if (window.i18n && typeof window.i18n.applyTranslations === 'function') {
@@ -2621,11 +3035,11 @@
             });
         }
 
-        // 初始化国家自动补全（用于输入提示）
+        // ========== 2. 国家自动补全 ==========
         await setupCountryAutocomplete('filterCountry', 'countryDatalist', 'filterCountryCode');
         await setupCountryAutocomplete('countryInput', 'countryDatalist', 'countryCodeForSetting');
 
-        // 库房搜索
+        // ========== 3. 库房搜索 ==========
         const whFilterInput = document.getElementById('pushWhFilter');
         if (whFilterInput) {
             whFilterInput.addEventListener('input', async function () {
@@ -2644,12 +3058,43 @@
                 }
             });
         }
+
+        // ========== 4. 季度和筛选 ==========
         await loadQuarterOptions();
         setupQuarterInput();
         bindFilterEvents();
         loadExams(false);
 
-        // 语言切换时重新加载
+        // ========== 5. 重新打开模态框事件 ==========
+        // 搜索防抖
+        const searchInput = document.getElementById('reopenSearchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                clearTimeout(reopenSearchTimer);
+                reopenSearchTimer = setTimeout(() => {
+                    reopenCurrentPage = 1;
+                    loadEligibleUsers();
+                }, 300);
+            });
+        }
+
+        // 重置筛选
+        document.getElementById('reopenResetBtn')?.addEventListener('click', function() {
+            document.getElementById('reopenSearchInput').value = '';
+            reopenCurrentPage = 1;
+            loadEligibleUsers();
+        });
+        
+        // 强制推送选中
+        document.getElementById('forcePushSelectedBtn')?.addEventListener('click', forcePushSelectedUsers);
+        
+        // 强制推送全部
+        document.getElementById('forcePushAllBtn')?.addEventListener('click', forcePushAllUsers);
+
+        // 存储当前考试列表页面 URL，供签到详情页返回使用
+        sessionStorage.setItem('exam_list_return_url', window.location.href);
+        
+        // ========== 6. 语言切换事件 ==========
         window.addEventListener('app:languageChanged', function(e) {
             try {
                 const detail = e?.detail || {};
@@ -2670,6 +3115,7 @@
             }
         });
         
+        // ========== 7. 导出Excel按钮 ==========
         document.getElementById('exportExamsExcelBtn')?.addEventListener('click', async function() {
             const btn = this;
             const originalText = btn.innerHTML;
@@ -2714,6 +3160,80 @@
                 btn.innerHTML = originalText;
             }
         });
+
+        // ============================================================
+        // 8. 监听其他页面的考试更新
+        // ============================================================
+        if (typeof onExamUpdate === 'function') {
+            onExamUpdate(function(data) {
+                console.log('📢 收到考试更新通知:', data);
+                // 刷新当前页面
+                if (data.action === 'update' || data.action === 'reimport') {
+                    // 局部更新该行
+                    if (typeof window.updateExamRow === 'function') {
+                        window.updateExamRow(data.exam_id);
+                    } else {
+                        loadExams(true);
+                    }
+                } else if (data.action === 'delete') {
+                    removeExamRow(data.exam_id);
+                } else if (data.action === 'create') {
+                    // 新增，重新加载
+                    loadExams(true);
+                } else {
+                    // 其他情况，重新加载
+                    loadExams(true);
+                }
+            });
+        } else {
+            // 备用：使用 BroadcastChannel 直接监听
+            try {
+                const channel = new BroadcastChannel('exam_update_channel');
+                channel.onmessage = function(event) {
+                    const data = event.data;
+                    if (data && data.type === 'exam_updated') {
+                        console.log('📢 收到考试更新通知 (备用):', data);
+                        if (data.action === 'update' || data.action === 'reimport') {
+                            if (typeof window.updateExamRow === 'function') {
+                                window.updateExamRow(data.exam_id);
+                            } else {
+                                loadExams(true);
+                            }
+                        } else if (data.action === 'delete') {
+                            removeExamRow(data.exam_id);
+                        } else {
+                            loadExams(true);
+                        }
+                    }
+                };
+            } catch (e) {
+                // 备用：localStorage 监听
+                window.addEventListener('storage', function(e) {
+                    if (e.key === 'exam_update_flag') {
+                        try {
+                            const data = JSON.parse(e.newValue);
+                            if (data && data.exam_id) {
+                                console.log('📢 收到考试更新通知 (localStorage):', data);
+                                loadExams(true);
+                            }
+                        } catch (err) {
+                            // 忽略
+                        }
+                    }
+                });
+            }
+        }
+
+        // ============================================================
+        // 9. 监听培训更新（影响考试绑定状态）
+        // ============================================================
+        if (typeof onTrainingUpdate === 'function') {
+            onTrainingUpdate(function(data) {
+                console.log('📢 考试管理页面收到培训更新通知:', data);
+                // 培训更新可能影响考试绑定状态，刷新列表
+                loadExams(true);
+            });
+        }
     });
 
     // 语言切换时只重新渲染

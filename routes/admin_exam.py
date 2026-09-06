@@ -1702,15 +1702,29 @@ def admin_exam_status(exam_id):
 @login_required
 @admin_required
 def api_admin_exam_detail(exam_id):
-    """获取单个考试信息接口（用于模态框回显）"""
+    """获取单个考试信息接口（用于模态框回显和局部更新）"""
     db = get_supabase()
-
-    # 先获取 data
-    result = db.table("exams").select("*").eq("id", exam_id).maybe_single().execute()
-    if not result.data:
-        return jsonify({"error": "考试不存在"}), 404
-
-    exam_data = result.data  # 这是字典
+    
+    # 使用 execute() 然后检查 data
+    try:
+        result = db.table("exams").select("*").eq("id", exam_id).execute()
+        
+        # 检查 result 是否为 None 或没有 data
+        if result is None:
+            return jsonify({"error": "考试不存在"}), 404
+        
+        # 检查 data 是否存在且不为空
+        if not hasattr(result, 'data') or result.data is None:
+            return jsonify({"error": "考试不存在"}), 404
+        
+        if not result.data or len(result.data) == 0:
+            return jsonify({"error": "考试不存在"}), 404
+        
+        exam_data = result.data[0]  # 取第一条数据
+        
+    except Exception as e:
+        logger.error(f"查询考试失败: {e}")
+        return jsonify({"error": f"查询失败: {str(e)}"}), 500
 
     # 2. 权限检查
     if not can_access_exam(exam_data):
@@ -1719,15 +1733,67 @@ def api_admin_exam_detail(exam_id):
     # 3. 获取考试状态
     status = get_exam_status(exam_data)
     countries = parse_exam_countries(exam_data)
-    return jsonify({
+    
+    # 构建基础响应
+    response_data = {
+        "id": exam_data.get('id'),
         "title": exam_data.get('title'),
         "start_time": exam_data.get('start_time'),
         "end_time": exam_data.get('end_time'),
         "duration": exam_data.get('duration', 60),
         "reviewer": exam_data.get('reviewer', ''),
         "status": status,
-        "countries": countries
-    })
+        "countries": countries,
+        "pass_score": exam_data.get('pass_score', 85),
+        "max_retake": exam_data.get('max_retake', 3),
+        "is_active": exam_data.get('is_active', False),
+        "created_at": exam_data.get('created_at'),
+        "deleted_at": exam_data.get('deleted_at'),
+        "countries_display": ', '.join(countries) if countries else '-'
+    }
+    
+    # 检查是否需要统计信息（兼容 include_stats 参数）
+    include_stats = request.args.get('include_stats', 'false').lower() == 'true'
+    
+    if include_stats:
+        try:
+            # 获取题目数量
+            q_res = db.table("questions").select("id", count="exact").eq("exam_id", exam_id).execute()
+            response_data['question_count'] = q_res.count if hasattr(q_res, 'count') else 0
+            
+            # 获取分配人数（在职）
+            assign_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).is_("deleted_at", "null").execute()
+            assign_user_ids = [a['user_id'] for a in (assign_res.data or [])]
+            if assign_user_ids:
+                active_users = db.table("users").select("id").in_("id", assign_user_ids).eq("is_resign", False).execute()
+                response_data['assigned_count'] = len(active_users.data or [])
+            else:
+                response_data['assigned_count'] = 0
+            
+            # 获取提交人数（在职）
+            submitted_res = db.table("exam_results").select("user_id").eq("exam_id", exam_id).is_("deleted_at", "null").execute()
+            submitted_user_ids = [r['user_id'] for r in (submitted_res.data or [])]
+            if submitted_user_ids:
+                active_submitted = db.table("users").select("id").in_("id", submitted_user_ids).eq("is_resign", False).execute()
+                response_data['submitted_count'] = len(active_submitted.data or [])
+            else:
+                response_data['submitted_count'] = 0
+            
+            # 获取最高分/最低分
+            results = db.table("exam_results").select("total_score").eq("exam_id", exam_id).is_("deleted_at", "null").execute()
+            scores = [r['total_score'] for r in (results.data or []) if r.get('total_score') is not None]
+            response_data['max_score'] = max(scores) if scores else None
+            response_data['min_score'] = min(scores) if scores else None
+            
+            # 获取绑定培训数量
+            bind_res = db.table("training_exam_bindings").select("id").eq("exam_id", exam_id).is_("deleted_at", "null").execute()
+            response_data['binding_count'] = len(bind_res.data or [])
+            
+        except Exception as e:
+            logger.warning(f"获取考试统计信息失败: {e}")
+            # 统计信息失败不影响主数据返回
+    
+    return jsonify(response_data)
 
 @admin_exam_bp.route('/api/admin/exam/<int:exam_id>/assignments')
 @login_required
