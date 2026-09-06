@@ -190,6 +190,52 @@
 		border-radius: 50%;
 		transition: background 0.2s;
 	}
+/* templates/admin/import_preview.html - 在 extra_css 中添加 */
+
+.reviewer-suggestions .suggestion-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.2s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.reviewer-suggestions .suggestion-item:hover {
+    background-color: #e7f3ff;
+}
+
+.reviewer-suggestions .suggestion-item.active {
+    background-color: #e7f3ff;
+}
+
+.reviewer-suggestions .suggestion-item .suggestion-name {
+    font-weight: 500;
+}
+
+.reviewer-suggestions .suggestion-item .suggestion-meta {
+    font-size: 0.7rem;
+    color: #6c757d;
+}
+
+.reviewer-suggestions .suggestion-empty {
+    padding: 20px 12px;
+    text-align: center;
+    color: #adb5bd;
+    font-size: 0.85rem;
+}
+
+.reviewer-suggestions .suggestion-loading {
+    padding: 16px 12px;
+    text-align: center;
+    color: #6c757d;
+}
+
+.reviewer-suggestions .suggestion-loading .spinner-border {
+    width: 1rem;
+    height: 1rem;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -243,7 +289,31 @@
 			
 			<div class="col-md-3">
 				<label class="form-label fw-bold" for="reviewerInput">👨‍🏫 <span data-i18n="reviewer">阅卷人</span></label>
-				<input type="text" id="reviewerInput" class="form-control" value="{{ exam_reviewer|default('') }}" placeholder="姓名 (工号)" {% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
+				<div class="position-relative">
+					<input type="text" id="reviewerInput" class="form-control" 
+						value="{{ exam_reviewer|default('') }}" 
+                        data-i18n-placeholder="placeholder_reviewer" 
+						placeholder="姓名 (工号)" 
+						autocomplete="off"
+						{% if edit_mode and exam_status == 'closed' %}disabled{% endif %}>
+					<!-- 自定义搜索下拉列表 -->
+					<div id="reviewerSuggestions" class="reviewer-suggestions" 
+						style="display: none; position: absolute; top: 100%; left: 0; right: 0; 
+							max-height: 200px; overflow-y: auto; background: white; 
+							border: 1px solid #ddd; border-radius: 4px; 
+							box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000;">
+						<div class="suggestion-header" style="padding: 6px 12px; 
+							background: #f8f9fa; font-size: 0.75rem; color: #6c757d; 
+							border-bottom: 1px solid #eee;">
+							<i class="bi bi-search me-1"></i> 输入姓名或工号搜索
+						</div>
+						<div id="reviewerListContainer">
+							<div class="suggestion-empty" style="padding: 12px; text-align: center; color: #999;">
+								输入关键词搜索阅卷人...
+							</div>
+						</div>
+					</div>
+				</div>
 			</div>
 			
 			<!-- 及格分数 -->
@@ -449,19 +519,22 @@
         }
     }
     
-    // ✅ 在页面加载时，将 returnUrl 存储到 sessionStorage（供其他页面使用）
+    // 在页面加载时，将 returnUrl 存储到 sessionStorage（供其他页面使用）
     sessionStorage.setItem('exam_editor_return_url', returnUrl);
     console.log('📍 回源 URL:', returnUrl);
 
 	// ==================== 获取模板变量 ====================
 	const isEditMode = {{ edit_mode | default(false) | tojson }};
+	const isReimportMode = {{ reimport_mode | default(false) | tojson }};
+	const originalExamId = {{ original_exam_id | default(0) }};
 	const examId = {{ original_exam_id | default(0) }};
 	const canEditQuestions = {{ can_edit_questions | default(true) | tojson }};
 	const examStatus = '{{ exam_status | default("") }}';
 
-    // ✅ 新增：接收默认值
+    // 接收默认值
     const defaultStartTime = "{{ exam_start_time | default('') }}";
     const defaultEndTime = "{{ exam_end_time | default('') }}";
+	const examCountries = {{ exam_countries | tojson | default('[]') }};
     const defaultCountries = {{ exam_countries | tojson | default('[]') }};
 	const examPassScore = {{ exam_pass_score | default(85) }};
     
@@ -471,7 +544,10 @@
 	const trainingId = urlParams.get('training_id');
 	const trainingCountry = urlParams.get('country');
 
-	// ==================== 辅助函数 ====================
+    console.log('📋 模板变量 - exam_countries:', examCountries);
+    console.log('📋 模板变量 - isReimportMode:', isReimportMode);
+    console.log('📋 模板变量 - originalExamId:', originalExamId);
+    // ==================== 辅助函数 ====================
 	function renumberRows() {
 		document.querySelectorAll('#qTableBody tr').forEach((tr, idx) => {
 			const numCell = tr.querySelector('.q-num');
@@ -555,17 +631,27 @@
 	async function initCountrySelector(initialCodes = []) {
 		await loadCountries();
 	
-		console.log('🌍 initCountrySelector 开始, window.pendingCountries:', window.pendingCountries);  // ✅ 调试
+		console.log('🌍 initCountrySelector 开始, initialCodes:', initialCodes);
+		console.log('🌍 window.pendingCountries:', window.pendingCountries);
 
-		// ✅ 优先使用 pendingCountries（来自复制配置）
-		if (window.pendingCountries && window.pendingCountries.length > 0) {
+		// 优先使用传入的初始国家
+		let initCodes = initialCodes;
+		if (!initCodes || initCodes.length === 0) {
+			// 如果重新导入模式且有 exam_countries，使用它
+			if (isReimportMode && defaultCountries && defaultCountries.length > 0) {
+				initCodes = defaultCountries;
+			}
+		}
+		// 优先使用 pendingCountries（来自复制配置）
+		else if (window.pendingCountries && window.pendingCountries.length > 0) {
 			console.log('🌍 使用 pendingCountries:', window.pendingCountries);  // ✅ 调试
 			selectedCountryCodes = [...window.pendingCountries];
 			window.pendingCountries = null;
 		} else {
 			selectedCountryCodes = [...initialCodes];
 		}
-		
+		console.log('🌍 最终 selectedCountryCodes:', selectedCountryCodes);
+
 		renderSelectedCountryTags();
 		
 		const input = document.getElementById('countrySearchInput');
@@ -725,6 +811,7 @@
 	}
 
 	// ==================== 保存和更新函数 ====================
+	// 检测是否为重新导入模式
 	async function saveExam(isDraft = true) {
 		const examTitle = document.getElementById('examTitleInput').value.trim();
 		if (!validate(examTitle)) {
@@ -746,7 +833,7 @@
 
 		const duration = parseInt(document.getElementById('durationInput')?.value || 60);
 		const reviewer = document.getElementById('reviewerInput')?.value || '';
-    	const passScore = parseInt(document.getElementById('passScoreInput')?.value || 85);  // ✅ 新增
+    	const passScore = parseInt(document.getElementById('passScoreInput')?.value || 85);
 		
 		let startTime = null, endTime = null;
 		if (!isDraft) {
@@ -755,13 +842,52 @@
 			if (startTimeInput && startTimeInput.value) startTime = localDateTimeToUTC(startTimeInput.value);
 			if (endTimeInput && endTimeInput.value) endTime = localDateTimeToUTC(endTimeInput.value);
 		}
-		
+
+		// ============================================================
+		// 🔥 重新导入模式：使用不同的 API 端点
+		// ============================================================
+		if (isReimportMode && originalExamId) {
+			// 重新导入：更新现有考试
+			const updateData = {
+				questions: questions,
+				title: examTitle,
+				duration: duration,
+				reviewer: reviewer,
+				pass_score: passScore,
+				countries: selectedCountries
+			};
+			if (startTime) updateData.start_time = startTime;
+			if (endTime) updateData.end_time = endTime;
+			
+			const res = await fetch(`/admin/exam/${originalExamId}/reimport`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(updateData)
+			});
+			const json = await res.json();
+			
+			if (!json.success) {
+				throw new Error(json.message || '重新导入失败');
+			}
+			
+			if (typeof showToast === 'function') {
+				showToast('重新导入成功', 'success');
+			} else {
+				alert('重新导入成功');
+			}
+			window.location.href = returnUrl || '/admin/exams';
+			return;
+		}
+
+		// ============================================================
+		// 普通导入模式 / 绑定模式
+		// ============================================================
 		const requestData = {
 			questions: questions,
 			countries: selectedCountries,
 			duration: duration,
 			reviewer: reviewer,
-        	pass_score: passScore  // ✅ 新增
+        	pass_score: passScore
 		};
 		if (!isDraft) {
 			if (startTime) requestData.start_time = startTime;
@@ -963,19 +1089,67 @@
 			console.error('读取复制配置失败:', e);
 		}
 	}
-	
+
+    // 加载阅卷人历史记录
+    async function loadReviewerHistory() {
+        try {
+            const res = await fetch('/api/admin/reviewer_history');
+            if (res.ok) {
+                const data = await res.json();
+                const datalist = document.getElementById('reviewerHistoryList');
+                if (datalist && data.length > 0) {
+                    datalist.innerHTML = data.map(name => 
+                        `<option value="${escapeHtml(name)}">`
+                    ).join('');
+                }
+            }
+        } catch (e) {
+            console.warn('加载阅卷人历史失败:', e);
+        }
+    }
+
+    // 保存阅卷人输入到历史
+    async function saveReviewerToHistory(reviewer) {
+        if (!reviewer || reviewer.trim() === '') return;
+        try {
+            await fetch('/api/admin/reviewer_history', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reviewer: reviewer.trim() })
+            });
+        } catch (e) {
+            console.warn('保存阅卷人历史失败:', e);
+        }
+    }
+
 	// ==================== 页面初始化（重写确保顺序正确）====================
 	document.addEventListener('DOMContentLoaded', async () => {
 		// ========== 1. 确定初始国家列表 ==========
 		let initialCountries = [];
-		
-		// 优先级1：复制模式（pendingCountries）
-		if (window.pendingCountries && window.pendingCountries.length > 0) {
+
+		// ========== 初始化阅卷人搜索组件 ==========
+		if (document.getElementById('reviewerInput')) {
+			new ReviewerSearch('reviewerInput', 'reviewerListContainer');
+		}
+
+		console.log('📋 调试信息:');
+		console.log('  - isReimportMode:', isReimportMode);
+		console.log('  - examCountries:', examCountries);
+		console.log('  - defaultCountries:', defaultCountries);
+		console.log('  - window.pendingCountries:', window.pendingCountries);
+
+		// ✅ 优先级1：重新导入模式 - 从 exam_countries 获取
+		if (isReimportMode && examCountries && examCountries.length > 0) {
+			initialCountries = [...examCountries];
+			console.log('📋 重新导入模式 - 使用原考试国家:', initialCountries);
+		}
+		// 优先级2：复制模式（pendingCountries）
+		else if (window.pendingCountries && window.pendingCountries.length > 0) {
 			initialCountries = [...window.pendingCountries];
 			window.pendingCountries = null;
 			console.log('📋 使用 pendingCountries:', initialCountries);
 		}
-		// 优先级2：绑定模式或普通模式（defaultCountries）
+		// 优先级3：绑定模式或普通模式（defaultCountries）
 		else if (!isEditMode && defaultCountries && defaultCountries.length > 0) {
 			initialCountries = [...defaultCountries];
 			console.log('📋 使用 defaultCountries:', initialCountries);
@@ -1185,6 +1359,228 @@
 				}
 			};
 			btn.title = t('go_back') || '返回上一页';
+		}
+	}
+
+	/**
+	 * 阅卷人搜索组件 - 支持输入即搜索，从数据库获取去重数据
+	 */
+	class ReviewerSearch {
+		constructor(inputId, containerId) {
+			this.input = document.getElementById(inputId);
+			this.container = document.getElementById(containerId);
+			this.suggestions = document.getElementById('reviewerSuggestions');
+			this.currentIndex = -1;
+			this.searchTimeout = null;
+			this.isLoading = false;
+			
+			if (!this.input || !this.suggestions) return;
+			
+			this.bindEvents();
+		}
+		
+		bindEvents() {
+			// 输入事件 - 防抖搜索
+			this.input.addEventListener('input', (e) => {
+				const query = e.target.value.trim();
+				clearTimeout(this.searchTimeout);
+				
+				if (query.length === 0) {
+					this.hideSuggestions();
+					return;
+				}
+				
+				// 如果输入长度 >= 1，开始搜索
+				this.searchTimeout = setTimeout(() => {
+					this.searchReviewers(query);
+				}, 300);
+			});
+			
+			// 聚焦事件 - 如果有值，显示建议
+			this.input.addEventListener('focus', (e) => {
+				const query = e.target.value.trim();
+				if (query.length > 0) {
+					this.searchReviewers(query);
+				}
+			});
+			
+			// 键盘事件
+			this.input.addEventListener('keydown', (e) => {
+				const items = this.suggestions.querySelectorAll('.suggestion-item');
+				
+				switch (e.key) {
+					case 'ArrowDown':
+						e.preventDefault();
+						if (items.length > 0) {
+							this.currentIndex = Math.min(this.currentIndex + 1, items.length - 1);
+							this.highlightItem(items, this.currentIndex);
+						}
+						break;
+					case 'ArrowUp':
+						e.preventDefault();
+						if (items.length > 0) {
+							this.currentIndex = Math.max(this.currentIndex - 1, 0);
+							this.highlightItem(items, this.currentIndex);
+						}
+						break;
+					case 'Enter':
+						e.preventDefault();
+						if (this.currentIndex >= 0 && items.length > 0) {
+							const selected = items[this.currentIndex];
+							if (selected) {
+								this.selectItem(selected);
+							}
+						}
+						break;
+					case 'Escape':
+						e.preventDefault();
+						this.hideSuggestions();
+						this.input.blur();
+						break;
+				}
+			});
+			
+			// 点击其他地方关闭
+			document.addEventListener('click', (e) => {
+				if (!this.input.contains(e.target) && !this.suggestions.contains(e.target)) {
+					this.hideSuggestions();
+				}
+			});
+		}
+		
+		async searchReviewers(query) {
+			if (this.isLoading) return;
+			this.isLoading = true;
+			
+			// 显示加载状态
+			this.suggestions.innerHTML = `
+				<div class="suggestion-loading">
+					<span class="spinner-border spinner-border-sm me-2"></span>
+					搜索中...
+				</div>
+			`;
+			this.suggestions.style.display = 'block';
+			
+			try {
+				const response = await fetch(`/api/admin/reviewer_search?q=${encodeURIComponent(query)}`);
+				if (!response.ok) throw new Error('搜索失败');
+				
+				const data = await response.json();
+				this.renderSuggestions(data);
+				
+			} catch (error) {
+				console.error('搜索阅卷人失败:', error);
+				this.suggestions.innerHTML = `
+					<div class="suggestion-empty text-danger">
+						<i class="bi bi-exclamation-triangle me-1"></i>
+						搜索失败，请重试
+					</div>
+				`;
+				this.suggestions.style.display = 'block';
+			} finally {
+				this.isLoading = false;
+			}
+		}
+		
+		renderSuggestions(reviewers) {
+			const container = this.suggestions;
+			
+			if (!reviewers || reviewers.length === 0) {
+				container.innerHTML = `
+					<div class="suggestion-empty">
+						<i class="bi bi-search me-1"></i>
+						未找到匹配的阅卷人
+					</div>
+				`;
+				container.style.display = 'block';
+				return;
+			}
+			
+			// 构建建议列表 找到 ${reviewers.length} 个匹配结果
+			let html = `
+				<div style="padding: 4px 12px; background: #f8f9fa; font-size: 0.65rem; color: #6c757d; border-bottom: 1px solid #eee;">
+					${t('found_matching_results', reviewers.length)}
+				</div>
+			`;
+			
+			reviewers.forEach((reviewer, index) => {
+				// 高亮匹配的关键词
+				const displayName = reviewer.display_name || reviewer.reviewer;
+				const highlightText = (text, query) => {
+					if (!text || !query) return text;
+					const lowerText = text.toLowerCase();
+					const lowerQuery = query.toLowerCase();
+					const idx = lowerText.indexOf(lowerQuery);
+					if (idx === -1) return text;
+					return text.slice(0, idx) + 
+						`<span style="background: #ffeb3b; padding: 0 2px;">${text.slice(idx, idx + query.length)}</span>` + 
+						text.slice(idx + query.length);
+				};
+				
+				html += `
+					<div class="suggestion-item" data-reviewer="${escapeHtml(reviewer.reviewer)}" data-index="${index}">
+						<span class="suggestion-name">${highlightText(escapeHtml(displayName), this.input.value.trim())}</span>
+						<span class="suggestion-meta">
+							${reviewer.usage_count > 0 ? `${t('use_times', reviewer.usage_count)}` : '新阅卷人'}
+							${reviewer.recent_used ? `<span class="badge bg-info" style="font-size: 0.55rem;">${t('recently_used')}</span>` : ''}
+						</span>
+					</div>
+				`;
+			});
+			
+			container.innerHTML = html;
+			container.style.display = 'block';
+			this.currentIndex = -1;
+			
+			// 绑定点击事件 使用 ${reviewer.usage_count} 次
+			container.querySelectorAll('.suggestion-item').forEach((item) => {
+				item.addEventListener('click', () => {
+					this.selectItem(item);
+				});
+			});
+		}
+		
+		highlightItem(items, index) {
+			items.forEach((item, i) => {
+				if (i === index) {
+					item.classList.add('active');
+					item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+				} else {
+					item.classList.remove('active');
+				}
+			});
+		}
+		
+		selectItem(item) {
+			const reviewer = item.dataset.reviewer;
+			if (reviewer) {
+				this.input.value = reviewer;
+				// 触发 change 事件，以便其他逻辑可以响应
+				this.input.dispatchEvent(new Event('change', { bubbles: true }));
+				// 触发 input 事件，以便验证逻辑
+				this.input.dispatchEvent(new Event('input', { bubbles: true }));
+			}
+			this.hideSuggestions();
+			// 保存到历史记录（后台静默保存）
+			this.saveToHistory(reviewer);
+		}
+		
+		hideSuggestions() {
+			this.suggestions.style.display = 'none';
+			this.currentIndex = -1;
+		}
+		
+		async saveToHistory(reviewer) {
+			if (!reviewer || reviewer.trim() === '') return;
+			try {
+				await fetch('/api/admin/reviewer_history', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ reviewer: reviewer.trim() })
+				});
+			} catch (e) {
+				// 静默失败，不影响主流程
+			}
 		}
 	}
 </script>

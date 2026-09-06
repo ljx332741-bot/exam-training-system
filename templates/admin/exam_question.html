@@ -8,7 +8,7 @@
 
 {% block content %}
 <div class="exam-question-container" id="mainContainer">
-    
+
     <!-- 考试信息 -->
     <div id="examInfo" class="exam-info-card">
         <div class="loading-spinner">
@@ -136,7 +136,23 @@
         });
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', async function() {
+        // ========== 订阅语言变化事件 ==========
+        window.addEventListener('app:languageChanged', function(e) {
+            const newLang = e.detail?.lang || window.i18n?.currentLang || 'zh';
+            console.log('🔄 语言已切换为:', newLang);
+            
+            // 重新加载数据以更新翻译
+            loadExamData();
+        });
+        
+        // 也监听 i18n:ready 事件
+        window.addEventListener('i18n:ready', function(e) {
+            console.log('🌐 i18n 已就绪，语言:', e.detail?.lang);
+            // 重新加载数据
+            loadExamData();
+        });
+
         const examId = {{ exam_id }};
         const isReadonly = {{ readonly|tojson }};
         let currentEditingField = null;
@@ -146,7 +162,7 @@
         // 如果是只读模式，添加只读类
         if (isReadonly) {
             document.getElementById('mainContainer').classList.add('readonly-mode');
-            showToast('📖 只读模式：此考试已发布，题目不可编辑', 'info');
+            showToast('📖' + `${t('readonly_hint')}`, 'info');
         }
         
         // ==================== 数据加载 ====================
@@ -222,8 +238,8 @@
 
             // 清理标题
             const title = cleanText(info.title || '未命名考试');
-            const reviewer = cleanText(info.reviewer || '未指定');
-            const quarter = cleanText(info.quarter || '未设置');
+            const reviewer = cleanText(info.reviewer || `${t('t_unspecified')}`);
+            const quarter = cleanText(info.quarter || `${t('not_setup')}`);
             const cleanedCountryDisplay = cleanText(countryDisplay);
             
             container.innerHTML = `
@@ -238,7 +254,7 @@
                                 ${escapeHtml(info.title || '未命名考试')}
                                 ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
                             </span>
-                            ${!isEditable ? '<span class="badge bg-light text-dark ms-2" style="font-size:11px;">🔒 只读</span>' : ''}
+                            ${!isEditable ? `<span class="badge bg-light text-dark ms-2" style="font-size:11px;">🔒 ${t('readonly')}</span>` : ''}
                         </div>
                         <div class="exam-info-grid">
                             <div class="exam-info-item">
@@ -283,8 +299,8 @@
                                     <span class="editable-info-field" 
                                         data-field="reviewer" 
                                         data-exam-id="${info.id}"
-                                        data-original-value="${escapeHtml(info.reviewer || '未指定')}">
-                                        ${escapeHtml(info.reviewer || '未指定')}
+                                        data-original-value="${escapeHtml(info.reviewer || `${t('t_unspecified')}`)}">
+                                        ${escapeHtml(info.reviewer || `${t('t_unspecified')}`)}
                                         ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
                                     </span>
                                 </span>
@@ -296,8 +312,8 @@
                                     <span class="editable-info-field" 
                                         data-field="quarter" 
                                         data-exam-id="${info.id}"
-                                        data-original-value="${escapeHtml(info.quarter || '未设置')}">
-                                        ${escapeHtml(info.quarter || '未设置')}
+                                        data-original-value="${escapeHtml(info.quarter || `${t('not_setup')}`)}">
+                                        ${escapeHtml(info.quarter || `${t('not_setup')}`)}
                                         ${isEditable ? '<span class="edit-hint">✏️</span>' : ''}
                                     </span>
                                 </span>
@@ -306,12 +322,15 @@
                             <div class="exam-info-item">
                                 <span class="label">📝</span>
                                 <span class="value" style="font-weight:600;">
-                                    ${info.questions_count || 0} 题
+                                    ${info.questions_count || 0} ${t('question_unit')}
                                 </span>
                             </div>
                         </div>
                     </div>
                     <!-- 只在可编辑状态显示 "双击编辑" 提示 -->
+                    <button class="btn btn-secondary" onclick="window.close()">
+                        <i class="bi bi-x-lg"></i> ${t('close')}
+                    </button>
                     ${isEditable ? `
                         <div class="edit-badge">
                             <i class="fas fa-mouse-pointer"></i> ${t('double_click_to_edit')}
@@ -368,7 +387,7 @@
                             <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
                                 <i class="fas ${typeIcon}" style="color:#667eea;"></i>
                                 <h4>${typeLabel}</h4>
-                                <span class="badge-group">${typeLabelEn} · ${items.length} 题 · ${totalScore} 分</span>
+                                <span class="badge-group">${typeLabelEn} · ${items.length} ${t('question_unit')} · ${totalScore} ${t('points')}</span>
                             </div>
                         </div>
                         ${items.map((q, index) => renderQuestion(q, index)).join('')}
@@ -428,7 +447,8 @@
             return `
                 <div class="question-item" data-qid="${q.id}">
                     <div class="edit-actions">
-                        <button class="btn btn-sm btn-outline-primary" onclick="window.toggleEditMode(this)" title="编辑模式">
+                        <button class="btn btn-sm btn-outline-primary" onclick="window.toggleEditMode(this)" 
+                            title="编辑模式">
                             <i class="fas fa-edit"></i>
                         </button>
                     </div>
@@ -452,7 +472,7 @@
                     
                     <div class="question-meta">
                         <div class="meta-item">
-                            <span class="label">📌 答案：</span>
+                            <span class="label">📌 ${t('answer')}：</span>
                             <span class="value editable-field" 
                                 data-field="answer" 
                                 data-qid="${q.id}">
@@ -461,7 +481,7 @@
                             </span>
                         </div>
                         <div class="meta-item">
-                            <span class="label">⭐ 分值：</span>
+                            <span class="label">⭐ ${t('str_score')}：</span>
                             <span class="value editable-field" 
                                 data-field="score" 
                                 data-qid="${q.id}">
@@ -925,7 +945,6 @@
             
             // 如果数据没有变化，不保存
             // 检查当前数据是否与原始数据相同
-            // ... 可以添加对比逻辑
             
             fetch(`/api/admin/exam/${examId}`, {
                 method: 'PUT',
@@ -1362,8 +1381,9 @@
             return sortedGroups;
         }
         
+        //const labels = { 'single': '单选题', 'multi': '多选题', 'judge': '判断题' };
         function getTypeLabel(type) {
-            const labels = { 'single': '单选题', 'multi': '多选题', 'judge': '判断题' };
+            const labels = { 'single': `${t('single')}`, 'multi': `${t('multi')}`, 'judge': `${t('judge')}` };
             return labels[type] || type;
         }
         

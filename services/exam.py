@@ -117,23 +117,23 @@ def _finalize_question(q: dict) -> dict:
     q["warnings"] = [] if clean_options else ["⚠️ 未识别到选项"]
     return q
 
-def parse_docx_bilingual(file_path: str, exam_id: int = None) -> list[dict]:
-    """
-    最终版解析器：全局正则提取选项，完美支持 A~I 及判断题默认选项
-    """
-    from docx import Document
-    import re
 
+def parse_docx_bilingual(file_path: str, exam_id: int = None) -> tuple:
+    """
+    最终版解析器：支持中英文双语题型识别
+    """
     doc = Document(file_path)
     questions = []
 
-    # 提取标题（取第一个非空、非题号的段落）
+    # 提取标题
     title = "未命名考试"
     for para in doc.paragraphs:
         text = para.text.strip()
         if text and not re.match(r'^\d+[.,、\s]', text):
-            title = text[:100]
-            break
+            # 跳过题型行作为标题
+            if not re.search(r'Single-Choice|Multiple-Choice|True[/]?False|Judge|单选|多选|判断', text, re.I):
+                title = text[:100]
+                break
 
     current_type = "single"
     current_score = 5
@@ -145,34 +145,74 @@ def parse_docx_bilingual(file_path: str, exam_id: int = None) -> list[dict]:
     while i < len(paragraphs):
         line = paragraphs[i]
 
-        # 题型声明
+        logger.info(f"🔍 [i={i}] 处理行: {line[:80]}...")
+
+        # ============================================================
+        # ✅ 题型识别 - 支持中英文双语
+        # ============================================================
+        type_detected = False
+
+        # ---- 1. 单选题识别 ----
+        # 中文：单选...每题...分
         if re.search(r'单选.*?每题.*?分', line, re.I):
-            current_type, current_score = "single", _extract_score(line, 5)
-            logger.info(f"📋 切换题型: 单选, 分值={current_score}")
-            i += 1
-            continue
-        if re.search(r'多选.*?每题.*?分', line, re.I):
-            current_type, current_score = "multi", _extract_score(line, 6)
-            logger.info(f"📋 切换题型: 多选, 分值={current_score}")
-            i += 1
-            continue
-        if re.search(r'判断.*?每题.*?分', line, re.I):
-            current_type, current_score = "judge", _extract_score(line, 4)
-            logger.info(f"📋 切换题型: 判断, 分值={current_score}")
+            current_type = "single"
+            current_score = _extract_score(line, 5)
+            type_detected = True
+            logger.info(f"📋 识别题型: 单选, 分值={current_score}")
+        # 英文：Single-Choice 或 Single Choice
+        elif re.search(r'Single[-\s]?Choice', line, re.I):
+            current_type = "single"
+            current_score = _extract_score_english(line, 5)
+            type_detected = True
+            logger.info(f"📋 识别题型: Single-Choice, 分值={current_score}")
+
+        # ---- 2. 多选题识别 ----
+        elif re.search(r'多选.*?每题.*?分', line, re.I):
+            current_type = "multi"
+            current_score = _extract_score(line, 6)
+            type_detected = True
+            logger.info(f"📋 识别题型: 多选, 分值={current_score}")
+        elif re.search(r'Multiple[-\s]?Choice', line, re.I):
+            current_type = "multi"
+            current_score = _extract_score_english(line, 6)
+            type_detected = True
+            logger.info(f"📋 识别题型: Multiple-Choice, 分值={current_score}")
+
+        # ✅ 判断题 - 支持中文数字前缀
+        elif re.search(r'判断.*?每题.*?分', line, re.I):
+            current_type = "judge"
+            current_score = _extract_score(line, 4)
+            type_detected = True
+            logger.info(f"📋 识别题型: 判断(中文), 分值={current_score}")
+        # ✅ 关键修复：支持 "三、True or False" 和 "三、True/False" 格式
+        elif re.search(r'[一二三四五六七八九十]+[、.）\)]\s*True\s+(?:or\s+)?False|True[/]?False|Judge', line, re.I):
+            current_type = "judge"
+            current_score = _extract_score_english(line, 4)
+            type_detected = True
+            logger.info(f"📋 ✅✅✅ 识别题型: True/False, 分值={current_score}")
+
+        # 如果是题型行，跳过继续
+        if type_detected:
+            logger.info(f"📋 题型切换: current_type={current_type}, current_score={current_score}, 行内容: {line[:100]}")
             i += 1
             continue
 
-        # 题号行识别：支持 1,  1.  1、 等
+        # ============================================================
+        # 题号行识别
+        # ============================================================
         if re.match(r'^\d+[.,、\s]+', line):
-            logger.debug(f"🔍 题号行: {line[:50]}")
+            logger.info(f"🔍 匹配到题号行 [i={i}]: {line[:50]}...")
             block_lines = [line]
             i += 1
-            # 收集后续行，直到遇到下一个题号、题型声明
+            # 收集后续行
             while i < len(paragraphs):
                 nxt = paragraphs[i]
+                # 遇到下一个题号、题型声明停止
                 if re.match(r'^\d+[.,、\s]+', nxt):
                     break
-                if re.search(r'单选|多选|判断', nxt, re.I):
+                # 遇到题型行也停止（包括中文数字前缀的题型）
+                if re.search(r'Single-Choice|Multiple-Choice|True[/]?False|Judge|单选|多选|判断|[一二三四五六七八九十]+[、.）\)]\s*(?:Single-Choice|Multiple-Choice|True\s+(?:or\s+)?False|True[/]?False)', nxt, re.I):
+                    logger.info(f"🔍 遇到题型行，停止收集 [i={i}]: {nxt[:50]}...")
                     break
                 block_lines.append(nxt)
                 i += 1
@@ -185,6 +225,7 @@ def parse_docx_bilingual(file_path: str, exam_id: int = None) -> list[dict]:
                 logger.info(f"✅ 解析题目 #{q['num']}: {q['content'][:30]}... 答案={q['answer']} 选项={list(q['options'].keys())}")
             continue
         else:
+            logger.info(f"⚠️ 行未被识别 [i={i}]: {line[:50]}...")
             i += 1
 
     logger.info(f"🎉 总共解析 {len(questions)} 道题目")
@@ -304,6 +345,39 @@ def _parse_question_block_v2(block_lines, q_type, q_score, exam_id=None):
 def _extract_score(line: str, default: int) -> int:
     m = re.search(r'(\d+)\s*分', line)
     return int(m.group(1)) if m else default
+
+
+def _extract_score_english(line: str, default: int) -> int:
+    """
+    从英文题型行提取分值
+    支持格式：
+    - "Single-Choice: 5 points for each question, 50 points in total."
+    - "Single Choice: 5 points per question"
+    - "True or False: 4 points for each question, 20 points in total."
+    - "6 points for each question, 30 points in total"
+    """
+    # 1. 尝试匹配 "X points for each question" 或 "X points per question"
+    m = re.search(r'(\d+)\s*points?\s*(?:for each|per|each)?\s*question', line, re.I)
+    if m:
+        return int(m.group(1))
+    
+    # 2. 尝试匹配 "(X points each)" 格式
+    m = re.search(r'\((\d+)\s*points?\s*each\)', line, re.I)
+    if m:
+        return int(m.group(1))
+    
+    # 3. 尝试匹配 "X points" 单独出现（但排除总分）
+    m = re.search(r'(\d+)\s*points?\s+for\s+each', line, re.I)
+    if m:
+        return int(m.group(1))
+    
+    # 4. 最后尝试匹配任何 "X points"
+    m = re.search(r'(\d+)\s*points?', line, re.I)
+    if m:
+        return int(m.group(1))
+    
+    return default
+
 
 def auto_grade(answers: dict, exam_id: int) -> dict:
     """自动评分 - 兼容两种答案格式"""
