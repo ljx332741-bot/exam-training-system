@@ -653,6 +653,94 @@
     let currentTrainingId = null;
     let signaturePad = null;
     const CURRENT_USER_NAME = "{{ user_name | default('') }}";
+    
+    /**
+     * 翻译动态插入的 HTML 中的 data-i18n 属性
+     */
+    function translateAllDynamicContent() {
+        // 翻译 data-i18n 文本
+        document.querySelectorAll('#trainingCards [data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (key) {
+                const translated = safeT(key);
+                if (translated && translated !== key) {
+                    el.textContent = translated;
+                }
+            }
+        });
+        
+        // 翻译 data-i18n-title
+        document.querySelectorAll('#trainingCards [data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            if (key) {
+                const translated = safeT(key);
+                if (translated && translated !== key) {
+                    el.setAttribute('title', translated);
+                }
+            }
+        });
+    }
+
+    /**
+     * 翻译单个 HTML 字符串中的 data-i18n 属性
+     */
+    function translateDynamicHtml(html) {
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = html;
+        
+        // 翻译文本
+        tempDiv.querySelectorAll('[data-i18n]').forEach(el => {
+            const key = el.getAttribute('data-i18n');
+            if (key) {
+                const translated = safeT(key);
+                if (translated && translated !== key) {
+                    el.textContent = translated;
+                }
+            }
+        });
+        
+        // 翻译 title
+        tempDiv.querySelectorAll('[data-i18n-title]').forEach(el => {
+            const key = el.getAttribute('data-i18n-title');
+            if (key) {
+                const translated = safeT(key);
+                if (translated && translated !== key) {
+                    el.setAttribute('title', translated);
+                }
+            }
+        });
+        
+        return tempDiv.innerHTML;
+    }
+
+    /**
+     * 绑定培训卡片按钮事件
+     */
+    function bindTrainingButtons() {
+        // 签到按钮
+        document.querySelectorAll('#trainingCards .sign-btn').forEach(btn => {
+            btn.removeEventListener('click', btn._signHandler);
+            btn._signHandler = () => {
+                currentTrainingId = btn.dataset.id;
+                currentSignAction = 'sign';
+                if(signaturePad) signaturePad.clear();
+                new bootstrap.Modal(document.getElementById('signatureModal')).show();
+            };
+            btn.addEventListener('click', btn._signHandler);
+        });
+        
+        // 重新签名按钮
+        document.querySelectorAll('#trainingCards .resign-btn').forEach(btn => {
+            btn.removeEventListener('click', btn._resignHandler);
+            btn._resignHandler = () => {
+                currentTrainingId = btn.dataset.id;
+                currentSignAction = 'resign';
+                if(signaturePad) signaturePad.clear();
+                new bootstrap.Modal(document.getElementById('signatureModal')).show();
+            };
+            btn.addEventListener('click', btn._resignHandler);
+        });
+    }
 
     // 加载可签到的培训
     async function loadTrainings() {
@@ -673,27 +761,30 @@
             
             // 根据后端返回的状态确定徽章样式
             let statusBadge = '';
-            let actionHtml = '';
 
-            if (t.is_future) {
-                // 未开始
-                statusBadge = '<span class="badge bg-secondary">' + safeT('t_not_started') + '</span>';
-                actionHtml = `<button class="btn btn-secondary" disabled>${safeT('t_not_started')}</button>`;
-            } else if (t.needs_resign) {
-                // ✅ 优先判断：需要重新签名（无论培训状态如何）
-                statusBadge = '<span class="badge bg-danger">' + safeT('need_re-sign') + '</span>';
-                actionHtml = `<button class="btn btn-warning resign-btn" data-id="${t.id}">${safeT('re-sign')}</button>`;
-            } else if (t.is_active) {
-                if (t.signed) {
-                    // 已签到
-                    statusBadge = '<span class="badge bg-success">' + safeT('signed') + '</span>';
-                    actionHtml = `<button class="btn btn-success" disabled>${safeT('signed')}</button>`;
-                } else {
-                    // 待签到
-                    statusBadge = '<span class="badge bg-warning text-dark">' + safeT('not_checked_in') + '</span>';
-                    actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}">${safeT('sign_now')}</button>`;
+            // ✅ 直接使用后端返回的 button_html
+            let actionHtml = t.button_html || '';
+      
+            // 如果后端返回了 button_html，先翻译再插入
+            if (actionHtml) {
+                actionHtml = translateDynamicHtml(actionHtml);
+            } else {
+                // 向后兼容：使用默认逻辑
+                if (t.is_future) {
+                    actionHtml = `<button class="btn btn-secondary" disabled><span data-i18n="not_started">未开始</span></button>`;
+                } else if (t.needs_resign) {
+                    actionHtml = `<button class="btn btn-warning resign-btn" data-id="${t.id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">重新签名</span></button>`;
+                } else if (t.is_active) {
+                    if (t.signed) {
+                        actionHtml = `<button class="btn btn-success" disabled><span data-i18n="signed">已签到</span></button>`;
+                    } else {
+                        actionHtml = `<button class="btn btn-primary sign-btn" data-id="${t.id}"><span data-i18n="sign_now">立即签到</span></button>`;
+                    }
                 }
+                // 翻译默认生成的HTML
+                actionHtml = translateDynamicHtml(actionHtml);
             }
+
 
             // 签到时间显示
             let signTimeHtml = '';
@@ -833,11 +924,11 @@
                     // 考试未完成，不能进行访谈
                     statusBarClass = 'warning';
                     statusBadge = '<span class="badge bg-warning text-dark ms-2">' + safeT('t_exam_required') + '</span>';
-                    btnHtml = `<button class="btn btn-warning btn-sm w-100" disabled title="${safeT('t_complete_exam_first')}">${safeT('t_complete_exam_first')}</button>`;
+                    btnHtml = `<button class="btn btn-warning btn-sm w-100" disabled title="${safeT('complete_exam_first')}">${safeT('complete_exam_first')}</button>`;
                     progressPercent = 0;
-                    progressText = '📋 ' + safeT('t_waiting_for_exam');
+                    progressText = '📋 ' + safeT('waiting_for_exam');
                     btnDisabled = true;
-                    btnTooltip = safeT('t_complete_exam_first');
+                    btnTooltip = safeT('complete_exam_first');
                 }
                 else if (isFuture) {
                     // 未开始
