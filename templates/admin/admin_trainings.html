@@ -2478,15 +2478,15 @@
                             body: JSON.stringify({
                                 id: trainingId,
                                 name: newName,
-                                countries: selectedCountries,  // ✅ 多国家数组
+                                countries: selectedCountries,
                                 start_time: startISO,
                                 end_time: endISO
                             })
                         });
                         
                         if (res.ok) {
-                            const result = await res.json();  // ✅ 获取返回的 JSON
-                            const newStatus = result.dynamic_status;  // ✅ 获取新状态
+                            const result = await res.json();
+                            const newStatus = result.dynamic_status;
                             // 使用本地更新（不刷新列表）
                             updateTrainingLocally(trainingId, {
                                 name: newName,
@@ -2495,6 +2495,11 @@
                                 end_time: endISO,
                                 dynamic_status: newStatus
                             });
+
+                            // 通知其他页面培训已更新
+                            if (typeof notifyTrainingUpdate === 'function') {
+                                notifyTrainingUpdate(trainingId, 'update');
+                            }
                             
                             if (typeof showToast === 'function') {
                                 showToast(t('training_updated_successfully'), 'success');
@@ -2649,8 +2654,13 @@
                     const data = await res.json();
                     
                     if (data.success) {
-                        // ✅ 使用本地删除（不刷新列表）
+                        // 使用本地删除（不刷新列表）
                         deleteTrainingLocally(id);
+
+                        // 通知其他页面培训已删除
+                        if (typeof notifyTrainingUpdate === 'function') {
+                            notifyTrainingUpdate(id, 'delete');
+                        }
                         
                         if (typeof showToast === 'function') {
                             showToast(safeT('t_delete_success'), 'success');
@@ -3674,7 +3684,11 @@
                     
                     // 使用本地添加（不刷新列表）
                     addTrainingLocally(newTraining);
-                    
+
+                    // 通知其他页面培训已创建
+                    if (typeof notifyTrainingUpdate === 'function') {
+                        notifyTrainingUpdate(newTrainingId, 'create');
+                    }
                     // 只有非草稿状态才弹出推送对话框
                     if (hasValidPeriod && dynamicStatus !== 'draft') {
                         if (typeof showToast === 'function') {
@@ -4465,6 +4479,12 @@
             // loadTrainings(true);
             
             bootstrap.Modal.getInstance(document.getElementById('pushModal')).hide();
+
+            // 通知其他页面培训已推送
+            if (typeof notifyTrainingUpdate === 'function') {
+                notifyTrainingUpdate(currentTrainingId, 'push');
+            }
+
             // 使用 toast 替代 alert
             if (typeof showToast === 'function') {
                 showToast(safeT('t_notification_push_success'), 'success');
@@ -4630,7 +4650,49 @@
         // 初始化缓存监听器
         initCacheListeners();
         registerGlobalHeaderListeners();
-        
+
+        // 监听培训更新（从培训管理页面）
+        if (typeof onTrainingUpdate === 'function') {
+            onTrainingUpdate(function(data) {
+                console.log('📢 仪表盘收到培训更新通知:', data);
+                // 刷新培训列表
+                if (typeof loadDashboardTrainings === 'function') {
+                    loadDashboardTrainings(true);
+                }
+            });
+        } else {
+            // 备用：使用 BroadcastChannel 直接监听
+            try {
+                const channel = new BroadcastChannel('training_update_channel');
+                channel.onmessage = function(event) {
+                    const data = event.data;
+                    if (data && data.type === 'training_updated') {
+                        console.log('📢 收到培训更新通知:', data);
+                        if (typeof loadDashboardTrainings === 'function') {
+                            loadDashboardTrainings(true);
+                        }
+                    }
+                };
+            } catch (e) {
+                // 备用：localStorage 监听
+                window.addEventListener('storage', function(e) {
+                    if (e.key === 'training_update_flag') {
+                        try {
+                            const data = JSON.parse(e.newValue);
+                            if (data && data.training_id) {
+                                console.log('📢 收到培训更新通知:', data);
+                                if (typeof loadDashboardTrainings === 'function') {
+                                    loadDashboardTrainings(true);
+                                }
+                            }
+                        } catch (err) {
+                            // 忽略
+                        }
+                    }
+                });
+            }
+        }
+
         // 导出培训列表
         document.getElementById('exportTrainingsExcelBtn')?.addEventListener('click', async function() {
             const btn = this;
@@ -7242,6 +7304,44 @@
                 this._input.removeEventListener('keydown', this._input._keydownListener);
             }
             this.container.innerHTML = '';
+        }
+    }
+
+    // ============================================================
+    // 培训更新通知函数（如果全局函数不存在，定义备用）
+    // ============================================================
+    function notifyTrainingUpdate(trainingId, action) {
+        // 如果全局函数存在，使用它
+        if (typeof window.notifyTrainingUpdate === 'function') {
+            window.notifyTrainingUpdate(trainingId, action);
+            return;
+        }
+        
+        // 备用方案：使用 BroadcastChannel 直接发送
+        try {
+            const channel = new BroadcastChannel('training_update_channel');
+            channel.postMessage({
+                type: 'training_updated',
+                training_id: trainingId,
+                action: action,
+                timestamp: Date.now()
+            });
+            channel.close();
+            console.log('📡 已发送培训更新通知:', trainingId, action);
+        } catch (e) {
+            // 备用：localStorage
+            try {
+                localStorage.setItem('training_update_flag', JSON.stringify({
+                    training_id: trainingId,
+                    action: action,
+                    timestamp: Date.now()
+                }));
+                setTimeout(() => {
+                    localStorage.removeItem('training_update_flag');
+                }, 100);
+            } catch (err) {
+                console.warn('发送培训更新通知失败:', err);
+            }
         }
     }
 </script>

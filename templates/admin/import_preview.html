@@ -875,7 +875,30 @@
 			} else {
 				alert('重新导入成功');
 			}
-			window.location.href = returnUrl || '/admin/exams';
+
+			// ============================================================
+			// 在重新导入成功时刷新父页面
+			// ============================================================
+			
+			// 方式1：如果是从考试列表页面打开的弹窗，刷新父页面
+			if (window.opener && typeof window.opener.updateExamRow === 'function') {
+				// 调用父页面的刷新函数（需要先在 admin_exams.html 中暴露）
+				await window.opener.updateExamRow(originalExamId);
+			}
+			
+			// 方式2：如果有 opener 但不知道具体函数，使用简单刷新
+			if (window.opener) {
+				// 刷新父页面
+				window.opener.location.reload();
+			}
+			
+			// 关闭当前窗口（如果是弹窗模式）
+			if (window.opener) {
+				window.close();
+			} else {
+				// 如果是从页面直接进入的，跳转到考试列表
+				window.location.href = returnUrl || '/admin/exams';
+			}
 			return;
 		}
 

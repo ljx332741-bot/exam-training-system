@@ -4586,6 +4586,12 @@
 			}
 			bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
 			location.reload(); // 刷新列表
+
+            // 发送通知给其他页面
+            if (typeof notifyExamUpdate === 'function') {
+                notifyExamUpdate(examId, 'update');
+                console.log('📡 仪表盘发送考试更新通知:', examId);
+            }
 		} else {
 			const errorData = await updateRes.json();
 			if (typeof showToast === 'function') {
@@ -4666,6 +4672,11 @@
 				}
 				bootstrap.Modal.getInstance(document.getElementById('settingModal')).hide();
 				location.reload(); // 刷新列表
+                // 发送通知给其他页面
+                if (typeof notifyExamUpdate === 'function') {
+                    notifyExamUpdate(examId, 'update');
+                    console.log('📡 仪表盘发送考试更新通知:', examId);
+                }
 			} else {
 				const errorMsg = result.message || t('t_operation_failed');
 				if (typeof showToast === 'function') {
@@ -4729,6 +4740,26 @@
 		}
 	});
 
+    // 仪表盘 - 通知发送函数（如果不存在）
+    if (typeof notifyExamUpdate !== 'function') {
+        window.notifyExamUpdate = function(examId, action) {
+            action = action || 'update';
+            console.log('📡 仪表盘发送通知:', examId, action);
+            try {
+                var channel = new BroadcastChannel('exam_update_channel');
+                channel.postMessage({
+                    type: 'exam_updated',
+                    exam_id: examId,
+                    action: action,
+                    timestamp: Date.now()
+                });
+                channel.close();
+            } catch(e) {
+                console.warn('发送通知失败:', e);
+            }
+        };
+    }
+
 	// 修改 deleteExam 函数
 	async function deleteExam(examId, permanent) {
 		if (isDeleting) return;
@@ -4763,6 +4794,12 @@
 				}
 				currentPage = 1;
 				location.reload();
+
+                // 发送通知
+                if (typeof notifyExamUpdate === 'function') {
+                    notifyExamUpdate(examId, 'delete');
+                    console.log('📡 仪表盘发送删除考试通知:', examId);
+                }
 			} else {
 				throw new Error(result.message || t('t_delete_failed'));
 			}
@@ -5489,6 +5526,104 @@
         }
     }
 
+    function refreshDashboardExams(examId) {
+        console.log('🔄 仪表盘刷新考试列表, exam_id:', examId);
+        
+        // 方式1: 如果有局部更新函数，使用它
+        if (examId && typeof updateDashboardExamRow === 'function') {
+            updateDashboardExamRow(examId);
+            return;
+        }
+        
+        // 方式2: 重新加载仪表盘数据
+        if (typeof loadDashboardData === 'function') {
+            console.log('🔄 仪表盘重新加载数据');
+            // 清除缓存
+            sessionStorage.removeItem('dashboard_data');
+            sessionStorage.removeItem('dashboard_data_time');
+            loadDashboardData(true);
+        }
+        
+        // 方式3: 直接刷新页面（降级方案）
+        // 如果上面都不行，刷新页面
+        // location.reload();
+    }
+
+    function updateDashboardExamRow(examId) {
+        console.log('🔄 仪表盘局部更新考试行:', examId);
+        
+        // ✅ 使用更可靠的选择器
+        const row = document.querySelector(`#examsTable tbody tr .exam-detail-link[data-id="${examId}"]`)?.closest('tr');
+        
+        if (!row) {
+            console.warn('未找到考试行，重新加载数据');
+            if (typeof loadDashboardData === 'function') {
+                loadDashboardData(true);
+            }
+            return;
+        }
+        
+        console.log('✅ 找到行:', row);
+        
+        // 从服务器获取该考试的最新数据
+        fetch(`/api/admin/exam/${examId}?include_stats=true`)
+            .then(res => {
+                if (!res.ok) throw new Error('API 返回错误: ' + res.status);
+                return res.json();
+            })
+            .then(examData => {
+                console.log('📊 仪表盘获取到考试数据:', examData);
+                
+                // ✅ 更新状态徽章
+                const statusBadge = row.querySelector('.badge');
+                if (statusBadge) {
+                    const statusMap = {
+                        'draft': { text: '草稿', class: 'bg-secondary' },
+                        'created': { text: '未开始', class: 'bg-info' },
+                        'active': { text: '进行中', class: 'bg-success' },
+                        'closed': { text: '已关闭', class: 'bg-danger' }
+                    };
+                    const info = statusMap[examData.status] || statusMap['draft'];
+                    statusBadge.textContent = info.text;
+                    statusBadge.className = 'badge ' + info.class;
+                    console.log('✅ 状态已更新为:', info.text);
+                }
+                
+                // ✅ 更新时间范围
+                const timeRange = row.querySelector('.time-range');
+                if (timeRange) {
+                    const start = examData.start_time ? formatLocalTime(examData.start_time) : '';
+                    const end = examData.end_time ? formatLocalTime(examData.end_time) : '';
+                    timeRange.textContent = start + ' - ' + end;
+                    console.log('✅ 时间已更新:', timeRange.textContent);
+                }
+                
+                // ✅ 更新应考/实考人数
+                const countCell = row.querySelector('td:nth-child(11)');
+                if (countCell) {
+                    const assigned = examData.assigned_count || 0;
+                    const submitted = examData.submitted_count || 0;
+                    countCell.textContent = assigned + '/' + submitted;
+                    console.log('✅ 人数已更新:', countCell.textContent);
+                }
+                
+                // ✅ 更新考试名称（如果有变化）
+                const nameLink = row.querySelector('.exam-name-link');
+                if (nameLink && examData.title) {
+                    nameLink.textContent = examData.title;
+                    console.log('✅ 名称已更新:', examData.title);
+                }
+                
+                console.log('✅ 仪表盘考试行更新完成');
+            })
+            .catch(err => {
+                console.warn('仪表盘更新考试行失败，重新加载数据:', err);
+                if (typeof loadDashboardData === 'function') {
+                    loadDashboardData(true);
+                }
+            });
+    }
+
 	// 初始化事件监听
 	document.addEventListener('DOMContentLoaded', async function () {
         {% if session.get('role') in ['developer', 'super_admin'] %}
@@ -5564,6 +5699,69 @@
             }
         });
 
+        console.log('📡 [仪表盘] 正在注册考试更新监听...');
+
+        // 方式1：使用 onExamUpdate
+        if (typeof onExamUpdate === 'function') {
+            console.log('📡 [仪表盘] onExamUpdate 函数存在，开始监听');
+            onExamUpdate(function(data) {
+                console.log('📢 仪表盘收到考试更新通知:', data);
+                // ✅ 直接刷新页面，确保数据完全同步
+                // 使用 location.reload() 强制从服务器重新加载
+                location.reload();
+            });
+        } else {
+            console.warn('📡 [仪表盘] onExamUpdate 函数不存在');
+        }
+
+        // 方式2：直接监听 BroadcastChannel
+        try {
+            const channel = new BroadcastChannel('exam_update_channel');
+            channel.onmessage = function(event) {
+                console.log('📡 [仪表盘] ✅ 收到考试更新通知 (BroadcastChannel):', event.data);
+                if (event.data && event.data.type === 'exam_updated') {
+                    if (typeof refreshDashboardExams === 'function') {
+                        refreshDashboardExams(event.data.exam_id);
+                    } else {
+                        loadDashboardData(true);
+                    }
+                }
+            };
+            console.log('📡 [仪表盘] BroadcastChannel 监听已注册');
+        } catch (e) {
+            console.warn('📡 [仪表盘] BroadcastChannel 监听失败:', e);
+        }
+
+        // 方式3：localStorage 降级
+        window.addEventListener('storage', function(e) {
+            if (e.key === 'exam_update_flag') {
+                try {
+                    const data = JSON.parse(e.newValue);
+                    console.log('📡 [仪表盘] ✅ 收到考试更新通知 (localStorage):', data);
+                    if (data && data.exam_id) {
+                        if (typeof refreshDashboardExams === 'function') {
+                            refreshDashboardExams(data.exam_id);
+                        } else {
+                            loadDashboardData(true);
+                        }
+                    }
+                } catch (err) {
+                    // 忽略
+                }
+            }
+        });
+
+        // 监听培训更新（从培训管理页面）
+        if (typeof onTrainingUpdate === 'function') {
+            onTrainingUpdate(function(data) {
+                console.log('📢 仪表盘收到培训更新通知:', data);
+                // 刷新培训列表
+                if (typeof loadDashboardTrainings === 'function') {
+                    loadDashboardTrainings(true);
+                }
+            });
+        }
+        
         // 监听综合筛选 Tab 显示事件（备用）
         document.getElementById('multi-tab')?.addEventListener('shown.bs.tab', function() {
             // 刷新选中计数

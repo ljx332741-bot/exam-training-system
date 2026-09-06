@@ -21,7 +21,8 @@ exam-system/
 │   │   │
 │   │   └── admin/
 │   │        │
-│   │        └── dashboard/           
+│   │        └── dashboard/
+│   │             ├── channel.js                # 全局通信工具 
 │   │             └── _training_list.js         # 管理员培训列表 JavaScript
 │   │
 │   ├── css/                          
