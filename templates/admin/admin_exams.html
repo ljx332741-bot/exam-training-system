@@ -1133,6 +1133,9 @@
         const showDelete = ['super_admin', 'developer'].includes(CURRENT_USER_ROLE);
         const showReopenBtn = ex.can_show_reopen_button === true;
 
+        // ========== 重新导入按钮（仅草稿和未开始状态） ==========
+        const showReimport = ['draft', 'created'].includes(ex.status) && !isDeleted;
+
         // ========== 新增：题库按钮显示条件 ==========
         // 只有在草稿(draft)或未开始(created)状态时才显示可编辑的题库按钮
         // 其他状态(active/closed)不显示或显示为只读查看
@@ -1329,12 +1332,21 @@
                     </button>` : ''}
 
                 ${showQuestionBank ? `
-                    <a href="/admin/exam/${ex.id}/questions" 
+                    <a href="/admin/exam/${ex.id}/questions" target="_blank"
                     class="btn btn-sm btn-outline-info" 
                     title="${safeT('edit_question_bank') || '编辑题库'}"
                     style="white-space: nowrap;">
                         <i class="bi bi-book"></i> 
                         <span class="d-none d-lg-inline">${safeT('question_bank') || '题库'}</span>
+                    </a>` : ''
+                }
+                ${showReimport ? `
+                    <a href="/admin/import?exam_id=${ex.id}&mode=reimport&return_url=${encodeURIComponent(window.location.href)}" 
+                        class="btn btn-sm btn-outline-warning" 
+                        title="${safeT('reimport_exam') || '重新导入'}"
+                        style="white-space: nowrap;">
+                        <i class="bi bi-arrow-repeat"></i> 
+                        <span class="d-none d-lg-inline">${safeT('reimport') || '重新导入'}</span>
                     </a>` : ''
                 }
                 ${!isDeleted && !isEditable && ['active', 'closed'].includes(ex.status) ? `

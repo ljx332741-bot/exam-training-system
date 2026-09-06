@@ -176,7 +176,7 @@
                         <td class="fw-medium" style="display: flex; flex-direction: column;">
                             {# 进行中的考试名称显示为可点击链接 #}
                             {% if ex.status == 'active' %}
-                                <a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}"  target="_blank"
+                                <a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" target="_blank"
                                     class="text-decoration-none fw-semibold">
                                     {{ ex.title }}
                                     {% if ex.has_binding %}
@@ -238,7 +238,7 @@
                                 {% if ex.status not in ['deleted'] %}
                                     {# 草稿或未开始：显示可编辑的题库按钮 #}
                                     {% if ex.status == 'draft' or ex.status == 'created' %}
-                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}" 
+                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}" target="_blank"
                                         class="btn btn-sm btn-outline-info" 
                                         data-i18n-title="edit_question_bank"
                                         title="编辑题库">
@@ -247,7 +247,7 @@
                                         </a>
                                     {# 进行中或已关闭：显示只读的查看按钮 #}
                                     {% elif ex.status == 'active' or ex.status == 'closed' %}
-                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}?readonly=true" 
+                                        <a href="{{ url_for('admin_exam_q.admin_exam_questions_page', exam_id=ex.id) }}?readonly=true" target="_blank"
                                         class="btn btn-sm btn-outline-secondary" 
                                         data-i18n-title="view_question_bank"
                                         title="查看题目（只读模式）">
@@ -259,11 +259,16 @@
                                 <button class="btn btn-outline-secondary batch-export" data-id="{{ ex.id }}">PDF</button> 
                                 <!-- 重置考生状态（需配合用户选择，示例中简化） -->
                                 <button class="btn btn-outline-primary setting-btn" data-id="{{ ex.id }}" data-duration="{{ ex.duration | default(60) }}"><span data-i18n="setting">推送</span></button>
-                                {% if ex.dynamic_status == 'draft' %}
+                                {% if ex.dynamic_status == 'draft' or ex.status == 'created' %}
                                     <button class="btn btn-outline-info edit-exam-btn" data-id="{{ ex.id }}"
                                         onclick="location.href='/admin/exam/edit/' + this.dataset.id; sessionStorage.setItem('exam_editor_return_url', window.location.href);">
                                         ✏️ <span data-i18n="edit">编辑</span>
                                     </button>
+                                    <a href="/admin/import?exam_id={{ ex.id }}&mode=reimport&return_url={{ request.url }}" 
+                                        class="btn btn-sm btn-outline-warning" 
+                                        title="重新导入题库">
+                                        <i class="bi bi-arrow-repeat"></i> 重新导入
+                                    </a>
                                 {% endif %}
                                 <button class="btn btn-outline-info copy-exam-btn" data-id="{{ ex.id }}"><span data-i18n="copy">拷贝</span></button>
                                 <!-- 删除考试（危险操作） -->

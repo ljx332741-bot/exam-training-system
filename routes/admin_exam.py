@@ -10,6 +10,7 @@ from flask import (
 )
 from io import BytesIO
 import openpyxl
+import services.exam as exam_service
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from . import admin_exam_bp
 from services.db import get_supabase, get_supabase_admin, safe_table
@@ -474,7 +475,7 @@ def edit_exam_preview(exam_id):
 @login_required
 @admin_required
 def admin_import():
-    """Word 题库导入页面 / 新建考试页面"""
+    """Word 题库导入页面 / 新建考试页面 / 重新导入页面"""
     print(f"\n🔥🔥🔥 admin_import 被调用！method={request.method} 🔥🔥🔥\n", flush=True)
 
     # 获取参数
@@ -483,6 +484,8 @@ def admin_import():
     training_countries_param = request.args.get('training_countries', '')
     countries_param = request.args.get('countries', '')
     mode = request.args.get('mode', '')
+    reimport_exam_id = request.args.get('exam_id')  # 重新导入的考试ID
+    return_url_param = request.args.get('return_url', '')
     
     # ========== 解析培训国家（支持多国家） ==========
     training_countries = []
@@ -532,7 +535,47 @@ def admin_import():
     
     # ========== GET 请求处理 ==========
     if request.method == 'GET':
-        # 如果是绑定模式且设置了 mode=create，直接进入上传页面但携带国家信息
+        db = get_supabase()
+        
+        # ===== 1. 检查是否是重新导入模式 =====
+        if mode == 'reimport' and reimport_exam_id:
+            try:
+                exam_id = int(reimport_exam_id)
+                # 获取考试信息
+                exam_res = db.table("exams").select("title, status, countries").eq("id", exam_id).maybe_single().execute()
+                if not exam_res.data:
+                    flash({'msg': 'exam_not_found', 'params': []}, 'danger')
+                    return redirect(url_for('admin_exam.admin_exams_page'))
+                
+                exam = exam_res.data
+                # 只允许草稿和未开始状态重新导入
+                if exam.get('status') not in ['draft', 'created']:
+                    flash({'msg': 'only_draft_or_created_can_reimport', 'params': []}, 'danger')
+                    return redirect(url_for('admin_exam.admin_exams_page'))
+                
+                # 获取题目数量
+                q_res = db.table("questions").select("id", count="exact").eq("exam_id", exam_id).execute()
+                question_count = q_res.count if hasattr(q_res, 'count') else 0
+                
+                # 解析考试国家
+                exam_countries = parse_exam_countries(exam)
+                if not exam_countries and exam.get('country'):
+                    exam_countries = [exam.get('country')]
+                
+                return render_template(
+                    'admin/import.html',
+                    reimport_mode=True,
+                    exam_id=exam_id,
+                    exam_title=exam.get('title', ''),
+                    exam_question_count=question_count,
+                    exam_countries=exam_countries,
+                    return_url=return_url_param or url_for('admin_exam.admin_exams_page')
+                )
+            except ValueError:
+                flash({'msg': 'invalid_exam_id', 'params': []}, 'danger')
+                return redirect(url_for('admin_exam.admin_exams_page'))
+        
+        # ===== 2. 绑定模式（上传题库） =====
         if from_binding and training_id:
             logger.info("📄 渲染 import.html（绑定模式 - 上传题库）")
             return render_template('admin/import.html',
@@ -542,7 +585,7 @@ def admin_import():
                 return_url=request.referrer or url_for('admin_exam.admin_dashboard')
             )
         
-        # 普通导入模式
+        # ===== 3. 普通导入模式 =====
         logger.info("📄 渲染 import.html（普通导入模式）")
         return render_template('admin/import.html')
     
@@ -551,10 +594,13 @@ def admin_import():
         file = request.files['docx_file']
         logger.info(f"📄 收到文件: {file.filename}, size={file.content_length}")
         
-        # 从 POST 表单获取国家信息（由隐藏字段传递）
+        # 从 POST 表单获取参数
         post_training_id = request.form.get('training_id', '')
         post_from_binding = request.form.get('from_binding', 'false') == 'true'
         post_training_countries = request.form.get('training_countries', '')
+        post_mode = request.form.get('mode', '')
+        post_exam_id = request.form.get('exam_id', '')
+        post_return_url = request.form.get('return_url', '')
         
         # 解析国家
         if post_from_binding and post_training_countries:
@@ -563,9 +609,14 @@ def admin_import():
         else:
             countries = training_countries  # 使用 GET 参数中的国家
         
+        # 检查是否是重新导入模式
+        is_reimport = post_mode == 'reimport' and post_exam_id
+        
         if not file.filename.endswith('.docx'):
             logger.warning(f"❌ 文件格式错误: {file.filename}")
             flash({'msg': 'only_docx', 'params': []}, 'danger')
+            if is_reimport and post_return_url:
+                return redirect(post_return_url)
             return redirect(request.url)
         
         tmp_path = None
@@ -578,7 +629,7 @@ def admin_import():
                 tmp_path = tmp.name
             logger.info(f"💾 临时文件已保存: {tmp_path}")
             
-            exam_title, qs = exam.parse_docx_bilingual(tmp_path, exam_id=0)
+            exam_title, qs = exam_service.parse_docx_bilingual(tmp_path, exam_id=0)
             if not exam_title or exam_title == '未命名考试':
                 exam_title = os.path.splitext(os.path.basename(file.filename))[0]
                 logger.info(f"使用文件名作为考试标题: {exam_title}")
@@ -587,14 +638,77 @@ def admin_import():
             if not qs:
                 logger.warning("⚠️ 解析结果为空")
                 flash({'msg': 'no_valid_question', 'params': []}, 'warning')
+                if is_reimport and post_return_url:
+                    return redirect(post_return_url)
                 return render_template('admin/import.html')
+
+            # ========== 🔥 重新导入模式：先进入预览页 ==========
+            if is_reimport:
+                try:
+                    exam_id = int(post_exam_id)
+                    db = get_supabase()
+                    
+                    # 验证考试状态
+                    exam_res = db.table("exams").select("title, status, countries").eq("id", exam_id).maybe_single().execute()
+                    if not exam_res.data:
+                        flash({'msg': 'exam_not_found', 'params': []}, 'danger')
+                        if post_return_url:
+                            return redirect(post_return_url)
+                        return redirect(url_for('admin_exam.admin_exams_page'))
+                    
+                    if exam_res.data.get('status') not in ['draft', 'created']:
+                        flash({'msg': 'exam_not_editable', 'params': []}, 'danger')
+                        if post_return_url:
+                            return redirect(post_return_url)
+                        return redirect(url_for('admin_exam.admin_exams_page'))
+                    
+                    # ✅ 获取原考试的国家
+                    exam_info = exam_res.data
+                    exam_countries = parse_exam_countries(exam_info)
+                    if not exam_countries and exam_info.get('country'):
+                        exam_countries = [exam_info.get('country')]
+                    
+                    # ✅ 优先使用原考试的国家，如果没有则使用上传时传入的国家
+                    final_countries = exam_countries if exam_countries else countries
+                    
+                    logger.info(f"📋 重新导入 - 原考试国家: {exam_countries}, 上传国家: {countries}, 最终: {final_countries}")
+                    
+                    # ✅ 跳转到预览页（重新导入模式）
+                    return render_template('admin/import_preview.html',
+                        questions=qs,
+                        exam_title=exam_title,
+                        edit_mode=False,
+                        copy_mode=False,
+                        original_exam_id=exam_id,  # 传递原考试ID
+                        exam_status='draft',
+                        can_edit_questions=True,
+                        exam_duration=60,
+                        exam_reviewer='',
+                        exam_pass_score=85,
+                        exam_start_time='',
+                        exam_end_time='',
+                        exam_countries=final_countries,  # ✅ 使用原考试的国家
+                        from_binding=False,
+                        training_id='',
+                        training_country='',
+                        return_url=post_return_url or url_for('admin_exam.admin_exams_page'),
+                        reimport_mode=True  # 标记为重新导入模式
+                    )
+                    
+                except ValueError as e:
+                    logger.error(f"❌ 重新导入失败: {e}")
+                    flash({'msg': 'reimport_failed', 'params': [str(e)]}, 'danger')
+                    if post_return_url:
+                        return redirect(post_return_url)
+                    return redirect(url_for('admin_exam.admin_exams_page'))
             
+            # ========== 普通导入模式：跳转到预览页 ==========
             # 获取来源 URL
-            return_url = request.referrer or url_for('admin_exam.admin_dashboard')
+            return_url = post_return_url or request.referrer or url_for('admin_exam.admin_dashboard')
             if return_url and '/admin/import' in return_url:
                 return_url = url_for('admin_exam.admin_dashboard')
             
-            logger.info("🔄 跳转预览页，国家: {countries}")
+            logger.info(f"🔄 跳转预览页，国家: {countries}")
             
             # 获取默认值
             defaults = get_default_exam_values(request)
@@ -620,22 +734,35 @@ def admin_import():
                 from_binding=post_from_binding or from_binding,
                 training_id=post_training_id or training_id,
                 training_country=','.join(final_countries) if final_countries else '',
-                return_url=return_url
+                return_url=return_url,
+                reimport_mode=False    # 不是重新导入模式
             )
 
         except AttributeError as e:
             logger.error(f"❌ AttributeError: {e}")
             flash({'msg': 'parse_func_missing', 'params': []}, 'danger')
+            if is_reimport and post_return_url:
+                return redirect(post_return_url)
+            return redirect(request.url)
         except FileNotFoundError as e:
             logger.error(f"❌ 文件未找到: {e}")
             flash({'msg': 'temp_file_failed', 'params': []}, 'danger')
+            if is_reimport and post_return_url:
+                return redirect(post_return_url)
+            return redirect(request.url)
         except PermissionError as e:
             logger.error(f"❌ 权限错误: {e}")
             flash({'msg': 'file_permission_denied', 'params': []}, 'danger')
+            if is_reimport and post_return_url:
+                return redirect(post_return_url)
+            return redirect(request.url)
         except Exception as e:
             logger.error(f"❌ 未知异常: {type(e).__name__}: {e}")
             logger.error(f"📋 完整堆栈:\n{traceback.format_exc()}")
             flash({'msg': 'parse_error', 'params': [str(e)]}, 'danger')
+            if is_reimport and post_return_url:
+                return redirect(post_return_url)
+            return redirect(request.url)
         finally:
             if tmp_path and os.path.exists(tmp_path):
                 try:
@@ -647,6 +774,79 @@ def admin_import():
     
     # ========== 其他情况 ==========
     return render_template('admin/import.html')
+
+@admin_exam_bp.route('/admin/exam/<int:exam_id>/reimport', methods=['POST'])
+@login_required
+@admin_required
+def admin_exam_reimport(exam_id):
+    """重新导入题库（替换现有考试的所有题目）"""
+    data = request.json
+    db = get_supabase()
+    
+    # 1. 验证考试是否存在
+    exam_res = db.table("exams").select("title, status").eq("id", exam_id).maybe_single().execute()
+    if not exam_res.data:
+        return jsonify({"success": False, "message": "考试不存在"}), 404
+    
+    exam = exam_res.data
+    
+    # 2. 只允许草稿和未开始状态
+    if exam.get('status') not in ['draft', 'created']:
+        return jsonify({"success": False, "message": "只有草稿或未开始的考试可以重新导入"}), 403
+    
+    # 3. 获取数据
+    questions = data.get('questions', [])
+    exam_title = data.get('title', exam.get('title', ''))
+    duration = data.get('duration', 60)
+    reviewer = data.get('reviewer', '')
+    pass_score = data.get('pass_score', 85)
+    countries = data.get('countries', [])
+    start_time = data.get('start_time')
+    end_time = data.get('end_time')
+    
+    if not questions:
+        return jsonify({"success": False, "message": "没有题目数据"}), 400
+    
+    try:
+        # 4. 删除旧题目
+        delete_res = db.table("questions").delete().eq("exam_id", exam_id).execute()
+        deleted_count = len(delete_res.data) if delete_res.data else 0
+        logger.info(f"🗑️ 删除旧题目: {deleted_count} 道")
+        
+        # 5. 插入新题目
+        for q in questions:
+            q['exam_id'] = exam_id
+            q['options'] = json.dumps(q.get('options', {}))
+        insert_res = db.table("questions").insert(questions).execute()
+        inserted_count = len(insert_res.data) if insert_res.data else 0
+        logger.info(f"✅ 插入新题目: {inserted_count} 道")
+        
+        # 6. 更新考试信息
+        update_data = {
+            "title": exam_title,
+            "duration": duration,
+            "reviewer": reviewer,
+            "pass_score": pass_score,
+            "countries": json.dumps(countries) if countries else None
+        }
+        if start_time:
+            update_data["start_time"] = start_time
+        if end_time:
+            update_data["end_time"] = end_time
+        
+        db.table("exams").update(update_data).eq("id", exam_id).execute()
+        
+        logger.info(f"✅ 重新导入成功: 考试 {exam_id}, {inserted_count} 道题目")
+        
+        return jsonify({
+            "success": True,
+            "message": f"重新导入成功，{inserted_count} 道题目",
+            "question_count": inserted_count
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ 重新导入失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
 
 @admin_exam_bp.route('/admin/import/save', methods=['POST'])
 @login_required
@@ -4074,3 +4274,106 @@ def export_exams_excel():
         logger.error(f"导出考试列表失败: {e}")
         return jsonify({"success": False, "message": str(e)}), 500
 
+
+@admin_exam_bp.route('/api/admin/reviewer_search')
+@login_required
+@admin_required
+def reviewer_search():
+    """
+    搜索阅卷人（支持模糊匹配，权限过滤）
+    返回去重的阅卷人列表，按使用频率排序
+    """
+    db = get_supabase()
+    query = request.args.get('q', '').strip()
+    
+    if not query or len(query) < 1:
+        return jsonify([])
+    
+    # 获取当前用户权限范围
+    allowed_countries = get_admin_allowed_countries()
+    is_dev = is_developer()
+    
+    # ========== 1. 构建考试查询（获取权限范围内的考试） ==========
+    exam_query = db.table("exams").select("id, reviewer, country, countries")
+    
+    # 权限过滤
+    if not is_dev and allowed_countries is not None and allowed_countries:
+        or_conditions = []
+        for c in allowed_countries:
+            or_conditions.append(f"country.eq.{c}")
+            or_conditions.append(f"countries.cs.{{{c}}}")
+        if or_conditions:
+            exam_query = exam_query.or_(','.join(or_conditions))
+    elif not is_dev and allowed_countries is not None and not allowed_countries:
+        return jsonify([])
+    
+    # 获取所有考试
+    exams_res = exam_query.execute()
+    exams = exams_res.data or []
+    
+    # 收集阅卷人及其使用次数
+    reviewer_stats = {}
+    reviewer_recent = {}
+    
+    for exam in exams:
+        reviewer = exam.get('reviewer')
+        if not reviewer or reviewer.strip() == '':
+            continue
+        
+        # 模糊匹配（姓名或工号）
+        reviewer_lower = reviewer.lower()
+        if query.lower() in reviewer_lower or any(keyword in reviewer_lower for keyword in query.lower().split()):
+            # 统计使用次数
+            reviewer_stats[reviewer] = reviewer_stats.get(reviewer, 0) + 1
+            # 记录最近使用的考试（用于排序）
+            if reviewer not in reviewer_recent or exam.get('created_at', '') > reviewer_recent.get(reviewer, ''):
+                reviewer_recent[reviewer] = exam.get('created_at', '')
+    
+    # ========== 2. 获取阅卷人历史记录（优先排序） ==========
+    history = session.get('reviewer_history', [])
+    
+    # 构建返回结果
+    result = []
+    for reviewer, count in reviewer_stats.items():
+        # 检查是否在历史记录中
+        in_history = reviewer in history
+        result.append({
+            'reviewer': reviewer,
+            'display_name': reviewer,
+            'usage_count': count,
+            'recent_used': in_history
+        })
+    
+    # 排序：优先显示历史记录中的，然后按使用次数排序
+    result.sort(key=lambda x: (not x['recent_used'], -x['usage_count']))
+    
+    # 限制返回数量
+    return jsonify(result[:20])
+
+
+@admin_exam_bp.route('/api/admin/reviewer_history', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def reviewer_history():
+    """获取或保存阅卷人历史记录"""
+    if request.method == 'POST':
+        data = request.json
+        reviewer = data.get('reviewer', '').strip()
+        if reviewer:
+            if 'reviewer_history' not in session:
+                session['reviewer_history'] = []
+            history = session['reviewer_history']
+            # 移到最前面（最近使用）
+            if reviewer in history:
+                history.remove(reviewer)
+            history.insert(0, reviewer)
+            # 最多保留20条
+            if len(history) > 20:
+                history = history[:20]
+            session['reviewer_history'] = history
+            return jsonify({"success": True})
+        return jsonify({"success": False}), 400
+    
+    # GET 请求
+    history = session.get('reviewer_history', [])
+    return jsonify(history)

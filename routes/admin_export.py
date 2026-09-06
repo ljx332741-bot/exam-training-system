@@ -744,14 +744,12 @@ def generate_single_user_pdf(exam_id, user_id):
         url_reviewer=None  # 批量导出时没有 URL 参数
     )
 
-    '''
     # ✅ 添加调试日志
     logger.info(f"========== generate_single_user_pdf 阅卷人 ==========")
     logger.info(f"考生国家: {user_data.get('country')}")
     logger.info(f"考试表 reviewer: {exam_data.get('reviewer')}")
     logger.info(f"最终 reviewer: {reviewer}")
     logger.info(f"=================================================")
-    '''
 
     # 7. 生成PDF字节流
     pdf_buffer = export.generate_user_pdf(
