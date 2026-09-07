@@ -175,10 +175,7 @@ def api_available_trainings():
     filtered_trainings = []
     for t in all_trainings:
         training_id = t['id']
-        
-        # 使用新的工具函数解析国家列表
         country_list = parse_training_countries(t)
-        
         if not country_list:
             continue
         
@@ -213,18 +210,26 @@ def api_available_trainings():
     training_ids = [t['id'] for t in filtered_trainings]
     
     binding_map = {}
+    binding_names_map = {}
+    
     if training_ids:
+        # ✅ 修复：查询时同时获取考试名称
         bind_res = admin_db.table("training_exam_bindings") \
-            .select("training_id, exam_id") \
+            .select("training_id, exam_id, exams!inner(title)") \
             .in_("training_id", training_ids) \
             .is_("deleted_at", "null") \
             .execute()
         
         for b in (bind_res.data or []):
             tid = b['training_id']
+            exam_data = b.get('exams', {})
+            exam_name = exam_data.get('title', f'考试 #{b["exam_id"]}')
+            
             if tid not in binding_map:
                 binding_map[tid] = []
+                binding_names_map[tid] = []
             binding_map[tid].append(b['exam_id'])
+            binding_names_map[tid].append(exam_name)
     
     # 查询用户已完成的考试
     completed_exam_ids_set = set()
@@ -253,8 +258,8 @@ def api_available_trainings():
         if not start or not end:
             continue
         
-        signed_info = signed_dict.get(training_id)
-        signed = signed_info is not None
+        signed_info = signed_dict.get(training_id, {})
+        signed = bool(signed_info)
         needs_resign = False
         if signed:
             # 有签到记录但无签名 → 需要重新签名
@@ -268,14 +273,39 @@ def api_available_trainings():
         
         # 🔥 获取绑定信息
         binding_exam_ids = binding_map.get(training_id, [])
+        binding_exam_names = binding_names_map.get(training_id, [])
         has_binding = len(binding_exam_ids) > 0
-        
+
         # 检查用户是否完成了该培训的所有绑定考试
         is_exam_completed = False
         if has_binding:
             # 检查是否完成了所有绑定的考试（全部完成才可签到）
             is_exam_completed = all(eid in completed_exam_ids_set for eid in binding_exam_ids)
-        
+
+        # 构建绑定徽章 HTML
+        binding_badge_html = ''
+        if has_binding:
+            # 构建详细的 tooltip 内容
+            if binding_exam_names and len(binding_exam_names) == len(binding_exam_ids):
+                details = ', '.join([
+                    f'{name}(ID:{eid})' for eid, name in zip(binding_exam_ids, binding_exam_names)
+                ])
+            else:
+                details = f'考试 ID: {", ".join(map(str, binding_exam_ids))}'
+            
+            tooltip_text = f'已绑定考试: {details}'
+            
+            binding_badge_html = f'''
+                <span class="binding-badge badge bg-success ms-1" 
+                      data-bs-toggle="tooltip" 
+                      data-bs-placement="top"
+                      data-bs-title="{tooltip_text}"
+                      style="font-size: 0.6rem; cursor: help; vertical-align: middle;">
+                    <i class="bi bi-link-45deg" style="font-size: 0.7rem;"></i>
+                    <span class="badge bg-light text-dark ms-1" style="font-size: 0.5rem; padding: 0 4px;">{len(binding_exam_ids)}</span>
+                </span>
+            '''
+
         logger.info(f"培训 {training_id}: has_binding={has_binding}, is_exam_completed={is_exam_completed}")
         
         # ========== 8. 状态判断逻辑 ==========
@@ -299,6 +329,8 @@ def api_available_trainings():
                 "has_binding": has_binding,
                 "is_exam_completed": is_exam_completed,
                 "binding_exam_ids": binding_exam_ids,
+                "binding_exam_names": binding_exam_names,
+                "binding_badge_html": binding_badge_html,
                 "button_html": f'<button class="btn btn-secondary" disabled><span data-i18n="not_started">未开始</span></button>'
             })
             continue
@@ -324,6 +356,8 @@ def api_available_trainings():
                     "has_binding": has_binding,
                     "is_exam_completed": is_exam_completed,
                     "binding_exam_ids": binding_exam_ids,
+                    "binding_exam_names": binding_exam_names,
+                    "binding_badge_html": binding_badge_html,
                     "button_html": f'<button class="btn btn-warning resign-btn" data-id="{training_id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">重新签名</span></button>'
                 })
                 continue
@@ -347,6 +381,8 @@ def api_available_trainings():
                     "has_binding": has_binding,
                     "is_exam_completed": is_exam_completed,
                     "binding_exam_ids": binding_exam_ids,
+                    "binding_exam_names": binding_exam_names,
+                    "binding_badge_html": binding_badge_html,
                     "button_html": f'<button class="btn btn-warning resign-btn" data-id="{training_id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">补签</span></button>'
                 })
                 continue
@@ -379,6 +415,8 @@ def api_available_trainings():
                     "has_binding": has_binding,
                     "is_exam_completed": is_exam_completed,
                     "binding_exam_ids": binding_exam_ids,
+                    "binding_exam_names": binding_exam_names,
+                    "binding_badge_html": binding_badge_html,
                     "button_html": f'<button class="btn btn-success" disabled><span data-i18n="signed">已签到</span></button>'
                 })
             elif needs_resign:
@@ -400,6 +438,8 @@ def api_available_trainings():
                     "has_binding": has_binding,
                     "is_exam_completed": is_exam_completed,
                     "binding_exam_ids": binding_exam_ids,
+                    "binding_exam_names": binding_exam_names,
+                    "binding_badge_html": binding_badge_html,
                     "button_html": f'<button class="btn btn-warning resign-btn" data-id="{training_id}"><i class="bi bi-exclamation-triangle"></i> <span data-i18n="re-sign">重新签名</span></button>'
                 })
             else:
@@ -421,6 +461,8 @@ def api_available_trainings():
                     "has_binding": has_binding,
                     "is_exam_completed": is_exam_completed,
                     "binding_exam_ids": binding_exam_ids,
+                    "binding_exam_names": binding_exam_names,
+                    "binding_badge_html": binding_badge_html,
                     "button_html": _generate_button_html(training_id, can_sign, is_active, signed, needs_resign, has_binding, is_exam_completed)
                 })
             continue

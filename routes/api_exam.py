@@ -217,12 +217,14 @@ def dashboard():
                 ex['total_score'] = 100
             
             exams.append(ex)
-            
+
         # ============================================================
         # 🔥 获取最近10条成绩记录（增强版：支持重考状态和备注）
         # ============================================================
         results_res = db.table("exam_results").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(10).execute()
         results = []
+        history_exam_ids = [] 
+
         if results_res.data:
             # 获取考试信息
             valid_exams = db.table("exams").select("id, title, pass_score, max_retake, status").in_("id", [r['exam_id'] for r in results_res.data]).is_("deleted_at", "null").execute()
@@ -231,11 +233,12 @@ def dashboard():
             for r in results_res.data:
                 exam = valid_map.get(r['exam_id'])
                 if exam:
-                    # ✅ 使用字符串标识符，前端翻译
+                    history_exam_ids.append(r['exam_id'])
+                    # 使用字符串标识符，前端翻译
                     r['exam_title'] = exam.get('title', '')
                     # 添加一个标识符，让前端知道使用哪个翻译键
                     r['exam_title_key'] = 'exam_name_unknown' if not exam.get('title') else None
-                    
+
                     pass_score = exam.get('pass_score', 85)
                     max_retake = exam.get('max_retake', 3)
                     total_score = r.get('total_score', 0)
@@ -267,7 +270,7 @@ def dashboard():
                     is_exam_available = exam_status in ['active', 'created']
                     can_retake = not is_passed and retake_count < max_retake and is_exam_available
                     
-                    # 5. ✅ 重考状态：使用状态码 + 参数（前端翻译）
+                    # 5. 重考状态：使用状态码 + 参数（前端翻译）
                     if is_passed and retake_count > 0:
                         retake_status_code = 'passed_after_retake'
                         retake_status_class = 'success'
@@ -293,7 +296,7 @@ def dashboard():
                     remark = r.get('remark', '')
                     retake_number = r.get('retake_number', 0)
 
-                    # 7. ✅ 备注类型：使用标识符
+                    # 7. 备注类型：使用标识符
                     if retake_number == 1:
                         remark_type = 'first'
                     elif retake_number > 1:
@@ -304,8 +307,8 @@ def dashboard():
                     # 检查是否为强制推送（从 remark 字段判断）
                     is_force = r.get('remark', '').startswith('🔥') if r.get('remark') else False
 
-                    # 8. ✅ 构造重考序号显示（使用标识符 + 参数）
-                    # ✅ 初始化默认值，避免 UnboundLocalError
+                    # 8. 构造重考序号显示（使用标识符 + 参数）
+                    # 初始化默认值，避免 UnboundLocalError
                     retake_display = ''
                     retake_display_key = None
                     retake_display_params = None
@@ -346,11 +349,48 @@ def dashboard():
                     r['score_title_params'] = {'score': total_score, 'pass': pass_score}
                     
                     results.append(r)
+
+        # ========== 获取考试-培训绑定关系 ==========
+        # 获取所有考试ID
+        all_exam_ids = [ex['id'] for ex in exams] + history_exam_ids
+        all_exam_ids = list(set(all_exam_ids))
+
+        binding_map = {}
+        if all_exam_ids:
+            # 查询培训-考试绑定关系
+            bind_res = admin_db.table("training_exam_bindings") \
+                .select("exam_id, training_id, trainings!inner(name)") \
+                .in_("exam_id", all_exam_ids) \
+                .is_("deleted_at", "null") \
+                .execute()
+            
+            for b in (bind_res.data or []):
+                exam_id = b['exam_id']
+                training_data = b.get('trainings', {})
+                if exam_id not in binding_map:
+                    binding_map[exam_id] = []
+                binding_map[exam_id].append({
+                    'training_id': b['training_id'],
+                    'training_name': training_data.get('name', f'培训 #{b["training_id"]}')
+                })
+        
+        # 为每个考试添加绑定信息
+        for ex in exams:
+            bindings = binding_map.get(ex['id'], [])
+            ex['has_binding'] = len(bindings) > 0
+            ex['binding_trainings'] = bindings
+            ex['binding_training_ids'] = [b['training_id'] for b in bindings]
         
         # 获取用户名称
         user_info_res = db.table("users").select("name_cn, name_en, email").eq("id", user_id).single().execute()
         user_info_data = user_info_res.data if user_info_res.data else {}
         user_name = user_info_data.get('name_cn') or user_info_data.get('name_en')
+
+        for r in results:
+            bindings = binding_map.get(r['exam_id'], [])
+            r['has_binding'] = len(bindings) > 0
+            r['binding_training_ids'] = [b['training_id'] for b in bindings]
+            r['binding_training_names'] = [b['training_name'] for b in bindings]
         
         return render_template(
             'exam/dashboard.html',
