@@ -1,4 +1,5 @@
 /* static/css/dashboard.css */
+/* 学员端仪表盘样式 */
 /* ==================== 统计数据卡片 ==================== */
 .stat-card {
     background: rgba(255, 255, 255, 0.08);
@@ -700,4 +701,44 @@
     .stat-number-row .stat-photo-count {
         font-size: 0.7rem;
     }
+}
+
+
+/* 绑定徽章样式 */
+.binding-badge {
+    font-size: 0.6rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    cursor: help;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    vertical-align: middle;
+}
+
+.binding-badge:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(25, 135, 84, 0.3);
+}
+
+.binding-badge i {
+    font-size: 0.7rem;
+}
+
+.binding-badge .badge {
+    font-size: 0.5rem;
+    padding: 0 4px;
+    line-height: 1.4;
+}
+
+/* 培训卡片标题中的绑定徽章 */
+.card-title-full .binding-badge {
+    margin-left: 4px;
+    vertical-align: middle;
+}
+
+/* 列表中的绑定徽章 */
+.list-group-item .binding-badge {
+    vertical-align: middle;
 }
