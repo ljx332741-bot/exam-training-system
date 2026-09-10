@@ -38,6 +38,10 @@
                 <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary btn-sm" target="_blank">
                     <i class="bi bi-person-x"></i> <span data-i18n="resigned_users_management">离职管理</span>
                 </a>
+                <button class="btn btn-outline-info btn-sm" id="viewAuditLogBtn">
+                    <i class="bi bi-clock-history"></i>
+                    <span data-i18n="user_audit_log">操作日志</span>
+                </button>
                 {% endif %}
                 <button class="btn btn-secondary btn-sm" onclick="window.close()">
                     <i class="bi bi-x-lg"></i> <span class="d-none d-sm-inline" data-i18n="close">关闭</span>
@@ -81,6 +85,10 @@
                         <a href="{{ url_for('admin_user.resigned_users_page') }}" class="btn btn-outline-secondary btn-sm w-100 text-start" target="_blank">
                             <i class="bi bi-person-x me-2"></i> <span data-i18n="resigned_users_management">离职管理</span>
                         </a>
+                        <button class="btn btn-outline-info btn-sm w-100 text-start" id="mobileViewAuditLogBtn">
+                            <i class="bi bi-clock-history"></i>
+                            <span data-i18n="user_audit_log">操作日志</span>
+                        </button>
                         {% endif %}
                         
                         <hr class="my-1">
@@ -225,8 +233,31 @@
                     <input type="hidden" id="existingAdminCountries" value="[]">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <label class="form-label" for="email"><span data-i18n="email">邮箱</span> *</label>
-                            <input type="email" class="form-control" id="email" autocomplete="email" required>
+                            <label class="form-label d-flex align-items-center justify-content-between" for="email">
+                                <span>
+                                    <span data-i18n="email">邮箱</span> *
+                                    <i class="bi bi-shield-lock text-warning ms-1" 
+                                    id="emailLockIcon" 
+                                    title="邮箱受保护，需解锁后才能修改"
+                                    style="cursor: help;"></i>
+                                </span>
+                                <!-- 防呆开关 -->
+                                <span class="form-check form-switch mb-0" style="min-height:auto;">
+                                    <input class="form-check-input" type="checkbox" role="switch" 
+                                        id="emailEditToggle" 
+                                        style="cursor:pointer; margin-left:0;"
+                                        title="点击解锁邮箱编辑">
+                                    <label class="form-check-label small text-muted ms-1" 
+                                        for="emailEditToggle"
+                                        id="emailEditToggleLabel"
+                                        style="cursor:pointer; user-select:none;">
+                                        解锁
+                                    </label>
+                                </span>
+                            </label>
+                            <input type="email" class="form-control" id="email" autocomplete="email" 
+                                readonly 
+                                style="background-color:#e9ecef; cursor:not-allowed;">
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="userCountrySelect">
@@ -516,6 +547,8 @@
         </div>
     </div>
 </div>
+
+{% include 'components/user_info_change_logs_modal.html' %}
 {% endblock %}
 
 {% block extra_css %}
@@ -523,6 +556,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="{{ url_for('static', filename='js/admin/user_info_change_logs_modal.js') }}"></script>
 <script>
     // 在文件顶部添加全局变量
     let _actionCellRetryTimer = null;
@@ -957,12 +991,21 @@
     function updateEmailRequired() {
         const emailInput = document.getElementById('email');
         const userStatusSelect = document.getElementById('user_status');
-        if (emailInput && userStatusSelect) {
-            if (userStatusSelect.value === 'imported') {
-                emailInput.removeAttribute('required');
-            } else {
-                emailInput.setAttribute('required', 'required');
-            }
+        const toggle = document.getElementById('emailEditToggle');
+
+        if (!emailInput || !userStatusSelect) return;
+
+        // 邮箱被锁定时不加 required
+        const isUnlocked = toggle && toggle.checked;
+        if (!isUnlocked) {
+            emailInput.removeAttribute('required');
+            return;
+        }
+
+        if (userStatusSelect.value === 'imported') {
+            emailInput.removeAttribute('required');
+        } else {
+            emailInput.setAttribute('required', 'required');
         }
     }
 
@@ -1256,6 +1299,7 @@
 
             console.log('📊 最终用户数据:', users.length, '条');
             currentUsersData = users;
+            window.currentUsersData = users;
             renderUserTable(currentUsersData, false);
 
             if (users.length > 0) {
@@ -2958,6 +3002,7 @@
             const data = await response.json();
             
             if (data.success) {
+                resetEmailLock();
                 if (currentEditUserId) {
                     alert(t('t_update_successful'));
                 } else {
@@ -3029,10 +3074,14 @@
                 ? `<span data-i18n="add_user">${t('add_user')}</span> <small class="text-muted">[${t("power_scope")}: ${scopeText}]</small>`
                 : `<span data-i18n="edit_user">${t('edit_user')}</span> <small class="text-muted">[${t("power_scope")}: ${scopeText}]</small>`;
         }
-        
+
+        // ========== 邮箱防呆初始化 ==========
+        bindEmailLockToggle();
+
         // 同步更新 currentEditUserId
         if (isNewMode) {
             currentEditUserId = null;
+            initEmailLockMode(false, '');
         }
         
         // 1. 绑定邮箱必填状态变化
@@ -3117,7 +3166,12 @@
             const input = document.getElementById(id);
             if (input) input.value = '';
         });
-        
+
+        // ✅ 同时清空 email 的 initialValue，避免残留
+        const emailInput = document.getElementById('email');
+        if (emailInput) {
+            emailInput.dataset.initialValue = '';
+        }
         // 清空国家选择器
         const countryInput = document.getElementById('userCountrySelect');
         if (countryInput) countryInput.value = '';
@@ -3173,6 +3227,7 @@
         // 重置角色选择器
         renderRoleSelect('user');
         updateEmailRequired();
+        resetEmailLock();
     });
 
     document.getElementById('addUserModal').addEventListener('shown.bs.modal', async () => {
@@ -3193,6 +3248,25 @@
     async function fillEditForm(user) {
         // 依据 user_status 控制邮箱必填
         const emailInput = document.getElementById('email');
+        const toggle = document.getElementById('emailEditToggle');
+
+        // 1. 先设置值
+        const initialEmail = user.email || '';
+        currentEditUserEmail = initialEmail;
+        if (emailInput) {
+            emailInput.value = initialEmail;
+            emailInput.dataset.initialValue = initialEmail;   // ✅ 此时记录初始值
+        }
+
+        // 2. 决定是否解锁（无邮箱时解锁）
+        const shouldUnlock = !initialEmail;
+        if (toggle) {
+            toggle.checked = shouldUnlock;
+        }
+
+        // 3. 应用状态（不 rollback，避免覆盖刚设置的值）
+        applyEmailLockState(shouldUnlock);   // ✅ 不传 rollback
+
         if (user.user_status === 'imported') {
             emailInput.removeAttribute('required');
         } else {
@@ -4494,6 +4568,14 @@
                 document.getElementById('showDeletedUsersBtn')?.click();
             });
         }
+
+        // 移动端用户信息变更日志
+        const mobileViewAuditLogBtn = document.getElementById('mobileViewAuditLogBtn');
+        if (mobileViewAuditLogBtn) {
+            mobileViewAuditLogBtn.addEventListener('click', function() {
+                document.getElementById('viewAuditLogBtn')?.click();
+            });
+        }
         // 也监听窗口变化
         let resizeTimer;
         window.addEventListener('resize', function() {
@@ -4538,6 +4620,13 @@
         if (mobileShowDeletedBtn) {
             mobileShowDeletedBtn.addEventListener('click', function() {
                 document.getElementById('showDeletedUsersBtn')?.click();
+            });
+        }
+        // 移动端用户信息变更日志
+        const mobileViewAuditLogBtn = document.getElementById('mobileViewAuditLogBtn');
+        if (mobileViewAuditLogBtn) {
+            mobileViewAuditLogBtn.addEventListener('click', function() {
+                document.getElementById('viewAuditLogBtn')?.click();
             });
         }
     });
@@ -4591,6 +4680,111 @@
             }
         }
     }
+    // ==================== 邮箱防呆开关 ====================
+    function initEmailLockMode(isEditMode, initialEmail) {
+        const toggle = document.getElementById('emailEditToggle');
+        const emailInput = document.getElementById('email');
+        if (!toggle || !emailInput) return;
 
+        if (isEditMode) {
+            // 编辑模式：默认锁定（fillEditForm 会根据是否有邮箱决定是否解锁）
+            toggle.checked = false;
+            applyEmailLockState(false);   // 不 rollback
+        } else {
+            // 新增模式：解锁
+            toggle.checked = true;
+            emailInput.dataset.initialValue = '';
+            applyEmailLockState(true);
+        }
+    }
+
+    function applyEmailLockState(unlocked, options) {
+        const opts = options || {};
+        const rollback = opts.rollback === true;
+
+        const emailInput = document.getElementById('email');
+        const toggleLabel = document.getElementById('emailEditToggleLabel');
+        const lockIcon = document.getElementById('emailLockIcon');
+        if (!emailInput) return;
+
+        if (unlocked) {
+            emailInput.readOnly = false;
+            emailInput.style.backgroundColor = '#fff8e1';
+            emailInput.style.cursor = 'text';
+            emailInput.classList.add('email-unlocked');
+            emailInput.removeAttribute('readonly');
+            updateEmailRequired();
+
+            if (toggleLabel) {
+                toggleLabel.textContent = '已解锁';
+                toggleLabel.classList.remove('text-muted');
+                toggleLabel.classList.add('text-warning', 'fw-bold');
+            }
+            if (lockIcon) {
+                lockIcon.className = 'bi bi-unlock-fill text-warning ms-1';
+                lockIcon.title = '邮箱已解锁，可编辑';
+            }
+        } else {
+            emailInput.readOnly = true;
+            emailInput.style.backgroundColor = '#e9ecef';
+            emailInput.style.cursor = 'not-allowed';
+            emailInput.classList.remove('email-unlocked');
+            emailInput.setAttribute('readonly', 'readonly');
+
+            // 只在显式请求 rollback 时恢复
+            if (rollback) {
+                emailInput.value = currentEditUserEmail || '';
+            }
+
+            emailInput.removeAttribute('required');
+
+            if (toggleLabel) {
+                toggleLabel.textContent = '解锁';
+                toggleLabel.classList.add('text-muted');
+                toggleLabel.classList.remove('text-warning', 'fw-bold');
+            }
+            if (lockIcon) {
+                lockIcon.className = 'bi bi-shield-lock text-warning ms-1';
+                lockIcon.title = '邮箱受保护，需解锁后才能修改';
+            }
+        }
+    }
+
+    function bindEmailLockToggle() {
+        const toggle = document.getElementById('emailEditToggle');
+        if (!toggle) return;
+
+        if (toggle._hasLockListener) return;
+        toggle._hasLockListener = true;
+
+        toggle.addEventListener('change', function () {
+            const unlocked = this.checked;
+            
+            if (!unlocked) {
+                const emailInput = document.getElementById('email');
+                const initialValue = emailInput.dataset.initialValue || '';
+                const currentValue = emailInput.value;
+                
+                if (currentValue !== initialValue && currentValue.trim() !== '') {
+                    if (!confirm('关闭开关将丢弃对邮箱的修改，确定吗？')) {
+                        this.checked = true;
+                        return;
+                    }
+                }
+                
+                // ✅ 用户主动关闭开关：回滚到初始值
+                applyEmailLockState(false, { rollback: true });
+            } else {
+                applyEmailLockState(true);
+            }
+        });
+    }
+
+    function resetEmailLock() {
+        const toggle = document.getElementById('emailEditToggle');
+        if (toggle) toggle.checked = false;
+        // ✅ 不清空 dataset.initialValue
+        // 下次 fillEditForm 会重新赋值
+    }
 </script>
 {% endblock %}

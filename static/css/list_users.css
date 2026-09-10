@@ -399,3 +399,21 @@ td {
 td .badge {
     white-space: nowrap;
 }
+
+/* 邮箱防呆开关 */
+#emailEditToggle {
+    width: 2.2em;
+    height: 1.15em;
+}
+
+#emailEditToggle:checked {
+    background-color: #ffc107;
+    border-color: #ffc107;
+}
+
+/* 邮箱解锁后可编辑的视觉提示 */
+#email.email-unlocked {
+    background-color: #fff8e1 !important;  /* 淡黄色，暗示"编辑中" */
+    border-color: #ffc107;
+    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25);
+}

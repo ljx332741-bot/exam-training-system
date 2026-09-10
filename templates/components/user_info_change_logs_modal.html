@@ -1,0 +1,80 @@
+<!-- templates/components/user_info_change_logs_modal.html -->
+<div class="modal fade" id="userAuditModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-clock-history"></i>
+                    <span data-i18n="user_audit_log">用户修改记录</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <!-- 筛选栏 -->
+                <div class="row g-2 mb-3">
+                    <div class="col-md-3">
+                        <input type="text" id="auditUserSearch" class="form-control"
+                               data-i18n-placeholder="audit_search_user"
+                               placeholder="搜索用户（姓名/邮箱）..." autocomplete="off">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="text" id="auditFieldFilter" class="form-control"
+                               data-i18n-placeholder="audit_search_field"
+                               placeholder="字段名..." autocomplete="off">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="date" id="auditDateFrom" class="form-control" title="起始日期">
+                    </div>
+                    <div class="col-md-2">
+                        <input type="date" id="auditDateTo" class="form-control" title="结束日期">
+                    </div>
+                    <div class="col-md-3">
+                        <button id="auditResetBtn" class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-arrow-repeat"></i>
+                            <span data-i18n="reset">重置</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 表格 -->
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle table-sm">
+                        <thead class="table-light">
+                            <tr>
+                                <th style="width:50px;">#</th>
+                                <th style="width:180px;" data-i18n="user">用户</th>
+                                <th style="width:110px;" data-i18n="field_name">字段名</th>
+                                <th data-i18n="old_value">修改前</th>
+                                <th data-i18n="new_value">修改后</th>
+                                <th style="width:110px;" data-i18n="changed_by">修改人</th>
+                                <th style="width:160px;" data-i18n="changed_at">修改时间</th>
+                            </tr>
+                        </thead>
+                        <tbody id="auditLogsTbody">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted" style="padding:30px;">
+                                    <span data-i18n="loading">加载中...</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 分页 -->
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                    <div>
+                        <span data-i18n="total">共</span>
+                        <span id="auditTotalCount">0</span>
+                        <span data-i18n="record">条记录</span>
+                    </div>
+                    <nav><ul class="pagination mb-0" id="auditPagination"></ul></nav>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">
+                    <span data-i18n="close">关闭</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

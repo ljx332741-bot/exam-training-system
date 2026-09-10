@@ -14,7 +14,8 @@ logger = logging.getLogger(__name__)
 admin_logs_bp = Blueprint('admin_logs', __name__, url_prefix='/api/admin/logs')
 
 # 日志配置文件路径
-CONFIG_FILE = 'log_config.json'
+LOG_DIR = 'logs'
+CONFIG_FILE = os.path.join(LOG_DIR, 'log_config.json')
 
 
 def get_log_config():
@@ -35,6 +36,7 @@ def get_log_config():
 def save_log_config(config):
     """保存日志配置"""
     try:
+        os.makedirs(LOG_DIR, exist_ok=True)
         with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=2, ensure_ascii=False)
         return True

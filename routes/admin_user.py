@@ -22,6 +22,7 @@ from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, ge
 from utils.i18n_messages import I18nMessages
 from utils.employment_history import add_employment_event, get_latest_employment_status, get_employment_summary
 from utils.manage_messages import log_user_rehire, log_user_resign
+from utils.user_info_change_logs import log_user_update
 
 logger = logging.getLogger(__name__)
 
@@ -891,9 +892,40 @@ def api_admin_edit_user(user_id):
     if not update_data:
         return jsonify({"success": False, "message": "no_fields_to_update", "params": []}), 400
     
+    # 1. 获取修改前的用户数据
+    old_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+    old_user = old_user_res.data
+
+    # 检查是否有实际变化
+    has_changes = False
+    for field, new_value in update_data.items():
+        old_value = old_user.get(field)
+        from utils.user_info_change_logs import _normalize_value
+        if _normalize_value(field, old_value) != _normalize_value(field, new_value):
+            has_changes = True
+            break
+
+    if not has_changes:
+        # 无变化直接返回，避免无意义的 UPDATE + 审计
+        return jsonify({"success": True, "no_change": True})
+
     try:
         db.table("users").update(update_data).eq("id", user_id).execute()
-        
+
+        # 3. 获取修改后的用户数据
+        new_user_res = db.table("users").select("*").eq("id", user_id).maybe_single().execute()
+        new_user = new_user_res.data
+
+        # 4. 记录日志
+        log_user_update(
+            user_id=user_id,
+            changed_by=session['user_id'],
+            old_data=old_user,
+            new_data=new_user,
+            request_ip=request.remote_addr,
+            user_agent=request.headers.get('User-Agent')
+        )
+
         # 如果更新的是当前用户，同步 session
         if user_id == session.get('user_id'):
             if 'role' in update_data:
@@ -904,6 +936,141 @@ def api_admin_edit_user(user_id):
         return jsonify({"success": True})
     except Exception as e:
         return jsonify({"success": False, "message": str(e)}), 500
+
+@admin_user_bp.route('/api/admin/users/<user_id>/user_info_change_logs')
+@login_required
+@admin_required
+def api_admin_user_audit_logs(user_id):
+    """获取用户的所有修改记录"""
+    db = get_supabase_admin()
+    
+    # 基础查询
+    query = db.table("user_info_change_logs")\
+        .select("*, changed_by_user:changed_by(name_en)")\
+        .eq("user_id", user_id)\
+        .order("changed_at", desc=True)
+    
+    res = query.execute()
+    logs = res.data or []
+    
+    # 计算每个字段的修改序号
+    field_counters = {}
+    for log in logs:
+        field = log.get('field_name')
+        if field not in field_counters:
+            field_counters[field] = 0
+        field_counters[field] += 1
+        log['change_sequence'] = field_counters[field]
+        log['changed_by_name'] = log.get('changed_by_user', {}).get('name_en', '')
+        if 'changed_by_user' in log:
+            del log['changed_by_user']
+    
+    return jsonify(logs)
+
+@admin_user_bp.route('/api/admin/users/user_info_change_logs')
+@login_required
+@admin_required
+def api_admin_all_audit_logs():
+    """
+    获取所有用户的修改记录（支持筛选 + 分页）
+    
+    Query Parameters:
+        page: 页码（默认 1）
+        per_page: 每页条数（默认 20）
+        user_id: 筛选特定用户
+        field_name: 筛选字段
+        changed_by: 筛选操作人
+        date_from: 起始日期 (YYYY-MM-DD)
+        date_to: 结束日期 (YYYY-MM-DD)
+        search: 关键词（匹配用户名/邮箱）
+    """
+    db = get_supabase_admin()
+    
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+    user_id = request.args.get('user_id', '').strip()
+    field_name = request.args.get('field_name', '').strip()
+    changed_by = request.args.get('changed_by', '').strip()
+    date_from = request.args.get('date_from', '').strip()
+    date_to = request.args.get('date_to', '').strip()
+    search = request.args.get('search', '').strip()
+    
+    # 1. 构建基础查询
+    query = db.table("user_info_change_logs").select(
+        "*, changed_by_user:changed_by(name_en, email)",
+        count="exact"
+    )
+    
+    # 2. 应用筛选
+    if user_id:
+        query = query.eq("user_id", user_id)
+    if field_name:
+        query = query.eq("field_name", field_name)
+    if changed_by:
+        query = query.eq("changed_by", changed_by)
+    if date_from:
+        query = query.gte("changed_at", f"{date_from}T00:00:00")
+    if date_to:
+        query = query.lte("changed_at", f"{date_to}T23:59:59")
+    
+    # 3. 排序 + 分页
+    query = query.order("changed_at", desc=True)
+    start = (page - 1) * per_page
+    end = start + per_page - 1
+    query = query.range(start, end)
+    
+    try:
+        res = query.execute()
+        logs = res.data or []
+        total = res.count if hasattr(res, 'count') and res.count else len(logs)
+    except Exception as e:
+        logger.error(f"查询审计日志失败: {e}")
+        return jsonify({"success": False, "message": str(e)}), 500
+    
+    # 4. 补充用户信息（被修改的用户名）
+    user_ids = list(set([log.get('user_id') for log in logs if log.get('user_id')]))
+    user_map = {}
+    if user_ids:
+        try:
+            users_res = db.table("users").select("id, name_en, email").in_("id", user_ids).execute()
+            for u in (users_res.data or []):
+                user_map[u['id']] = u
+        except Exception as e:
+            logger.warning(f"查询用户信息失败: {e}")
+    
+    # 5. 组装返回数据
+    result = []
+    for log in logs:
+        # 处理 changed_by_user（可能返回列表）
+        changed_by_user = log.get('changed_by_user')
+        if isinstance(changed_by_user, list) and changed_by_user:
+            changed_by_user = changed_by_user[0]
+        elif not isinstance(changed_by_user, dict):
+            changed_by_user = {}
+        
+        target_user = user_map.get(log.get('user_id'), {})
+        
+        result.append({
+            "id": log.get('id'),
+            "user_id": log.get('user_id'),
+            "user_name": target_user.get('name_en') or target_user.get('email') or '-',
+            "user_email": target_user.get('email', ''),
+            "field_name": log.get('field_name'),
+            "old_value": log.get('old_value'),
+            "new_value": log.get('new_value'),
+            "changed_by": log.get('changed_by'),
+            "changed_by_name": changed_by_user.get('name_en') or changed_by_user.get('email') or '-',
+            "changed_at": log.get('changed_at'),
+            "operation_type": log.get('operation_type', 'update')
+        })
+    
+    return jsonify({
+        "success": True,
+        "data": result,
+        "total": total,
+        "page": page,
+        "per_page": per_page
+    })
 
 @admin_user_bp.route('/api/admin/users/<user_id>', methods=['DELETE'])
 @login_required
