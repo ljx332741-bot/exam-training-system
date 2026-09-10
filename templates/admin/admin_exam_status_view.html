@@ -1,4 +1,4 @@
-﻿<!-- templates/admin/candidate_exam_status.html -->
+﻿<!-- templates/admin/admin_exam_status_view.html -->
 {% extends "base.html" %}
 {% block title %}考生考试状态{% endblock %}
 
@@ -836,6 +836,11 @@
 
     // ==================== 页面初始化 ====================
     document.addEventListener('DOMContentLoaded', async function() {
+        const forceRefresh = sessionStorage.getItem('exam_status_force_refresh') === 'true';
+        if (forceRefresh) {
+            sessionStorage.removeItem('exam_status_force_refresh');
+            cachedExamUsers = [];
+        }
         bindFilterEvents();
 
         // 等待 i18n 就绪后加载列表
@@ -875,5 +880,11 @@
             refreshUILanguage();
         });
     });
+    
+    // 在刷新按钮或页面加载时
+    function forceRefreshData() {
+        sessionStorage.setItem('exam_status_force_refresh', 'true');
+        location.reload();
+    }
 </script>
 {% endblock %}

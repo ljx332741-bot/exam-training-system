@@ -278,6 +278,31 @@
                     </table>
                 </div>
                 <small class="text-muted"><span data-i18n="training_push_hint">不选择则推送至所有用户（仅发送通知）</span></small>
+                <!-- 在 pushModal 的 modal-body 中添加 -->
+                <div class="mb-3">
+                    <label class="form-label fw-bold"><span data-i18n="push_mode">推送模式</span></label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="pushMode" id="pushModeNone" value="none" checked>
+                        <label class="btn btn-outline-secondary" for="pushModeNone">
+                            <i class="bi bi-save"></i> <span data-i18n="save_only">仅保存</span>
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="pushMode" id="pushModeSelected" value="selected">
+                        <label class="btn btn-outline-primary" for="pushModeSelected">
+                            <i class="bi bi-person-check"></i> <span data-i18n="push_selected">定点推送</span>
+                        </label>
+                        
+                        <input type="radio" class="btn-check" name="pushMode" id="pushModeAll" value="all">
+                        <label class="btn btn-outline-success" for="pushModeAll">
+                            <i class="bi bi-globe"></i> <span data-i18n="push_all">全国推送</span>
+                        </label>
+                    </div>
+                    <div class="form-text text-muted mt-1 small">
+                        <span data-i18n="push_mode_hint_training">
+                            "仅保存"：只保存设置，不推送任何人；"定点推送"：推送给选中的学员；"全国推送"：推送给国家匹配的所有学员
+                        </span>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
@@ -859,12 +884,15 @@
     // 核心：加载培训列表
     // ============================================================
     // 显示国家分组模态框
-    async function showCountryGroupModal(trainingId) {
-        // 1. 获取培训基本信息（名称、header_template）
+    async function showCountryGroupModal(trainingId, trainingName, countries) {
+        // 1. 获取培训基本信息（名称、国家列表、header_template）
         const trainingRes = await fetch(`/api/admin/trainings?id=${trainingId}`);
         const trainingData = await trainingRes.json();
         const training = Array.isArray(trainingData) ? trainingData[0] : trainingData.data?.[0];
-        if (!training) { alert('未找到培训信息'); return; } 
+        if (!training) {
+            alert('未找到培训信息');
+            return;
+        }
         document.getElementById('groupModalTrainingName').innerText = training.name;
 
         // 2. 获取按国家分组的签到记录
@@ -872,63 +900,130 @@
         const groups = await groupsRes.json();
         const tbody = document.getElementById('groupTableBody');
 
-        if (!groups.length) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center">暂无签到记录</td></tr>';
-        } else {
-            // 获取当前语言
-            const currentLang = window.i18n?.currentLang || 'zh';
-            
-            // 为每个国家获取表头模板状态
-            const groupRows = await Promise.all(groups.map(async (g) => {
-                let template = {};
-                let status = 'empty';
-                let tooltipText = '';
-                let statusIcon = '📋';
-                let statusClass = 'header-status-empty';
-                
-                try {
-                    // 获取该国家的表头模板
-                    const templateRes = await fetch(`/api/admin/training/${trainingId}/country_template?country=${g.country}`);
-                    if (templateRes.ok) {
-                        const templateData = await templateRes.json();
-                        template = templateData.template || {};
-                        
-                        // 检查表头模板状态
-                        const headerStatus = checkHeaderTemplateStatus(template);
-                        status = headerStatus.status;
-                        tooltipText = getHeaderTooltipText(template, currentLang);
-                        statusIcon = getHeaderStatusIcon(template);
-                        statusClass = getHeaderStatusClass(template);
-                    }
-                } catch (err) {
-                    console.warn(`获取国家 ${g.country} 模板失败:`, err);
-                }
-                
-                // 根据状态设置按钮颜色
-                let btnColorClass = 'btn-outline-info';
-                let statusBadge = '';
-                if (status === 'full') {
-                    btnColorClass = 'btn-outline-success';
-                    statusBadge = `<span class="badge bg-success ms-1" style="font-size: 0.55rem;">✓</span>`;
-                } else if (status === 'partial') {
-                    btnColorClass = 'btn-outline-warning';
-                    statusBadge = `<span class="badge bg-warning text-dark ms-1" style="font-size: 0.55rem;">!</span>`;
-                } else if (status === 'empty') {
-                    btnColorClass = 'btn-outline-secondary';
-                    statusBadge = `<span class="badge bg-secondary ms-1" style="font-size: 0.55rem;">?</span>`;
-                }
-                
-                return `
+        // ============================================================
+        // 核心修复：如果 groups 为空，使用培训的国家列表
+        // ============================================================
+        let displayGroups = groups || [];
+
+        if (displayGroups.length === 0) {
+            // 从培训数据中提取国家列表
+            const countriesList = parseTrainingCountries(training);
+            if (countriesList && countriesList.length > 0) {
+                // 为每个国家创建占位数据（无签到记录）
+                displayGroups = countriesList.map(country => ({
+                    country: country,
+                    count: 0,
+                    has_attendance: false
+                }));
+            } else {
+                // 培训没有国家列表，显示提示
+                tbody.innerHTML = `
                     <tr>
-                        <td>${g.country}</td>
-                        <td>${g.count}</td>
-                        <td>
-                            <button 
-                                class="btn btn-sm btn-primary view-country-attendance" 
-                                data-training-id="${trainingId}" 
-                                data-country="${g.country}">
-                                ${safeT('view_sign_in_records_export')}
-                            </button>
+                        <td colspan="3" class="text-center text-warning">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            该培训未指定国家，请先在培训管理中设置国家
+                        </td>
+                    </tr>
+                `;
+                // 仍然显示模态框（让用户知道需要设置国家）
+                const modalEl = document.getElementById('countryGroupModal');
+                let modal = bootstrap.Modal.getInstance(modalEl);
+                if (modal) modal.dispose();
+                modal = new bootstrap.Modal(modalEl);
+                modal.show();
+                return;
+            }
+        } else {
+            // 确保每个 group 都有 has_attendance 字段（兼容旧数据）
+            displayGroups = displayGroups.map(g => ({
+                ...g,
+                has_attendance: g.has_attendance !== undefined ? g.has_attendance : (g.count > 0)
+            }));
+        }
+
+        // ============================================================
+        // 3. 渲染表格
+        // ============================================================
+        const currentLang = window.i18n?.currentLang || 'zh';
+
+        const groupRows = await Promise.all(displayGroups.map(async (g) => {
+            let template = {};
+            let status = 'empty';
+            let tooltipText = '';
+            let statusIcon = '📋';
+            let statusClass = 'header-status-empty';
+
+            try {
+                // 获取该国家的表头模板
+                const templateRes = await fetch(`/api/admin/training/${trainingId}/country_template?country=${g.country}`);
+                if (templateRes.ok) {
+                    const templateData = await templateRes.json();
+                    template = templateData.template || {};
+
+                    // 检查表头模板状态
+                    const headerStatus = checkHeaderTemplateStatus(template);
+                    status = headerStatus.status;
+                    tooltipText = getHeaderTooltipText(template, currentLang);
+                    statusIcon = getHeaderStatusIcon(template);
+                    statusClass = getHeaderStatusClass(template);
+                }
+            } catch (err) {
+                console.warn(`获取国家 ${g.country} 模板失败:`, err);
+            }
+
+            // 根据状态设置按钮颜色
+            let btnColorClass = 'btn-outline-info';
+            let statusBadge = '';
+            if (status === 'full') {
+                btnColorClass = 'btn-outline-success';
+                statusBadge = `<span class="badge bg-success ms-1" style="font-size: 0.55rem;">✓</span>`;
+            } else if (status === 'partial') {
+                btnColorClass = 'btn-outline-warning';
+                statusBadge = `<span class="badge bg-warning text-dark ms-1" style="font-size: 0.55rem;">!</span>`;
+            } else if (status === 'empty') {
+                btnColorClass = 'btn-outline-secondary';
+                statusBadge = `<span class="badge bg-secondary ms-1" style="font-size: 0.55rem;">?</span>`;
+            }
+
+            // ============================================================
+            // 关键修复：根据 has_attendance 决定查看签到按钮状态
+            // ============================================================
+            const hasAttendance = g.has_attendance === true;
+            const attendanceCount = g.count || 0;
+
+            let viewBtnHtml;
+            if (hasAttendance) {
+                viewBtnHtml = `
+                    <button class="btn btn-sm btn-primary view-country-attendance" 
+                        data-training-id="${trainingId}" 
+                        data-country="${g.country}">
+                        ${safeT('view_sign_in_records_export') || '查看签到'} (${attendanceCount})
+                    </button>
+                `;
+            } else {
+                viewBtnHtml = `
+                    <button class="btn btn-sm btn-secondary" 
+                        style="opacity:0.6; cursor: not-allowed;"
+                        data-bs-toggle="tooltip"
+                        data-bs-placement="top"
+                        title="${safeT('no_sign_in_record_available') || '暂无签到记录'}">
+                        ${safeT('view_sign_in_records_export') || '查看签到'} (0)
+                    </button>
+                `;
+            }
+
+            return `
+                <tr>
+                    <td><strong>${g.country}</strong></td>
+                    <td>
+                        <span class="badge ${hasAttendance ? 'bg-success' : 'bg-secondary'}">
+                            ${attendanceCount}
+                        </span>
+                        ${!hasAttendance ? '<span class="text-muted small ms-1">(无签到)</span>' : ''}
+                    </td>
+                    <td>
+                        <div class="d-flex gap-1 flex-wrap">
+                            ${viewBtnHtml}
                             <button 
                                 class="btn btn-sm ${btnColorClass} group-header-btn header-status-${status}" 
                                 data-training-id="${trainingId}" 
@@ -938,52 +1033,51 @@
                                 data-bs-title="${tooltipText || (status === 'full' ? '✅ 表头已录入' : '📋 点击录入表头')}"
                                 data-bs-trigger="hover focus"
                                 data-header-status="${status}">
-                                ${statusIcon} ${safeT('header_input')}
+                                ${statusIcon} ${safeT('header_input') || '表头'}
                                 ${statusBadge}
                             </button>
-                        </td>
-                    </tr>
-                `;
-            }));
-            
-            tbody.innerHTML = groupRows.join('');
-        }
-        // 3. 绑定“查看签到记录”按钮（跳转到签到详情页，带上国家参数）
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }));
+
+        tbody.innerHTML = groupRows.join('');
+
+        // ============================================================
+        // 4. 绑定事件
+        // ============================================================
+
+        // 4.1 查看签到记录按钮（只有有签到记录的才绑定）
         document.querySelectorAll('.view-country-attendance').forEach(btn => {
-            // 移除旧监听器避免重复绑定
             btn.removeEventListener('click', btn._attendanceHandler);
             btn._attendanceHandler = () => {
                 const tid = btn.dataset.trainingId;
                 const ctry = btn.dataset.country;
-                window.location.href = `/admin/training/${tid}/attendance?country=${encodeURIComponent(ctry)}`;
+                window.open(`/admin/training/${tid}/attendance?country=${encodeURIComponent(ctry)}&from=dashboard`, '_blank');
             };
             btn.addEventListener('click', btn._attendanceHandler);
         });
 
-        // 4. 绑定“表头录入”按钮（复用一级菜单逻辑）
+        // 4.2 表头录入按钮
         document.querySelectorAll('.group-header-btn').forEach(btn => {
-            // 移除旧监听器避免重复绑定
             btn.removeEventListener('click', btn._headerClickHandler);
-            
+
             btn._headerClickHandler = async function(e) {
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 const trainingId = this.dataset.trainingId;
                 const country = this.dataset.country;
                 console.log('🔘 group-header-btn 点击:', { trainingId, country });
                 const btnElement = this;
-                
-                // 防止重复点击
+
                 if (btnElement.dataset.loading === 'true') {
                     console.log('⏳ 正在加载中，请勿重复点击');
                     return;
                 }
-                
-                // 保存原始内容
+
                 const originalText = btnElement.innerHTML;
-                
-                // 显示加载状态
                 btnElement.dataset.loading = 'true';
                 btnElement.disabled = true;
                 btnElement.style.opacity = '0.7';
@@ -993,9 +1087,8 @@
                     </span>
                     ${safeT('loading') || '加载中...'}
                 `;
-                
+
                 try {
-                    // 复用与一级菜单完全相同的表头录入逻辑
                     await openHeaderModalForTraining(trainingId, country);
                 } catch (err) {
                     console.error('打开国家表头失败:', err);
@@ -1003,38 +1096,41 @@
                         showToast(t('load_failed'), 'error');
                     }
                 } finally {
-                    // 恢复状态
                     btnElement.dataset.loading = 'false';
                     btnElement.disabled = false;
                     btnElement.style.opacity = '';
                     btnElement.innerHTML = originalText;
                 }
             };
-            
+
             btn.addEventListener('click', btn._headerClickHandler);
         });
 
-        // 初始化新生成的 group-header-btn 的 Tooltip
+        // ============================================================
+        // 5. 初始化 Tooltip
+        // ============================================================
         setTimeout(() => {
-            document.querySelectorAll('.group-header-btn[data-bs-toggle="tooltip"]').forEach(el => {
-                const oldTooltip = bootstrap.Tooltip.getInstance(el);
-                if (oldTooltip) {
-                    oldTooltip.dispose();
+            document.querySelectorAll('.group-header-btn[data-bs-toggle="tooltip"], .btn-secondary[data-bs-toggle="tooltip"]').forEach(el => {
+                try {
+                    const oldTooltip = bootstrap.Tooltip.getInstance(el);
+                    if (oldTooltip) oldTooltip.dispose();
+                    new bootstrap.Tooltip(el, {
+                        container: 'body',
+                        trigger: 'hover focus',
+                        placement: 'top'
+                    });
+                } catch (e) {
+                    // 忽略 Bootstrap 未加载的情况
                 }
-                new bootstrap.Tooltip(el, {
-                    container: 'body',
-                    trigger: 'hover focus',
-                    placement: 'top'
-                });
             });
         }, 50);
 
-        // 显示模态框
-        // 获取或安全创建模态框实例（确保单一实例）
+        // ============================================================
+        // 6. 显示模态框
+        // ============================================================
         const modalEl = document.getElementById('countryGroupModal');
         let modal = bootstrap.Modal.getInstance(modalEl);
         if (modal) {
-            // 销毁已有实例以清理遮罩，再重新创建（更稳健）
             modal.dispose();
         }
         modal = new bootstrap.Modal(modalEl);
@@ -1504,6 +1600,30 @@
                 `;
             }
 
+            // 判断是否草稿状态
+            const isDraft = t.dynamic_status === 'draft';
+
+            // 构建详情按钮
+            let detailBtnHtml = '';
+            if (!isDraft) {
+                // 非草稿状态才显示详情按钮
+                if (t.country) {
+                    detailBtnHtml = `
+                        <a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary" data-i18n-key="t_details">
+                            ${safeT('t_details')}
+                        </a>
+                    `;
+                } else {
+                    detailBtnHtml = `
+                        <button class="btn btn-sm btn-outline-info group-detail-btn" 
+                            data-id="${t.id}" 
+                            data-is-multi-country="${isMultiCountry}"
+                            data-i18n-key="details_by_country">
+                            ${safeT('details_by_country')}
+                        </button>
+                    `;
+                }
+            }
             // 构建行内容（其余部分保持不变）
             row.innerHTML = `
                 <td class="seq-column">${rowNumber}</td>
@@ -1529,17 +1649,7 @@
                 </td>
                 <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>
-                    ${t.country ? 
-                        `<a href="/admin/training/${t.id}/attendance" class="btn btn-sm btn-outline-secondary" data-i18n-key="t_details">
-                            ${safeT('t_details')}
-                        </a>` : 
-                        `<button class="btn btn-sm btn-outline-info group-detail-btn" 
-                            data-id="${t.id}" 
-                            data-is-multi-country="${isMultiCountry}"
-                            data-i18n-key="details_by_country">
-                            ${safeT('details_by_country')}
-                        </button>`
-                    }
+                    ${detailBtnHtml}
                     ${headerBtnHtml}
                     <button 
                         class="btn btn-sm btn-outline-success push-btn" 
@@ -4450,12 +4560,21 @@
             return;
         }
 
+        // 获取推送模式
+        const pushMode = document.querySelector('input[name="pushMode"]:checked')?.value || 'none';
+
+        // 收集选中的用户ID（仅在定点推送模式下）
+        let selectedUserIds = [];
+        if (pushMode === 'selected') {
+            selectedUserIds = Array.from(document.querySelectorAll('.push-user-checkbox:checked')).map(cb => cb.value);
+        }
+
+        // 收集选中的用户ID
+        // const selectedUserIds = Array.from(document.querySelectorAll('.push-user-checkbox:checked')).map(cb => cb.value);
+
         // 使用统一函数将本地时间转为 UTC 字符串
         const startISO = localDateTimeToUTC(startLocal);
         const endISO = localDateTimeToUTC(endLocal);
-
-        // 收集选中的用户ID
-        const selectedUserIds = Array.from(document.querySelectorAll('.push-user-checkbox:checked')).map(cb => cb.value);
 
         const res = await fetch('/api/admin/trainings', {
             method: 'PUT',
@@ -4464,8 +4583,9 @@
                 id: currentTrainingId,
                 start_time: startISO,
                 end_time: endISO,
-                is_active: true,
-                user_ids: selectedUserIds.length > 0 ? selectedUserIds : null   // 没有勾选则传递 null
+                is_active: pushMode !== 'none',  // 只有推送模式才激活
+                push_mode: pushMode,             // 新增字段，用于记录推送模式
+                user_ids: pushMode === 'selected' ? selectedUserIds : []  // 只有定点推送才传递用户列表
             })
         });
 
@@ -4475,6 +4595,8 @@
             // 更新本地缓存中的状态
             updateTrainingFieldLocally(currentTrainingId, 'dynamic_status', result.dynamic_status);
             updateTrainingFieldLocally(currentTrainingId, 'is_active', result.is_active);
+            updateTrainingFieldLocally(currentTrainingId, 'start_time', result.start_time);
+            updateTrainingFieldLocally(currentTrainingId, 'end_time', result.end_time);
 
             // loadTrainings(true);
             

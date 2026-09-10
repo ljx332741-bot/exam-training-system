@@ -1671,8 +1671,15 @@ def admin_exam_status(exam_id):
         if user_country not in exam_countries:
             continue
         
+        # 优先判断是否有考试成绩
+        result_info = results_dict.get(uid, {})
+        has_result = uid in results_dict
+        
         # 判断考试状态
-        if uid not in assigned_user_ids:
+        if has_result:
+            # 有成绩 → 已提交
+            exam_status = 'submitted'
+        elif uid not in assigned_user_ids:
             exam_status = 'not_assigned'
         else:
             user_status = status_dict.get(uid, {})
@@ -1683,7 +1690,6 @@ def admin_exam_status(exam_id):
             else:
                 exam_status = 'pending'
 
-        result_info = results_dict.get(uid, {})
         data.append({
             "user_id": uid,
             "email": u.get('email'),
@@ -1906,6 +1912,14 @@ def api_admin_exam_update(exam_id):
         update_data['is_active'] = False
         update_data['status'] = 'draft'
 
+    # 新增：处理 push_mode
+    if 'push_mode' in data:
+        push_mode = data.get('push_mode')
+        if push_mode == 'none':
+            update_data['push_mode'] = None
+        elif push_mode in ['selected', 'all']:
+            update_data['push_mode'] = push_mode
+            
     if not update_data:
         return jsonify({"success": False, "message": "无更新内容"}), 400
     db = get_supabase()
@@ -1916,7 +1930,7 @@ def api_admin_exam_update(exam_id):
 @login_required
 @admin_required
 def admin_push_exam_with_settings(exam_id):
-    db = get_supabase()
+    db = get_supabase_admin()
     data = request.json
     logger.info(f"接收到的推送数据: {data}")
     
@@ -1930,51 +1944,68 @@ def admin_push_exam_with_settings(exam_id):
     if not can_access_exam(exam):
         return jsonify({"success": False, "message": "无权操作此考试"}), 403
 
-    # 获取用户列表时排除离职人员
-    def get_active_users_for_exam(allowed_countries=None):
-        """获取活跃用户（未离职）用于考试推送"""
-        query = db.table("users").select("*").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
-        
-        if allowed_countries is not None and allowed_countries:
-            query = query.in_("country", allowed_countries)
-        
-        return query.execute().data or []
-
     # 2. 获取请求数据
     start_time_local = data.get('start_time')
     end_time_local = data.get('end_time')
     duration = data.get('duration')
     raw_user_ids = data.get('user_ids', [])
     reviewer = data.get('reviewer', '')
-
-    # 3. 过滤用户（只保留权限范围内的用户）
-    user_ids = raw_user_ids if raw_user_ids is not None else []
+    push_mode = data.get('push_mode', 'none')
 
     logger.info(f"获取到的 reviewer 值: {reviewer}")
-    logger.info(f"原始 user_ids: {raw_user_ids}, 处理后: {user_ids}")
+    logger.info(f"原始 user_ids: {raw_user_ids}, push_mode: {push_mode}")
 
-    # 4. 过滤用户（只保留权限范围内的用户）
-    if not is_developer() and user_ids:  # 只有 user_ids 非空时才过滤
-        allowed = get_admin_allowed_countries()
-        if allowed is not None and allowed:
-            users_res = db.table("users").select("id").in_("id", user_ids).in_("country", allowed).execute()
-            user_ids = [u['id'] for u in (users_res.data or [])]
-        
-        # 如果没有有效用户，返回错误（仅当用户指定了 ID 但没有有效用户时）
-        if not user_ids:
-            return jsonify({"success": False, "message": "所选考生不在您的权限范围内"}), 403
-            
-    # 5. 获取考试信息（用于国家和标题）
+    # ========== ✅ 修复1：先获取考试信息 ==========
     exam_info = db.table("exams").select("country, title, reviewer").eq("id", exam_id).maybe_single().execute()
     if not exam_info.data:
         return jsonify({"success": False, "message": "考试不存在"}), 404
     exam_data = exam_info.data
 
-    # 6. 更新考试有效期和时长
+    # 3. 处理用户列表（根据推送模式）
+    if push_mode == 'none':
+        final_user_ids = []
+    elif push_mode == 'all':
+        # 全国推送模式：获取所有符合条件的用户
+        allowed = get_admin_allowed_countries()
+        exam_country = exam_data.get('country')  # ✅ 现在 exam_data 已定义
+        query = db.table("users").select("id").is_("deleted_at", "null").eq("user_status", "registered").eq("is_resign", False)
+        if exam_country:
+            query = query.eq("country", exam_country)
+        if allowed is not None and allowed:
+            query = query.in_("country", allowed)
+        users_res = query.execute()
+        final_user_ids = [u['id'] for u in (users_res.data or [])]
+    else:  # push_mode == 'selected'
+        final_user_ids = raw_user_ids
+        if not is_developer() and final_user_ids:
+            allowed = get_admin_allowed_countries()
+            if allowed is not None and allowed:
+                users_res = db.table("users").select("id").in_("id", final_user_ids).in_("country", allowed).execute()
+                final_user_ids = [u['id'] for u in (users_res.data or [])]
+        
+        if not final_user_ids:
+            return jsonify({"success": False, "message": "所选考生不在您的权限范围内"}), 403
+
+    logger.info(f"最终 user_ids: {final_user_ids}")
+
+    # 4. 按国家过滤考生（确保用户国家与考试国家匹配）
+    def get_user_country(uid):
+        user_res = db.table("users").select("country").eq("id", uid).maybe_single().execute()
+        return user_res.data.get('country') if user_res.data else None
+
+    country = exam_data.get('country')
+    if country and final_user_ids:
+        filtered_ids = [uid for uid in final_user_ids if get_user_country(uid) == country]
+        if not filtered_ids:
+            return jsonify({"success": False, "message": "没有符合国家条件的考生"}), 400
+        final_user_ids = filtered_ids
+
+    logger.info(f"国家过滤后 user_ids: {final_user_ids}")
+
+    # 5. 更新考试有效期和时长
     update_data = {}
     if start_time_local is not None:
         update_data['start_time'] = start_time_local
-        logger.info(f"本地开始时间: {start_time_local}, UTC: {update_data['start_time']}")
     if end_time_local is not None:
         update_data['end_time'] = end_time_local
     if duration is not None:
@@ -1983,104 +2014,161 @@ def admin_push_exam_with_settings(exam_id):
         update_data['status'] = 'active'
         update_data['is_active'] = True
     else:
-        # 如果没有有效期，视为草稿，关闭激活状态
         update_data['is_active'] = False
         update_data['status'] = 'draft'
 
-    # 7. 更新阅卷人（如果有值）
+    # 6. 更新阅卷人
     if reviewer and reviewer.strip():
         update_data['reviewer'] = reviewer
         logger.info(f"使用前端传递的阅卷人: {reviewer}")
     elif not exam_data.get('reviewer'):
-        # 如果没有指定阅卷人，尝试根据国家自动获取默认阅卷人
         default_reviewer = get_reviewer_by_country(
             user_country=exam_data.get('country'),
             exam_reviewer=None,
             url_reviewer=None
-            )
+        )
         if default_reviewer and default_reviewer != "Administrator":
             update_data['reviewer'] = default_reviewer
-            logger.info(f"使用默认阅卷人: {default_reviewer}")
         else:
-            # 最后的保底
             update_data['reviewer'] = "Administrator"
-            logger.info(f"使用保底阅卷人: Administrator")
     else:
-        # 保留考试表原有的 reviewer
         logger.info(f"保留原有阅卷人: {exam_data.get('reviewer')}")
 
     if update_data:
         db.table("exams").update(update_data).eq("id", exam_id).execute()
         logger.info(f"更新考试 {exam_id} 的数据: {update_data}")
 
-    # 8. 按国家过滤考生（保留原有逻辑）
-    def get_user_country(uid):
-        user_res = db.table("users").select("country").eq("id", uid).maybe_single().execute()
-        return user_res.data.get('country') if user_res.data else None
-
-    country = exam_data.get('country')
-    if country and user_ids:
-        filtered_ids = [uid for uid in user_ids if get_user_country(uid) == country]
-        if not filtered_ids:
-            return jsonify({"success": False, "message": "没有符合国家条件的考生"}), 400
-        user_ids = filtered_ids
-
-    # 9. 更新考生分配（只在有用户时处理）
-    if user_ids:
+    # 7. 更新考生分配
+    if final_user_ids:
         # 获取现有分配
         existing_res = db.table("exam_assignments").select("user_id").eq("exam_id", exam_id).execute()
         existing_ids = {row['user_id'] for row in (existing_res.data or [])}
+        
         # 需要新增的用户
-        to_add = [uid for uid in user_ids if uid not in existing_ids]
-        # 需要删除的用户（如果前端传递了完整列表，则删除不在新列表中的用户）
-        to_remove = [uid for uid in existing_ids if uid not in user_ids]
+        to_add = [uid for uid in final_user_ids if uid not in existing_ids]
+        # 需要删除的用户
+        to_remove = [uid for uid in existing_ids if uid not in final_user_ids]
+        
         if to_remove:
             db.table("exam_assignments").delete().eq("exam_id", exam_id).in_("user_id", to_remove).execute()
             logger.info(f"移除 {len(to_remove)} 名考生的分配")
         
-        for uid in to_add:
-            db.table("exam_assignments").insert({"exam_id": exam_id, "user_id": uid}).execute()
-        logger.info(f"新增 {len(to_add)} 名考生的分配")
+        if to_add:
+            for uid in to_add:
+                db.table("exam_assignments").insert({
+                    "exam_id": exam_id, 
+                    "user_id": uid,
+                    "assigned_at": datetime.now(timezone.utc).isoformat(),
+                    "created_by": session.get('user_id')
+                }).execute()
+            logger.info(f"新增 {len(to_add)} 名考生的分配")
 
-        # 10. 发送邮件通知
-        exam_title = exam_data.get('title', '考试')
-        final_reviewer = reviewer or update_data.get('reviewer', '管理员')
-        for uid in user_ids:
-            user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
-            if user_res.data:
-                email = user_res.data[0]['email']
-                name = user_res.data[0].get('name_en', '用户')
-                try:
-                    send_bilingual_notification(
-                        email=email,
-                        scenario=EmailScenario.EXAM_ASSIGNMENT,
-                        params={
-                            "name": name,
-                            "exam_title": exam_title,
-                            "start_display": _format_time(start_time_local),
-                            "end_display": _format_time(end_time_local),
-                            "duration": str(duration),
-                            "reviewer": reviewer,
-                            "host_url": request.host_url,
-                        },
-                        host_url=request.host_url,
-                        auth_module=auth
-                    )
-                except Exception as e:
-                    logger.warning(f"发送邮件失败: {e}")
+        # ========== ✅ 修复2：使用 final_user_ids 而不是 to_add ==========
+        # 这样可以确保即使 to_add 为空，也能为已有考试分配但缺少培训分配的用户补全
+        if final_user_ids:
+            try:
+                synced_count = _sync_training_assignments_on_exam_push(
+                    db, exam_id, final_user_ids, session.get('user_id')
+                )
+                if synced_count > 0:
+                    logger.info(f"✅ 同步创建了 {synced_count} 条培训分配记录")
+            except Exception as e:
+                logger.warning(f"同步培训分配失败（不影响主流程）: {e}")
+
+        # 8. 发送邮件通知（只发给新增的用户）
+        if to_add:
+            exam_title = exam_data.get('title', '考试')
+            final_reviewer = reviewer or update_data.get('reviewer', '管理员')
+            for uid in to_add:
+                user_res = db.table("users").select("email, name_en").eq("id", uid).execute()
+                if user_res.data:
+                    email = user_res.data[0]['email']
+                    name = user_res.data[0].get('name_en', '用户')
+                    try:
+                        send_bilingual_notification(
+                            email=email,
+                            scenario=EmailScenario.EXAM_ASSIGNMENT,
+                            params={
+                                "name": name,
+                                "exam_title": exam_title,
+                                "start_display": _format_time(start_time_local),
+                                "end_display": _format_time(end_time_local),
+                                "duration": str(duration),
+                                "reviewer": final_reviewer,
+                                "host_url": request.host_url,
+                            },
+                            host_url=request.host_url,
+                            auth_module=auth
+                        )
+                    except Exception as e:
+                        logger.warning(f"发送邮件失败: {e}")
     else:
-        # 全国推送（user_ids 为空）：只更新有效期，不修改分配关系
-        logger.info(f"全国推送，不修改分配关系")
+        logger.info("没有需要推送的用户")
 
+    # 9. 记录日志
     log_admin_push_exam(
         exam_id=exam_id,
-        exam_title=exam_title,
-        user_count=len(user_ids),
+        exam_title=exam_data.get('title', '考试'),
+        user_count=len(final_user_ids),
         admin_id=session.get('user_id'),
-        is_all=(len(user_ids) == 0)  # 空数组表示全国推送
+        is_all=(push_mode == 'all')
     )
     
     return jsonify({"success": True})
+
+
+def _sync_training_assignments_on_exam_push(db, exam_id, user_ids, operator_id):
+    """
+    当考试被推送给用户时，同步创建关联培训的分配记录
+    """
+    if not user_ids:
+        return 0
+    db = get_supabase_admin()
+    # 1. 检查该考试是否绑定了培训
+    bindings_res = db.table("training_exam_bindings")\
+        .select("training_id")\
+        .eq("exam_id", exam_id)\
+        .is_("deleted_at", "null")\
+        .execute()
+    
+    if not bindings_res.data:
+        return 0
+    
+    training_ids = [b['training_id'] for b in bindings_res.data]
+    now = datetime.now(timezone.utc).isoformat()
+    created_count = 0
+    
+    for training_id in training_ids:
+        # 2. 过滤出尚未分配该培训的用户
+        existing_res = db.table("training_assignments")\
+            .select("user_id")\
+            .eq("training_id", training_id)\
+            .in_("user_id", user_ids)\
+            .is_("deleted_at", "null")\
+            .execute()
+        existing_set = set([a['user_id'] for a in (existing_res.data or [])])
+        
+        to_assign = [uid for uid in user_ids if uid not in existing_set]
+        
+        if not to_assign:
+            continue
+        
+        # 3. 批量创建培训分配
+        assignments = [{
+            "training_id": training_id,
+            "user_id": uid,
+            "created_by": operator_id,
+            "created_at": now
+        } for uid in to_assign]
+        
+        try:
+            result = db.table("training_assignments").insert(assignments).execute()
+            created_count += len(result.data or [])
+            logger.info(f"✅ 考试推送同步创建培训分配: exam={exam_id}, training={training_id}, users={len(to_assign)}")
+        except Exception as e:
+            logger.error(f"创建培训分配失败: {e}")
+    
+    return created_count
 
 @admin_exam_bp.route('/api/admin/exam/<int:exam_id>/push', methods=['POST'])
 @login_required
@@ -3295,7 +3383,7 @@ def admin_candidate_exam_status(exam_id):
     exam_title = exam_res.data.get('title', f'考试 #{exam_id}') if exam_res.data else f'考试 #{exam_id}'
     
     return render_template(
-        'admin/candidate_exam_status.html',
+        'admin/admin_exam_status_view.html',
         exam_id=exam_id,
         exam_title=exam_title
     )

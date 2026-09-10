@@ -417,6 +417,19 @@
                     </div>
                 </div>
                 <div class="col-md-4">
+                    <!-- 国家选择区 -->
+                    <div class="mb-2" id="uploadCountrySelector" style="display: none;">
+                        <label class="form-label fw-bold small mb-1">
+                            <i class="bi bi-globe2 me-1"></i>
+                            <span data-i18n="select_upload_country">选择上传国家</span>
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="d-flex flex-wrap gap-2" id="uploadCountryCheckboxes">
+                            <!-- 动态渲染 -->
+                        </div>
+                        <div class="form-text small text-muted" id="uploadCountryHint"></div>
+                    </div>
+
                     <button class="btn btn-primary w-100" id="adminUploadBtn" disabled>
                         <i class="bi bi-cloud-upload"></i> <span data-i18n="upload">上传</span>
                         <span class="badge bg-light text-dark ms-1" id="adminSelectedCount">0</span>
@@ -1126,26 +1139,29 @@
             return;
         }
 
+        // 不重新加载国家列表，只读取当前选中的
+        const selector = document.getElementById('uploadCountrySelector');
+        if (!selector || selector.style.display === 'none') {
+            showToast(safeT('no_country_permission_for_this_training') || '您没有该培训任何国家的权限', '错误', 'error');
+            return;
+        }
+        const selectedCountry = getSelectedUploadCountry();
+        if (!selectedCountry) {
+            showToast(safeT('please_select_upload_country') || '请选择上传国家', '警告', 'warning');
+            return;
+        }
+
         // 获取培训名称
         let trainingName = '';
-        let trainingCountry = '';
         try {
             const res = await fetch(`/api/admin/trainings/${trainingId}`);
             const data = await res.json();
             if (data.success && data.data) {
                 trainingName = data.data.name || `培训 ${trainingId}`;
-                trainingCountry = data.data.country || '';
             }
         } catch (e) {
             console.warn('获取培训名称失败:', e);
             trainingName = `培训 ${trainingId}`;
-            trainingCountry = '';
-        }
-
-        // 验证国家是否存在
-        if (!trainingCountry) {
-            showToast('该培训未指定国家，无法上传照片', '错误', 'error');
-            return;
         }
 
         const addWatermark = document.getElementById('adminAddWatermark').checked;
@@ -1155,7 +1171,7 @@
         const formData = new FormData();
         formData.append('training_id', trainingId);
         formData.append('training_name', trainingName);
-        formData.append('training_country', trainingCountry);
+        formData.append('training_country', selectedCountry);
         formData.append('add_watermark', addWatermark ? 'true' : 'false');
         formData.append('include_training_name', includeTrainingName ? 'true' : 'false');
 
@@ -1411,11 +1427,8 @@
                 console.warn('获取培训名称失败:', e);
             }
             loadPhotos(1);
-
-            // ✅ 初始化上传功能
+            loadAdminUploadCountries(trainingId);
             setupAdminUploadArea();
-            
-            // ✅ 初始化照片变更监听
             initAdminPhotoListener();
         } else {
             document.getElementById('photoGridContainer').innerHTML = `

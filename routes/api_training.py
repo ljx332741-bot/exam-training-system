@@ -184,19 +184,26 @@ def api_available_trainings():
         has_targeted_assignments = len(assign_check.data or []) > 0
         
         show_training = False
-        
+
+        # ========== 关键修改：使用 push_mode 判断 ==========
+        push_mode = t.get('push_mode')  # None 或 'all'
+
         # 情况1：用户被定点分配了该培训
         if training_id in assigned_training_ids:
             show_training = True
             logger.info(f"培训 {training_id} 用户在分配列表中")
         
         # 情况2：没有分配记录时，按国家过滤（全国推送）
-        elif not has_targeted_assignments:
+        # elif not has_targeted_assignments:
+        elif push_mode == 'all':
             if user_country in country_list:
                 show_training = True
                 logger.info(f"培训 {training_id} 国家匹配（全国推送）")
+
+        # 情况3：没有分配记录且不是全国推送 -> 不显示（修复核心问题）
+        # 注意：不再自动将"无分配"视为"全国推送"
         
-        # 情况3：需要补签的培训，强制显示
+        # 情况4：需要补签的培训，强制显示
         if training_id in all_pending_training_ids:
             show_training = True
             logger.info(f"培训 {training_id} 需要补签，强制显示")
@@ -511,85 +518,63 @@ def _generate_button_html(training_id, can_sign, is_active, signed, needs_resign
 @training_bp.route('/api/trainings/for_photos')
 @login_required
 def api_trainings_for_photos():
-    """
-    获取照片上传可选择的培训列表
-    普通学员：与照片墙保持一致
-    """
     db = get_supabase()
     admin_db = get_supabase_admin()
     user_id = session['user_id']
     current_role = session.get('role')
     
-    # 获取用户信息
     user_res = db.table("users").select("country,role").eq("id", user_id).maybe_single().execute()
     if not user_res.data:
         return jsonify([])
     
     user_country = user_res.data.get('country')
     user_role = user_res.data.get('role')
-    
-    # 判断是否开发者
     is_dev = is_developer()
     
-    # ============================================================
-    # 1. 获取所有培训
-    # ============================================================
     trainings_res = db.table("trainings").select("*").execute()
     all_trainings = trainings_res.data or []
     
-    # ============================================================
-    # 2. 获取管理员权限范围
-    # ============================================================
     allowed_countries = get_admin_allowed_countries()
     
-    # ============================================================
-    # 3. 根据角色过滤
-    # ============================================================
     filtered_trainings = []
     
-    # 情况1：开发者 - 看到所有培训
+    # ========== 开发者：全部 ==========
     if is_dev:
         filtered_trainings = all_trainings
         result = _build_photo_training_response(db, filtered_trainings)
         result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         return jsonify(result)
     
-    # 情况2：管理员或超管
+    # ========== 管理员/超管：权限范围 ∩ 培训国家 ==========
     if current_role in ['admin', 'super_admin']:
         for t in all_trainings:
-            training_country = t.get('country')
-            if not training_country:
+            training_countries = parse_training_countries(t)
+            if not training_countries:
                 continue
             
-            country_list = _parse_country_list(training_country)
-            
             if allowed_countries is None:
+                # 无限制，全部可见
                 filtered_trainings.append(t)
                 continue
             
             if allowed_countries:
-                matched = any(c in allowed_countries for c in country_list)
-                if matched:
+                # 检查交集：培训国家 ∩ 权限国家
+                if any(c in allowed_countries for c in training_countries):
                     filtered_trainings.append(t)
         
         result = _build_photo_training_response(db, filtered_trainings)
         result.sort(key=lambda x: x.get('created_at', ''), reverse=True)
         return jsonify(result)
     
-    # ============================================================
-    # 情况3：普通学员 - 与照片墙逻辑保持一致
-    # ============================================================
+    # ========== 普通学员：用户国家 ∈ 培训国家，且该培训可访问 ==========
     if not user_country:
         return jsonify([])
     
-    # 1. 获取用户相关的培训ID（与照片墙完全一致）
+    # 1. 获取用户可访问的培训ID（与照片墙一致）
     assigned_res = admin_db.table("training_assignments").select("training_id").eq("user_id", user_id).execute()
     assigned_training_ids = {a['training_id'] for a in (assigned_res.data or [])}
     
-    att_res = admin_db.table("training_attendances") \
-        .select("training_id") \
-        .eq("user_id", user_id) \
-        .execute()
+    att_res = admin_db.table("training_attendances").select("training_id").eq("user_id", user_id).execute()
     signed_training_ids = {a['training_id'] for a in (att_res.data or [])}
     
     completed_exams_res = db.table("exam_results").select("exam_id").eq("user_id", user_id).execute()
@@ -599,32 +584,28 @@ def api_trainings_for_photos():
     if completed_exam_ids:
         bindings_res = admin_db.table("training_exam_bindings").select("training_id").in_("exam_id", completed_exam_ids).execute()
         for b in (bindings_res.data or []):
-            training_id_tmp = b['training_id']
-            if training_id_tmp not in signed_training_ids:
-                pending_sign_training_ids.add(training_id_tmp)
+            tid = b['training_id']
+            if tid not in signed_training_ids:
+                pending_sign_training_ids.add(tid)
     
-    # 2. 合并所有可访问的培训ID（与照片墙完全一致）
     accessible_training_ids = assigned_training_ids | signed_training_ids | pending_sign_training_ids
     
-    # 3. 如果没有可访问的培训，返回空
     if not accessible_training_ids:
         return jsonify([])
     
-    # 4. 筛选培训
+    # 2. 筛选培训
     for t in all_trainings:
         training_id = t.get('id')
-        training_country = t.get('country')
         
-        if not training_country:
+        training_countries = parse_training_countries(t)
+        if not training_countries:
             continue
         
-        country_list = _parse_country_list(training_country)
-        
-        # 必须匹配用户国家
-        if user_country not in country_list:
+        # 用户国家必须在培训国家列表里
+        if user_country not in training_countries:
             continue
         
-        # 只返回可访问的培训（与照片墙完全一致）
+        # 必须可访问（与照片墙一致）
         if training_id in accessible_training_ids:
             filtered_trainings.append(t)
     
@@ -967,8 +948,6 @@ def _parse_country_list(training_country):
 
 def _build_photo_training_response(db, trainings):
     """构建照片上传培训响应数据（包含动态状态）"""
-    from datetime import datetime, timezone
-    from services.db import get_supabase_admin
     
     if not trainings:
         return []
@@ -1023,11 +1002,15 @@ def _build_photo_training_response(db, trainings):
             except Exception as e:
                 logger.warning(f"解析培训 {training_id} 时间失败: {e}")
                 dynamic_status = 'draft'
+
+        # 解析多国家
+        training_countries = parse_training_countries(t)
         
         result.append({
             "id": training_id,
             "name": t.get('name', ''),
             "country": t.get('country'),
+            "countries": training_countries,
             "start_time": t.get('start_time'),
             "end_time": t.get('end_time'),
             "created_at": t.get('created_at'),

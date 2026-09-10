@@ -497,6 +497,9 @@
                     <button id="resetFiltersBtn" class="btn btn-outline-secondary w-100">
                         <i class="bi bi-arrow-repeat"></i> <span data-i18n="reset">重置</span>
                     </button>
+                    <button class="btn btn-outline-primary" id="refreshDataBtn">
+                        <i class="bi bi-arrow-clockwise"></i> <span data-i18n="refresh_data">刷新数据</span>
+                    </button>
                 </div>
             </div>
         </div>
@@ -914,7 +917,11 @@
             
             switch (item.sign_status) {
                 case 'not_assigned':
-                    statusBadge = '<span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> ' + (t('not_assigned') || '未分配') + '</span>';
+                    // 检查是否为全国推送模式
+                    const isNationalPush = item.push_mode === 'all';
+                    const pushBadge = isNationalPush ? 
+                        '<span class="badge bg-info ms-1" style="font-size: 0.5rem;">🌍 全国</span>' : '';
+                    statusBadge = '<span class="badge bg-secondary"><i class="bi bi-dash-circle"></i> ' + (t('not_assigned') || '未分配') + `${pushBadge}` + '</span>';
                     actionHtml = `<button class="btn btn-sm btn-outline-primary assign-btn" 
                                         data-training-id="${item.training_id}" 
                                         data-user-id="${item.user_id}"
@@ -1506,6 +1513,25 @@
                 }
             });
         }
+        
+        // 刷新数据
+        document.getElementById('refreshDataBtn')?.addEventListener('click', function() {
+            // 清除缓存
+            sessionStorage.removeItem('training_status_data');
+            sessionStorage.removeItem('training_status_data_time');
+            cachedData = [];
+            allData = [];
+            
+            // 显示加载状态
+            this.disabled = true;
+            this.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> ' + t('loading');
+            
+            // 重新加载数据
+            loadData(1, true).finally(() => {
+                this.disabled = false;
+                this.innerHTML = '<i class="bi bi-arrow-clockwise me-1"></i> ' + t('refresh_data');
+            });
+        });
     });
 
     window.addEventListener('app:languageChanged', function() {

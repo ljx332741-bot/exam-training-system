@@ -80,6 +80,19 @@
                     <div class="form-text text-muted mt-1">
                         <span data-i18n="select_training_hint" id="trainingHintText">请选择您要上传照片的培训</span>
                     </div>
+
+                    <!-- 国家选择区 -->
+                    <div class="mb-2" id="uploadCountrySelector" style="display: none;">
+                        <label class="form-label fw-bold small mb-1">
+                            <i class="bi bi-globe2 me-1"></i>
+                            <span data-i18n="select_upload_country">选择上传国家</span>
+                            <span class="text-danger">*</span>
+                        </label>
+                        <div class="d-flex flex-wrap gap-2" id="uploadCountryCheckboxes">
+                            <!-- 动态渲染 -->
+                        </div>
+                        <div class="form-text small text-muted" id="uploadCountryHint"></div>
+                    </div>
                 </div>
 
                 <div class="col-md-6">
@@ -1484,6 +1497,10 @@
         }
         updatePhotoLimit();
         document.getElementById('trainingDropdown').style.display = 'none';
+
+        // 加载国家选择器
+        loadAdminUploadCountries(training.id);
+
         updateUploadBtn();
     }
 
@@ -1507,7 +1524,15 @@
             hintEl.textContent = safeT('select_training_hint') || '请选择您要上传照片的培训';
             hintEl.style.color = '';
         }
-        
+
+        // 隐藏国家选择器
+        const countrySelector = document.getElementById('uploadCountrySelector');
+        if (countrySelector) {
+            countrySelector.style.display = 'none';
+            const container = document.getElementById('uploadCountryCheckboxes');
+            if (container) container.innerHTML = '';
+        }
+
         updateUploadBtn();
     }
 
@@ -1811,6 +1836,19 @@
             return;
         }
 
+        // 读取选中的国家
+        const selector = document.getElementById('uploadCountrySelector');
+        if (!selector || selector.style.display === 'none') {
+            window.showToast(safeT('no_country_permission_for_this_training') || '您没有该培训任何国家的权限', '错误', 'error');
+            return;
+        }
+        
+        const selectedCountry = getSelectedUploadCountry();
+        if (!selectedCountry) {
+            window.showToast(safeT('please_select_upload_country') || '请选择上传国家', '警告', 'warning');
+            return;
+        }
+
         const addWatermark = document.getElementById('addWatermark').checked;
         const includeTrainingName = document.getElementById('includeTrainingName').checked;
         const totalFiles = selectedFiles.length;
@@ -1818,6 +1856,7 @@
         const formData = new FormData();
         formData.append('training_id', trainingId);
         formData.append('training_name', trainingName);
+        formData.append('training_country', selectedCountry);
         formData.append('add_watermark', addWatermark ? 'true' : 'false');
         formData.append('include_training_name', includeTrainingName ? 'true' : 'false');
 

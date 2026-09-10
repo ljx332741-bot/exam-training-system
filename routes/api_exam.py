@@ -11,13 +11,20 @@ from flask import (
     session, flash, jsonify, send_file
 )
 from utils.common import get_reviewer_by_country
-from routes.helpers import login_required, admin_required, robust_parse_json, get_default_reviewer_by_country, safe_parse_datetime
 from services.db import get_supabase, get_supabase_admin
 from services import auth, exam, export
 from utils.status import get_exam_status
 from utils.manage_messages import log_user_login
 from utils.training_helpers import parse_training_countries
 from utils.permissions import is_developer
+from routes.helpers import (
+    login_required, 
+    admin_required, 
+    robust_parse_json, 
+    get_default_reviewer_by_country, 
+    safe_parse_datetime, 
+    parse_exam_countries
+)
 logger = logging.getLogger(__name__)
 
 @exam_bp.route('/dashboard')
@@ -96,10 +103,35 @@ def dashboard():
 
         for ex in exams_res.data or []:
             exam_id = ex['id']
+            push_mode = ex.get('push_mode') 
 
             # 检查是否有任何分配记录
             any_assign = db.table("exam_assignments").select("id").eq("exam_id", exam_id).limit(1).execute()
             if any_assign.data and exam_id not in assigned_exam_ids:
+                continue
+
+            # 检查用户是否已分配
+            is_assigned = exam_id in assigned_exam_ids
+            is_national_push = (push_mode == 'all')
+
+            # 国家匹配检查
+            exam_countries = parse_exam_countries(ex)
+            country_matched = user_country in exam_countries if exam_countries else False
+            
+            # 判断是否应该显示
+            should_show = False
+            
+            # 1. 已分配的用户可以看到
+            if is_assigned:
+                should_show = True
+            # 2. 全国推送 + 国家匹配
+            elif is_national_push and country_matched:
+                should_show = True
+            # 3. 强制重推（原有逻辑）
+            elif exam_id in force_exam_ids:
+                should_show = True
+            
+            if not should_show:
                 continue
 
             # 关键修复：绑定模式的考试处理
@@ -914,6 +946,41 @@ def submit_exam(exam_id):
             return jsonify({"success": False, "message": "save_score_failed", "params": []}), 500
         flash({'msg': 'save_score_failed', 'params': []}, 'danger')
         return redirect(url_for('exam.dashboard'))
+
+    # ========== 同步培训分配 ==========
+    try:
+        admin_db = get_supabase_admin()
+        
+        # 检查考试是否绑定了培训
+        bindings_res = admin_db.table("training_exam_bindings")\
+            .select("training_id")\
+            .eq("exam_id", exam_id)\
+            .is_("deleted_at", "null")\
+            .execute()
+        
+        if bindings_res.data:
+            for binding in bindings_res.data:
+                training_id = binding['training_id']
+                
+                # 检查是否已有培训分配
+                existing = admin_db.table("training_assignments")\
+                    .select("id")\
+                    .eq("training_id", training_id)\
+                    .eq("user_id", user_id)\
+                    .is_("deleted_at", "null")\
+                    .maybe_single()\
+                    .execute()
+                
+                if not existing.data:
+                    admin_db.table("training_assignments").insert({
+                        "training_id": training_id,
+                        "user_id": user_id,
+                        "created_by": "system",
+                        "created_at": datetime.now(timezone.utc).isoformat()
+                    }).execute()
+                    logger.info(f"✅ 考试提交后自动创建培训分配: user={user_id}, training={training_id}")
+    except Exception as e:
+        logger.warning(f"同步培训分配失败（不影响主流程）: {e}")
     
     # ========== 关键修复：删除草稿 ==========
     try:

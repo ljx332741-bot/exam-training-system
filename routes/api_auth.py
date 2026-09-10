@@ -1,4 +1,5 @@
 # routes/api_auth.py
+import time
 import os
 import json
 import logging
@@ -375,6 +376,7 @@ def login():
             try:
                 if isinstance(admin_countries, str): json.loads(admin_countries)
             except: admin_countries = json.dumps([])
+            session.permanent = True
             session.update({
                 "user_id": user['id'], 
                 "user_email": email, 
@@ -419,6 +421,17 @@ def login():
 
     # GET 请求也使用独立模板
     return render_template('auth/login_standalone.html')
+
+@auth_bp.route('/api/user/heartbeat')
+@login_required   # ← 复用增强版 login_required，自动校验用户状态
+def heartbeat():
+    """心跳接口：每次请求会触发用户状态校验"""
+    return jsonify({
+        "success": True,
+        "role": session.get('role'),
+        "user_id": session.get('user_id'),
+        "timestamp": int(time.time())
+    })
 
 @auth_bp.route('/logout')
 def logout():
