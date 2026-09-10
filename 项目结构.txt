@@ -6,7 +6,10 @@ exam-system/
 ├── Procfile                                    # Render 启动配置
 ├── .env                                        # 重要依赖
 ├── reviewer.txt                                # 阅卷人
-├── reviewers.json                              # 阅卷人static
+├── reviewers.json                              # 阅卷人
+├── logs/
+│   └── log_config.json                        # 日志配置参数
+│
 ├── static/
 │   ├── i18n/ 
 │   │   ├── en.json                             # 词典英文
@@ -20,6 +23,7 @@ exam-system/
 │   │   ├── timezone.js                         # 前端时区检测增强
 │   │   │
 │   │   └── admin/
+│   │        ├── user_info_change_logs_modal.js # 用户修改记录（审计日志）模态框
 │   │        │
 │   │        └── dashboard/
 │   │             ├── channel.js                # 全局通信工具 
@@ -49,6 +53,7 @@ exam-system/
 │   ├── import_helper.py                        # 用户和库房导入的工具函数
 │   ├── ip_location.py                          # 用户IP 归属地查询
 │   ├── device_detector.py                      # 用户设备检测工具
+│   ├── user_info_change_logs.py                # 用户信息修改记录工具函数
 │   └── status.py                               # 后端统一考试状态计算函数
 │
 ├── services/
@@ -72,6 +77,7 @@ exam-system/
 │   │   └── register_standalone.html            # 注册界面(新)
 │   │
 │   ├── components/               
+│   │   ├── user_info_change_logs_modal.html    # 用户修改记录（审计日志）模态框 
 │   │   ├── help_modal.html                     # 隐私声明弹窗组件
 │   │   ├── privacy_modal.html                  # 隐私声明弹窗组件
 │   │   └── delete_modal.html                   # 全局删除模态框组件

@@ -204,7 +204,7 @@ class CustomTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
     
     def _get_retention_days(self):
         """从配置文件读取保留天数"""
-        config_file = 'log_config.json'
+        config_file = os.path.join('logs', 'log_config.json')
         default_days = 2
         try:
             if os.path.exists(config_file):
@@ -234,7 +234,7 @@ class CustomTimedRotatingFileHandler(logging.handlers.TimedRotatingFileHandler):
 # ============================================================
 def get_retention_days_from_config():
     """从配置文件读取保留天数，如果失败则返回默认值 2"""
-    config_file = 'log_config.json'
+    config_file = os.path.join('logs', 'log_config.json')
     default_days = 2
     try:
         if os.path.exists(config_file):
