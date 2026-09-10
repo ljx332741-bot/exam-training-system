@@ -4,6 +4,7 @@ import json
 import re
 import random
 import logging
+import time
 from dateutil import parser
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -14,22 +15,153 @@ from utils.timezone_utils import get_current_local_time, format_datetime_24h_sho
 
 logger = logging.getLogger(__name__)
 
+# ========== 用户状态缓存 ==========
+# 结构: {user_id: (timestamp, status_dict_or_None)}
+_USER_STATUS_CACHE = {}
+_USER_STATUS_CACHE_TTL = 60  # 秒
+
+def _get_user_status(user_id):
+    """获取用户当前状态（带 60 秒缓存）"""
+    if not user_id:
+        return None
+    
+    now = time.time()
+    cached = _USER_STATUS_CACHE.get(user_id)
+    if cached and now - cached[0] < _USER_STATUS_CACHE_TTL:
+        return cached[1]
+    
+    try:
+        db = get_supabase()
+        res = db.table("users").select(
+            "id, role, is_resign, deleted_at, is_protected, "
+            "admin_countries, country, user_status, is_active"
+        ).eq("id", user_id).maybe_single().execute()
+        status = res.data if res and res.data else None
+    except Exception as e:
+        logger.warning(f"校验用户状态失败 (user_id={user_id}): {e}")
+        # 出错时返回"上次缓存"（如果有），避免误踢
+        if cached:
+            return cached[1]
+        return "DB_ERROR"  # 特殊标记，不踢人
+    
+    _USER_STATUS_CACHE[user_id] = (now, status)
+    return status
+
+
+def invalidate_user_status_cache(user_id):
+    """清除指定用户的缓存（离职/删除/改权限后调用）"""
+    if user_id in _USER_STATUS_CACHE:
+        del _USER_STATUS_CACHE[user_id]
+    logger.debug(f"清除用户状态缓存: {user_id}")
+
+
+def _reject_request(reason, status_code=401):
+    """统一的拒绝响应"""
+    is_ajax = (
+        request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+        or request.path.startswith('/api/')
+    )
+    
+    if is_ajax:
+        return jsonify({
+            "success": False,
+            "code": reason,
+            "message": reason
+        }), status_code
+    
+    # 普通页面请求：清 session 并跳登录
+    session.clear()
+    flash({'msg': reason, 'params': []}, 'danger')
+    return redirect('/login')
+
+
 # ================= 装饰器 =================
+
 def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
-            return redirect('/login')
+            return _reject_request('not_logged_in', 401)
+        
+        user_id = session['user_id']
+        status = _get_user_status(user_id)
+        
+        # DB 异常：放行（避免因 DB 抖动误踢用户）
+        if status == "DB_ERROR":
+            logger.warning(f"DB 异常，临时放行 user_id={user_id}")
+            return f(*args, **kwargs)
+        
+        # 用户不存在（被硬删除）
+        if not status:
+            session.clear()
+            logger.warning(f"用户不存在，清 session: {user_id}")
+            return _reject_request('account_deleted', 401)
+        
+        # 被软删除
+        if status.get('deleted_at'):
+            session.clear()
+            logger.warning(f"用户已删除，清 session: {user_id}")
+            return _reject_request('account_deleted', 401)
+        
+        # 已离职
+        if status.get('is_resign'):
+            session.clear()
+            logger.warning(f"用户已离职，清 session: {user_id}")
+            return _reject_request('account_resigned', 401)
+        
+        # 状态异常（未激活）
+        if status.get('user_status') not in ('registered', 'imported'):
+            session.clear()
+            return _reject_request('account_inactive', 401)
+        
+        # ========== 实时同步 session（角色/权限被改） ==========
+        current_role = status.get('role', 'user')
+        if session.get('role') != current_role:
+            logger.info(f"用户 {user_id} 角色变更: {session.get('role')} → {current_role}")
+            session['role'] = current_role
+        
+        # 同步 admin_countries
+        db_admin_countries = status.get('admin_countries')
+        if db_admin_countries != session.get('admin_countries'):
+            session['admin_countries'] = db_admin_countries
+            logger.info(f"用户 {user_id} 权限范围已同步")
+        
+        # 同步 user_country
+        db_country = status.get('country')
+        if db_country != session.get('user_country'):
+            session['user_country'] = db_country
+        
         return f(*args, **kwargs)
+    
     return decorated
 
 
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        if session.get('role') not in ('admin', 'super_admin', 'developer'):
+        # 先走 login_required 的校验
+        if 'user_id' not in session:
+            return _reject_request('not_logged_in', 401)
+        
+        user_id = session['user_id']
+        status = _get_user_status(user_id)
+        
+        if status == "DB_ERROR":
+            # DB 异常时用 session 里的角色继续
+            pass
+        elif not status or status.get('deleted_at') or status.get('is_resign'):
+            session.clear()
+            return _reject_request('account_resigned', 401)
+        
+        # 角色校验（用实时角色，而不是 session）
+        current_role = status.get('role') if status and status != "DB_ERROR" else session.get('role')
+        
+        if current_role not in ('admin', 'super_admin', 'developer'):
+            if request.path.startswith('/api/') or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                return jsonify({"success": False, "message": "permission_denied"}), 403
             flash({'msg': 'permission_denied_admin', 'params': []}, 'danger')
             return redirect('/dashboard')
+        
         return f(*args, **kwargs)
     return decorated
 

@@ -1,5 +1,5 @@
 # routes/admin_user.py
-import os, json, logging, uuid, secrets, string, sys, openpyxl, re
+import os, json, logging, uuid, secrets, string, sys, openpyxl, re, time
 from io import BytesIO
 from datetime import datetime, timezone, timedelta, date
 from flask import  (
@@ -17,7 +17,7 @@ from utils.permissions import (
     is_developer, apply_country_filter, can_view_user, get_admin_allowed_countries, 
     can_modify_user, parse_countries_input, filter_users_by_permission, can_resign_user, can_rehire_user
 )
-from routes.helpers import login_required, admin_required, get_current_user
+from routes.helpers import login_required, admin_required, get_current_user, invalidate_user_status_cache
 from utils.import_helper import parse_excel_rows, validate_country_and_wh_id, generate_import_template, format_import_result
 from utils.i18n_messages import I18nMessages
 from utils.employment_history import add_employment_event, get_latest_employment_status, get_employment_summary
@@ -836,6 +836,7 @@ def api_admin_edit_user(user_id):
 
     # 角色和权限范围字段（需要更高权限）
     if 'role' in data:
+        invalidate_user_status_cache(user_id)
         new_role = data['role']
         # 开发者可以修改任何角色
         if is_developer():
@@ -852,6 +853,7 @@ def api_admin_edit_user(user_id):
     
     # 权限范围字段
     if 'admin_countries' in data:
+        invalidate_user_status_cache(user_id)
         if is_developer() or session.get('role') == 'super_admin':
             countries_input = data['admin_countries']
             if isinstance(countries_input, str):
@@ -1491,6 +1493,7 @@ def api_admin_resign_user(user_id):
         "is_rehire": False,
         "rehire_at": None
     }).eq("id", user_id).execute()
+    invalidate_user_status_cache(user_id)
 
     # 添加历史记录
     add_employment_event(
@@ -1545,6 +1548,7 @@ def api_admin_rehire_user(user_id):
         "rehire_at": now
         # 保留 resigned_at 用于审计
     }).eq("id", user_id).execute()
+    invalidate_user_status_cache(user_id)
 
     # 添加历史记录
     add_employment_event(

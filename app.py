@@ -8,7 +8,7 @@ import pytz
 import re
 import string, time
 from routes import register_blueprints
-from datetime import datetime, timezone, date
+from datetime import datetime, timezone, date, timedelta
 from flask import Flask, request, jsonify, session, make_response, redirect, url_for
 from services.db import get_supabase
 from services import auth, exam, export
@@ -104,8 +104,14 @@ logger.info("🚀 缓存管理器已初始化")
 logger.info(f"📊 当前缓存: {training_cache.get_stats()}")
 logger.info("=" * 60)
 
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=12)
+app.config['SESSION_REFRESH_EACH_REQUEST'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+
 # 根据生产环境强制设置 debug
 if IS_PRODUCTION:
+    app.config['SESSION_COOKIE_SECURE'] = True
     app.debug = False
     os.environ['FLASK_DEBUG'] = 'false'
 else:
@@ -324,6 +330,7 @@ def static_proxy(filename):
 def handle_all_exceptions(e):
     """全局异常处理 - 不记录敏感信息"""
     logger.error(f"Uncaught exception: {type(e).__name__}: {e}")
+    logger.error(traceback.format_exc())
     # 生产环境不返回详细错误信息
     if IS_PRODUCTION:
         return "500 Internal Server Error", 500

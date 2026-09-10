@@ -1743,6 +1743,102 @@
                 }
             }
 
+            // ==================== 用户在线状态检测（心跳） ====================
+            (function() {
+                // 只有登录用户才启动心跳
+                if (!window.USER_PERMISSIONS || !window.USER_PERMISSIONS.user_id) {
+                    return;
+                }
+                
+                const HEARTBEAT_INTERVAL = 60000;   // 60 秒
+                const HEARTBEAT_URL = '/api/user/heartbeat';
+                let heartbeatTimer = null;
+                let isRedirecting = false;
+                let failCount = 0;
+                
+                async function sendHeartbeat() {
+                    // 已经在跳转中，不再发送
+                    if (isRedirecting) return;
+                    
+                    // 页面隐藏时跳过（省资源）
+                    if (document.hidden) return;
+                    
+                    try {
+                        const res = await fetch(HEARTBEAT_URL, {
+                            method: 'GET',
+                            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                            credentials: 'same-origin'
+                        });
+                        
+                        if (res.status === 401) {
+                            // 被踢出：解析原因
+                            const data = await res.json().catch(() => ({}));
+                            const reason = data.code || 'account_status_changed';
+                            
+                            // 显示提示
+                            const msgMap = {
+                                'account_resigned': '您的账号已离职，系统已自动登出',
+                                'account_deleted': '您的账号已被删除，系统已自动登出',
+                                'account_inactive': '您的账号状态异常，系统已自动登出',
+                                'not_logged_in': '登录已过期，请重新登录'
+                            };
+                            const msg = (window.i18n && window.i18n.t(reason)) 
+                                    || msgMap[reason] 
+                                    || '您的账号状态已变更，请重新登录';
+                            
+                            isRedirecting = true;
+                            if (typeof showToast === 'function') {
+                                showToast(msg, '警告', 'warning');
+                            }
+                            
+                            // 1.5 秒后跳转到退出登录
+                            setTimeout(() => {
+                                window.location.href = '/logout';
+                            }, 1500);
+                            return;
+                        }
+                        
+                        if (!res.ok) {
+                            failCount++;
+                            console.warn(`心跳失败 (${failCount}): HTTP ${res.status}`);
+                            return;
+                        }
+                        
+                        // 成功，重置失败计数
+                        failCount = 0;
+                        
+                    } catch (e) {
+                        failCount++;
+                        console.warn('心跳请求异常:', e.message);
+                        // 连续失败 3 次才提示（避免网络抖动误报）
+                        if (failCount >= 3) {
+                            console.warn('心跳连续失败，可能是网络问题');
+                        }
+                    }
+                }
+                
+                // 启动心跳（延迟 5 秒首次执行，避免影响页面加载）
+                setTimeout(() => {
+                    sendHeartbeat();
+                    heartbeatTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL);
+                }, 5000);
+                
+                // 页面重新可见时立即发一次
+                document.addEventListener('visibilitychange', () => {
+                    if (!document.hidden) {
+                        sendHeartbeat();
+                    }
+                });
+                
+                // 页面卸载时停止
+                window.addEventListener('beforeunload', () => {
+                    if (heartbeatTimer) {
+                        clearInterval(heartbeatTimer);
+                        heartbeatTimer = null;
+                    }
+                });
+            })();
+
             // ==================== 表格内嵌加载进度条 ====================
             (function() {
                 /**
@@ -2954,6 +3050,64 @@
                     console.log('📸 复用已有 BroadcastChannel');
                 }
                 return window._photoChannel;
+            }
+
+            // 照片上传加载国家选择器
+            async function loadAdminUploadCountries(trainingId) {
+                const selector = document.getElementById('uploadCountrySelector');
+                const container = document.getElementById('uploadCountryCheckboxes');
+                const hint = document.getElementById('uploadCountryHint');
+                
+                try {
+                    const res = await fetch(`/api/training/${trainingId}/available_countries`);
+                    const data = await res.json();
+                    
+                    if (!data.success) {
+                        selector.style.display = 'none';
+                        return null;
+                    }
+                    
+                    selector.style.display = 'block';
+                    
+                    if (!data.has_available) {
+                        container.innerHTML = `<span class="text-danger small">${safeT('no_country_permission_for_this_training') || '您没有该培训任何国家的权限'}</span>`;
+                        hint.textContent = '';
+                        return null;
+                    }
+                    
+                    // 渲染 radio（单选）
+                    container.innerHTML = data.countries.map(c => {
+                        const disabled = !c.available;
+                        const checked = c.code === data.default_selected ? 'checked' : '';
+                        const title = disabled ? (safeT('no_permission_for_country') || '无此国家权限') : '';
+                        const name = c.name_zh || c.name_en || c.code;
+                        return `
+                            <div class="form-check form-check-inline" style="margin-right: 12px;" title="${title}">
+                                <input class="form-check-input" type="radio" 
+                                    name="uploadCountry" value="${c.code}" 
+                                    id="country_${c.code}"
+                                    ${checked} ${disabled ? 'disabled' : ''}>
+                                <label class="form-check-label small" for="country_${c.code}"
+                                    style="${disabled ? 'opacity: 0.5; cursor: not-allowed;' : 'cursor: pointer;'}">
+                                    ${name} <span class="text-muted">(${c.code})</span>
+                                </label>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    hint.textContent = safeT('select_upload_country_hint') || '请选择照片归属的国家';
+                    return data;
+                } catch (e) {
+                    console.error('加载培训国家失败:', e);
+                    selector.style.display = 'none';
+                    return null;
+                }
+            }
+
+            // 照片上传加载国家选择器
+            function getSelectedUploadCountry() {
+                const checked = document.querySelector('input[name="uploadCountry"]:checked');
+                return checked ? checked.value : null;
             }
 
         </script>

@@ -17,11 +17,21 @@
             </thead>
             <tbody id="dashboardTrainingTbody">
                 {% for t in dashboard_trainings | default([]) %}
-                    <tr data-training-id="{{ t.id }}">
+                    <tr data-training-id="{{ t.id }}" data-countries='{{ t.countries_list | tojson }}'>
                         <td>
                             <div class="training-name-cell">
                                 <div>
-                                    <span class="training-name-link">{{ t.name }}</span>
+                                    {% if t.signed_count > 0 and (t.countries_list or t.country) %}
+                                    <a href="javascript:void(0)" 
+                                    class="training-name-link" 
+                                    data-id="{{ t.id }}" 
+                                    style="cursor: pointer; color: #0d6efd; text-decoration: none;"
+                                    data-i18n-title="title_view_sign_in"
+                                    title="点击查看签到详情">
+                                        {{ t.name }}
+                                    </a>
+                                    {% else %} {{ t.name }} {% endif %}
+
                                     {% if t.binding_count > 0 %}
                                     <span class="binding-badge" 
                                         title="已绑定 {{ t.binding_count }} 个考试"
@@ -39,7 +49,16 @@
                                 </div>
                             </div>
                         </td>
-                        <td class="text-muted" style="font-size:0.8rem;">{{ t.id }}</td>
+                        <td>
+                            <a href="/admin/training/attendance_status_view?training_id={{ t.id }}" 
+                                class="training-id-link" 
+                                target="_blank"
+                                style="cursor: pointer; color: #0d6efd; text-decoration: none;"
+                                data-i18n-title="title_view_this_sign_in_status"
+                                title="查看该培训的学员签到状态">
+                                {{ t.id }}
+                            </a>
+                        </td>
                         <td>
                             {% if t.dynamic_status == 'draft' %}
                                 <span class="status-badge draft" data-i18n="draft">草稿</span>
@@ -57,7 +76,35 @@
                             <span class="sign-count-badge">{{ t.signed_count | default(0) }}</span>
                         </td>
                         <td>
-                            <div class="btn-group btn-group-sm gap-2" role="group">
+                            <div class="btn-group btn-group-sm gap-1" role="group">
+                                <!-- ========== 表头录入按钮（移植自 admin_trainings.html） ========== -->
+                                {% set countries_list = t.countries_list | default([]) %}
+                                {% if countries_list | length == 1 %}
+                                    <button class="btn btn-sm btn-outline-info header-btn" 
+                                        data-id="{{ t.id }}" 
+                                        data-country="{{ countries_list[0] }}"
+                                        data-single-country="true"
+                                        data-i18n-title="title_header_input"
+                                        title="录入表头">
+                                        <i class="bi bi-table"></i>
+                                    </button>
+                                {% elif countries_list | length > 1 %}
+                                    <button class="btn btn-sm btn-outline-info header-btn" 
+                                        data-id="{{ t.id }}" 
+                                        data-multi-country="true"
+                                        data-countries='{{ countries_list | tojson }}'
+                                        data-i18n-title="title_multi_country_header_input"
+                                        title="按国家录入表头">
+                                        <i class="bi bi-table"></i>
+                                        <span class="badge bg-warning text-dark ms-1" style="font-size: 0.5rem;">{{ countries_list | length }}</span>
+                                    </button>
+                                {% else %}
+                                    <button class="btn btn-sm btn-outline-secondary" disabled>
+                                        <i class="bi bi-table"></i>
+                                    </button>
+                                {% endif %}
+                                
+                                <!-- ========== 查看签到按钮 ========== -->
                                 {% if t.signed_count > 0 and (t.countries_list or t.country) %}
                                     <a href="/admin/training/{{ t.id }}/attendance?from=dashboard" 
                                         class="btn btn-outline-info" target="_blank"
@@ -73,19 +120,24 @@
                                         <i class="bi bi-eye"></i>
                                     </button>
                                 {% endif %}
+                                
+                                <!-- ========== 推送按钮 ========== -->
                                 <button class="btn btn-outline-success push-training-btn" 
                                     data-id="{{ t.id }}" 
                                     data-i18n-title="push"
                                     title="推送">
                                     <i class="bi bi-send"></i> <span data-i18n="push">推送</span>
                                 </button>
+                                
+                                <!-- ========== 拷贝按钮 ========== -->
                                 <button class="btn btn-outline-secondary copy-training-btn" 
                                     data-id="{{ t.id }}" 
                                     data-i18n-title="copy"
                                     title="拷贝">
                                     <i class="bi bi-copy"></i> <span data-i18n="copy">拷贝</span>
                                 </button>
-                                <!-- 编辑按钮（草稿状态显示） -->
+                                
+                                <!-- ========== 编辑按钮（草稿状态显示） ========== -->
                                 {% if t.dynamic_status == 'draft' %}
                                     <button class="btn btn-outline-warning edit-training-btn" 
                                         data-id="{{ t.id }}" 
@@ -94,6 +146,8 @@
                                         <i class="bi bi-pencil"></i> <span data-i18n="edit">编辑</span>
                                     </button>
                                 {% endif %}
+                                
+                                <!-- ========== 删除按钮（草稿状态显示） ========== -->
                                 {% if t.dynamic_status == 'draft' %}
                                     <button class="btn btn-outline-danger delete-training-btn" 
                                         data-id="{{ t.id }}" 
@@ -172,12 +226,14 @@
             </thead>
             <tbody>
                 {% for ex in exams_table | default([]) %}
-                    <tr>
-                        <td class="fw-medium" style="display: flex; flex-direction: column;">
-                            {# 进行中的考试名称显示为可点击链接 #}
+                    <tr data-exam-id="{{ ex.id }}">
+                        <td class="fw-medium">
+                            {# 考试名称 -> 跳转考生考试详情页 #}
                             {% if ex.status == 'active' %}
-                                <a href="{{ url_for('admin_exam.admin_candidate_exam_status', exam_id=ex.id) }}" target="_blank"
-                                    class="text-decoration-none fw-semibold">
+                                <a href="/admin/exam/{{ ex.id }}/scores" target="_blank"
+                                    class="text-decoration-none fw-semibold exam-name-link"
+                                    data-i18n-title="title_view_exam_scores"
+                                    title="查看考生考试详情">
                                     {{ ex.title }}
                                     {% if ex.has_binding %}
                                     <span class="badge bg-success ms-1" 
@@ -185,7 +241,7 @@
                                         data-i18n-title="binded_training_with_names"
                                         data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
                                         title="">
-                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
+                                        <i class="bi bi-link"></i>
                                     </span>
                                     {% endif %}
                                 </a>
@@ -198,12 +254,12 @@
                                         data-i18n-title="binded_training_with_names"
                                         data-i18n-title-params='{"names": "{% for b in ex.binding_trainings %}{{ b.training_name }}{% if not loop.last %}, {% endif %}{% endfor %}"}'
                                         title="">
-                                        <i class="bi bi-link"></i> <span data-i18n="binded">已绑定</span>
+                                        <i class="bi bi-link"></i>
                                     </span>
                                     {% endif %}
                                 </span>
                             {% endif %}
-                            <small class="text-muted" style="margin-top: 4px;">
+                            <small class="text-muted" style="margin-top: 4px; display: block;">
                                 <!-- 显示多个国家标签 -->
                                 <span class="badge bg-secondary me-1">{{ ex.countries_display or '-' }}</span>
                                 {{ (ex.start_time | format_datetime_local) or '' }}
@@ -214,7 +270,17 @@
                                 {{ ex.submitted_count }}/{{ ex.assigned_count }}
                             </small>
                         </td>
-                        <td class="text-muted">{{ ex.id }}</td>
+                        <td> 
+                            {# 考试ID -> 跳转考生考试状态管理页 #}
+                            <a href="/admin/exam/{{ ex.id }}/candidate_status" 
+                            class="exam-id-link" 
+                            target="_blank"
+                            style="font-size:0.8rem; text-decoration: none; color: #0d6efd;"
+                            data-i18n-title="title_view_exam_status"
+                            title="查看考生考试状态">
+                                {{ ex.id }}
+                            </a>
+                        </td>
                         <td>
                             {% if ex.status == 'draft' %}
                                 <span class="badge bg-secondary" data-i18n="draft">草稿</span>
@@ -348,6 +414,110 @@
             </div>
             <div id="status-table-container"></div>
         </div>	
+    </div>
+</div>
+
+<!-- ============================================================
+    国家分组模态框（用于多国家培训）
+    ============================================================ -->
+<div class="modal fade" id="countryGroupModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <span data-i18n="sign_in_records_by_country_group">按国家分组签到记录</span>
+                    - <span id="groupModalTrainingName"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered">
+                        <thead class="table-light">
+                            <tr>
+                                <th><span data-i18n="country">国家</span></th>
+                                <th><span data-i18n="sign_count">签到人数</span></th>
+                                <th><span data-i18n="actions">操作</span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="groupTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="close">关闭</span></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================================================
+    表头录入模态框（移植自 admin_trainings.html）
+    ============================================================ -->
+<div class="modal fade" id="headerModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-light">
+                <h5 class="modal-title">
+                    <span data-i18n="training_header_input">📋 培训表头录入</span>
+                    <span id="headerModalTrainingName" class="ms-2 text-muted small"></span>
+                    <span id="headerModalCountry" class="ms-2 text-muted small"></span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="headerForm">
+                    <input type="hidden" id="currentEditTrainingId" value="">
+                    <input type="hidden" id="currentEditCountry" value="">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="course_name">培训课程名称（双语）Training Course Name</label>
+                            <input type="text" class="form-control" name="course_name" id="course_name">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="project_no">培训项目编号Training Project NO.</label>
+                            <input type="text" class="form-control" name="project_no" id="project_no">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="venue">培训地点（双语）Training Venue</label>
+                            <input type="text" class="form-control" name="venue" id="venue">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="language">培训语言Language</label>
+                            <input type="text" class="form-control" name="language" id="language">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="target">培训对象（双语）Target Trainees</label>
+                            <input type="text" class="form-control" name="target" id="target">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="dept">培训组织部门（双语）Training Organizing Dept</label>
+                            <input type="text" class="form-control" name="dept" id="dept">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="organizer">培训组织者Training Organizer</label>
+                            <input type="text" class="form-control" name="organizer" id="organizer">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="training_date">培训年月日Training Date</label>
+                            <input type="date" class="form-control" name="training_date" id="training_date">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="lecturer">主讲人Course Lecturer</label>
+                            <input type="text" class="form-control" name="lecturer" id="lecturer">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="translator">翻译员Translator</label>
+                            <input type="text" class="form-control" name="translator" id="translator">
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><span data-i18n="cancel">取消</span></button>
+                <button type="button" class="btn btn-primary" id="saveHeaderBtn"><span data-i18n="save">保存</span></button>
+            </div>
+        </div>
     </div>
 </div>
 

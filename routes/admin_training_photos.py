@@ -19,6 +19,7 @@ from PIL import Image, ImageDraw, ImageFont
 from services.cloudflare_r2 import upload_to_r2, delete_from_r2, delete_multiple_from_r2
 from services.db import get_supabase, get_supabase_admin
 from routes.helpers import login_required, admin_required
+from utils.training_helpers import parse_training_countries
 from utils.permissions import (
     get_admin_allowed_countries, is_developer, filter_users_by_permission
 )
@@ -28,136 +29,6 @@ logger = logging.getLogger(__name__)
 # 创建蓝图
 admin_training_photos_bp = Blueprint('admin_training_photos', __name__)
 
-
-# ============================================================
-# 辅助函数
-# ============================================================
-'''一行布局
-def add_watermark_to_image(
-    image_data, 
-    training_name, 
-    include_training_name=True,
-    font_scale=0.03,      # 字体大小比例（默认 6%）
-    min_font_size=24,     # 最小字体（px）
-    bg_padding_scale=0.15 # 背景框 padding 比例（默认 15%）
-    ):
-    """
-    为图片添加水印（左下角）
-    Args:
-        image_data: 图片二进制数据
-        training_name: 培训名称
-        include_training_name: 是否包含培训名称
-        font_scale: 字体大小相对于图片尺寸的比例
-        min_font_size: 最小字体大小（px）
-        bg_padding_scale: 背景框 padding 相对于字体大小的比例
-    """
-    try:
-        # 打开图片
-        img = Image.open(io.BytesIO(image_data))
-        
-        # 转换为 RGB
-        if img.mode in ('RGBA', 'LA', 'P'):
-            background = Image.new('RGB', img.size, (255, 255, 255))
-            if img.mode == 'P':
-                img = img.convert('RGBA')
-            background.paste(img, mask=img.split()[-1] if img.mode == 'RGBA' else None)
-            img = background
-        elif img.mode != 'RGB':
-            img = img.convert('RGB')
-        
-        draw = ImageDraw.Draw(img)
-        
-        # 获取当前时间
-        now = datetime.now()
-        date_str = now.strftime('%Y-%m-%d %H:%M')
-        
-        # 构建水印文本
-        watermark_text = date_str
-        if include_training_name and training_name:
-            watermark_text = f"{training_name} | {date_str}"
-        
-        # 根据图片大小动态调整字体大小
-        base_size = min(img.width, img.height)
-        font_size = max(int(base_size * font_scale), min_font_size)
-
-        # 尝试加载字体
-        import os
-        font = None
-        font_paths = [
-            # Linux 中文字体
-            '/usr/share/fonts/truetype/wqy/wqy-microhei.ttc',
-            '/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc',
-            '/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
-            # macOS 中文字体
-            '/System/Library/Fonts/PingFang.ttc',
-            '/System/Library/Fonts/STHeiti Light.ttc',
-            '/System/Library/Fonts/Hiragino Sans GB.ttc',
-            '/System/Library/Fonts/AppleSDGothicNeo.ttc',
-            # Windows 中文字体
-            'C:/Windows/Fonts/msyh.ttc',      # 微软雅黑
-            'C:/Windows/Fonts/msyhbd.ttc',    # 微软雅黑粗体
-            'C:/Windows/Fonts/simsun.ttc',    # 宋体
-            'C:/Windows/Fonts/simhei.ttf',    # 黑体
-            'C:/Windows/Fonts/STKAITI.TTF',   # 楷体
-            'C:/Windows/Fonts/arial.ttf',     # Arial（备选）
-        ]
-        for path in font_paths:
-            if os.path.exists(path):
-                try:
-                    font = ImageFont.truetype(path, font_size)
-                    break
-                except Exception as e:
-                    print(f"⚠️ 加载字体失败 {path}: {e}")
-                    continue
-
-        # 如果所有字体都加载失败，尝试使用 ImageFont.load_default() 并记录警告
-        if font is None:
-            print("⚠️ 未找到任何字体，使用默认字体（中文可能显示为方块）")
-            font = ImageFont.load_default()
-        
-        # 计算文本尺寸
-        bbox = draw.textbbox((0, 0), watermark_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        # 计算位置
-        padding = max(int(font_size * 0.4), 12)
-        x = padding
-        y = img.height - text_height - padding
-        
-        # 绘制背景框（使用较小的 padding）
-        bg_padding = int(font_size * bg_padding_scale) + 4
-        draw.rectangle(
-            [x - bg_padding, y - bg_padding, x + text_width + bg_padding, y + text_height + bg_padding],
-            fill=(0, 0, 0, 160)
-        )
-        
-        # 绘制水印文字
-        draw.text(
-            (x + 1, y + 1),
-            watermark_text,
-            font=font,
-            fill=(0, 0, 0, 200)
-        )
-        draw.text(
-            (x, y),
-            watermark_text,
-            font=font,
-            fill=(255, 255, 255, 255)
-        )
-        
-        # 保存为 JPEG
-        output = io.BytesIO()
-        img.save(output, format='JPEG', quality=92)
-        return output.getvalue()
-        
-    except Exception as e:
-        logger.error(f"添加水印失败: {e}", exc_info=True)
-        return image_data
-'''
 def add_watermark_to_image(
     image_data, 
     training_name, 
@@ -165,7 +36,7 @@ def add_watermark_to_image(
     font_scale=0.03,
     min_font_size=24,
     bg_padding_scale=0.12
-):
+    ):
     """
     为图片添加水印（左下角）- 双行布局
     第一行：培训名称
@@ -480,14 +351,6 @@ def api_admin_upload_training_photos():
     if not training_country:
         return jsonify({"success": False, "message": "培训国家不能为空"}), 400
     
-    # 权限检查：培训国家是否在权限范围内
-    if not is_dev and allowed_countries is not None:
-        if training_country not in allowed_countries:
-            return jsonify({
-                "success": False,
-                "message": f"无权操作国家 {training_country} 的培训照片"
-            }), 403
-    
     # 解析描述
     try:
         descriptions = json.loads(descriptions_json)
@@ -523,9 +386,25 @@ def api_admin_upload_training_photos():
         }), 400
 
     # 验证培训是否存在
-    training_res = db.table("trainings").select("id, name, country").eq("id", int(training_id)).maybe_single().execute()
+    training_res = db.table("trainings").select("id, name, country, countries").eq("id", int(training_id)).maybe_single().execute()
     if not training_res.data:
         return jsonify({"success": False, "message": "培训不存在"}), 404
+
+    training_countries = parse_training_countries(training_res.data)
+
+    if training_country not in training_countries:
+        return jsonify({
+            "success": False,
+            "message": f"国家 {training_country} 不属于该培训的覆盖范围 {training_countries}"
+        }), 400
+
+    # 权限检查：培训国家是否在权限范围内
+    if not is_dev and allowed_countries is not None:
+        if training_country not in allowed_countries:
+            return jsonify({
+                "success": False,
+                "message": f"无权操作国家 {training_country} 的培训照片"
+            }), 403
     
     # 上传照片
     uploaded_photos = []
@@ -978,22 +857,37 @@ def api_training_upload_photos():
         return jsonify({"success": False, "message": "培训名称不能为空"}), 400
     
     # 验证培训是否存在且用户有权限
-    training_res = db.table("trainings").select("id, name, country").eq("id", int(training_id)).maybe_single().execute()
+    training_res = db.table("trainings").select("id, name, country, countries").eq("id", int(training_id)).maybe_single().execute()
     if not training_res.data:
         logger.error(f"培训不存在: training_id={training_id}")
         return jsonify({"success": False, "message": "培训不存在"}), 404
     
-    training_country = training_res.data.get('country')
+    training_country = request.form.get('training_country')
     
-    # 权限检查：普通用户只能上传自己国家的培训
+    if not training_country:
+        return jsonify({"success": False, "message": "请选择上传国家"}), 400
+        
+    training_countries = parse_training_countries(training_res.data)
+
+    if training_country not in training_countries:
+        return jsonify({
+            "success": False,
+            "message": f"国家 {training_country} 不属于该培训"
+        }), 400
+
+    # 角色权限校验
+    is_dev = is_developer()
+    allowed_countries = get_admin_allowed_countries()
     is_admin = current_role in ['admin', 'super_admin', 'developer']
-    if not is_admin:
+
+    if is_dev or allowed_countries is None:
+        pass  # 不校验
+    elif is_admin:
+        if training_country not in allowed_countries:
+            return jsonify({"success": False, "message": "无此国家权限"}), 403
+    else:  # 普通学员
         if training_country != user_country:
-            logger.warning(f"国家不匹配: training_country={training_country}, user_country={user_country}")
-            return jsonify({
-                "success": False,
-                "message": "您只能上传自己国家培训的照片"
-            }), 403
+            return jsonify({"success": False, "message": "您只能上传本国照片"}), 403
     
     # 检查该培训的照片数量
     count_res = db.table("training_photos").select("id", count="exact").eq("training_id", int(training_id)).eq("is_deleted", False).execute()
@@ -1103,7 +997,7 @@ def api_training_upload_photos():
             insert_data = {
                 "training_id": int(training_id),
                 "training_name": training_name,
-                "training_country": training_country or user_country,
+                "training_country": training_country,
                 "photo_url": public_url,
                 "photo_path": photo_path,
                 "file_name": file.filename,
@@ -1587,3 +1481,71 @@ def api_user_role():
         "is_admin": is_admin,
         "can_manage_photos": is_admin
     })
+
+@admin_training_photos_bp.route('/api/training/<int:training_id>/available_countries', methods=['GET'])
+@login_required
+def api_training_available_countries(training_id):
+    """返回指定培训的国家列表 + 当前用户是否可用"""
+    from utils.training_helpers import parse_training_countries
+    
+    db = get_supabase_admin()
+    current_role = session.get('role')
+    current_user_id = session.get('user_id')
+    is_dev = is_developer()
+    allowed_countries = get_admin_allowed_countries()
+    
+    training_res = db.table("trainings").select("country, countries").eq("id", training_id).maybe_single().execute()
+    if not training_res.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
+    
+    training = training_res.data
+    training_countries = parse_training_countries(training)
+    
+    if not training_countries:
+        return jsonify({"success": False, "message": "该培训未设置任何国家"}), 400
+    
+    user_res = db.table("users").select("country, role").eq("id", current_user_id).maybe_single().execute()
+    user_country = user_res.data.get('country') if user_res and user_res.data else None
+    
+    countries_res = db.table("countries").select("code, name_zh, name_en").in_("code", training_countries).execute()
+    name_map = {c['code']: c for c in (countries_res.data or [])}
+    
+    result = []
+    for code in training_countries:
+        available = False
+        reason = None
+        
+        if is_dev:
+            available = True
+        elif current_role in ('admin', 'super_admin'):
+            if allowed_countries is None:
+                available = True
+            elif code in allowed_countries:
+                available = True
+            else:
+                reason = "no_permission_for_country"
+        else:
+            if user_country and code == user_country:
+                available = True
+            else:
+                reason = "only_own_country_allowed"
+        
+        info = name_map.get(code, {})
+        result.append({
+            "code": code,
+            "name_zh": info.get('name_zh', code),
+            "name_en": info.get('name_en', code),
+            "available": available,
+            "reason": reason
+        })
+    
+    available_list = [r for r in result if r['available']]
+    default_selected = available_list[0]['code'] if len(available_list) == 1 else None
+    
+    return jsonify({
+        "success": True,
+        "countries": result,
+        "default_selected": default_selected,
+        "has_available": len(available_list) > 0
+    })
+
