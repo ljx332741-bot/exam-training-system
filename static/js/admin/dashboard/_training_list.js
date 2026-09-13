@@ -492,7 +492,7 @@ const TrainingListModule = (function() {
         _updateSelectedCount() {
             if (this._hint) {
                 const count = this.selectedCountries.length;
-                this._hint.textContent = `已选 ${count} 个国家`;
+                this._hint.textContent = `${t('chose_count_country', count)}`;
                 this._hint.style.color = count > 0 ? '#198754' : '#6c757d';
             }
         }
@@ -661,7 +661,7 @@ const TrainingListModule = (function() {
                             <button class="btn btn-sm btn-primary view-country-attendance" 
                                 data-training-id="${trainingId}" 
                                 data-country="${g.country}">
-                                ${safeT('view_sign_in_records_export') || '查看签到'} (${attendanceCount})
+                                ${safeT('title_view_attendance_details') || '查看签到'} (${attendanceCount})
                             </button>
                         `;
                     } else {
@@ -671,7 +671,7 @@ const TrainingListModule = (function() {
                                 data-bs-toggle="tooltip"
                                 data-bs-placement="top"
                                 title="${safeT('no_sign_in_record_available') || '暂无签到记录'}">
-                                ${safeT('view_sign_in_records_export') || '查看签到'} (0)
+                                ${safeT('title_view_attendance_details') || '查看签到'} (0)
                             </button>
                         `;
                     }

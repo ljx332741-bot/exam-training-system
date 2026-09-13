@@ -959,7 +959,7 @@ def api_training_attendance(training_id):
     
     # 签到记录查询
     att_res = db.table("training_attendances") \
-        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company, is_resign)") \
+        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company, is_resign, wh_id, wh_name_en)") \
         .eq("training_id", training_id) \
         .execute()
 
@@ -1003,6 +1003,8 @@ def api_training_attendance(training_id):
             "signature_url": rec.get('signature_url', ''),
             "sign_time": rec.get('sign_time'),
             "company": user.get('company', ''),
+            "wh_id": user.get('wh_id', ''),
+            "wh_name_en": user.get('wh_name_en', ''),
             "country": user.get('country', '')
         })
 
@@ -1234,6 +1236,7 @@ def download_training_attendance_pdf(training_id):
     导出培训签到表的 PDF
     """
     country = request.args.get('country', '')
+    wh_id = request.args.get('wh_id', '') 
     lang = request.args.get('lang', 'zh')
     show_header = request.args.get('show_header', 'true').lower() == 'true'
     
@@ -1245,6 +1248,13 @@ def download_training_attendance_pdf(training_id):
     if not data:
         flash("培训不存在", "danger")
         return redirect(url_for('admin_dashboard'))
+
+    # ✅ 按库房过滤
+    if wh_id:
+        data['attendances'] = [
+            a for a in data['attendances']
+            if a.get('wh_id') == wh_id
+        ]
 
     # 渲染正文模板（不含页眉页脚 HTML）
     html_content = render_template(
@@ -2103,6 +2113,7 @@ def search_exams():
 def search_warehouses():
     """模糊搜索库房编码/名称（从 users 表，带权限过滤）"""
     q = request.args.get('q', '').strip()
+    country = request.args.get('country', '').strip()
     if not q:
         return jsonify([])
     
@@ -2113,9 +2124,14 @@ def search_warehouses():
     query = db.table("users").select("wh_id, wh_name_en, country").is_("deleted_at", "null")
     
     # ✅ 权限过滤：只返回权限范围内的用户对应的库房
+    allowed_countries = get_allowed_countries()
     if allowed_countries is not None and allowed_countries:
         query = query.in_("country", allowed_countries)
-    
+
+    # ✅ 按指定国家过滤
+    if country:
+        query = query.eq("country", country)
+
     # 模糊查询 wh_id 或 wh_name_en
     # 注意：Supabase 不支持 OR 条件的 ilike，需要分别查询后合并
     r1 = query.ilike("wh_id", f"%{q}%").limit(20).execute()

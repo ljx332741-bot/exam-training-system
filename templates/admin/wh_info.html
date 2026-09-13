@@ -11,6 +11,15 @@
                 <i class="bi bi-question-circle-fill me-1"></i>
                 <span data-i18n="help">帮助</span>
             </button>
+            
+            <!-- ✅ 新增：同步按钮 -->
+            <button class="btn btn-outline-success me-2" id="syncWhFromUsersBtn"
+                    data-i18n-title="sync_wh_from_users_hint"
+                    title="从用户数据中提取库房，自动补齐到库房列表">
+                <i class="bi bi-arrow-repeat"></i> 
+                <span data-i18n="sync_from_users">同步用户库房</span>
+            </button>
+            
             <button class="btn btn-outline-secondary me-2" id="showDeletedWhBtn">
                 <i class="bi bi-trash"></i> <span data-i18n="deleted_wh">已删除库房</span>
             </button>
@@ -986,11 +995,7 @@
     const closePageBtn = document.getElementById('closePageBtn');
     if (closePageBtn) {
         closePageBtn.addEventListener('click', () => {
-            if (window.history.length > 1) {
-                window.history.back();
-            } else {
-                window.close();
-            }
+            window.close();
         });
     }
 
@@ -1069,5 +1074,108 @@
     window.addEventListener('app:languageChanged', function() {
         loadWhList();
     });
+
+    // ============================================================
+    // 同步用户库房
+    // ============================================================
+    const syncWhFromUsersBtn = document.getElementById('syncWhFromUsersBtn');
+    if (syncWhFromUsersBtn) {
+        syncWhFromUsersBtn.addEventListener('click', async function() {
+            const btn = this;
+            const originalText = btn.innerHTML;
+            
+            // 确认弹窗
+            const confirmMsg = t('confirm_sync_wh_from_users') || 
+                '确定要从用户数据中同步库房吗？\n\n' +
+                '• 新增：users 表里有但 wh_info 表里没有的库房\n' +
+                '• 更新：已有库房的空字段（不会覆盖已有值）\n' +
+                '• 跳过：已软删除的库房（不自动恢复）';
+            
+            if (!confirm(confirmMsg)) return;
+            
+            // 显示加载状态
+            btn.disabled = true;
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span> ${t('syncing') || '同步中...'}`;
+            
+            try {
+                const res = await fetch('/api/admin/wh/sync_from_users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const result = await res.json();
+                
+                if (result.success) {
+                    // 构建详细的提示信息
+                    let msg = (t('sync_success') || '同步完成') + '\n';
+                    msg += '─────────────────────\n';
+                    msg += `${t('sync_total_user_wh') || '用户库房总数'}: ${result.total_user_wh || 0}\n`;
+                    msg += `${t('sync_added') || '新增'}: ${result.added || 0}\n`;
+                    msg += `${t('sync_updated') || '更新'}: ${result.updated || 0}\n`;
+                    msg += `${t('sync_skipped') || '已存在'}: ${result.skipped || 0}\n`;
+                    if (result.skipped_soft_deleted) {
+                        msg += `${t('sync_skipped_soft_deleted') || '已删除（跳过）'}: ${result.skipped_soft_deleted}\n`;
+                    }
+                    
+                    // 新增详情
+                    if (result.added_details && result.added_details.length > 0) {
+                        msg += '\n' + (t('sync_new_wh_list') || '📦 新增的库房：') + '\n';
+                        msg += result.added_details.map(d => {
+                            let line = `  • ${d.wh_id} - ${d.wh_name_en}`;
+                            if (d.wh_type) line += ` [${d.wh_type}]`;
+                            line += ` (${d.user_count} 用户)`;
+                            if (!d.has_real_name) line += ' ⚠️';
+                            if (!d.has_real_type) line += ' ⚠️类型缺失';
+                            return line;
+                        }).join('\n');
+                    }
+                    
+                    // 更新详情
+                    if (result.updated_details && result.updated_details.length > 0) {
+                        msg += '\n' + (t('sync_updated_wh_list') || '🔄 更新的库房：') + '\n';
+                        msg += result.updated_details.map(d => {
+                            const fields = d.updated_fields.map(f => {
+                                const fieldName = {
+                                    'wh_name_en': '名称',
+                                    'wh_type': '类型',
+                                    'country_code': '国家'
+                                }[f] || f;
+                                return fieldName;
+                            }).join('、');
+                            return `  • ${d.wh_id} - 更新了 [${fields}]`;
+                        }).join('\n');
+                    }
+                    
+                    // 失败详情
+                    if (result.failed && result.failed.length > 0) {
+                        msg += '\n' + (t('sync_failed_list') || '❌ 失败列表：') + '\n';
+                        msg += result.failed.map(f => 
+                            `  • ${f.wh_id} (${f.action || '操作'}): ${f.error}`
+                        ).join('\n');
+                    }
+                    
+                    // 无变化提示
+                    if (result.added === 0 && result.updated === 0) {
+                        msg += '\n' + (t('sync_no_change') || '✨ 数据已是最新，无需变更');
+                    }
+                    
+                    alert(msg);
+                    
+                    // 刷新列表
+                    if (result.added > 0 || result.updated > 0) {
+                        currentPage = 1;
+                        await loadWhList();
+                    }
+                } else {
+                    alert((t('sync_failed') || '同步失败') + ': ' + (result.message || '未知错误'));
+                }
+            } catch (err) {
+                console.error('同步库房失败:', err);
+                alert((t('sync_failed') || '同步失败') + ': ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        });
+    }
 </script>
 {% endblock %}

@@ -77,7 +77,7 @@
             </button>
             <ul class="dropdown-menu dropdown-menu-end">
                 <li>
-                    <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;" target="_blank">
+                    <a class="dropdown-item" href="#" onclick="openWhInfoModal(); return false;">
                         <i class="bi bi-building me-2"></i> <span data-i18n="warehouse_info">库房信息</span>
                     </a>
                 </li>
@@ -5842,9 +5842,12 @@
 	}
 
 	// 打开库房信息页面（新标签页）
-	function openWhInfoModal() {
-		window.location.href = '/admin/wh';
-	}
+    function openWhInfoModal() {
+        const newWindow = window.open('/admin/wh', '_blank');
+        if (newWindow) {
+            newWindow.focus();
+        }
+    }
 
 	// 监听语言变化事件，重新加载动态数据
 	window.addEventListener('app:languageChanged', function() {

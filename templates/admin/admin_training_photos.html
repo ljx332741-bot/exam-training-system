@@ -4,6 +4,147 @@
 
 {% block extra_css %}
 <style>
+    /* ========== 库房分组容器 ========== */
+    .wh-groups-container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding: 8px 0;
+    }
+    .wh-group {
+        border: 1px solid #e9ecef;
+        border-radius: 8px;
+        padding: 12px 14px;
+        background: #fafbfc;
+    }
+    .wh-group:hover {
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .wh-group-header {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px dashed #dee2e6;
+        font-size: 0.9rem;
+        flex-wrap: nowrap;          /* ✅ 明确不换行 */
+        overflow: hidden;           /* ✅ 防止溢出 */
+    }
+    .wh-group-header i {
+        color: #0d6efd;
+        flex-shrink: 0; 
+    }
+    .wh-group-id {
+        display: inline-block;
+        background: #e7f3ff;
+        color: #0d6efd;
+        padding: 2px 10px;
+        border-radius: 4px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        white-space: nowrap;        /* ✅ 内部不换行 */
+        flex-shrink: 0;             /* ✅ 不收缩 */
+    }
+
+    .wh-group-name {
+        color: #495057;
+        font-weight: 500;
+        font-size: 0.85rem;
+        white-space: nowrap;        /* ✅ 内部不换行 */
+        overflow: hidden;           /* ✅ 超出隐藏 */
+        text-overflow: ellipsis;    /* ✅ 用省略号 */
+        flex: 1 1 auto;             /* ✅ 允许占用剩余空间，但不收缩到 0 */
+        min-width: 0;               /* ✅ 关键！允许 flex 子元素小于内容宽度 */
+    }
+
+    .wh-group-count {
+        color: #6c757d;
+        font-size: 0.75rem;
+        background: #f1f3f5;
+        padding: 1px 8px;
+        border-radius: 10px;
+        white-space: nowrap;        /* ✅ 内部不换行 */
+        flex-shrink: 0;             /* ✅ 不收缩 */
+    }
+    .wh-group.wh-group-unknown {
+        border-color: #ffe8cc;
+        background: #fffbf5;
+    }
+    .wh-group.wh-group-unknown .wh-group-id {
+        background: #fff3cd;
+        color: #856404;
+    }
+    /* 库房建议下拉 */
+    .wh-suggestions-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        background: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        max-height: 240px;
+        overflow-y: auto;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        margin-top: 2px;
+        /* 默认隐藏（用 style.display 控制） */
+    }
+    .wh-suggestions-dropdown .suggestion-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.15s;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .wh-suggestions-dropdown .suggestion-item:hover,
+    .wh-suggestions-dropdown .suggestion-item.active {
+        background: #f0f7ff;
+    }
+    .wh-suggestions-dropdown .suggestion-item:last-child {
+        border-bottom: none;
+    }
+    .wh-suggestions-dropdown .suggestion-code {
+        display: inline-block;
+        background: #e7f3ff;
+        color: #0d6efd;
+        padding: 1px 8px;
+        border-radius: 3px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        flex-shrink: 0;
+    }
+    .wh-suggestions-dropdown .suggestion-name {
+        color: #495057;
+        flex: 1;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .wh-suggestions-dropdown .suggestion-type {
+        font-size: 0.65rem;
+        color: #6c757d;
+        background: #f8f9fa;
+        padding: 1px 6px;
+        border-radius: 3px;
+        flex-shrink: 0;
+    }
+    .wh-suggestions-dropdown .suggestion-empty {
+        padding: 16px;
+        text-align: center;
+        color: #adb5bd;
+        font-size: 0.85rem;
+    }
+    .wh-suggestions-dropdown .suggestion-empty i {
+        display: block;
+        font-size: 1.5rem;
+        margin-bottom: 8px;
+    }
+
     /* ========== 顶部操作栏 ========== */
     .photo-toolbar {
         display: flex;
@@ -430,6 +571,34 @@
                         <div class="form-text small text-muted" id="uploadCountryHint"></div>
                     </div>
 
+                    <!-- 库房选择器 -->
+                    <div class="mb-3" id="whSelectorWrapper" style="display: none;">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-building"></i>
+                            <span data-i18n="select_warehouse">选择库房</span>
+                            <span class="text-danger">*</span>
+                        </label>
+                        <!-- 搜索输入框 -->
+                        <div class="position-relative" id="whSearchContainer">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" 
+                                    id="whSearchInput" 
+                                    class="form-control" 
+                                    placeholder="输入库房编码或名称搜索..."
+                                    autocomplete="off">
+                                <button class="btn btn-outline-secondary" type="button" id="whClearBtn" style="display: none;">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                            <!-- 下拉建议列表 -->
+                            <div id="whSuggestions" class="wh-suggestions-dropdown"></div>
+                            <!-- 隐藏字段：实际选中的 wh_id -->
+                            <input type="hidden" id="whSelect" value="">
+                        </div>
+                        <div class="form-text small text-muted" id="whSelectorHint"></div>
+                    </div>
+
                     <button class="btn btn-primary w-100" id="adminUploadBtn" disabled>
                         <i class="bi bi-cloud-upload"></i> <span data-i18n="upload">上传</span>
                         <span class="badge bg-light text-dark ms-1" id="adminSelectedCount">0</span>
@@ -550,6 +719,11 @@
     let currentViewPhotos = [];
     let viewModalInstance = null;
     let isModalOpen = false;
+    // 库房搜索状态
+    let _whAllOptions = [];         // 当前国家的全部库房（缓存）
+    let _whSelected = null;         // 当前选中的库房对象
+    let _whSearchTimer = null;      // 防抖定时器
+    let _whInitBound = false;       // 是否已绑定事件（防重复）
 
     // ---------- 工具函数 ----------
     function escapeHtml(str) {
@@ -653,7 +827,7 @@
     // ---------- 渲染照片网格 ----------
     function renderPhotos(photos) {
         const container = document.getElementById('photoGridContainer');
-
+        
         if (!photos || photos.length === 0) {
             container.innerHTML = `
                 <div class="empty-state">
@@ -664,40 +838,140 @@
             `;
             return;
         }
+        
+        // 判断是否需要分组
+        const whIds = new Set(photos.map(p => p.wh_id || '_unknown'));
+        
+        if (whIds.size <= 1) {
+            // 单个库房或全为空 → 平铺
+            container.innerHTML = renderAdminFlatGrid(photos);
+        } else {
+            // 多个库房 → 分组
+            container.innerHTML = renderAdminGroupedGrid(photos);
+        }
+        
+        // 绑定事件（无论平铺还是分组，都要绑定）
+        bindAdminPhotoEvents();
+    }
 
+    /**
+     * 管理员端：平铺渲染（单个库房或无库房）
+     */
+    function renderAdminFlatGrid(photos) {
         let html = '<div class="photo-grid">';
-        photos.forEach(photo => {
-            const isSelected = selectedIds.has(photo.id);
-            const isCover = photo.is_cover || false;
-            const fileName = photo.file_name || '未命名';
-            const uploader = photo.uploaded_by_name || '系统';
+        
+        photos.forEach((photo, index) => {
+            html += renderAdminPhotoItem(photo, index);
+        });
+        
+        html += '</div>';
+        return html;
+    }
 
+    /**
+     * 管理员端：渲染单张照片项
+     */
+    function renderAdminPhotoItem(photo, index) {
+        const isSelected = selectedIds.has(photo.id);
+        const isCover = photo.is_cover || false;
+        const fileName = photo.file_name || '未命名';
+        const uploader = photo.uploaded_by_name || '系统';
+        
+        return `
+            <div class="photo-item ${isSelected ? 'selected' : ''}" 
+                data-id="${photo.id}"
+                data-wh-id="${escapeHtml(photo.wh_id || '')}">
+                ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
+                <input type="checkbox" class="photo-checkbox" 
+                    data-id="${photo.id}" 
+                    ${isSelected ? 'checked' : ''}>
+                <img src="${photo.photo_url}" 
+                    alt="${escapeHtml(fileName)}" 
+                    loading="lazy"
+                    onclick="viewPhotoById(${photo.id})"
+                    onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.8rem;\\'>📷<br>加载失败</div>'">
+                <div class="photo-overlay">
+                    <div class="filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</div>
+                    <div class="uploader">👤 ${escapeHtml(uploader)}</div>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn download-btn" 
+                            onclick="event.stopPropagation();downloadPhoto(${photo.id})" 
+                            title="${safeT('download')}">
+                        <i class="bi bi-download"></i>
+                    </button>
+                    <button class="btn" 
+                            onclick="event.stopPropagation();deletePhoto(${photo.id})" 
+                            title="${safeT('delete')}">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * 管理员端：按库房分组渲染
+     */
+    function renderAdminGroupedGrid(photos) {
+        // 按 wh_id 分组
+        const groups = {};
+        photos.forEach(photo => {
+            const key = photo.wh_id || '_unknown';
+            if (!groups[key]) {
+                groups[key] = {
+                    wh_id: photo.wh_id || null,
+                    wh_name_en: photo.wh_name_en || '',
+                    photos: []
+                };
+            }
+            groups[key].photos.push(photo);
+        });
+        
+        // 排序：有 wh_id 的按字母序，_unknown 最后
+        const sortedKeys = Object.keys(groups).sort((a, b) => {
+            if (a === '_unknown') return 1;
+            if (b === '_unknown') return -1;
+            return a.localeCompare(b);
+        });
+        
+        // 渲染
+        let html = '<div class="wh-groups-container">';
+        
+        sortedKeys.forEach(key => {
+            const g = groups[key];
+            const isUnknown = key === '_unknown';
+            const displayWhId = g.wh_id || safeT('uncategorized');
+            
             html += `
-                <div class="photo-item ${isSelected ? 'selected' : ''}" data-id="${photo.id}" data-index="${photoData.indexOf(photo)}">
-                    ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
-                    <input type="checkbox" class="photo-checkbox" data-id="${photo.id}" ${isSelected ? 'checked' : ''}>
-                    <img src="${photo.photo_url}" alt="${escapeHtml(fileName)}" loading="lazy"
-                        onclick="viewPhoto(${photoData.indexOf(photo)})"
-                        onerror="this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.8rem;\\'>📷<br>加载失败</div>'">
-                    <div class="photo-overlay">
-                        <div class="filename" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</div>
-                        <div class="uploader">👤 ${escapeHtml(uploader)}</div>
+                <div class="wh-group ${isUnknown ? 'wh-group-unknown' : ''}">
+                    <div class="wh-group-header">
+                        <i class="bi bi-building"></i>
+                        <span class="wh-group-id">${escapeHtml(displayWhId)}</span>
+                        ${g.wh_name_en ? `<span class="wh-group-name">${escapeHtml(g.wh_name_en)}</span>` : ''}
+                        <span class="wh-group-count">${g.photos.length} ${safeT('photos')}</span>
+                        <button class="btn btn-sm btn-outline-primary ms-auto group-select-all-btn"
+                                data-wh-id="${escapeHtml(g.wh_id || '')}"
+                                title="${safeT('select_all')}">
+                            <i class="bi bi-check-square"></i>
+                        </button>
                     </div>
-                    <div class="action-buttons">
-                        <button class="btn download-btn" onclick="event.stopPropagation();downloadPhoto(${photo.id})" title="${safeT('download')}">
-                            <i class="bi bi-download"></i>
-                        </button>
-                        <button class="btn" onclick="event.stopPropagation();deletePhoto(${photo.id})" title="${safeT('delete')}">
-                            <i class="bi bi-trash"></i>
-                        </button>
+                    <div class="photo-grid">
+                        ${g.photos.map((p, idx) => renderAdminPhotoItem(p, idx)).join('')}
                     </div>
                 </div>
             `;
         });
+        
         html += '</div>';
-        container.innerHTML = html;
+        return html;
+    }
 
-        // 绑定复选框事件
+    /**
+     * 管理员端：绑定照片项事件
+     */
+    function bindAdminPhotoEvents() {
+        // 1. 复选框事件
         document.querySelectorAll('.photo-checkbox').forEach(cb => {
             cb.addEventListener('change', function(e) {
                 e.stopPropagation();
@@ -709,6 +983,35 @@
                     selectedIds.delete(id);
                     this.closest('.photo-item').classList.remove('selected');
                 }
+                updateToolbar();
+            });
+        });
+        
+        // 2. 分组内"全选"按钮（如果启用了）
+        document.querySelectorAll('.group-select-all-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const whId = this.dataset.whId;
+                const group = this.closest('.wh-group');
+                if (!group) return;
+                
+                // 检查该组是否已全部选中
+                const groupCheckboxes = group.querySelectorAll('.photo-checkbox');
+                const allChecked = Array.from(groupCheckboxes).every(cb => cb.checked);
+                
+                // 切换：全选 / 全部取消
+                groupCheckboxes.forEach(cb => {
+                    cb.checked = !allChecked;
+                    const id = parseInt(cb.dataset.id);
+                    if (!allChecked) {
+                        selectedIds.add(id);
+                        cb.closest('.photo-item').classList.add('selected');
+                    } else {
+                        selectedIds.delete(id);
+                        cb.closest('.photo-item').classList.remove('selected');
+                    }
+                });
+                
                 updateToolbar();
             });
         });
@@ -780,6 +1083,16 @@
         currentViewIndex = index;
         currentViewPhotos = photoData;
         showPhotoInModal(index);
+    }
+
+    function viewPhotoById(photoId) {
+        if (!photoData || photoData.length === 0) return;
+        const index = photoData.findIndex(p => p.id === photoId);
+        if (index === -1) {
+            console.warn('照片不存在:', photoId);
+            return;
+        }
+        viewPhoto(index);
     }
 
     // ---------- 更新模态框内容（不重新创建模态框） ----------
@@ -1150,7 +1463,16 @@
             showToast(safeT('please_select_upload_country') || '请选择上传国家', '警告', 'warning');
             return;
         }
-
+        
+        // 库房
+        const whSelect = document.getElementById('whSelect');
+        const selectedWhId = whSelect ? whSelect.value : '';
+        
+        if (!selectedWhId) {
+            showToast('请选择库房', '警告', 'warning');
+            return;
+        }
+        
         // 获取培训名称
         let trainingName = '';
         try {
@@ -1172,6 +1494,7 @@
         formData.append('training_id', trainingId);
         formData.append('training_name', trainingName);
         formData.append('training_country', selectedCountry);
+        formData.append('wh_id', selectedWhId);
         formData.append('add_watermark', addWatermark ? 'true' : 'false');
         formData.append('include_training_name', includeTrainingName ? 'true' : 'false');
 
@@ -1314,6 +1637,14 @@
             const input = document.getElementById('adminFileInput');
             input.setAttribute('capture', 'environment');
             input.click();
+        });
+
+        // 监听国家选择变化
+        document.addEventListener('change', function(e) {
+            if (e.target.name === 'uploadCountry') {
+                const trainingId = document.getElementById('pageTrainingId')?.value || '';
+                loadWarehousesForUpload(e.target.value, trainingId);
+            }
         });
 
         // 文件选择

@@ -1,4 +1,177 @@
 /* static/css/training_photos.css */
+
+/* ========== 库房分组容器 ========== */
+.wh-groups-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    padding: 8px 0;
+    width: 100%;
+}
+
+/* 单个库房组 */
+.wh-group {
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: #fafbfc;
+    transition: box-shadow 0.2s ease;
+    width: 100%;                    /* ✅ 占满父容器 */
+    box-sizing: border-box;         /* ✅ padding 不影响宽度 */
+    overflow: hidden;               /* ✅ 防止溢出 */
+}
+
+.wh-group:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+}
+
+/* 库房标题栏 - 单行不换行 */
+.wh-group-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed #dee2e6;
+    font-size: 0.9rem;
+    flex-wrap: nowrap;              /* ✅ 不换行 */
+    overflow: hidden;               /* ✅ 防止溢出 */
+    min-width: 0;
+}
+
+.wh-group-header i {
+    color: #0d6efd;
+    font-size: 1rem;
+    flex-shrink: 0;                 /* ✅ 图标不压缩 */
+}
+
+.wh-group-id {
+    display: inline-block;
+    background: #e7f3ff;
+    color: #0d6efd;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    letter-spacing: 0.3px;
+    white-space: nowrap;            /* ✅ 内部不换行 */
+    flex-shrink: 0;                 /* ✅ 不压缩 */
+}
+
+.wh-group-name {
+    color: #495057;
+    font-weight: 500;
+    font-size: 0.85rem;
+    flex: 1 1 auto;                 /* ✅ 占剩余空间，可压缩 */
+    min-width: 0;                   /* ✅ 关键：允许被压缩 */
+    white-space: nowrap;            /* ✅ 内部不换行 */
+    overflow: hidden;               /* ✅ 超出隐藏 */
+    text-overflow: ellipsis;        /* ✅ 用省略号 */
+}
+
+.wh-group-count {
+    color: #6c757d;
+    font-size: 0.75rem;
+    background: #f1f3f5;
+    padding: 1px 8px;
+    border-radius: 10px;
+    white-space: nowrap;            /* ✅ 内部不换行 */
+    flex-shrink: 0;                 /* ✅ 不压缩 */
+}
+
+/* 分组内的照片网格 - 保持横向排列 */
+.wh-group .photo-grid {
+    margin-top: 0;
+    display: grid;                                                  /* ✅ 显式声明 */
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));  /* ✅ 显式声明 */
+    gap: 10px;
+    width: 100%;
+}
+
+/* ========== 未分类组特殊样式 ========== */
+.wh-group.wh-group-unknown {
+    border-color: #ffe8cc;
+    background: #fffbf5;
+}
+
+.wh-group.wh-group-unknown .wh-group-id {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.wh-group.wh-group-unknown .wh-group-header i {
+    color: #ffc107;
+}
+
+/* 库房建议下拉 */
+.wh-suggestions-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    margin-top: 2px;
+    /* 默认隐藏（用 style.display 控制） */
+}
+.wh-suggestions-dropdown .suggestion-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.wh-suggestions-dropdown .suggestion-item:hover,
+.wh-suggestions-dropdown .suggestion-item.active {
+    background: #f0f7ff;
+}
+.wh-suggestions-dropdown .suggestion-item:last-child {
+    border-bottom: none;
+}
+.wh-suggestions-dropdown .suggestion-code {
+    display: inline-block;
+    background: #e7f3ff;
+    color: #0d6efd;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    flex-shrink: 0;
+}
+.wh-suggestions-dropdown .suggestion-name {
+    color: #495057;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.wh-suggestions-dropdown .suggestion-type {
+    font-size: 0.65rem;
+    color: #6c757d;
+    background: #f8f9fa;
+    padding: 1px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.wh-suggestions-dropdown .suggestion-empty {
+    padding: 16px;
+    text-align: center;
+    color: #adb5bd;
+    font-size: 0.85rem;
+}
+.wh-suggestions-dropdown .suggestion-empty i {
+    display: block;
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+}
 /* ===== 季度下拉面板 ===== */
 .quarter-dropdown .dropdown-item {
     padding: 8px 14px;

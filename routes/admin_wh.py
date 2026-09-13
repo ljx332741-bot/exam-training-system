@@ -11,7 +11,8 @@ from services.db import get_supabase, get_supabase_admin
 from routes.helpers import login_required, admin_required
 from utils.import_helper import generate_import_template, validate_country_and_wh_id, parse_excel_rows, format_import_result, extract_country_from_wh_id
 from utils.permissions import filter_users_by_permission, get_admin_allowed_countries, can_view_user
-
+from utils.permissions import get_allowed_countries, is_developer
+    
 logger = logging.getLogger(__name__)
 
 @admin_wh_bp.route('/admin/wh')
@@ -89,7 +90,6 @@ def create_wh():
         return jsonify({"success": False, "message": "库房编码不能为空"}), 400
     
     # ✅ 获取当前用户权限范围
-    from utils.permissions import get_allowed_countries, is_developer
     
     current_role = session.get('role')
     is_dev = is_developer()
@@ -172,8 +172,6 @@ def update_wh(wh_id):
     new_wh_id = data.get('wh_id', '').strip().upper()
     
     # ✅ 获取当前用户权限范围
-    from utils.permissions import get_allowed_countries, is_developer
-    
     current_role = session.get('role')
     is_dev = is_developer()
     allowed_countries = get_allowed_countries()
@@ -492,3 +490,230 @@ def download_wh_import_template():
         as_attachment=True,
         download_name=f"库房导入模板_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     )
+
+@admin_wh_bp.route('/api/admin/wh/sync_from_users', methods=['POST'])
+@login_required
+@admin_required
+def sync_wh_from_users():
+    """
+    从 users 表同步库房到 wh_info
+    
+    功能：
+    1. 新增：users 表里有，但 wh_info 里没有的库房
+    2. 更新：wh_info 里已存在，但字段为空的（用 users 表的值补齐）
+    3. 跳过：已软删除的库房（不自动恢复）
+    
+    策略：
+    - 同一 wh_id 多个用户记录，取第一个非空值
+    - 只更新"当前为空"的字段，不覆盖已有值
+    """
+    db = get_supabase_admin()
+    current_user_id = session.get('user_id')
+    
+    try:
+        # ========== 1. 从 users 表提取库房信息（按 wh_id 聚合）==========
+        users_res = db.table("users") \
+            .select("wh_id, wh_name_en, wh_type, country") \
+            .is_("deleted_at", "null") \
+            .not_.is_("wh_id", "null") \
+            .neq("wh_id", "") \
+            .execute()
+        
+        # 按 wh_id 聚合，每个字段取第一个非空值
+        user_wh_map = {}
+        for u in (users_res.data or []):
+            wh_id = (u.get('wh_id') or '').strip().upper()
+            if not wh_id:
+                continue
+            
+            if wh_id not in user_wh_map:
+                user_wh_map[wh_id] = {
+                    'country': None,
+                    'wh_name_en': None,
+                    'wh_type': None,
+                    'user_count': 0,
+                }
+            
+            info = user_wh_map[wh_id]
+            info['user_count'] += 1
+            
+            # ✅ 只填充空字段（第一个非空值生效）
+            country = (u.get('country') or '').strip().upper()
+            wh_name = (u.get('wh_name_en') or '').strip()
+            wh_type = (u.get('wh_type') or '').strip()
+            
+            if not info['country'] and country:
+                info['country'] = country
+            if not info['wh_name_en'] and wh_name:
+                info['wh_name_en'] = wh_name
+            if not info['wh_type'] and wh_type:
+                info['wh_type'] = wh_type
+        
+        if not user_wh_map:
+            return jsonify({
+                "success": True,
+                "added": 0,
+                "updated": 0,
+                "skipped": 0,
+                "skipped_soft_deleted": 0,
+                "total_user_wh": 0,
+                "added_details": [],
+                "updated_details": [],
+                "failed": [],
+                "message": "用户表中没有库房数据"
+            })
+        
+        # ========== 2. 获取 wh_info 现有数据 ==========
+        wh_res = db.table("wh_info") \
+            .select("id, wh_id, wh_name_en, wh_type, country_code, deleted_at") \
+            .execute()
+        
+        existing_map = {}          # wh_id -> 完整记录（未删除）
+        soft_deleted_wh_ids = set()  # 已软删除的 wh_id
+        
+        for w in (wh_res.data or []):
+            wh_id = (w.get('wh_id') or '').strip().upper()
+            if w.get('deleted_at'):
+                soft_deleted_wh_ids.add(wh_id)
+            else:
+                existing_map[wh_id] = w
+        
+        # ========== 3. 分类：新增 / 更新 / 跳过 ==========
+        to_add = {}          # 需要新增的
+        to_update = []       # 需要更新的 [(existing_record, update_data)]
+        skipped_soft_deleted = 0
+        
+        now = datetime.now(timezone.utc).isoformat()
+        
+        for wh_id, info in user_wh_map.items():
+            # 情况 A：已软删除 → 跳过（不自动恢复）
+            if wh_id in soft_deleted_wh_ids:
+                skipped_soft_deleted += 1
+                continue
+            
+            # 情况 B：不存在 → 新增
+            if wh_id not in existing_map:
+                to_add[wh_id] = info
+                continue
+            
+            # 情况 C：已存在 → 检查空字段
+            existing = existing_map[wh_id]
+            update_data = {}
+            
+            # 只更新"当前为空"的字段
+            if not existing.get('wh_name_en') and info['wh_name_en']:
+                update_data['wh_name_en'] = info['wh_name_en']
+            if not existing.get('wh_type') and info['wh_type']:
+                update_data['wh_type'] = info['wh_type']
+            if not existing.get('country_code') and info['country']:
+                update_data['country_code'] = info['country']
+            
+            if update_data:
+                to_update.append({
+                    'id': existing['id'],
+                    'wh_id': wh_id,
+                    'update_data': update_data,
+                })
+        
+        # ========== 4. 执行新增 ==========
+        added_details = []
+        failed = []
+        
+        for wh_id, info in to_add.items():
+            # 国家：优先 users.country，否则从 wh_id 前两位
+            country_code = info['country']
+            if not country_code and len(wh_id) >= 2:
+                country_code = wh_id[:2]
+            
+            # 名称：优先 users.wh_name_en，否则默认
+            wh_name_en = info['wh_name_en'] or f"WH {wh_id}"
+            has_real_name = bool(info['wh_name_en'])
+            
+            # 类型：直接使用 users.wh_type（可能为空）
+            wh_type = info['wh_type'] or ""
+            
+            try:
+                insert_data = {
+                    "wh_id": wh_id,
+                    "country_code": country_code or "",
+                    "wh_name_cn": "",
+                    "wh_name_en": wh_name_en,
+                    "wh_type": wh_type,
+                    "is_active": True,
+                    "remark": f"自动同步自用户数据（{info['user_count']} 位用户）",
+                    "created_by": current_user_id,
+                    "created_at": now
+                }
+                db.table("wh_info").insert(insert_data).execute()
+                added_details.append({
+                    "wh_id": wh_id,
+                    "country_code": country_code or "",
+                    "wh_name_en": wh_name_en,
+                    "wh_type": wh_type,
+                    "user_count": info['user_count'],
+                    "has_real_name": has_real_name,
+                    "has_real_type": bool(wh_type),
+                })
+                logger.info(f"✅ 新增库房: {wh_id} - {wh_name_en} ({info['user_count']} users)")
+            except Exception as e:
+                logger.error(f"❌ 新增 {wh_id} 失败: {e}")
+                failed.append({"wh_id": wh_id, "action": "add", "error": str(e)})
+        
+        # ========== 5. 执行更新 ==========
+        updated_details = []
+        
+        for item in to_update:
+            try:
+                update_data = dict(item['update_data'])
+                update_data['updated_at'] = now
+                
+                db.table("wh_info") \
+                    .update(update_data) \
+                    .eq("id", item['id']) \
+                    .execute()
+                
+                updated_details.append({
+                    "wh_id": item['wh_id'],
+                    "updated_fields": list(item['update_data'].keys()),
+                    "new_values": item['update_data'],
+                })
+                logger.info(f"🔄 更新库房: {item['wh_id']} - 字段 {list(item['update_data'].keys())}")
+            except Exception as e:
+                logger.error(f"❌ 更新 {item['wh_id']} 失败: {e}")
+                failed.append({"wh_id": item['wh_id'], "action": "update", "error": str(e)})
+        
+        # ========== 6. 构建返回消息 ==========
+        skipped_existing = len(user_wh_map) - len(to_add) - len(to_update) - skipped_soft_deleted
+        
+        message_parts = []
+        if added_details:
+            message_parts.append(f"新增 {len(added_details)} 个")
+        if updated_details:
+            message_parts.append(f"更新 {len(updated_details)} 个")
+        if not message_parts:
+            message_parts.append("无变化")
+        
+        message = "同步完成：" + "，".join(message_parts)
+        if skipped_soft_deleted:
+            message += f"（跳过 {skipped_soft_deleted} 个已删除）"
+        
+        return jsonify({
+            "success": True,
+            "added": len(added_details),
+            "updated": len(updated_details),
+            "skipped": skipped_existing,
+            "skipped_soft_deleted": skipped_soft_deleted,
+            "total_user_wh": len(user_wh_map),
+            "added_details": added_details,
+            "updated_details": updated_details,
+            "failed": failed,
+            "message": message
+        })
+        
+    except Exception as e:
+        logger.error(f"同步失败: {e}", exc_info=True)
+        return jsonify({
+            "success": False,
+            "message": f"同步失败: {str(e)}"
+        }), 500
+

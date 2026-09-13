@@ -29,6 +29,85 @@ logger = logging.getLogger(__name__)
 # 创建蓝图
 admin_training_photos_bp = Blueprint('admin_training_photos', __name__)
 
+def get_active_warehouses_for_country(country_code):
+    """
+    获取指定国家下所有活跃库房（有在职用户的库房）
+    
+    Args:
+        country_code: 国家代码（如 "NP"）
+    
+    Returns:
+        list: [{"wh_id": "NP001", "wh_name_en": "...", ...}, ...]
+    """
+    if not country_code:
+        return []
+    
+    db = get_supabase_admin()
+    
+    # 1. 从 users 表统计该国家的活跃 wh_id
+    users_res = db.table("users") \
+        .select("wh_id") \
+        .eq("country", country_code) \
+        .eq("is_resign", False) \
+        .eq("user_status", "registered") \
+        .is_("deleted_at", "null") \
+        .not_.is_("wh_id", "null") \
+        .execute()
+    
+    active_wh_ids = set()
+    for u in (users_res.data or []):
+        wh_id = u.get('wh_id')
+        if wh_id:
+            active_wh_ids.add(wh_id)
+    
+    if not active_wh_ids:
+        return []
+    
+    # 2. 从 wh_info 表获取这些库房的详细信息
+    wh_res = db.table("wh_info") \
+        .select("wh_id, wh_name_en, wh_name_cn, wh_type") \
+        .in_("wh_id", list(active_wh_ids)) \
+        .eq("is_active", True) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    return wh_res.data or []
+
+
+def validate_wh_id_for_country(wh_id, country_code):
+    """
+    校验 wh_id 是否属于指定国家的有效库房
+    
+    Returns:
+        (is_valid, error_message, wh_info)
+    """
+    if not wh_id:
+        return False, "库房ID不能为空", None
+    
+    if not country_code:
+        return False, "国家代码不能为空", None
+    
+    db = get_supabase_admin()
+    
+    # 从 wh_info 查询该库房
+    wh_res = db.table("wh_info") \
+        .select("wh_id, wh_name_en, wh_name_cn, country_code") \
+        .eq("wh_id", wh_id) \
+        .eq("is_active", True) \
+        .is_("deleted_at", "null") \
+        .execute()
+    
+    if not wh_res.data:
+        return False, f"库房 {wh_id} 不存在或已禁用", None
+    
+    wh_info = wh_res.data[0]
+    
+    # 校验国家匹配
+    if wh_info.get('country_code') != country_code:
+        return False, f"库房 {wh_id} 属于 {wh_info.get('country_code')}，与所选国家 {country_code} 不匹配", None
+    
+    return True, None, wh_info
+
 def add_watermark_to_image(
     image_data, 
     training_name, 
@@ -335,6 +414,7 @@ def api_admin_upload_training_photos():
     training_id = request.form.get('training_id')
     training_name = request.form.get('training_name')
     training_country = request.form.get('training_country')
+    wh_id = request.form.get('wh_id', '').strip()
     exam_id = request.form.get('exam_id')
     exam_name = request.form.get('exam_name')
     descriptions_json = request.form.get('descriptions', '[]')
@@ -398,6 +478,20 @@ def api_admin_upload_training_photos():
             "message": f"国家 {training_country} 不属于该培训的覆盖范围 {training_countries}"
         }), 400
 
+    # ========== wh_id 校验（管理员必须传） ==========
+    if not wh_id:
+        return jsonify({
+            "success": False, 
+            "message": "请选择库房"
+        }), 400
+    
+    is_valid, err_msg, wh_info = validate_wh_id_for_country(wh_id, training_country)
+    if not is_valid:
+        return jsonify({"success": False, "message": err_msg}), 400
+    
+    wh_name_en = wh_info.get('wh_name_en', '') if wh_info else ''
+
+    # =====================================================
     # 权限检查：培训国家是否在权限范围内
     if not is_dev and allowed_countries is not None:
         if training_country not in allowed_countries:
@@ -448,7 +542,7 @@ def api_admin_upload_training_photos():
             file.seek(0)
             image_data = file.read()
 
-            # ✅ 添加水印（如果开启）- 与学员端完全一致
+            # 添加水印（如果开启）- 与学员端完全一致
             if add_watermark:
                 image_data = add_watermark_to_image(
                     image_data, 
@@ -456,7 +550,7 @@ def api_admin_upload_training_photos():
                     include_training_name
                 )
             
-            # ✅ 确定扩展名和内容类型 - 与学员端完全一致
+            # 确定扩展名和内容类型 - 与学员端完全一致
             original_ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
             
             # 如果添加了水印，图片已转换为 JPEG
@@ -490,16 +584,16 @@ def api_admin_upload_training_photos():
             unique_id = uuid.uuid4().hex[:12]
             file_key = f"training_{training_id}/{unique_id}.{ext}"
 
-            # ✅ 关键修复：使用处理后的 image_data，而不是原始 file
+            # 使用处理后的 image_data，而不是原始 file
             file_obj = BytesIO(image_data)
             file_obj.seek(0)
             
-            # ✅ 上传到 R2
+            # 上传到 R2
             public_url, photo_path = upload_to_r2(
-                file_obj=file_obj,                # ✅ 使用 BytesIO 对象
+                file_obj=file_obj,
                 training_id=training_id,
-                filename=f"{unique_id}.{ext}",    # ✅ 使用新文件名
-                content_type=content_type         # ✅ 使用正确的 content_type
+                filename=f"{unique_id}.{ext}",
+                content_type=content_type
             )
             
             # 获取描述
@@ -510,13 +604,15 @@ def api_admin_upload_training_photos():
                 "training_id": int(training_id),
                 "training_name": training_name,
                 "training_country": training_country,
+                "wh_id": wh_id,
+                "wh_name_en": wh_name_en,
                 "exam_id": int(exam_id) if exam_id else None,
                 "exam_name": exam_name,
                 "photo_url": public_url,
                 "photo_path": photo_path,
-                "file_name": f"{unique_id}.{ext}",  # ✅ 使用新文件名
+                "file_name": f"{unique_id}.{ext}",
                 "file_size": file_size,
-                "file_type": content_type,          # ✅ 使用正确的 content_type
+                "file_type": content_type,
                 "photo_description": description,
                 "is_cover": False,
                 "uploaded_at": now,
@@ -845,6 +941,8 @@ def api_training_upload_photos():
     # 获取表单参数
     training_id = request.form.get('training_id')
     training_name = request.form.get('training_name')
+    training_country = request.form.get('training_country')
+    wh_id = request.form.get('wh_id', '').strip()
     add_watermark = request.form.get('add_watermark', 'true').lower() == 'true'
     include_training_name = request.form.get('include_training_name', 'true').lower() == 'true'
 
@@ -862,8 +960,6 @@ def api_training_upload_photos():
         logger.error(f"培训不存在: training_id={training_id}")
         return jsonify({"success": False, "message": "培训不存在"}), 404
     
-    training_country = request.form.get('training_country')
-    
     if not training_country:
         return jsonify({"success": False, "message": "请选择上传国家"}), 400
         
@@ -877,6 +973,38 @@ def api_training_upload_photos():
 
     # 角色权限校验
     is_dev = is_developer()
+    current_role = session.get('role')
+
+    # 普通学员：如果不传 wh_id，自动用学员自己的
+    if not wh_id and current_role == 'user':
+        user_res2 = db.table("users").select("wh_id").eq("id", current_user_id).maybe_single().execute()
+        wh_id = user_res2.data.get('wh_id') if user_res2.data else None
+    
+    # 必须要有 wh_id
+    if not wh_id:
+        return jsonify({
+            "success": False, 
+            "message": "请选择库房（缺少 wh_id 参数）"
+        }), 400
+    
+    # 校验 wh_id 是否属于该国家
+    is_valid, err_msg, wh_info = validate_wh_id_for_country(wh_id, training_country)
+    if not is_valid:
+        return jsonify({"success": False, "message": err_msg}), 400
+    
+    # 普通学员：只能上传自己库房的照片
+    if current_role == 'user' and not is_dev:
+        user_res3 = db.table("users").select("wh_id").eq("id", current_user_id).maybe_single().execute()
+        user_wh_id = user_res3.data.get('wh_id') if user_res3.data else None
+        if user_wh_id != wh_id:
+            return jsonify({
+                "success": False, 
+                "message": f"您只能上传自己库房（{user_wh_id}）的照片"
+            }), 403
+    
+    # 保存用于后续插入
+    wh_name_en = wh_info.get('wh_name_en', '') if wh_info else ''
+
     allowed_countries = get_admin_allowed_countries()
     is_admin = current_role in ['admin', 'super_admin', 'developer']
 
@@ -998,6 +1126,8 @@ def api_training_upload_photos():
                 "training_id": int(training_id),
                 "training_name": training_name,
                 "training_country": training_country,
+                "wh_id": wh_id,
+                "wh_name_en": wh_name_en,
                 "photo_url": public_url,
                 "photo_path": photo_path,
                 "file_name": file.filename,
@@ -1486,8 +1616,6 @@ def api_user_role():
 @login_required
 def api_training_available_countries(training_id):
     """返回指定培训的国家列表 + 当前用户是否可用"""
-    from utils.training_helpers import parse_training_countries
-    
     db = get_supabase_admin()
     current_role = session.get('role')
     current_user_id = session.get('user_id')
@@ -1547,5 +1675,68 @@ def api_training_available_countries(training_id):
         "countries": result,
         "default_selected": default_selected,
         "has_available": len(available_list) > 0
+    })
+
+@admin_training_photos_bp.route('/api/training/<int:training_id>/available_warehouses', methods=['GET'])
+@login_required
+def api_training_available_warehouses(training_id):
+    """
+    获取培训下某国家可用的库房列表（用于照片上传时的库房选择）
+    
+    参数:
+        country: 国家代码（必填）
+    """
+    db = get_supabase_admin()
+    current_user_id = session.get('user_id')
+    current_role = session.get('role')
+    is_dev = is_developer()
+    
+    country = request.args.get('country', '').strip()
+    if not country:
+        return jsonify({"success": False, "message": "缺少 country 参数"}), 400
+    
+    # 1. 获取培训信息
+    training_res = db.table("trainings") \
+        .select("countries, country") \
+        .eq("id", training_id) \
+        .maybe_single() \
+        .execute()
+    if not training_res.data:
+        return jsonify({"success": False, "message": "培训不存在"}), 404
+    
+    training_countries = parse_training_countries(training_res.data)
+    if country not in training_countries:
+        return jsonify({"success": False, "message": f"国家 {country} 不属于该培训"}), 400
+    
+    # 2. 获取该国家的活跃库房
+    warehouses = get_active_warehouses_for_country(country)
+
+    # ✅ 判断空的原因
+    empty_reason = None
+    user_wh_id = None
+
+    # 3. 普通用户：只返回自己所在库房
+    if current_role == 'user' and not is_dev:
+        user_res = db.table("users").select("wh_id").eq("id", current_user_id).maybe_single().execute()
+        user_wh_id = user_res.data.get('wh_id') if user_res.data else None
+        
+        if not user_wh_id:
+            warehouses = []
+            empty_reason = "user_no_warehouse"
+        else:
+            warehouses = [w for w in warehouses if w['wh_id'] == user_wh_id]
+            if not warehouses:
+                # 用户有 wh_id，但该库房不在活跃列表中
+                empty_reason = "user_warehouse_inactive"
+    
+    if not warehouses and not empty_reason:
+        empty_reason = "no_warehouse_in_country"
+    
+    
+    return jsonify({
+        "success": True,
+        "warehouses": warehouses,
+        "count": len(warehouses),
+        "empty_reason": empty_reason
     })
 

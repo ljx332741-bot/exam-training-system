@@ -93,6 +93,33 @@
                         </div>
                         <div class="form-text small text-muted" id="uploadCountryHint"></div>
                     </div>
+                    <!-- 库房选择器 -->
+                    <div class="mb-3" id="whSelectorWrapper" style="display: none;">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-building"></i>
+                            <span data-i18n="select_warehouse">选择库房</span>
+                            <span class="text-danger">*</span>
+                        </label>
+                        <!-- 搜索输入框 -->
+                        <div class="position-relative" id="whSearchContainer">
+                            <div class="input-group input-group-sm">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" 
+                                    id="whSearchInput" 
+                                    class="form-control" 
+                                    placeholder="输入库房编码或名称搜索..."
+                                    autocomplete="off">
+                                <button class="btn btn-outline-secondary" type="button" id="whClearBtn" style="display: none;">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                            <!-- 下拉建议列表 -->
+                            <div id="whSuggestions" class="wh-suggestions-dropdown"></div>
+                            <!-- 隐藏字段：实际选中的 wh_id -->
+                            <input type="hidden" id="whSelect" value="">
+                        </div>
+                        <div class="form-text small text-muted" id="whSelectorHint"></div>
+                    </div>
                 </div>
 
                 <div class="col-md-6">
@@ -326,6 +353,13 @@
     let expandedTrainingId = null;
     let photoCache = {}; // { trainingId: [photos] }
     let trainingListData = []; // 有照片的培训列表
+
+    // 库房搜索状态
+    let _whAllOptions = [];         // 当前国家的全部库房（缓存）
+    let _whSelected = null;         // 当前选中的库房对象
+    let _whSearchTimer = null;      // 防抖定时器
+    let _whInitBound = false;       // 是否已绑定事件（防重复）
+
     // ---------- Toast 兼容 ----------
     if (typeof window.showToast !== 'function') {
         window.showToast = function(message, title = '提示', type = 'info') {
@@ -808,7 +842,7 @@
                             </button>
                             <span class="hint-text">${safeT('support_jpg_png')}</span>
                         </div>
-                        <div class="photo-grid" id="photoGrid_${t.id}">
+                        <div id="photoGrid_${t.id}">
                             ${renderPhotoGrid(t.id, photos)}
                         </div>
                     </div>
@@ -831,8 +865,25 @@
             }
         });
 
-        let html = '';
-        // 第一格：上传占位
+        // ✅ 判断是否需要分组
+        const whIds = new Set(uniquePhotos.map(p => p.wh_id || '_unknown'));
+        
+        // 只有一个库房（或全为空）→ 平铺（现状）
+        if (whIds.size <= 1) {
+            return renderFlatGrid(trainingId, uniquePhotos);
+        }
+        
+        // 多个库房 → 分组渲染
+        return renderGroupedGrid(trainingId, uniquePhotos);
+    }
+
+    /**
+     * 平铺渲染（无分组）- 保持原有行为
+     */
+    function renderFlatGrid(trainingId, photos) {
+        let html = '<div class="photo-grid">';
+        
+        // 上传占位格
         html += `
             <div class="photo-thumb upload-placeholder" onclick="uploadToTraining(${trainingId})" title="${safeT('upload_photos')}">
                 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;">
@@ -841,29 +892,92 @@
                 </div>
             </div>
         `;
-
+        
         // 照片缩略图
-        uniquePhotos.forEach(p => {
-            const isCover = p.is_cover || false;
-            const canDelete = p.can_delete !== undefined ? p.can_delete : true;
+        photos.forEach(p => {
+            html += renderPhotoThumb(trainingId, p);
+        });
+        html += '</div>';  
+        return html;
+    }
 
+    /**
+     * 分组渲染（按库房）
+     */
+    function renderGroupedGrid(trainingId, photos) {
+        // 1. 按 wh_id 分组
+        const groups = {};
+        photos.forEach(p => {
+            const key = p.wh_id || '_unknown';
+            if (!groups[key]) {
+                groups[key] = {
+                    wh_id: p.wh_id || null,
+                    wh_name_en: p.wh_name_en || '',
+                    photos: []
+                };
+            }
+            groups[key].photos.push(p);
+        });
+        
+        // 2. 排序：有 wh_id 的按 wh_id 升序，_unknown 放最后
+        const sortedKeys = Object.keys(groups).sort((a, b) => {
+            if (a === '_unknown') return 1;
+            if (b === '_unknown') return -1;
+            return a.localeCompare(b);
+        });
+        
+        // 3. 渲染
+        let html = '<div class="wh-groups-container">';
+        
+        sortedKeys.forEach(key => {
+            const g = groups[key];
+            const displayWhId = g.wh_id || '未分类';
+            const displayWhName = g.wh_name_en || '';
+            const photoCount = g.photos.length;
+            
             html += `
-                <div class="photo-thumb" onclick="viewPhotoFromGrid(${trainingId}, ${p.id})" data-photo-id="${p.id}">
-                    <img src="${p.photo_url}" alt="${escapeHtml(p.file_name)}" loading="lazy"
-                        onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.7rem;\\'>📷<br>加载失败</div>'">
-                    ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
-                    ${canDelete ? `
-                    <div class="thumb-actions">
-                        <button class="btn btn-sm" onclick="event.stopPropagation();deletePhotoFromGrid(${trainingId}, ${p.id})" title="${safeT('delete')}">
-                            <i class="bi bi-trash"></i>
+                <div class="wh-group">
+                    <div class="wh-group-header">
+                        <i class="bi bi-building"></i>
+                        <span class="wh-group-id">${escapeHtml(displayWhId)}</span>
+                        ${displayWhName ? `<span class="wh-group-name">${escapeHtml(displayWhName)}</span>` : ''}
+                        <span class="wh-group-count">${photoCount} ${safeT('photos')}</span>
+                        <button class="btn btn-sm btn-outline-primary ms-auto" onclick="event.stopPropagation();uploadToTraining(${trainingId})">
+                            <i class="bi bi-plus-circle"></i>
                         </button>
                     </div>
-                    ` : ''}
+                    <div class="photo-grid">
+                        ${g.photos.map(p => renderPhotoThumb(trainingId, p)).join('')}
+                    </div>
                 </div>
             `;
         });
-
+        
+        html += '</div>';
         return html;
+    }
+
+    /**
+     * 渲染单张照片的缩略图
+     */
+    function renderPhotoThumb(trainingId, p) {
+        const isCover = p.is_cover || false;
+        const canDelete = p.can_delete !== undefined ? p.can_delete : true;
+        
+        return `
+            <div class="photo-thumb" onclick="viewPhotoFromGrid(${trainingId}, ${p.id})" data-photo-id="${p.id}">
+                <img src="${p.photo_url}" alt="${escapeHtml(p.file_name)}" loading="lazy"
+                    onerror="this.style.display='none';this.parentElement.innerHTML='<div style=\\'display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:0.7rem;\\'>📷<br>加载失败</div>'">
+                ${isCover ? '<span class="cover-badge">📌 封面</span>' : ''}
+                ${canDelete ? `
+                <div class="thumb-actions">
+                    <button class="btn btn-sm" onclick="event.stopPropagation();deletePhotoFromGrid(${trainingId}, ${p.id})" title="${safeT('delete')}">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+                ` : ''}
+            </div>
+        `;
     }
 
     // ---------- 切换培训卡片折叠/展开 ----------
@@ -1167,8 +1281,9 @@
     // ---------- 上传到指定培训（卡片内上传） ----------
     let uploadTargetTrainingId = null;
 
-    function uploadToTraining(trainingId) {
+    function uploadToTraining(trainingId, whId) {
         uploadTargetTrainingId = trainingId;
+        uploadTargetWhId = whId || null;
         const fileInput = document.getElementById('cardFileInput');
         fileInput.click();
     }
@@ -1498,8 +1613,22 @@
         updatePhotoLimit();
         document.getElementById('trainingDropdown').style.display = 'none';
 
-        // 加载国家选择器
-        loadAdminUploadCountries(training.id);
+        // 加载国家选择器后，监听国家选择变化 → 加载对应库房
+        loadAdminUploadCountries(training.id).then(() => {
+            // 绑定国家 radio 的变化
+            document.querySelectorAll('input[name="uploadCountry"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const trainingId = document.getElementById('selectedTrainingId')?.value || '';
+                    loadWarehousesForUpload(this.value, trainingId);
+                });
+            });
+            
+            // 如果有默认选中的国家，立即加载库房
+            const defaultCountry = document.querySelector('input[name="uploadCountry"]:checked');
+            if (defaultCountry) {
+                loadWarehousesForUpload(defaultCountry.value);
+            }
+        });
 
         updateUploadBtn();
     }
@@ -1533,16 +1662,32 @@
             if (container) container.innerHTML = '';
         }
 
+        // 清空库房选择
+        const whWrapper = document.getElementById('whSelectorWrapper');
+        const whSelect = document.getElementById('whSelect');
+        if (whWrapper) whWrapper.style.display = 'none';
+        if (whSelect) {
+            whSelect.innerHTML = '<option value="">-- 请选择库房 --</option>';
+            whSelect.disabled = false;
+        }
         updateUploadBtn();
     }
 
     // 更新上传按钮状态
     function updateUploadBtn() {
         const btn = document.getElementById('uploadBtn');
-        const trainingId = document.getElementById('selectedTrainingId').value;
+        const trainingId = document.getElementById('selectedTrainingId')?.value || '';
         const hasFiles = selectedFiles.length > 0;
+
+        // 检查库房
+        const whSelect = document.getElementById('whSelect');
+        const whId = whSelect ? whSelect.value : '';
+        const wrapper = document.getElementById('whSelectorWrapper');
+        const needWh = wrapper && wrapper.style.display !== 'none';
+        
         const hintEl = document.getElementById('uploadBtnHint');
         
+        // 情况 1：什么都没选
         if (!trainingId && !hasFiles) {
             btn.disabled = true;
             btn.title = safeT('please_select_training_and_photos') || '请选择培训并添加照片';
@@ -1550,27 +1695,48 @@
                 hintEl.textContent = '⚠️ ' + (safeT('please_select_training_and_photos') || '请选择培训并添加照片');
                 hintEl.style.color = '#6c757d';
             }
-        } else if (!trainingId && hasFiles) {
+            return;
+        }
+        
+        // 情况 2：有照片但没选培训
+        if (!trainingId && hasFiles) {
             btn.disabled = true;
             btn.title = safeT('please_select_training') || '请先选择培训';
             if (hintEl) {
                 hintEl.textContent = '⚠️ ' + (safeT('please_select_training') || '请先选择培训');
                 hintEl.style.color = '#ffc107';
             }
-        } else if (trainingId && !hasFiles) {
+            return;
+        }
+        
+        // 情况 3：选了培训但没照片
+        if (trainingId && !hasFiles) {
             btn.disabled = true;
             btn.title = safeT('please_select_photos') || '请添加照片';
             if (hintEl) {
                 hintEl.textContent = '⚠️ ' + (safeT('please_select_photos') || '请添加照片');
                 hintEl.style.color = '#ffc107';
             }
-        } else {
-            btn.disabled = false;
-            btn.title = safeT('upload_photos') || '上传照片';
+            return;
+        }
+        
+        // 情况 4：库房选择器显示但未选库房
+        if (needWh && !whId) {
+            btn.disabled = true;
+            btn.title = safeT('please_select_warehouse') || '请选择库房';
             if (hintEl) {
-                hintEl.textContent = '✅ ' + (safeT('ready_to_upload') || '准备上传');
-                hintEl.style.color = '#198754';
+                hintEl.textContent = '⚠️ ' + (safeT('please_select_warehouse') || '请选择库房');
+                hintEl.style.color = '#ffc107';   // ✅ 加上颜色
             }
+            return;
+        }
+        
+        // 情况 5：所有条件满足
+        btn.disabled = false;
+        btn.title = safeT('upload_photos') || '上传照片';
+        if (hintEl) {
+            hintEl.textContent = '✅ ' + (safeT('ready_to_upload') || '准备上传');
+            hintEl.style.color = '#198754';
         }
     }
     // ==================== 事件绑定 ====================
@@ -1849,6 +2015,15 @@
             return;
         }
 
+        // 获取选中的库房
+        const whSelect = document.getElementById('whSelect');
+        const selectedWhId = whSelect ? whSelect.value : '';
+        
+        if (!selectedWhId) {
+            window.showToast('请选择库房', '警告', 'warning');
+            return;
+        }
+
         const addWatermark = document.getElementById('addWatermark').checked;
         const includeTrainingName = document.getElementById('includeTrainingName').checked;
         const totalFiles = selectedFiles.length;
@@ -1857,6 +2032,7 @@
         formData.append('training_id', trainingId);
         formData.append('training_name', trainingName);
         formData.append('training_country', selectedCountry);
+        formData.append('wh_id', selectedWhId); // 添加库房ID
         formData.append('add_watermark', addWatermark ? 'true' : 'false');
         formData.append('include_training_name', includeTrainingName ? 'true' : 'false');
 

@@ -210,24 +210,35 @@ def admin_dashboard():
 
     # ========== 9. 获取仪表盘培训列表（服务端渲染）==========
     dashboard_trainings = []
-    if session.get('role') in ['developer', 'super_admin']:
+    if session.get('role') in ['developer', 'super_admin', 'admin']:
         try:
             # 查询培训（仅草稿、未开始、进行中）
             query = db.table("trainings").select("*").is_("deleted_at", "null")
             query = query.in_("dynamic_status", ['draft', 'pending', 'active'])
+            query = query.order("created_at", desc=True)
             
-            # 权限过滤
-            if not is_dev and allowed_countries and len(allowed_countries) > 0:
-                or_conditions = []
-                for c in allowed_countries:
-                    or_conditions.append(f"country.eq.{c}")
-                    or_conditions.append(f"countries.cs.{{{c}}}")
-                if or_conditions:
-                    query = query.or_(','.join(or_conditions))
-            
-            query = query.order("created_at", desc=True).limit(20)
             res = query.execute()
-            dashboard_trainings = res.data or []
+            all_trainings = res.data or []
+            
+            # ✅ 在 Python 层做权限过滤（避免 Supabase SDK 的 or_ 不支持问题）
+            if is_dev:
+                dashboard_trainings = all_trainings
+            elif allowed_countries is not None:
+                if not allowed_countries:
+                    dashboard_trainings = []
+                else:
+                    dashboard_trainings = [
+                        t for t in all_trainings
+                        if any(c in allowed_countries for c in parse_training_countries(t))
+                    ]
+            else:
+                dashboard_trainings = all_trainings
+            
+            # 限制 20 条
+            dashboard_trainings = dashboard_trainings[:20]
+            
+            logger.info(f"📋 仪表盘培训: 总 {len(all_trainings)} 条, 权限过滤后 {len(dashboard_trainings)} 条")
+            logger.info(f"🔍 培训查询结果数: {len(dashboard_trainings)}")
             
             if dashboard_trainings:
                 training_ids = [t['id'] for t in dashboard_trainings]
@@ -327,6 +338,7 @@ def admin_dashboard():
                 
         except Exception as e:
             logger.error(f"加载仪表盘培训列表失败: {e}")
+            logger.error(traceback.format_exc())
             dashboard_trainings = []
     
     # ========== 10. 组装统计数据 ==========
@@ -2935,12 +2947,15 @@ def admin_exam_scores_page(exam_id):
     # 使用权限函数获取用户角色 
     is_dev = is_developer()
     is_super_admin = session.get('role') == 'super_admin' or is_dev
+
+    from_source = request.args.get('from', '')
     
     return render_template(
         'admin/admin_exams_scores.html',
         exam_id=exam_id,
         exam_title=exam_title,
-        is_super_admin=is_super_admin  # 传递是否超管/开发者
+        is_super_admin=is_super_admin,
+        from_source=from_source
     )
 
 @admin_exam_bp.route('/api/admin/exam/result/<int:result_id>', methods=['DELETE'])

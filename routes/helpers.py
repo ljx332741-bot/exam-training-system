@@ -303,7 +303,7 @@ def get_attendance_data(training_id, country=''):
     
     # 3. 获取签到记录
     att_res = db.table("training_attendances") \
-        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company, is_resign)") \
+        .select("id, user_id, signature_url, signed_name, sign_time, users(email, name_cn, name_en, department, employee_id, country, company, is_resign, wh_id, wh_name_en)") \
         .eq("training_id", training_id) \
         .execute()
 
@@ -347,6 +347,8 @@ def get_attendance_data(training_id, country=''):
             "signature_url": rec.get('signature_url', ''), 
             "sign_time": rec.get('sign_time'),
             "company": user.get('company', ''), 
+            "wh_id": user.get('wh_id', ''),
+            "wh_name_en": user.get('wh_name_en', ''),
             "country": user.get('country', '')
         })
         
