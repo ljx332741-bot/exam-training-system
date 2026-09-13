@@ -143,6 +143,11 @@
         display: none !important;
     }
     
+    .table th:nth-child(9),
+    .table td:nth-child(9) {
+        display: none !important;
+    }
+
     .table th:nth-child(2),
     .table td:nth-child(2) {
         width: 8% !important;
@@ -286,6 +291,57 @@
             opacity: 1;
         }
     }
+    
+    /* 库房建议下拉 */
+    .warehouse-suggestions-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1050;
+        background: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        max-height: 240px;
+        overflow-y: auto;
+        /* ❌ 删除 display: none; 让它由 JS 控制 */
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        margin-top: 2px;
+    }
+
+    .warehouse-suggestions-dropdown .suggestion-item {
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.15s;
+    }
+    .warehouse-suggestions-dropdown .suggestion-item:hover,
+    .warehouse-suggestions-dropdown .suggestion-item.active {
+        background: #f0f7ff;
+    }
+    .warehouse-suggestions-dropdown .suggestion-item:last-child {
+        border-bottom: none;
+    }
+    .warehouse-suggestions-dropdown .suggestion-code {
+        display: inline-block;
+        background: #e7f3ff;
+        color: #0d6efd;
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        margin-right: 8px;
+    }
+    .warehouse-suggestions-dropdown .suggestion-name {
+        color: #495057;
+    }
+    .warehouse-suggestions-dropdown .suggestion-empty {
+        padding: 12px;
+        text-align: center;
+        color: #adb5bd;
+        font-size: 0.8rem;
+    }
 </style>
 
 <!-- 动态打印样式（由 JavaScript 注入） -->
@@ -295,6 +351,33 @@
     <div class="mb-4">
         <h2 class="mb-2" id="attendanceTitle"><i class="bi bi-people-fill"></i> <span data-i18n="training_attendance_record">培训签到表</span></h2>
         <div class="d-flex justify-content-end gap-2 no-print align-items-center flex-wrap">
+            <!-- 国家切换器 -->
+            <div id="countrySwitcher" class="me-2" style="display: none;">
+                <label class="form-label mb-1 small text-muted">
+                    <i class="bi bi-globe"></i> 
+                    <span data-i18n="select_country_for_print">打印国家</span>:
+                </label>
+                <div class="btn-group btn-group-sm" role="group" id="countrySwitcherGroup">
+                    <!-- 动态生成 -->
+                </div>
+            </div>
+            <!-- 库房搜索器 -->
+            <div id="warehouseFilter" class="me-2 position-relative" style="display: none; min-width: 220px;">
+                <div class="input-group input-group-sm">
+                    <span class="input-group-text"><i class="bi bi-search"></i></span>
+                    <input type="text" 
+                        id="warehouseSearchInput" 
+                        class="form-control" 
+                        placeholder="输入库房编码或名称"
+                        data-i18n-placeholder="placeholder_warehouse_search"
+                        autocomplete="off">
+                    <button class="btn btn-outline-secondary" type="button" id="clearWarehouseBtn" style="display: none;">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
+                <!-- 下拉建议列表 -->
+                <div id="warehouseSuggestions" class="warehouse-suggestions-dropdown" style="display: none;"></div>
+            </div>
             <!-- 页眉页脚控制复选框 -->
             <div class="form-check form-switch me-2">
                 <input class="form-check-input" type="checkbox" id="showPrintHeaderFooter" checked>
@@ -325,16 +408,17 @@
                         <tr>
                             <th class="no-print" style="width: 5%;"><input type="checkbox" id="selectAll"></th>
                             <th style="width: 5%;">序号No</th>
-                            <th style="width: 30%;">部门/合作伙伴（双语）Department/Partner</th>
-                            <th style="width: 20%;">姓名+工号Name + Employee ID</th>
-                            <th style="width: 20%;">签名Signature</th>
-                            <th class="print-hide" style="width: 10%;" data-i18n="sign_in_period">签到时间</th>
+                            <th style="width: 20%;">部门/合作伙伴（双语）Department/Partner</th>
+                            <th style="width: 15%;">姓名+工号Name + Employee ID</th>
+                            <th style="width: 15%;">签名Signature</th>
+                            <th style="width: 15%;">WHID/WHName</th>
+                            <th class="print-hide" style="width: 15%;" data-i18n="sign_in_period">签到时间</th>
                             <th class="print-hide" style="width: 5%;" data-i18n="country">国家</th>
                             <th class="print-hide" style="width: 5%;" data-i18n="actions">操作</th>
                         </tr>
                     </thead>
                     <tbody id="attendanceTbody">
-                        <tr><td colspan="8" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
+                        <tr><td colspan="9" class="text-center"><span data-i18n="loading">加载中...</span></td></tr>
                     </tbody>
                 </table>
             </div>
@@ -493,13 +577,20 @@
     // ============================================================
     // 签到签字详情 - 带加载动画
     // ============================================================
-    async function loadDetail() {
+    async function loadDetail(forceCountry = null) {
         showLoadingState('正在加载签到数据...');
         
         await fetchUserPermissions();
 
         const urlParams = new URLSearchParams(window.location.search);
         let country = urlParams.get('country');
+        
+        // 优先使用传入的参数（点击切换器时）
+        if (forceCountry !== null) {
+            country = forceCountry;
+            resetWarehouseFilter();
+        }
+
         if (!country || country === 'null' || country === 'undefined') {
             country = '';
         }
@@ -528,8 +619,14 @@
 
             if (!data.training) {
                 hideLoadingState();
-                document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="8" class="text-center">培训不存在</td></tr>`;
+                document.getElementById('attendanceTbody').innerHTML = `<tr><td colspan="9" class="text-center">培训不存在</td></tr>`;
                 return;
+            }
+
+            // 首次加载时初始化切换器（避免重复初始化）
+            if (!window._printSwitcherInitialized) {
+                window._printSwitcherInitialized = true;
+                await loadPrintCountrySwitcher(trainingId);
             }
 
             updateLoadingState('正在渲染签到列表...');
@@ -565,7 +662,7 @@
             
             if (records.length === 0) {
                 hideLoadingState();
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center">暂无签到记录</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center">暂无签到记录</td></tr>`;
                 return;
             }
             
@@ -578,12 +675,15 @@
                     : `<span class="text-warning fw-bold">待重新签字</span>`;
 
                 const row = tbody.insertRow();
+                row.dataset.whId = r.wh_id || '';           // ✅ 记录库房ID
+                row.dataset.whName = r.wh_name_en || '';    // ✅ 记录库房名称（可选）
                 row.innerHTML = `
                     <td class="no-print"><input type="checkbox" class="attendance-checkbox" data-att-id="${r.id}"></td>
                     <td>${idx+1}</td>
                     <td>${escapeHtml(r.company || '')}</td>
                     <td>${escapeHtml(nameDisplay)}${empId}</td>
                     <td>${signatureCell}</td>
+                    <td class="print-hide">${escapeHtml(r.wh_id)}/${escapeHtml(r.wh_name_en)}</td>
                     <td class="print-hide">${formatLocalTime(r.sign_time)}</td>
                     <td class="country-cell no-print" title="${escapeHtml(r.country)}">${escapeHtml(r.country)}</td>
                     <td class="print-hide">
@@ -628,13 +728,24 @@
             updatePdfExportLink();
             addBatchDeleteButton();
             bindSelectAll();
+
+            // ✅ 数据渲染成功后，显示库房筛选器
+            const warehouseFilter = document.getElementById('warehouseFilter');
+            if (warehouseFilter) {
+                warehouseFilter.style.display = 'block';
+            }
+            
+            // ✅ 如果之前有库房筛选，重新应用
+            if (_selectedWarehouseId) {
+                applyWarehouseFilter(_selectedWarehouseId);
+            }
             
         } catch (err) {
             console.error('加载签到详情失败:', err);
             hideLoadingState();
             const tbody = document.getElementById('attendanceTbody');
             if (tbody) {
-                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">加载失败: ${err.message}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger">加载失败: ${err.message}</td></tr>`;
             }
         }
     }
@@ -714,7 +825,11 @@
         const selectAll = document.getElementById('selectAll');
         if (selectAll) {
             selectAll.addEventListener('change', (e) => {
-                document.querySelectorAll('.attendance-checkbox').forEach(cb => cb.checked = e.target.checked);
+                document.querySelectorAll('tr').forEach(row => {
+                    if (row.style.display === 'none') return;   // ✅ 跳过隐藏行
+                    const cb = row.querySelector('.attendance-checkbox');
+                    if (cb) cb.checked = e.target.checked;
+                });
             });
         }
     }
@@ -722,6 +837,7 @@
     // 批量删除签到记录message: `确定要删除选中的 ${selectedIds.length} 条签到记录吗？`
     async function batchDeleteAttendances() {
         const selectedIds = Array.from(document.querySelectorAll('.attendance-checkbox:checked'))
+            .filter(cb => cb.closest('tr').style.display !== 'none')
             .map(cb => cb.dataset.attId);
         
         if (selectedIds.length === 0) {
@@ -829,6 +945,7 @@
     }
 
     function updatePdfExportLink() {
+        // 加上库房参数
         const pdfBtn = document.getElementById('pdfExportBtn');
         if (!pdfBtn) return;
         
@@ -837,14 +954,16 @@
         if (!country || country === 'null' || country === 'undefined') {
             country = '';
         }
+        // ✅ 使用全局变量
+        const whId = _selectedWarehouseId || '';
         
         const lang = window.i18n?.currentLang || 'zh';
-        // ✅ 每次调用时实时读取 localStorage
         const showHeaderFooter = localStorage.getItem('show_print_header_footer') !== 'false';
         
         let url = `/admin/training/${trainingId}/attendance/pdf`;
         const params = [];
         if (country) params.push(`country=${encodeURIComponent(country)}`);
+        if (whId) params.push(`wh_id=${encodeURIComponent(whId)}`);
         params.push(`lang=${encodeURIComponent(lang)}`);
         params.push(`show_header=${showHeaderFooter}`);
         
@@ -866,8 +985,8 @@
     }
 
     function escapeHtml(str) {
-        if(!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>]/g, function(m) {
             if(m === '&') return '&amp;';
             if(m === '<') return '&lt;';
             if(m === '>') return '&gt;';
@@ -910,6 +1029,104 @@
         updatePrintHeaderFooterStyles();
     }
 
+    /**
+     * 加载打印国家切换器（复用已有 API：/api/training/{id}/available_countries）
+     */
+    async function loadPrintCountrySwitcher(trainingId) {
+        const switcher = document.getElementById('countrySwitcher');
+        const container = document.getElementById('countrySwitcherGroup');
+        if (!switcher || !container) return;
+        
+        try {
+            // ✅ 直接复用已有 API
+            const res = await fetch(`/api/training/${trainingId}/available_countries`);
+            const data = await res.json();
+            
+            if (!data.success || !data.countries || data.countries.length === 0) {
+                switcher.style.display = 'none';
+                return;
+            }
+            
+            // 过滤出有权限的国家
+            const availableCountries = data.countries.filter(c => c.available);
+            
+            // 只有 0 或 1 个国家时，不显示切换器（无需切换）
+            if (availableCountries.length <= 1) {
+                switcher.style.display = 'none';
+                return;
+            }
+            
+            // 从 URL 读取当前国家
+            const urlParams = new URLSearchParams(window.location.search);
+            let currentCountry = urlParams.get('country') || '';
+            if (!availableCountries.find(c => c.code === currentCountry)) {
+                currentCountry = '';
+            }
+            
+            // 构建按钮组
+            const lang = window.i18n?.currentLang || 'zh';
+            let html = '';
+            
+            // "全部" 选项
+            html += `
+                <input type="radio" class="btn-check" name="printCountryFilter" 
+                    id="printCountryAll" value="" 
+                    ${currentCountry === '' ? 'checked' : ''}>
+                <label class="btn btn-outline-primary btn-sm" for="printCountryAll">
+                    <i class="bi bi-globe"></i> 
+                    <span data-i18n="all_countries">全部</span>
+                </label>
+            `;
+            
+            // 各国选项
+            availableCountries.forEach(c => {
+                const id = `printCountry_${c.code}`;
+                html += `
+                    <input type="radio" class="btn-check" name="printCountryFilter" 
+                        id="${id}" value="${c.code}"
+                        ${currentCountry === c.code ? 'checked' : ''}>
+                    <label class="btn btn-outline-primary btn-sm" for="${id}">
+                        ${c.code}
+                    </label>
+                `;
+            });
+            
+            container.innerHTML = html;
+            switcher.style.display = 'block';
+            
+            // 绑定切换事件
+            container.querySelectorAll('input[name="printCountryFilter"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    const country = this.value;
+                    console.log('🌍 切换打印国家:', country || '全部');
+                    
+                    // 更新 URL（保留其他参数如 from=xxx）
+                    const url = new URL(window.location);
+                    if (country) {
+                        url.searchParams.set('country', country);
+                    } else {
+                        url.searchParams.delete('country');
+                    }
+                    window.history.replaceState({}, '', url);
+                    
+                    // 重新加载签到数据
+                    loadDetail(country);
+                });
+            });
+            
+            // 应用翻译
+            if (window.i18n && window.i18n.applyTranslations) {
+                window.i18n.applyTranslations();
+            }
+            
+            console.log('✅ 打印国家切换器已加载:', availableCountries.map(c => c.code));
+            
+        } catch (err) {
+            console.error('加载打印国家切换器失败:', err);
+            switcher.style.display = 'none';
+        }
+    }
+
     // ============================================================
     // 页面初始化
     // ============================================================
@@ -946,7 +1163,10 @@
         
         // 3. 等待 i18n 就绪后初始化
         await waitForI18n();
-        
+
+        // 初始化库房筛选器
+        initWarehouseFilter();
+
         // 4. 初始化打印页眉页脚
         updatePrintHeaderFooterStyles();
         
@@ -1003,7 +1223,260 @@
         window.addEventListener('afterprint', function() {
             console.log('📄 打印完成');
         });
+        // 重新渲染国家切换器（应用新语言）
+        if (window._printSwitcherInitialized) {
+            loadPrintCountrySwitcher(trainingId);
+        }
     });
 
+    // ============================================================
+    // 库房筛选器
+    // ============================================================
+    let _warehouseSuggestTimer = null;
+    let _selectedWarehouseId = '';       // 当前选中的库房ID（空=不筛选）
+    let _warehouseAllRecords = [];       // 当前国家的全部签到记录（缓存）
+
+    // 统一显示/隐藏函数
+    function showWarehouseDropdown() {
+        const dropdown = document.getElementById('warehouseSuggestions');
+        if (dropdown) dropdown.style.display = 'block';
+    }
+
+    function hideWarehouseDropdown() {
+        const dropdown = document.getElementById('warehouseSuggestions');
+        if (dropdown) dropdown.style.display = 'none';
+    }
+
+    /**
+     * 初始化库房搜索输入框
+     */
+
+    function initWarehouseFilter() {
+        const input = document.getElementById('warehouseSearchInput');
+        const clearBtn = document.getElementById('clearWarehouseBtn');
+        const dropdown = document.getElementById('warehouseSuggestions');
+        if (!input || !dropdown) return;
+        
+        // ✅ 防止重复绑定
+        if (input.dataset.whInit === 'true') {
+            console.log('⚠️ 库房筛选器已初始化，跳过');
+            return;
+        }
+        input.dataset.whInit = 'true';
+        
+        // 设置 placeholder
+        if (typeof t === 'function') {
+            input.placeholder = t('placeholder_warehouse_search') || '输入库房编码或名称';
+        }
+        
+        // 输入事件（防抖 300ms）
+        input.addEventListener('input', function() {
+            clearTimeout(_warehouseSuggestTimer);
+            const q = this.value.trim();
+            
+            // 显示/隐藏清除按钮
+            if (clearBtn) clearBtn.style.display = q.length > 0 ? 'block' : 'none';
+            
+            // 如果输入被清空，视为取消筛选
+            if (q.length === 0) {
+                _selectedWarehouseId = '';
+                hideWarehouseDropdown();      // ✅ 统一
+                applyWarehouseFilter('');
+                return;
+            }
+            
+            _warehouseSuggestTimer = setTimeout(() => {
+                fetchWarehouseSuggestions(q);
+            }, 300);
+        });
+        
+        // 键盘事件
+        input.addEventListener('keydown', function(e) {
+            const items = dropdown.querySelectorAll('.suggestion-item');
+            let activeIndex = -1;
+            items.forEach((item, i) => {
+                if (item.classList.contains('active')) activeIndex = i;
+            });
+            
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                if (items.length > 0) {
+                    const next = (activeIndex + 1) % items.length;
+                    items.forEach(it => it.classList.remove('active'));
+                    items[next].classList.add('active');
+                    items[next].scrollIntoView({block: 'nearest'});
+                }
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                if (items.length > 0) {
+                    const prev = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
+                    items.forEach(it => it.classList.remove('active'));
+                    items[prev].classList.add('active');
+                    items[prev].scrollIntoView({block: 'nearest'});
+                }
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (activeIndex >= 0) {
+                    items[activeIndex].click();
+                } else if (items.length > 0) {
+                    items[0].click();
+                }
+            } else if (e.key === 'Escape') {
+                hideWarehouseDropdown();      // ✅ 统一
+                this.blur();
+            }
+        });
+        
+        // 清除按钮
+        if (clearBtn) {
+            clearBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                input.value = '';
+                _selectedWarehouseId = '';
+                clearBtn.style.display = 'none';
+                hideWarehouseDropdown();          // ✅ 统一
+                applyWarehouseFilter('');
+            });
+        }
+        
+        // 点击外部关闭下拉
+        document.addEventListener('click', function(e) {
+            const wrapper = document.getElementById('warehouseFilter');
+            if (wrapper && !wrapper.contains(e.target)) {
+                hideWarehouseDropdown();          // ✅ 统一
+            }
+        });
+        
+        console.log('✅ 库房筛选器已初始化');
+    }
+
+    /**
+     * 请求库房建议（调用已有 API）
+     */
+
+    async function fetchWarehouseSuggestions(query) {
+        const dropdown = document.getElementById('warehouseSuggestions');
+        if (!dropdown) return;
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const country = urlParams.get('country') || '';
+        
+        let url = `/api/search/warehouses?q=${encodeURIComponent(query)}`;
+        if (country) url += `&country=${encodeURIComponent(country)}`;
+        
+        try {
+            const res = await fetch(url);
+            const suggestions = await res.json();
+            
+            if (!Array.isArray(suggestions) || suggestions.length === 0) {
+                dropdown.innerHTML = `<div class="suggestion-empty">
+                    <i class="bi bi-search"></i> 未找到匹配的库房
+                </div>`;
+                showWarehouseDropdown();          // ✅ 统一
+                return;
+            }
+            
+            dropdown.innerHTML = suggestions.map(item => {
+                const match = item.match(/^([^\s(]+)\s*(?:\((.*)\))?$/);
+                const code = match ? match[1] : item;
+                const name = match && match[2] ? match[2] : '';
+                
+                return `
+                    <div class="suggestion-item" 
+                        data-wh-id="${escapeHtml(code)}" 
+                        data-wh-name="${escapeHtml(name)}"
+                        data-wh-display="${escapeHtml(item)}">
+                        <span class="suggestion-code">${escapeHtml(code)}</span>
+                        <span class="suggestion-name">${escapeHtml(name || item)}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            // 绑定点击事件（用 onclick 覆盖，避免重复绑定）
+            dropdown.querySelectorAll('.suggestion-item').forEach(el => {
+                el.onclick = function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    const whId = this.dataset.whId;
+                    const whDisplay = this.dataset.whDisplay;
+                    
+                    document.getElementById('warehouseSearchInput').value = whDisplay;
+                    _selectedWarehouseId = whId;
+                    
+                    hideWarehouseDropdown();      // ✅ 统一
+                    applyWarehouseFilter(whId);
+                    
+                    console.log('🏢 选中库房:', whId);
+                };
+            });
+            
+            showWarehouseDropdown();              // ✅ 统一
+            
+        } catch (err) {
+            console.error('加载库房建议失败:', err);
+            dropdown.innerHTML = `<div class="suggestion-empty text-danger">
+                <i class="bi bi-exclamation-circle"></i> 加载失败
+            </div>`;
+            showWarehouseDropdown();              // ✅ 统一
+        }
+    }
+
+    /**
+     * 应用库房筛选（前端过滤当前签到记录）
+     */
+    function applyWarehouseFilter(whId) {
+        _selectedWarehouseId = whId || '';
+        
+        const tbody = document.getElementById('attendanceTbody');
+        if (!tbody) return;
+        
+        const rows = tbody.querySelectorAll('tr');
+        let visibleCount = 0;
+        
+        rows.forEach((row) => {
+            if (row.querySelector('td[colspan]')) return;
+            
+            const rowWhId = row.dataset.whId || '';
+            
+            if (!whId) {
+                row.style.display = '';
+                visibleCount++;
+                const seqTd = row.cells[1];
+                if (seqTd) seqTd.textContent = visibleCount;
+            } else {
+                // ✅ 精确匹配
+                if (rowWhId && rowWhId === whId) {
+                    row.style.display = '';
+                    visibleCount++;
+                    const seqTd = row.cells[1];
+                    if (seqTd) seqTd.textContent = visibleCount;
+                } else {
+                    row.style.display = 'none';
+                }
+            }
+        });
+        
+        if (whId) {
+            console.log(`🔍 库房筛选: ${whId}, 显示 ${visibleCount} 条`);
+        }
+        
+        updatePdfExportLink();
+    }
+ 
+    /**
+     * 重置库房筛选（当国家切换时调用）
+     */
+    function resetWarehouseFilter() {
+        const input = document.getElementById('warehouseSearchInput');
+        const clearBtn = document.getElementById('clearWarehouseBtn');
+        
+        if (input) input.value = '';
+        if (clearBtn) clearBtn.style.display = 'none';
+        hideWarehouseDropdown();                  // ✅ 统一
+        
+        _selectedWarehouseId = '';
+    }
 </script>
 {% endblock %}

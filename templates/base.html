@@ -3095,7 +3095,7 @@
                         `;
                     }).join('');
                     
-                    hint.textContent = safeT('select_upload_country_hint') || '请选择照片归属的国家';
+                    hint.textContent = safeT('select_upload_country_belong') || '请选择照片归属的国家';
                     return data;
                 } catch (e) {
                     console.error('加载培训国家失败:', e);
@@ -3110,6 +3110,313 @@
                 return checked ? checked.value : null;
             }
 
+            // 照片上传加载库房选择器
+            /**
+            * 加载库房选择器（替换原来的 select 逻辑）
+            * @param {string} countryCode - 国家代码
+            * @param {string} trainingId - 培训ID
+            */
+            async function loadWarehousesForUpload(countryCode, trainingId) {
+                const wrapper = document.getElementById('whSelectorWrapper');
+                const input = document.getElementById('whSearchInput');
+                const hiddenField = document.getElementById('whSelect');
+                const hint = document.getElementById('whSelectorHint');
+                const suggestions = document.getElementById('whSuggestions');
+                
+                if (!wrapper || !input || !hiddenField) return;
+                
+                // 重置状态
+                _whAllOptions = [];
+                _whSelected = null;
+                if (hiddenField) hiddenField.value = '';
+                if (input) input.value = '';
+                if (suggestions) suggestions.style.display = 'none';
+                const clearBtn = document.getElementById('whClearBtn');
+                if (clearBtn) clearBtn.style.display = 'none';
+                
+                if (!countryCode || !trainingId) {
+                    wrapper.style.display = 'none';
+                    return;
+                }
+                
+                try {
+                    const res = await fetch(
+                        `/api/training/${trainingId}/available_warehouses?country=${encodeURIComponent(countryCode)}`
+                    );
+                    const data = await res.json();
+                    
+                    if (!data.success || !data.warehouses || data.warehouses.length === 0) {
+                        wrapper.style.display = 'block';
+                        input.disabled = true;
+                        input.placeholder = '该国无可用库房';
+                        if (hint) {
+                            hint.textContent = '⚠️ 该国家下没有活跃库房，无法上传照片';
+                            hint.style.color = '#dc3545';
+                        }
+                        return;
+                    }
+                    
+                    // 保存选项
+                    _whAllOptions = data.warehouses;
+                    
+                    // 显示选择器
+                    wrapper.style.display = 'block';
+                    input.disabled = false;
+
+                    // 没有库房
+                    if (data.warehouses.length === 0) {
+                        wrapper.style.display = 'block';
+                        input.disabled = true;
+                        input.placeholder = '无可用库房';
+                        
+                        let msg = '⚠️ 该国家下没有活跃库房，无法上传照片';
+                        if (data.empty_reason === 'user_no_warehouse') {
+                            msg = '⚠️ 您的账号未关联库房，请联系管理员';
+                        } else if (data.empty_reason === 'user_warehouse_inactive') {
+                            msg = '⚠️ 您所在的库房暂无活跃用户，请联系管理员';
+                        }
+                        
+                        if (hint) {
+                            hint.textContent = msg;
+                            hint.style.color = '#dc3545';
+                        }
+                        return;
+                    }
+
+                    // 只有一个库房：自动选中
+                    if (data.warehouses.length === 1) {
+                        const wh = data.warehouses[0];
+                        input.value = `${wh.wh_id} - ${wh.wh_name_en || ''}`;
+                        hiddenField.value = wh.wh_id;
+                        _whSelected = wh;
+                        input.disabled = true;
+                        if (hint) {
+                            hint.textContent = `已自动选择：${wh.wh_id}`;
+                            hint.style.color = '#198754';
+                        }
+                    } else {
+                        // 多个库房：显示提示，等用户点击/输入
+                        input.placeholder = `输入搜索（共 ${data.warehouses.length} 个库房）`;
+                        if (hint) {
+                            hint.textContent = `该国家有 ${data.warehouses.length} 个库房，请点击或输入搜索`;
+                            hint.style.color = '#6c757d';
+                        }
+                    }
+                    
+                    // 绑定事件（只绑定一次）
+                    if (!_whInitBound) {
+                        bindWhSearchEvents();
+                        _whInitBound = true;
+                    }
+                    
+                    // 更新上传按钮状态
+                    if (typeof updateUploadBtn === 'function') updateUploadBtn();
+                    
+                } catch (err) {
+                    console.error('加载库房列表失败:', err);
+                    wrapper.style.display = 'none';
+                }
+            }
+
+            function bindWhSearchEvents() {
+                const input = document.getElementById('whSearchInput');
+                const clearBtn = document.getElementById('whClearBtn');
+                const suggestions = document.getElementById('whSuggestions');
+                
+                if (!input) return;
+                
+                // 点击输入框 → 显示全部（或已过滤的）
+                input.addEventListener('focus', function() {
+                    if (input.disabled) return;
+                    const q = this.value.trim();
+                    if (q && _whSelected) {
+                        // 已选中某库房，重新聚焦时清空搜索
+                        this.value = '';
+                        _whSelected = null;
+                        document.getElementById('whSelect').value = '';
+                        if (clearBtn) clearBtn.style.display = 'none';
+                    }
+                    renderWhSuggestions(q);
+                });
+                
+                // 点击输入框也触发（有些浏览器 focus 不触发）
+                input.addEventListener('click', function() {
+                    if (input.disabled) return;
+                    if (suggestions.style.display !== 'block') {
+                        const q = this.value.trim();
+                        renderWhSuggestions(q);
+                    }
+                });
+                
+                // 输入事件（防抖）
+                input.addEventListener('input', function() {
+                    clearTimeout(_whSearchTimer);
+                    const q = this.value.trim();
+                    
+                    // ✅ 用户开始输入时，清空之前的选中
+                    const hiddenField = document.getElementById('whSelect');
+                    if (hiddenField) hiddenField.value = '';
+                    _whSelected = null;
+                    
+                    if (clearBtn) clearBtn.style.display = q.length > 0 ? 'block' : 'none';
+                    
+                    _whSearchTimer = setTimeout(() => {
+                        renderWhSuggestions(q);
+                    }, 200);
+                });
+                
+                // 键盘导航
+                input.addEventListener('keydown', function(e) {
+                    const items = suggestions.querySelectorAll('.suggestion-item');
+                    let activeIndex = -1;
+                    items.forEach((item, i) => {
+                        if (item.classList.contains('active')) activeIndex = i;
+                    });
+                    
+                    if (e.key === 'ArrowDown') {
+                        e.preventDefault();
+                        if (items.length > 0) {
+                            const next = (activeIndex + 1) % items.length;
+                            items.forEach(it => it.classList.remove('active'));
+                            items[next].classList.add('active');
+                            items[next].scrollIntoView({block: 'nearest'});
+                        }
+                    } else if (e.key === 'ArrowUp') {
+                        e.preventDefault();
+                        if (items.length > 0) {
+                            const prev = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
+                            items.forEach(it => it.classList.remove('active'));
+                            items[prev].classList.add('active');
+                            items[prev].scrollIntoView({block: 'nearest'});
+                        }
+                    } else if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (activeIndex >= 0) {
+                            items[activeIndex].click();
+                        } else if (items.length > 0) {
+                            items[0].click();
+                        }
+                    } else if (e.key === 'Escape') {
+                        hideWhSuggestions();
+                        this.blur();
+                    }
+                });
+                
+                // 清除按钮
+                if (clearBtn) {
+                    clearBtn.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        input.value = '';
+                        document.getElementById('whSelect').value = '';
+                        _whSelected = null;
+                        clearBtn.style.display = 'none';
+                        hideWhSuggestions();
+                        if (typeof updateUploadBtn === 'function') updateUploadBtn();
+                    });
+                }
+                
+                // 点击外部关闭
+                document.addEventListener('click', function(e) {
+                    const container = document.getElementById('whSearchContainer');
+                    if (container && !container.contains(e.target)) {
+                        hideWhSuggestions();
+                    }
+                });
+            }
+
+            function renderWhSuggestions(query) {
+                const suggestions = document.getElementById('whSuggestions');
+                if (!suggestions) return;
+                
+                // 过滤逻辑
+                let filtered = _whAllOptions;
+                if (query) {
+                    const q = query.toLowerCase().trim();
+                    filtered = _whAllOptions.filter(w => {
+                        const whId = (w.wh_id || '').toLowerCase();
+                        const whName = (w.wh_name_en || '').toLowerCase();
+                        const whNameCn = (w.wh_name_cn || '').toLowerCase();
+                        // 支持多关键词（空格分隔）
+                        const keywords = q.split(/\s+/).filter(k => k);
+                        return keywords.every(kw => 
+                            whId.includes(kw) || whName.includes(kw) || whNameCn.includes(kw)
+                        );
+                    });
+                }
+                
+                if (filtered.length === 0) {
+                    suggestions.innerHTML = `
+                        <div class="suggestion-empty">
+                            <i class="bi bi-search"></i>
+                            未找到匹配的库房
+                        </div>
+                    `;
+                    suggestions.style.display = 'block';
+                    return;
+                }
+                
+                // 限制显示数量（避免一次渲染太多）
+                const displayList = filtered.slice(0, 100);
+                
+                suggestions.innerHTML = displayList.map(w => `
+                    <div class="suggestion-item" 
+                        data-wh-id="${escapeHtml(w.wh_id)}"
+                        data-wh-name="${escapeHtml(w.wh_name_en || '')}"
+                        data-wh-name-cn="${escapeHtml(w.wh_name_cn || '')}"
+                        data-wh-type="${escapeHtml(w.wh_type || '')}">
+                        <span class="suggestion-code">${escapeHtml(w.wh_id)}</span>
+                        <span class="suggestion-name">${escapeHtml(w.wh_name_en || w.wh_name_cn || '')}</span>
+                        ${w.wh_type ? `<span class="suggestion-type">${escapeHtml(w.wh_type)}</span>` : ''}
+                    </div>
+                `).join('');
+                
+                // 绑定点击
+                suggestions.querySelectorAll('.suggestion-item').forEach(el => {
+                    el.onclick = function(e) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        const whId = this.dataset.whId;
+                        const whName = this.dataset.whName || this.dataset.whNameCn;
+                        
+                        // 更新 UI
+                        const input = document.getElementById('whSearchInput');
+                        input.value = `${whId} - ${whName}`;
+                        
+                        // 更新隐藏字段
+                        document.getElementById('whSelect').value = whId;
+                        
+                        // 更新状态
+                        _whSelected = {
+                            wh_id: whId,
+                            wh_name_en: whName
+                        };
+                        
+                        // 隐藏下拉
+                        hideWhSuggestions();
+                        
+                        // 隐藏清除按钮（因为已经选中了）
+                        const clearBtn = document.getElementById('whClearBtn');
+                        if (clearBtn) clearBtn.style.display = 'none';
+                        
+                        // 更新上传按钮
+                        if (typeof updateUploadBtn === 'function') updateUploadBtn();
+                        
+                        console.log('🏢 选中库房:', whId);
+                    };
+                });
+                
+                suggestions.style.display = 'block';
+                
+                // 滚动到顶部（每次重新渲染时）
+                suggestions.scrollTop = 0;
+            }
+
+            function hideWhSuggestions() {
+                const suggestions = document.getElementById('whSuggestions');
+                if (suggestions) suggestions.style.display = 'none';
+            }
         </script>
 
         <!-- 引入全局删除模态框 -->

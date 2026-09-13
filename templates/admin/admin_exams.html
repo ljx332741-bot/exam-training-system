@@ -445,7 +445,7 @@
                     <div class="col-12">
                         <label class="form-label fw-bold">
                             <span data-i18n="push_mode">推送模式</span>
-                            <span class="text-muted small" style="font-weight: 400;">({{ '选择推送方式' }})</span>
+                            <span class="text-muted small" style="font-weight: 400;">(<span data-i18n="choose_push_mode">选择推送方式</span>)</span>
                         </label>
                         <div class="btn-group w-100" role="group">
                             <input type="radio" class="btn-check" name="examPushMode" id="examPushModeNone" value="none" checked>
@@ -1526,7 +1526,17 @@
                     </div>
                     ${bindingDetailRowHtml ? `<div id="binding-detail-container-${ex.id}"></div>` : ''}
                 </td>
-                <td>${ex.id}</td>
+                <td>
+                    {# 考试ID -> 跳转考生考试状态管理页 #}
+                    <a href="/admin/exam/${ ex.id }/candidate_status" 
+                    class="exam-id-link" 
+                    target="_blank"
+                    style="font-size:0.8rem; text-decoration: none; color: #0d6efd;"
+                    data-i18n-title="title_view_exam_status"
+                    title="${safeT('title_view_exam_status') || '查看考试分配状态'}">
+                        ${ ex.id }
+                    </a>
+                </td>
                 <td>${quarter}</td>
                 <td>${statusBadge}</td>  <!-- 使用状态徽章 -->
                 <td>${formatLocalTime(ex.created_at)}</td>
@@ -2353,7 +2363,7 @@
             });
             if (hint) {
                 hint.innerHTML = `<i class="bi bi-info-circle me-1"></i>
-                    <span data-i18n="save_mode_hint">"仅保存"模式下不推送任何考生，考生选择已禁用</span>`;
+                    ${t('save_mode_hint')}`;
             }
             if (summary) summary.style.display = 'none';
             
@@ -2373,7 +2383,7 @@
             });
             if (hint) {
                 hint.innerHTML = `<i class="bi bi-info-circle me-1"></i>
-                    <span data-i18n="all_mode_hint">🌍 全国推送模式：将推送给国家匹配的所有考生</span>`;
+                    🌍 ${t('all_mode_hint')}`;
             }
             // 全国推送模式下不显示"已选考生"摘要（因为不是基于勾选）
             if (summary) summary.style.display = 'none';
@@ -2394,7 +2404,7 @@
             });
             if (hint) {
                 hint.innerHTML = `<i class="bi bi-info-circle me-1"></i>
-                    <span data-i18n="selected_mode_hint">✅ 勾选需要推送的考生，未勾选则不推送</span>`;
+                    ✅ ${t('selected_mode_hint')}`;
             }
             // 定点推送模式下显示已选考生摘要
             updateSelectedCandidatesSummary();

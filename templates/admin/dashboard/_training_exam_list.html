@@ -2,7 +2,7 @@
 <!-- ============================================================
      培训列表 - 服务端渲染（仅开发者和超管可见）
      ============================================================ -->
-{% if session.get('role') in ['developer', 'super_admin'] %}
+{% if session.get('role') in ['developer', 'super_admin', 'admin'] %}
 <div class="card-body p-0">
     <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 training-dashboard-table" style="min-width: 1000px;">
@@ -26,7 +26,7 @@
                                     class="training-name-link" 
                                     data-id="{{ t.id }}" 
                                     style="cursor: pointer; color: #0d6efd; text-decoration: none;"
-                                    data-i18n-title="title_view_sign_in"
+                                    data-i18n-title="title_view_attendance_details"
                                     title="点击查看签到详情">
                                         {{ t.name }}
                                     </a>
@@ -34,7 +34,8 @@
 
                                     {% if t.binding_count > 0 %}
                                     <span class="binding-badge" 
-                                        title="已绑定 {{ t.binding_count }} 个考试"
+                                        data-i18n-title-key="bound_count_exam"
+                                        data-i18n-title-params='{"count": {{ t.binding_count }}}'
                                         data-bs-toggle="tooltip">
                                         <i class="bi bi-link"></i> {{ t.binding_count }}
                                     </span>
@@ -54,8 +55,8 @@
                                 class="training-id-link" 
                                 target="_blank"
                                 style="cursor: pointer; color: #0d6efd; text-decoration: none;"
-                                data-i18n-title="title_view_this_sign_in_status"
-                                title="查看该培训的学员签到状态">
+                                data-i18n-title="title_view_assign_status"
+                                title="查看培训分配状态">
                                 {{ t.id }}
                             </a>
                         </td>
@@ -104,11 +105,11 @@
                                     </button>
                                 {% endif %}
                                 
-                                <!-- ========== 查看签到按钮 ========== -->
+                                <!-- ========== 查看签到按钮 ========== 路由admin_training_attendance(training_id)-->
                                 {% if t.signed_count > 0 and (t.countries_list or t.country) %}
                                     <a href="/admin/training/{{ t.id }}/attendance?from=dashboard" 
                                         class="btn btn-outline-info" target="_blank"
-                                        data-i18n-title="view_sign_in_records_export"
+                                        data-i18n-title="title_view_attendance_details"
                                         title="查看签到详情">
                                         <i class="bi bi-eye"></i>
                                     </a>
@@ -230,7 +231,8 @@
                         <td class="fw-medium">
                             {# 考试名称 -> 跳转考生考试详情页 #}
                             {% if ex.status == 'active' %}
-                                <a href="/admin/exam/{{ ex.id }}/scores" target="_blank"
+                                <a href="/admin/exam/{{ ex.id }}/scores?from=dashboard" 
+                                    target="_blank"
                                     class="text-decoration-none fw-semibold exam-name-link"
                                     data-i18n-title="title_view_exam_scores"
                                     title="查看考生考试详情">
@@ -271,13 +273,13 @@
                             </small>
                         </td>
                         <td> 
-                            {# 考试ID -> 跳转考生考试状态管理页 #}
+                            {# 考试ID -> 跳转考生考试分配状态管理页 #}
                             <a href="/admin/exam/{{ ex.id }}/candidate_status" 
                             class="exam-id-link" 
                             target="_blank"
                             style="font-size:0.8rem; text-decoration: none; color: #0d6efd;"
                             data-i18n-title="title_view_exam_status"
-                            title="查看考生考试状态">
+                            title="查看考试分配状态">
                                 {{ ex.id }}
                             </a>
                         </td>

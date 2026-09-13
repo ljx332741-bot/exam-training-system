@@ -1416,7 +1416,7 @@ def export_users_to_excel():
         ws.title = "用户清单"
         
         # 表头（添加用户ID字段）
-        headers = ['序号', '用户ID', '姓名', '邮箱', '国家', '角色', '状态', '在职状态']
+        headers = ['序号', '用户ID', '姓名', '邮箱', '国家', '库房ID', '库房名称', '角色', '权限范围', '状态', '在职状态']
         
         # 写入表头
         for col, header in enumerate(headers, 1):
@@ -1429,14 +1429,17 @@ def export_users_to_excel():
             ws.cell(row=row_idx, column=3, value=user.get('name_en', ''))        # 姓名
             ws.cell(row=row_idx, column=4, value=user.get('email', ''))          # 邮箱
             ws.cell(row=row_idx, column=5, value=user.get('country', ''))        # 国家
-            ws.cell(row=row_idx, column=6, value=user.get('role', ''))           # 角色
-            ws.cell(row=row_idx, column=7, value=user.get('user_status', ''))    # 状态
-            ws.cell(row=row_idx, column=8, value='已离职' if user.get('is_resign') else '在职')  # 在职状态
+            ws.cell(row=row_idx, column=6, value=user.get('wh_id', ''))          # 库房编号
+            ws.cell(row=row_idx, column=7, value=user.get('wh_name_en', ''))
+            ws.cell(row=row_idx, column=8, value=user.get('role', ''))            # 角色
+            ws.cell(row=row_idx, column=9, value=user.get('admin_countries', '')) # 权限范围
+            ws.cell(row=row_idx, column=10, value=user.get('user_status', ''))    # 状态
+            ws.cell(row=row_idx, column=11, value='已离职' if user.get('is_resign') else '在职')  # 在职状态
         
         logger.info(f"实际写入 {len(filtered_users)} 条数据")
 
         # 调整列宽
-        column_widths = [8, 38, 15, 25, 12, 12, 12, 12]
+        column_widths = [8, 38, 15, 25, 12, 12, 12, 8, 12, 12, 12]
         for col, width in enumerate(column_widths, 1):
             ws.column_dimensions[get_column_letter(col)].width = width
         

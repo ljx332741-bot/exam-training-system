@@ -16,13 +16,17 @@
             </span>
         </h2>
         <div>
-            <!-- 动态显示返回或关闭按钮 -->
-            <button id="navBackBtn" class="btn btn-outline-secondary" onclick="handleNavigation()">
-                <i class="bi bi-arrow-left me-1"></i> <span id="navBtnText" data-i18n="back">返回</span>
-            </button>
-            <button id="navCloseBtn" class="btn btn-outline-secondary" onclick="window.close()" style="display: none;">
-                <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
-            </button>
+            {% if from_source in ['dashboard', 'exams', 'training'] %}
+                <!-- 从列表页新窗口打开：显示关闭按钮 -->
+                <button id="navCloseBtn" class="btn btn-outline-secondary" onclick="handleClose()">
+                    <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
+                </button>
+            {% else %}
+                <!-- 直接访问或其他来源：显示返回按钮 -->
+                <button id="navBackBtn" class="btn btn-outline-secondary" onclick="handleNavigation()">
+                    <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+                </button>
+            {% endif %}
         </div>
     </div>
 
@@ -682,8 +686,26 @@
         return urlParam || sessionFlag;
     }
 
+    const FROM_SOURCE = "{{ from_source }}";  // 'dashboard' | 'exams' | 'training' | ''
+
     function handleNavigation() {
-        if (isFromTrainingBinding()) {
+        // 返回按钮：尝试关闭窗口（如果是新窗口），否则返回上一页
+        if (FROM_SOURCE === 'dashboard') {
+            window.close();
+            setTimeout(() => {
+                if (!window.closed) window.location.href = '/admin/dashboard';
+            }, 200);
+        } else if (FROM_SOURCE === 'exams') {
+            window.close();
+            setTimeout(() => {
+                if (!window.closed) window.location.href = '/admin/exams';
+            }, 200);
+        } else if (FROM_SOURCE === 'training') {
+            window.close();
+            setTimeout(() => {
+                if (!window.closed) window.location.href = '/admin/trainings';
+            }, 200);
+        } else if (isFromTrainingBinding()) {
             // 从培训绑定跳转：关闭窗口
             if (window.opener) {
                 // 如果有父窗口，尝试关闭
@@ -712,12 +734,18 @@
 
     function handleClose() {
         window.close();
-        // 备选方案
+        // 备选方案：如果无法关闭（非脚本打开的窗口），跳转到来源页
         setTimeout(() => {
             if (!window.closed) {
-                window.location.href = '/admin/trainings';
+                if (FROM_SOURCE === 'dashboard') {
+                    window.location.href = '/admin/dashboard';
+                } else if (FROM_SOURCE === 'training') {
+                    window.location.href = '/admin/trainings';
+                } else {
+                    window.location.href = '/admin/exams';
+                }
             }
-        }, 500);
+        }, 300);
     }
 
     function initNavigation() {
