@@ -997,7 +997,7 @@
                     <button class="btn btn-sm btn-primary view-country-attendance" 
                         data-training-id="${trainingId}" 
                         data-country="${g.country}">
-                        ${safeT('view_sign_in_records_export') || '查看签到'} (${attendanceCount})
+                        ${safeT('view_attendance_details') || '查看签到'} (${attendanceCount})
                     </button>
                 `;
             } else {
@@ -1007,7 +1007,7 @@
                         data-bs-toggle="tooltip"
                         data-bs-placement="top"
                         title="${safeT('no_sign_in_record_available') || '暂无签到记录'}">
-                        ${safeT('view_sign_in_records_export') || '查看签到'} (0)
+                        ${safeT('view_attendance_details') || '查看签到'} (0)
                     </button>
                 `;
             }
@@ -3010,7 +3010,8 @@
                 }
                 
                 const url = `${STATUS_VIEW_URL}?training_id=${trainingId}&name=${encodeURIComponent(trainingName)}`;
-                window.location.href = url;
+                // window.location.href = url;
+                window.open(url, '_blank'); // 新标签页打开
             };
             link.addEventListener('click', link._clickHandler);
         });

@@ -661,15 +661,15 @@ def admin_batch_export_pdf(exam_id):
             pdf_bytes, score, result_id = generate_single_user_pdf(exam_id, uid)
             if pdf_bytes:
                 # 获取考生姓名
-                user_res = db.table("users").select("name_en, email").eq("id", uid).execute()
-                name = user_res.data[0].get('name_en', uid) if user_res.data else uid                
-                result_id = get_latest_result_id(exam_id, uid)  # 需实现该函数
+                user_res = db.table("users").select("name_en, email, country").eq("id", uid).execute()
+                name = user_res.data[0].get('name_en', uid) if user_res.data else uid    
+                country = user_res.data[0].get('country', uid) if user_res.data else uid             
+                result_id = get_latest_result_id(exam_id, uid)
                 safe_name = re.sub(r'[\\/*?:"<>|]', '_', name)
-                # filename = f"{name}_{exam_id}_{result_id}.pdf"
                 if score is not None:
-                    filename = f"{safe_name}_({exam_id}_{result_id})_{score}.pdf"
+                    filename = f"{country}_{safe_name}_({exam_id}_{result_id})_{score}.pdf"
                 else:
-                    filename = f"{safe_name}_({exam_id}_{result_id}).pdf"
+                    filename = f"{country}_{safe_name}_({exam_id}_{result_id}).pdf"
                 zf.writestr(filename, pdf_bytes)
                 logger.info(f"  已添加文件: {filename}")
     zip_buffer.seek(0)
@@ -683,7 +683,6 @@ def admin_batch_export_pdf(exam_id):
 
 def generate_single_user_pdf(exam_id, user_id):
     """为指定考试和考生生成PDF字节流，返回 (pdf_bytes, score, result_id)"""
-    # logger.info(f"[批量导出] 开始生成 PDF: exam_id={exam_id}, user_id={user_id}")
     db = get_supabase()
     # 1. 获取该考生在该考试的最新成绩记录
     result_res = db.table("exam_results") \
@@ -700,7 +699,6 @@ def generate_single_user_pdf(exam_id, user_id):
     result = result_res.data[0]
     score = result.get('total_score', 0)
     result_id = result.get('id')
-    # logger.info(f"  找到成绩记录 result_id={result['id']}, score={result.get('total_score')}")
 
     # 2. 获取考试信息
     exam_res = db.table("exams").select("*").eq("id", exam_id).execute()
@@ -744,7 +742,7 @@ def generate_single_user_pdf(exam_id, user_id):
         url_reviewer=None  # 批量导出时没有 URL 参数
     )
 
-    # ✅ 添加调试日志
+    # 添加调试日志
     logger.info(f"========== generate_single_user_pdf 阅卷人 ==========")
     logger.info(f"考生国家: {user_data.get('country')}")
     logger.info(f"考试表 reviewer: {exam_data.get('reviewer')}")

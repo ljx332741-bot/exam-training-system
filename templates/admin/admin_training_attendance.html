@@ -392,7 +392,7 @@
                 <i class="bi bi-download"></i> <span data-i18n="expert_pdf">PDF导出</span>
             </a>
             <button class="btn btn-sm btn-outline-secondary" id="backButton">
-                <i class="bi bi-arrow-left me-1"></i> <span data-i18n="back">返回</span>
+                <i class="bi bi-x-lg me-1"></i> <span data-i18n="close">关闭</span>
             </button>
         </div>
     </div>
@@ -1006,7 +1006,7 @@
         const isFromExamBinding = from === 'exam_binding';
         
         if (isFromExamBinding) {
-            backBtn.innerHTML = `<i class="bi bi-x-lg me-1"></i> 关闭`;
+            backBtn.innerHTML = `<i class="bi bi-x-lg me-1"></i> ${t('close')}`;
             backBtn.onclick = function(e) {
                 e.preventDefault();
                 window.close();
@@ -1017,7 +1017,7 @@
         } else {
             backBtn.onclick = function(e) {
                 e.preventDefault();
-                history.back();
+                window.close();
             };
         }
     }
