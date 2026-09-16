@@ -601,6 +601,51 @@ def generate_bilingual_excel(training_id: int, exam_id: int, country: str = None
     filename = f"培训报告_{training_id}_{datetime.now().strftime('%Y%m%d')}.xlsx"
     return buffer, filename
 
+def _count_user_exam_frequency_by_exam_year(db, user_ids, year):
+    """
+    统计每个用户在指定年份内参与的去重考试数
+    
+    Args:
+        user_ids: 用户ID列表。传 None 表示统计所有用户（不限制用户范围）
+        year: 整数年份
+    """
+    if not year:
+        return {}
+    
+    year_start = f"{year}-01-01T00:00:00+00:00"
+    year_end   = f"{year}-12-31T23:59:59+00:00"
+    
+    # 1. 该年份创建的所有考试ID
+    exams_res = (
+        db.table("exams")
+        .select("id")
+        .gte("created_at", year_start)
+        .lte("created_at", year_end)
+        .execute()
+    )
+    year_exam_ids = [e['id'] for e in (exams_res.data or [])]
+    if not year_exam_ids:
+        return {}
+    
+    # 2. 查询这些考试下的所有成绩（排除软删除）
+    freq = defaultdict(set)
+    CHUNK = 100
+    for i in range(0, len(year_exam_ids), CHUNK):
+        chunk = year_exam_ids[i:i + CHUNK]
+        q = (
+            db.table("exam_results")
+            .select("user_id, exam_id")
+            .in_("exam_id", chunk)
+            .is_("deleted_at", "null")
+        )
+        if user_ids is not None:      # ✅ None 时不过滤 user_id
+            q = q.in_("user_id", user_ids)
+        res = q.execute()
+        for r in res.data or []:
+            freq[r['user_id']].add(r['exam_id'])
+    
+    return {uid: len(s) for uid, s in freq.items()}
+
 def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end_date, user_ids=None, wh_id=None, lang='zh'):
     """
     生成双语Excel报告，支持按国家、库房、培训名称、考试名称筛选
@@ -614,7 +659,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     clean_title = lambda s: re.sub(r'[\\/*?:\[\]]', ' ', s).strip()
     
     # ============================================================
-    # ========== 工作表1：培训信息汇总（增强版） ==========
+    # ---------- 工作表1：培训信息汇总（增强版） ----------
     # ============================================================
     ws1 = wb.active
     ws1.title = clean_title("培训信息汇总 Training Summary")
@@ -823,7 +868,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
         ws1.column_dimensions[get_column_letter(col)].width = 15
 
     # ============================================================
-    # ========== 工作表2：知识测评汇总表（增强版） ==========
+    # ---------- 工作表2：知识测评汇总表（增强版） ----------
     # ============================================================
     ws2 = wb.create_sheet(title=clean_title("知识测评汇总表 Assessment Summary"))
 
@@ -838,16 +883,20 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             max_questions = len(questions)
 
     # 计算年份显示（用于测评次数列标题）
+    # 取 exams 中最大的年份作为"测评次数"的统计年份
     exam_years = set()
     for exam in exams:
         created_at = exam.get('created_at')
         if created_at:
             try:
                 year = datetime.fromisoformat(created_at.replace('Z', '+00:00')).year
-                exam_years.add(str(year))
+                exam_years.add(year)
             except:
                 pass
-    year_display = '/'.join(sorted(exam_years)) if exam_years else ''
+    
+    # 以最大年份作为统计口径（避免跨年时把多年混在一起）
+    target_year = max(exam_years) if exam_years else datetime.now().year
+    year_display = str(target_year)
 
     # 增加"业务单位"，原"考试名称"改为"年份年测评次数"，在备注后面新增"考试名称"
     headers2_fixed = [
@@ -971,19 +1020,44 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
     # ========== 数据行 ==========
     row_idx2 = 3
 
-    # 统计每个用户参与了哪些考试（去重：一个考试只统计一次）
-    user_exam_set = defaultdict(set)
+    # 收集本工作表涉及的用户ID（用于测评次数统计）
+    # 注意：user_ids 为 None 时，table_user_ids 也置为 None，让辅助函数统计所有用户
+    table_user_ids = None if user_ids is None else set()
     for exam in exams:
-        results_query = db.table("exam_results").select("user_id").eq("exam_id", exam['id'])
+        rq = (
+            db.table("exam_results")
+            .select("user_id")
+            .eq("exam_id", exam['id'])
+            .is_("deleted_at", "null")
+        )
         if user_ids is not None:
-            results_query = results_query.in_("user_id", user_ids)
-        results_all = results_query.execute().data or []
-        for r in results_all:
-            user_exam_set[r['user_id']].add(exam['id'])
+            rq = rq.in_("user_id", user_ids)
+        for r in (rq.execute().data or []):
+            if table_user_ids is not None:
+                table_user_ids.add(r['user_id'])
+
+    # 统计测评次数（按 exam.created_at 年份 + exam_id 去重）
+    user_exam_freq = _count_user_exam_frequency_by_exam_year(
+        db,
+        list(table_user_ids) if table_user_ids is not None else None,
+        target_year
+    )
+    logger.info(
+        f"测评次数统计: year={target_year}, "
+        f"用户数={len(user_exam_freq)}, "
+        f"样例={list(user_exam_freq.items())[:5]}"
+    )
 
     for exam in exams:
         exam_title = exam.get('title', '')
-        results_query = db.table("exam_results").select("*").eq("exam_id", exam['id'])
+
+        results_query = (
+            db.table("exam_results")
+            .select("*")
+            .eq("exam_id", exam['id'])
+            .is_("deleted_at", "null")
+        )
+        
         if user_ids is not None:
             results_query = results_query.in_("user_id", user_ids)
         results_all = results_query.execute().data or []
@@ -1030,8 +1104,9 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             # 获取业务单位（部门）
             dept = user.get('department', '')
             
-            # 获取该用户参与的考试总数（去重：一个考试只统计一次）
-            exam_count = len(user_exam_set.get(result['user_id'], set()))
+            # ✅ 该用户在 target_year 年份内参与的去重考试次数
+            #    口径：按 exam.created_at 年份 + exam_id 去重，排除软删除
+            exam_count = user_exam_freq.get(result['user_id'], 0)
 
             user_remark = user.get('remark') or ''
 
@@ -1080,7 +1155,7 @@ def generate_bilingual_excel_filtered(trainings, exams, country, start_date, end
             ws2.column_dimensions[get_column_letter(col)].width = 30
 
     # ============================================================
-    # ========== 工作表3：访谈检查结果（增强版） ==========
+    # ---------- 工作表3：访谈检查结果（增强版） ----------
     # ============================================================
     if exams:
         ws3 = wb.create_sheet(title=clean_title("访谈检查结果 Interview Results"))
