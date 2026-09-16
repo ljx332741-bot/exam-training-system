@@ -3191,14 +3191,14 @@
                         _whSelected = wh;
                         input.disabled = true;
                         if (hint) {
-                            hint.textContent = `已自动选择：${wh.wh_id}`;
+                            hint.textContent = `${t('auto_choose')}` + '：' + `${wh.wh_id}`;
                             hint.style.color = '#198754';
                         }
                     } else {
                         // 多个库房：显示提示，等用户点击/输入
-                        input.placeholder = `输入搜索（共 ${data.warehouses.length} 个库房）`;
+                        input.placeholder = `${t('input_search_wh_count', data.warehouses.length)}`;
                         if (hint) {
-                            hint.textContent = `该国家有 ${data.warehouses.length} 个库房，请点击或输入搜索`;
+                            hint.textContent = `${t('wh_qty_hint_under_the_country', data.warehouses.length)}`;
                             hint.style.color = '#6c757d';
                         }
                     }
