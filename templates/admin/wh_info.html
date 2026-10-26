@@ -266,6 +266,55 @@
     let allWhData = [];
     let deletedAllData = [];
 
+    // ==================== 通用按钮 loading 包装器 ====================
+    /**
+     * 包装一个按钮点击事件，自动：
+     *  1. 防止重复点击（禁用按钮）
+     *  2. 显示 loading 图标
+     *  3. 执行完成后恢复按钮状态
+     * 
+     * @param {HTMLElement} btn - 按钮元素
+     * @param {Function} asyncFn - 异步函数，返回 Promise
+     * @param {Object} options - 可选配置
+     *   - loadingText: 加载中的文字，默认取原按钮文字
+     *   - keepOriginalHTML: 是否保留原按钮 HTML（默认 true），false 时只替换文字
+     *   - disableOnly: 只禁用按钮不改变 innerHTML（适合图标按钮）
+     */
+    async function withButtonLoading(btn, asyncFn, options = {}) {
+        if (!btn) return;
+        
+        // 防止重复点击（如果按钮已禁用，直接返回）
+        if (btn.disabled) {
+            console.warn('按钮正在加载中，忽略重复点击');
+            return;
+        }
+        
+        const originalHtml = btn.innerHTML;
+        const originalDisabled = btn.disabled;
+        
+        // 获取原文本（去掉 HTML 后的纯文本）
+        const originalText = btn.innerText.trim();
+        const loadingText = options.loadingText || t('loading') || '加载中...';
+        const disableOnly = options.disableOnly === true;
+        
+        // 禁用按钮 + 显示 loading
+        btn.disabled = true;
+        if (!disableOnly) {
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>${loadingText}`;
+        }
+        
+        try {
+            return await asyncFn();
+        } catch (err) {
+            console.error('按钮操作失败:', err);
+            throw err;
+        } finally {
+            // 恢复按钮状态
+            btn.disabled = originalDisabled;
+            btn.innerHTML = originalHtml;
+        }
+    }
+
     // ========== 加载库房列表（使用表格内嵌进度条） ==========
     async function loadWhList() {
         const params = new URLSearchParams({
@@ -444,10 +493,10 @@
         `).join('');
 
         document.querySelectorAll('.restore-wh-btn').forEach(btn => {
-            btn.addEventListener('click', () => restoreWh(btn.dataset.id));
+            btn.addEventListener('click', () => restoreWh(btn.dataset.id), btn);
         });
         document.querySelectorAll('.permanent-delete-wh-btn').forEach(btn => {
-            btn.addEventListener('click', () => permanentDeleteWh(btn.dataset.id, btn.dataset.name));
+            btn.addEventListener('click', () => permanentDeleteWh(btn.dataset.id, btn.dataset.name, btn));
         });
         bindSelectAllDeleted();
     }
@@ -559,61 +608,89 @@
         }
     }
 
-    async function deleteWh(whId, permanent) {
-        try {
-            const res = await fetch(`/api/admin/wh/${whId}?permanent=${permanent}`, { method: 'DELETE' });
-            const result = await res.json();
-            if (result.success) {
-                alert(permanent ? t('js_delete_success') : t('t_soft_delete_success'));
-                loadWhList();
-            } else {
-                alert(t('delete_failed') + (result.message || ''));
+    async function deleteWh(whId, permanent, triggerBtn = null) {
+        const doDelete = async () => {
+            try {
+                const res = await fetch(`/api/admin/wh/${whId}?permanent=${permanent}`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(
+                        permanent ? (t('js_delete_success') || '删除成功') : (t('t_soft_delete_success') || '已软删除'),
+                        'success'
+                    );
+                    await loadWhList();
+                } else {
+                    showToast(t('delete_failed') + (result.message || ''), 'error');
+                }
+            } catch (err) {
+                showToast(t('delete_failed') + err.message, 'error');
             }
-        } catch (err) {
-            alert(t('delete_failed') + err.message);
+        };
+        
+        if (triggerBtn) {
+            await withButtonLoading(triggerBtn, doDelete);
+        } else {
+            await doDelete();
         }
     }
 
-    async function restoreWh(whId) {
-        if (!confirm(t('confirm_to_restore_wh_info'))) return;
-        try {
-            const res = await fetch(`/api/admin/wh/${whId}/restore`, { method: 'POST' });
-            const result = await res.json();
-            if (result.success) {
-                alert(t('restore_success'));
-                loadDeletedWhList();
-                loadWhList();
-            } else {
-                alert(t('restore_failed'));
+    async function restoreWh(whId, triggerBtn = null) {
+        if (!confirm(t('confirm_to_restore_wh_info') || '确定要恢复该库房吗？')) return;
+        
+        const doRestore = async () => {
+            try {
+                const res = await fetch(`/api/admin/wh/${whId}/restore`, { method: 'POST' });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(t('restore_success') || '恢复成功', 'success');
+                    await loadDeletedWhList();
+                    await loadWhList();
+                } else {
+                    showToast(t('restore_failed') || '恢复失败', 'error');
+                }
+            } catch (err) {
+                showToast((t('restore_failed') || '恢复失败') + ': ' + err.message, 'error');
             }
-        } catch (err) {
-            alert(t('restore_failed') + err.message);
+        };
+        
+        if (triggerBtn) {
+            await withButtonLoading(triggerBtn, doRestore);
+        } else {
+            await doRestore();
         }
     }
 
-    async function permanentDeleteWh(whId, name) {
-        const message = t('confirm_restore_wh_info').replace('{name}', name);
-        // if (!confirm(`确定要永久删除库房 ${name} 吗？此操作不可恢复！`)) return;
+    async function permanentDeleteWh(whId, name, triggerBtn = null) {
+        const message = (t('confirm_restore_wh_info') || '确定永久删除库房 {name} 吗？此操作不可恢复！').replace('{name}', name);
         if (!confirm(message)) return;
-        try {
-            const res = await fetch(`/api/admin/wh/${whId}?permanent=true`, { method: 'DELETE' });
-            const result = await res.json();
-            if (result.success) {
-                alert(t('js_delete_success'));
-                loadDeletedWhList();
-                loadWhList();
-            } else {
-                alert(t('delete_failed') + (result.message || ''));
+        
+        const doDelete = async () => {
+            try {
+                const res = await fetch(`/api/admin/wh/${whId}?permanent=true`, { method: 'DELETE' });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(t('js_delete_success') || '删除成功', 'success');
+                    await loadDeletedWhList();
+                    await loadWhList();
+                } else {
+                    showToast((t('delete_failed') || '删除失败') + (result.message || ''), 'error');
+                }
+            } catch (err) {
+                showToast((t('delete_failed') || '删除失败') + ': ' + err.message, 'error');
             }
-        } catch (err) {
-            alert(t('delete_failed') + err.message);
+        };
+        
+        if (triggerBtn) {
+            await withButtonLoading(triggerBtn, doDelete);
+        } else {
+            await doDelete();
         }
     }
 
-    async function batchDelete(deleteType) {
+    async function batchDelete(deleteType, triggerBtn = null) {
         const selectedIds = Array.from(document.querySelectorAll('.wh-checkbox:checked')).map(cb => cb.dataset.id);
         if (selectedIds.length === 0) {
-            alert(t('select_at_least_one_'));
+            showToast(t('select_at_least_one_') || '请至少选择一项', 'warning');
             return;
         }
         
@@ -622,21 +699,33 @@
             : t('Confirm_soft_delete_count_WH', selectedIds.length);
         if (!confirm(confirmMsg)) return;
         
-        try {
-            const res = await fetch('/api/admin/wh/batch_delete', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ids: selectedIds, delete_type: deleteType === 'hard' ? 'hard' : 'soft' })
-            });
-            const result = await res.json();
-            if (result.success) {
-                alert(t('delete_success_', result.success_count));
-                loadWhList();
-            } else {
-                alert(t('delete_failed', result.message));
+        const doBatchDelete = async () => {
+            try {
+                const res = await fetch('/api/admin/wh/batch_delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: selectedIds, delete_type: deleteType === 'hard' ? 'hard' : 'soft' })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(t('delete_success_', result.success_count) || `删除成功 ${result.success_count} 条`, 'success');
+                    // 清空选择
+                    document.querySelectorAll('.wh-checkbox:checked').forEach(cb => cb.checked = false);
+                    const selectAll = document.getElementById('selectAll');
+                    if (selectAll) selectAll.checked = false;
+                    await loadWhList();
+                } else {
+                    showToast(t('delete_failed', result.message) || '删除失败', 'error');
+                }
+            } catch (err) {
+                showToast((t('delete_failed_') || '删除失败') + ': ' + err.message, 'error');
             }
-        } catch (err) {
-            alert(t('delete_failed_') + err.message);
+        };
+        
+        if (triggerBtn) {
+            await withButtonLoading(triggerBtn, doBatchDelete);
+        } else {
+            await doBatchDelete();
         }
     }
 
@@ -955,7 +1044,7 @@
     if (saveWhBtn) saveWhBtn.addEventListener('click', saveWh);
     
     const batchDeleteWhBtn = document.getElementById('batchDeleteWhBtn');
-    if (batchDeleteWhBtn) batchDeleteWhBtn.addEventListener('click', () => batchDelete('soft'));
+    if (batchDeleteWhBtn) batchDeleteWhBtn.addEventListener('click', () => batchDelete('soft', batchDeleteWhBtn));
     
     const confirmPermanentDelete = document.getElementById('confirmPermanentDelete');
     if (confirmPermanentDelete) {

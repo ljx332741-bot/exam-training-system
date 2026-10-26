@@ -1913,7 +1913,7 @@ def search_trainings():
     if not q and not country and not warehouse and not start_date and not end_date:
         per_page = 8
     
-    db = get_supabase()
+    db = get_supabase_admin()
     
     # 获取当前用户的权限范围
     allowed_countries = get_admin_allowed_countries()
@@ -1987,10 +1987,22 @@ def search_trainings():
     if exam_id:
         try:
             exam_id_int = int(exam_id)
-            bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).execute()
+            bindings_res = db.table("training_exam_bindings").select("training_id").eq("exam_id", exam_id_int).is_("deleted_at", "null").execute()
             bound_training_ids = set([b['training_id'] for b in (bindings_res.data or [])])
         except ValueError:
             bound_training_ids = set()
+    else:
+        # 场景2：调用方只想知道"培训是否有任意绑定"（如完成度报表、培训管理页）
+        if paginated:
+            paginated_ids = [t['id'] for t in paginated]
+            bindings_res = (
+                db.table("training_exam_bindings")
+                .select("training_id")
+                .in_("training_id", paginated_ids)
+                .is_("deleted_at", "null")
+                .execute()
+            )
+            bound_training_ids = set([b['training_id'] for b in (bindings_res.data or [])])
 
     # ========== 9. 获取签到人数统计 ==========
     # 批量获取所有培训的签到人数
